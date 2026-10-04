@@ -3,7 +3,7 @@ import { ShieldCheck, Lock, AlertTriangle, ArrowLeft, Loader2, KeyRound } from '
 import { BrandLogo } from '../../components/brand/BrandLogo';
 import { EditorialButton } from '../../components/common/EditorialButton';
 import { useApp } from '../../context/AppContext';
-import { mockService } from '../../repositories/mockRepository';
+import { appRepositories as repositories } from '../../repositories/provider';
 
 export const AdminLoginGate: React.FC = () => {
   const { login, setScreen } = useApp();
@@ -20,7 +20,7 @@ export const AdminLoginGate: React.FC = () => {
     try {
       const normalizedEmail = email.trim().toLowerCase();
       // Verification pre-check against existing users
-      const users = await mockService.getAllUsers('user-admin-1').catch(() => []);
+      const users = await repositories.getAllUsers('user-admin-1').catch(() => []);
       const matched = users.find(u => u.email.toLowerCase() === normalizedEmail);
       if (matched && matched.role !== 'ADMIN') {
         throw new Error("Accès refusé : Ce compte est un profil public et ne dispose pas des privilèges d'administration.");
