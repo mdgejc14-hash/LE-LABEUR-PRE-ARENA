@@ -1,0 +1,10 @@
+{
+  "name": "LE LABEUR",
+  "description": "Application officielle LE LABEUR — Architecture des Métiers, contrats de travail, commissions déontologiques 25%/0%, arbitrage et VoIP WebRTC.",
+  "requestFramePermissions": [
+    "microphone"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

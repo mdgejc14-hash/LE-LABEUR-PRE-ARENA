@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 380 90" width="100%" height="100%" fill="none">
+  <!-- LE LABEUR Official Light Logo -->
+  <defs>
+    <linearGradient id="lightGold" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#E5C378"/>
+      <stop offset="100%" stop-color="#C5A059"/>
+    </linearGradient>
+  </defs>
+  <g transform="translate(10, 5)">
+    <rect x="0" y="0" width="76" height="76" rx="10" fill="#1E2C48" stroke="url(#lightGold)" stroke-width="2"/>
+    <rect x="5" y="5" width="66" height="66" rx="7" fill="none" stroke="#E5C378" stroke-opacity="0.35" stroke-width="0.8" stroke-dasharray="2 2"/>
+    <path d="M26 22 V54 H52" stroke="url(#lightGold)" stroke-width="5" stroke-linecap="square" stroke-linejoin="miter"/>
+    <path d="M21 31 H42 L37 39 H26" fill="url(#lightGold)"/>
+    <circle cx="41" cy="27" r="3.2" fill="#FFFFFF"/>
+    <polygon points="41,18 42.5,21.5 46,21.5 43,23.5 44.5,27 41,25 37.5,27 39,23.5 36,21.5 39.5,21.5" fill="#E5C378"/>
+    <line x1="22" y1="59" x2="56" y2="59" stroke="url(#lightGold)" stroke-width="2" stroke-linecap="round"/>
+    <line x1="28" y1="63" x2="50" y2="63" stroke="#E5C378" stroke-opacity="0.6" stroke-width="1.2" stroke-linecap="round"/>
+  </g>
+  <line x1="102" y1="18" x2="102" y2="70" stroke="#F3F3EC" stroke-opacity="0.25" stroke-width="1.2"/>
+  <g transform="translate(118, 0)">
+    <text x="0" y="47" font-family="'Bodoni Moda', 'Cormorant Garamond', Georgia, serif" font-size="34" font-weight="700" letter-spacing="3" fill="#F3F3EC">
+      LE LABEUR
+    </text>
+    <text x="2" y="65" font-family="'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif" font-size="9" font-weight="600" letter-spacing="2.8" fill="#E5C378">
+      L'ACCORD CLAIR RÉPUBLIQUE DU BÉNIN
+    </text>
+  </g>
+</svg>

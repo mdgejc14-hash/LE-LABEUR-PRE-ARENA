@@ -1,0 +1,24 @@
+{
+  "date": "2026-10-04",
+  "execution": "real repository/business-layer Node execution",
+  "browser_e2e": false,
+  "total": 800,
+  "pass": 800,
+  "fail": 0,
+  "categories": {
+    "AUTH / SESSION": 100,
+    "DATA SCOPING": 100,
+    "CONCURRENCY / DOUBLE ACTION": 100,
+    "CONTRACTS / OFFERS / APPLICATIONS": 100,
+    "PAYMENTS / BLOCKING": 100,
+    "INCIDENTS / REPLACEMENTS": 100,
+    "NOTIFICATIONS / PERSISTENCE": 100,
+    "SCALE / COLLECTION BEHAVIOR": 100
+  },
+  "focused_confirmed_gaps": [
+    "createOffer retry duplicates business object without idempotency key",
+    "sendMessage retry duplicates business object without idempotency key",
+    "sendProposal retry duplicates business object without idempotency key",
+    "no autonomous J+3 scheduler found"
+  ]
+}
