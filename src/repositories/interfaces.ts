@@ -169,7 +169,7 @@ export interface MessageRepository {
   markConversationAsRead(conversationId: string, actorId: string): Promise<void>;
   createOrGetConversation(
     userId: string,
-    targetUser: { id: string; name: string; role: UserRole; avatarUrl: string },
+    targetUser: { id: string; publicId?: string; name: string; role: UserRole; avatarUrl: string },
     context: { contextType: 'OFFER' | 'APPLICATION' | 'PROPOSAL' | 'CONTRACT' | 'INCIDENT' | 'REPLACEMENT'; contextTitle: string; contextRefId: string }
   ): Promise<Conversation>;
 }

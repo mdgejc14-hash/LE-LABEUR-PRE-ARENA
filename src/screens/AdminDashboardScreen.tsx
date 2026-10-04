@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, CheckCircle2, LockKeyhole, RefreshCw, UnlockKeyhole, XCircle } from 'lucide-react';
 import { useApp } from '../context/AppContext';
-import { mockService } from '../repositories/mockRepository';
+import { appRepositories as repositories } from '../repositories/provider';
 import { Contract, CommissionPaymentRecord, UserProfile, Incident, ReplacementDossier } from '../types';
 
 const daysLateFor = (dateValue?: string): number => {
@@ -45,11 +45,11 @@ export const AdminDashboardScreen: React.FC = () => {
     setError('');
     try {
       const [nextUsers, nextContracts, nextPayments, nextIncidents, nextReplacements] = await Promise.all([
-        mockService.getAllUsers(currentUser.id),
-        mockService.getContractsByUser(currentUser.id, 'ADMIN'),
-        mockService.getAllPaymentRecords(currentUser.id),
-        mockService.getAllIncidents(currentUser.id),
-        mockService.getAllReplacements(currentUser.id)
+        repositories.getAllUsers(currentUser.id),
+        repositories.getContractsByUser(currentUser.id, 'ADMIN'),
+        repositories.getAllPaymentRecords(currentUser.id),
+        repositories.getAllIncidents(currentUser.id),
+        repositories.getAllReplacements(currentUser.id)
       ]);
       setUsers(nextUsers);
       setContracts(nextContracts);

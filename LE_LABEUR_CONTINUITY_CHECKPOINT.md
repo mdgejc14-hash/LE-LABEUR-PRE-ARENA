@@ -2,7 +2,7 @@
 
 Date: 2026-10-04
 Phase: Functional stabilization before Cloud infrastructure
-Status: STABILIZATION EXECUTED — backend boundary prepared; build/runtime remain environment-blocked
+Status: PHASE 1B VALIDATED — tests 921/921, lint PASS, build PASS; browser and live WebRTC runtime not executed; production backend remains boundary-only
 
 ## Source
 
@@ -196,3 +196,55 @@ Runtime checks confirm coherent final states for contract activation, payment ve
 
 ### Next exact action
 Move to the real backend Cloudflare implementation only after preserving this checkpoint as the source state. Do not redesign the UI or rebuild validated business logic.
+
+## Phase 1B — validation and stabilization — 2026-10-04
+
+### Scope and starting point
+- Branch: `arena/01a108ca-le-labeur-pre-arena`.
+- Starting commit: `9ee5029032e0a4d86e2f477b44ce86150e3a08b6`.
+- Master continuity file `LE_LABEUR_MASTER_CONTINUITY_2026-10-04.md` was not present during this pass.
+- No Phase 2 infrastructure or UI work started.
+
+### Corrections made
+- Removed the duplicate `getAdminIncidents` member from `ServerIncidentRepository`.
+- Fixed TypeScript errors in the Worker handler key lookup, boundary test state capture, auth/document type imports, AppContext conversation target type, API adapter options import, and optional ICE test indexing.
+- Kept mock repository as the provider default; API mode remains opt-in and absent handlers remain explicit 501s.
+- Restored the mock/demo signaling branch without reading API credentials: it accepts only a server-signed WSS token bound to the current mock user and expiring within five minutes. API mode continues to request its credential through the authenticated API and does not send a client actor ID.
+- Restored optional mock TURN configuration only when its credential has an explicit expiry no more than five minutes away; otherwise public STUN remains the fallback. Call ID, `CALL_REJECT`, `RTCPeerConnection`, and WebSocket state checks were preserved.
+- Added six mock/API WebRTC boundary tests and included them in `npm test`.
+
+### Commands and exact results
+- Initial `npm test`: **not run**, exit 127 — `sh: 1: tsx: not found`.
+- Normal `npm install --ignore-scripts --no-audit --no-fund --prefer-offline --no-package-lock`: **FAIL**, ERESOLVE because Vite 8.3.2's optional esbuild peer requires `^0.27.0 || ^0.28.0`, while the project pins `esbuild ^0.25.0`.
+- `npm install --ignore-scripts --no-audit --no-fund --prefer-offline --no-package-lock --legacy-peer-deps`: **PASS**, 182 packages installed; no lockfile was generated.
+- Final `npm test`: **921/921 PASS, 0 FAIL** — deterministic 82/82, final stabilization 14/14, repository QA 800/800, backend boundary 19/19, mock/API WebRTC boundary 6/6.
+- First `npm run lint` found seven TypeScript errors; all were corrected. Final `npm run lint`: **PASS** (`tsc --noEmit`).
+- Final `npm run build`: **PASS**, Vite 8.3.2 transformed 1,718 modules. Warnings remain for `__dirname` with future native config loading and the 736.48 kB minified JS chunk.
+- `git diff --check`: **PASS**.
+- Browser smoke test and live WebSocket/peer-to-peer WebRTC session: **NOT EXECUTED**. WebRTC verification is unit-level only; no backend issuer or signaling service is configured.
+
+### Phase 1B files directly corrected/added
+- `src/backend/repositories/contracts.ts`
+- `src/backend/api/worker.ts`
+- `src/backend/api/foundation.test.ts`
+- `src/repositories/interfaces.ts`
+- `src/repositories/apiAppAdapter.ts`
+- `src/services/calls/signalingCredentialClient.ts`
+- `src/services/calls/iceCredentialClient.ts`
+- `src/services/calls/signalingCredentialClient.test.ts`
+- `scripts/run-tests.ts`
+- `.env.example`
+- `docs/PRODUCTION_BACKEND_BOUNDARY.md`
+- `LE_LABEUR_CONTINUITY_CHECKPOINT.md`
+
+### PASS / FAIL / remaining limitations
+- PASS: actor/session and ownership/business suites run at 82/82; QA at 800/800; targeted stabilization at 14/14; boundary security and mock/API credential tests pass.
+- PASS: ADMIN role/permission, client role spoofing denial, auth fail-closed, paging bounds, idempotency header validation, explicit 501 behavior covered by executed boundary tests.
+- PASS: mock provider remains default; existing mock domain files remain unchanged.
+- PASS: no long-lived signaling/TURN credential is accepted from VITE configuration. Mock WebRTC may use only a pre-issued short-lived token; live connectivity was not exercised.
+- FAIL (install path only): standard npm dependency resolution remains incompatible unless `--legacy-peer-deps` is used. Package versions were not changed in this stabilization pass.
+- NOT IMPLEMENTED: persistent auth/Google verifier, API domain handlers, PostgreSQL/Hyperdrive, R2, real transactions, persistent idempotency, Outbox, Queue/Cron and production signaling issuer.
+- Final validation commit subject requested: `feat: stabilize production backend boundary`; its full hash is recorded in the final report/Git history after commit.
+
+### Next action
+Stop after recording and committing the validated Phase 1/1B changes. Do not start PostgreSQL, Hyperdrive, R2, Cron, Queue, real Outbox, full Admin, redesign, data migration or WhatsApp without a separate Phase 2 authorization.

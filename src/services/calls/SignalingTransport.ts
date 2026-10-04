@@ -1,4 +1,5 @@
 import { SignalingMessage } from './types';
+import { requestSignalingCredential } from './signalingCredentialClient';
 
 export interface SignalingTransport {
   connect(userId: string): Promise<void>;
@@ -13,28 +14,27 @@ export class CloudflareWebSocketSignalingTransport implements SignalingTransport
   private socket: WebSocket | null = null;
   private handlers: Set<(message: SignalingMessage) => void> = new Set();
   private userId = '';
+  private signalingUrl = '';
   private readonly openTimeoutMs = 10_000;
 
   getSignalingUrl(): string {
-    const envUrl = typeof import.meta !== 'undefined' ? (import.meta as any).env?.VITE_SIGNALING_URL : null;
-    return envUrl || '';
-  }
-
-  private getAuthToken(): string {
-    const token = typeof import.meta !== 'undefined' ? (import.meta as any).env?.VITE_SIGNALING_TOKEN : '';
-    return token || '';
+    return this.signalingUrl;
   }
 
   async connect(userId: string): Promise<void> {
-    this.userId = userId;
-    const baseUrl = this.getSignalingUrl();
-    if (!baseUrl) throw new Error('Endpoint signaling non configuré.');
-    const token = this.getAuthToken();
-    if (!token) throw new Error('Token de signaling indisponible.');
+    if (!userId || !userId.trim()) throw new Error('Utilisateur signaling obligatoire.');
+    const credential = await requestSignalingCredential(userId);
+    const expiresAt = new Date(credential.expiresAt).getTime();
+    if (!credential.credential || !Number.isFinite(expiresAt) || expiresAt <= Date.now()) {
+      throw new Error('Credential signaling expiré ou invalide.');
+    }
 
     this.disconnect();
-    const url = new URL(baseUrl);
-    url.searchParams.set('token', token);
+    const url = new URL(credential.endpoint);
+    if (url.protocol !== 'wss:') throw new Error('Le signaling doit utiliser WebSocket sécurisé (wss).');
+    this.signalingUrl = url.toString();
+    url.searchParams.set('token', credential.credential);
+    this.userId = userId;
 
     await new Promise<void>((resolve, reject) => {
       let settled = false;
@@ -83,6 +83,8 @@ export class CloudflareWebSocketSignalingTransport implements SignalingTransport
       try { this.socket.close(); } catch { /* noop */ }
       this.socket = null;
     }
+    this.userId = '';
+    this.signalingUrl = '';
   }
 
   send(message: SignalingMessage): void {
