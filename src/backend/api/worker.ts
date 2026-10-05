@@ -1,9 +1,12 @@
 import type { AuthenticatedActor, PageRequest, ProductionCommandContext } from '../productionContracts';
 import { createCommandContext, requireIdempotencyKey } from './commands';
 import { ApiError, apiErrorResponse, apiJsonResponse } from './errors';
+import { healthStatusCode, type BoundaryHealthResponse } from './health';
 import { parsePageRequest } from './pagination';
 import { API_ROUTE_CONTRACTS, findApiPath, findApiRoute, routePathMatches, type ApiRouteContract, type ApiRouteKey } from './routeContracts';
 import { requireAdmin, requireAuth, requirePermission } from './security';
+
+export type { BoundaryHealthResponse, HealthRuntimeDescriptor, MigrationState, PersistenceHealthReport } from './health';
 
 export interface ApiRouteContext {
   request: Request;
@@ -18,19 +21,29 @@ export interface ApiRouteContext {
 
 export type ApiRouteHandler = (context: ApiRouteContext) => Promise<unknown | Response>;
 
+/** Rapport `/healthz` : construit à partir de l'état réel observé. */
+export type ApiHealthReporter = () => Promise<BoundaryHealthResponse> | BoundaryHealthResponse;
+
 export interface ApiWorkerDependencies {
   /** Must verify a server session cookie/token; never read actor fields from request data. */
   authenticate(request: Request): Promise<AuthenticatedActor | null>;
   /** Persistent domain handlers are intentionally absent in the foundation pass. */
   handlers?: Partial<Record<ApiRouteKey, ApiRouteHandler>>;
   createRequestId?: () => string;
+  /**
+   * Sans rapporteur, `/healthz` conserve la forme historique de la frontière
+   * nue (`boundary-only` / `not-configured`) : aucune persistance n'est
+   * annoncée tant qu'elle n'est pas réellement sondée.
+   */
+  health?: ApiHealthReporter;
 }
 
-export interface BoundaryHealthResponse {
-  status: 'boundary-only';
-  apiVersion: 'v1';
-  persistence: 'not-configured';
-}
+const boundaryOnlyHealth: BoundaryHealthResponse = {
+  status: 'boundary-only',
+  apiVersion: 'v1',
+  persistence: 'not-configured',
+  runtime: { runtime: 'unknown', declaredEnvironment: null, hyperdriveBinding: false },
+};
 
 function newRequestId(): string {
   if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
@@ -77,12 +90,29 @@ export function createApiWorker(dependencies: ApiWorkerDependencies): { fetch(re
       const url = new URL(request.url);
 
       if (url.pathname === '/healthz' && request.method.toUpperCase() === 'GET') {
-        const body: BoundaryHealthResponse = {
-          status: 'boundary-only',
-          apiVersion: 'v1',
-          persistence: 'not-configured',
-        };
-        return apiJsonResponse(body, 200, requestId);
+        let body: BoundaryHealthResponse = boundaryOnlyHealth;
+        if (dependencies.health) {
+          try {
+            body = await dependencies.health();
+          } catch {
+            // Un rapporteur défaillant ne doit jamais produire un 500 opaque :
+            // l'état devient explicitement dégradé, sans détail interne.
+            body = {
+              status: 'degraded',
+              apiVersion: 'v1',
+              persistence: {
+                mode: 'misconfigured',
+                reason: 'missing-sql-client',
+                configured: false,
+                durable: false,
+                reachable: false,
+                error: 'Le rapport de santé a échoué.',
+              },
+              runtime: boundaryOnlyHealth.runtime,
+            };
+          }
+        }
+        return apiJsonResponse(body, healthStatusCode(body), requestId);
       }
 
       try {

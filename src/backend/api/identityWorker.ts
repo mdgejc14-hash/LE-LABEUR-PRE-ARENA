@@ -16,7 +16,7 @@ import { isSelfAssignableRole } from '../identity/permissions';
 import type { IdentityStores } from '../identity/stores';
 import { ApiError, apiJsonResponse } from './errors';
 import type { ApiRouteKey } from './routeContracts';
-import { createApiWorker, type ApiRouteContext, type ApiRouteHandler } from './worker';
+import { createApiWorker, type ApiHealthReporter, type ApiRouteContext, type ApiRouteHandler } from './worker';
 
 export interface IdentityWorkerOptions {
   sessions: SessionService;
@@ -28,6 +28,8 @@ export interface IdentityWorkerOptions {
   createRequestId?: () => string;
   /** Handlers métier supplémentaires; aucun n'est fourni par cette phase. */
   handlers?: Partial<Record<ApiRouteKey, ApiRouteHandler>>;
+  /** Rapport de santé réel de la persistance (P0-C); absent = frontière nue. */
+  health?: ApiHealthReporter;
 }
 
 async function readJsonBody(request: Request): Promise<Record<string, unknown>> {
@@ -116,6 +118,7 @@ export function createIdentityApiWorker(options: IdentityWorkerOptions): { fetch
   return createApiWorker({
     authenticate: async request => (await sessions.getAuthenticatedActor(request))?.actor ?? null,
     createRequestId: options.createRequestId,
+    health: options.health,
     handlers: {
       'auth.google': googleLogin,
       'auth.google.credential': googleLogin,
