@@ -12,7 +12,9 @@ import {
   CallRecord,
   Incident,
   ReplacementDossier,
-  GoogleIdPayload
+  GoogleIdPayload,
+  PaymentDeclaration,
+  PaymentDeclarationInput
 } from '../types';
 import { appRepositories as repositories } from '../repositories/provider';
 import { callService } from '../services/calls/CallService';
@@ -44,6 +46,7 @@ export type AppScreen =
   | 'AUTH'
   | 'MAIN'
   | 'CONTRACTS'
+  | 'PAYMENTS'
   | 'OFFER_DETAIL'
   | 'CANDIDATE_DETAIL'
   | 'CHAT_DETAIL';
@@ -115,6 +118,12 @@ export interface AppContextType {
   assignReplacementCandidate: (replacementId: string, candidateId: string) => Promise<ReplacementDossier>;
   transferReplacementCandidate: (replacementId: string) => Promise<ReplacementDossier>;
   finalizeReplacementContract: (replacementId: string) => Promise<{ replacement: ReplacementDossier; newContract: Contract }>;
+
+  // Paiements externes déclarés par l'employeur (PHASE 4A)
+  paymentDeclarations: PaymentDeclaration[];
+  refreshPaymentDeclarations: () => Promise<PaymentDeclaration[]>;
+  createPaymentDeclaration: (input: PaymentDeclarationInput) => Promise<PaymentDeclaration>;
+  updatePaymentDeclaration: (paymentId: string, patch: Partial<PaymentDeclarationInput>) => Promise<PaymentDeclaration>;
 
   // Filtres
   filterState: FilterState;
@@ -200,6 +209,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [selectedCandidate, setSelectedCandidate] = useState<UserProfile | null>(null);
   const [applications, setApplications] = useState<Application[]>([]);
   const [contracts, setContracts] = useState<Contract[]>([]);
+  const [paymentDeclarations, setPaymentDeclarations] = useState<PaymentDeclaration[]>([]);
   const [favorites, setFavorites] = useState<string[]>([]);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
@@ -217,6 +227,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [resourceCatalogOpen, setResourceCatalogOpen] = useState<boolean>(false);
 
   const [scenarioDrawerOpen, setScenarioDrawerOpen] = useState<boolean>(false);
+
+  /**
+   * PHASE 4A — les déclarations de paiement externe n'existent que pour un
+   * employeur connecté. Toute autre session repart d'une liste vide.
+   */
+  const loadPaymentDeclarations = useCallback(async (user: UserProfile | null): Promise<PaymentDeclaration[]> => {
+    if (!user || user.role !== 'EMPLOYER') {
+      setPaymentDeclarations([]);
+      return [];
+    }
+    try {
+      const declarations = await repositories.listEmployerPayments(user.id, user.id);
+      setPaymentDeclarations(declarations);
+      return declarations;
+    } catch (err) {
+      console.error('Erreur chargement des déclarations de paiement', err);
+      setPaymentDeclarations([]);
+      return [];
+    }
+  }, []);
 
   const loadInitialData = useCallback(async () => {
     try {
@@ -249,6 +279,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setCurrentRoleState(persistedUser.role);
         setConversations(userConvs);
         setFavorites(userFavs);
+        await loadPaymentDeclarations(persistedUser);
 
         callService.connectSignaling(persistedUser.id, persistedUser.role).catch(err => {
           console.warn('Signaling connect warning:', err);
@@ -265,11 +296,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setCurrentUser(null);
         setConversations([]);
         setFavorites([]);
+        setPaymentDeclarations([]);
       }
     } catch (err) {
       console.error('Erreur chargement données initiales', err);
     }
-  }, []);
+  }, [loadPaymentDeclarations]);
 
   useEffect(() => {
     loadInitialData();
@@ -427,6 +459,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setApplications(userApps);
     setContracts(userContracts);
     setCandidates(scopedCandidates);
+    await loadPaymentDeclarations(user);
 
     callService.connectSignaling(user.id, user.role).catch(err => {
       console.warn('Signaling connect warning:', err);
@@ -435,7 +468,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     historyStackRef.current = [];
     setScreenState('MAIN');
     setActiveTabState(landingTabForRole(user.role));
-  }, []);
+  }, [loadPaymentDeclarations]);
 
   const login = useCallback(async (credentialsOrEmail?: string | { email?: string; phone?: string; role?: UserRole }, maybeRole?: UserRole) => {
     let emailToUse = '';
@@ -692,6 +725,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const finalizeReplacementContract = useCallback(async (replacementId: string) => {
     if (!currentUser || currentUser.role !== 'ADMIN') throw new Error('Action non autorisée : ADMIN uniquement.');
     return await repositories.finalizeReplacementContract(replacementId, currentUser.id);
+  }, [currentUser]);
+
+  // PHASE 4A — déclarations de paiement externe (EMPLOYEUR). Le contrôle
+  // administratif n'est pas encore implémenté : aucune action de validation ici.
+  const refreshPaymentDeclarations = useCallback(async () => {
+    return await loadPaymentDeclarations(currentUser);
+  }, [currentUser, loadPaymentDeclarations]);
+
+  const createPaymentDeclaration = useCallback(async (input: PaymentDeclarationInput) => {
+    if (!currentUser) throw new Error('Utilisateur non connecté');
+    if (currentUser.role !== 'EMPLOYER') throw new Error('Action non autorisée : EMPLOYER uniquement.');
+    const declaration = await repositories.createPaymentDeclaration(input, currentUser.id);
+    setPaymentDeclarations(prev => [declaration, ...prev.filter(item => item.paymentId !== declaration.paymentId)]);
+    return declaration;
+  }, [currentUser]);
+
+  const updatePaymentDeclaration = useCallback(async (paymentId: string, patch: Partial<PaymentDeclarationInput>) => {
+    if (!currentUser) throw new Error('Utilisateur non connecté');
+    if (currentUser.role !== 'EMPLOYER') throw new Error('Action non autorisée : EMPLOYER uniquement.');
+    const declaration = await repositories.updatePaymentDeclaration(paymentId, patch, currentUser.id);
+    setPaymentDeclarations(prev => {
+      const next = prev.map(item => item.paymentId === paymentId ? declaration : item);
+      return [...next].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    });
+    return declaration;
   }, [currentUser]);
 
   const updateFilterState = useCallback((patch: Partial<FilterState>) => {
@@ -1074,6 +1132,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     assignReplacementCandidate,
     transferReplacementCandidate,
     finalizeReplacementContract,
+    paymentDeclarations,
+    refreshPaymentDeclarations,
+    createPaymentDeclaration,
+    updatePaymentDeclaration,
     filterState,
     updateFilterState,
     resetFilters,

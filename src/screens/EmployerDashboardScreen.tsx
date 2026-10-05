@@ -37,7 +37,8 @@ export const EmployerDashboardScreen: React.FC = () => {
     setActiveTab,
     declareCommission,
     confirmMonthlyAction,
-    startAudioCall
+    startAudioCall,
+    paymentDeclarations
   } = useApp();
 
   const [newOfferModalOpen, setNewOfferModalOpen] = useState(false);
@@ -488,6 +489,31 @@ export const EmployerDashboardScreen: React.FC = () => {
           <span>Mes Contrats</span>
         </EditorialButton>
       </div>
+
+      {/* PHASE 4A : accès aux déclarations de paiement externe (Mes Paiements) */}
+      <button
+        type="button"
+        onClick={() => setScreen('PAYMENTS')}
+        className="w-full mb-6 bg-white border border-[#17233B]/10 rounded-[4px] p-4 flex items-center justify-between text-left hover:border-[#17233B]/25 transition-colors tap-feedback cursor-pointer"
+      >
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-[4px] bg-[#17233B]/5 border border-[#17233B]/10 flex items-center justify-center text-[#17233B]">
+            <DollarSign className="w-4 h-4" />
+          </div>
+          <div>
+            <h4 className="text-xs font-semibold text-[#17233B]">Paiements</h4>
+            <p className="text-[11px] text-[#17233B]/60 mt-0.5">
+              Déclarer un règlement effectué hors plateforme et suivre vos justificatifs
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <span className="text-[10px] font-mono text-[#17233B]/50">
+            {paymentDeclarations.length} déclaration(s)
+          </span>
+          <ArrowRight className="w-4 h-4 text-[#17233B]/40" />
+        </div>
+      </button>
 
       {/* Section Candidatures Récentes */}
       <div className="mb-6 space-y-3">
