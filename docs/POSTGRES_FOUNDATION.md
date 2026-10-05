@@ -122,9 +122,8 @@ Requête → workerd → env.HYPERDRIVE → pool pg par requête → PostgreSQL 
 - `npm run verify:postgres` et `npm run verify:workerd` : vérifications moteur réel, exécutées et reproductibles en local.
 - Les suites P0-A/P0-B poursuivent leurs vérifications (migrations, adaptateurs, configuration, séparation DEMO/API, identité PGlite) sans affaiblissement.
 
-## 9. Ce qui reste pour P0-D
+## 9. Ce qui reste avant P0-E
 
 - Provisionner une vraie base et un Hyperdrive Cloudflare, appliquer `0001 → 0003` dessus, déployer le Worker et exécuter `wrangler dev --remote`.
 - Confirmer en recette le comportement des verrous consultatifs transactionnels et des lectures d'identité à travers un Hyperdrive déployé (cache désactivé requis).
-- Compléter le seed RBAC des rôles non ADMIN (aujourd'hui un candidat a zéro permission effective en mode PostgreSQL).
 - Définir et réaliser les migrations/handlers métier explicitement exclus (offres, candidatures, contrats, paiements et autres domaines), ainsi que les services Cloudflare éventuels (R2, Queue, Cron, Durable Objects).

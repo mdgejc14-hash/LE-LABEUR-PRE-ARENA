@@ -149,6 +149,7 @@ export async function runHealthReportTests(): Promise<HealthTestResult[]> {
     const misconfigured = requireReport(health.body);
     assert(misconfigured.mode === 'misconfigured', 'mode misconfigured attendu');
     assert(misconfigured.reason === 'missing-sql-client', 'motif missing-sql-client attendu');
+    assert(misconfigured.configured === false, 'une configuration invalide ne doit jamais être annoncée configurée');
     assert(misconfigured.reachable === null, 'aucune sonde sans connexion');
     const offers = await composition.worker.fetch(new Request('https://api.test/api/v1/offers'));
     assert(offers.status === 501, 'aucune route métier ne doit s’ouvrir');
@@ -163,13 +164,21 @@ export async function runHealthReportTests(): Promise<HealthTestResult[]> {
     });
     assert(unreachable.status === 'degraded', 'sans sonde, postgres est dégradé (jamais ok)');
     assert(requireReport(unreachable).reachable === null, 'reachable null sans sonde');
+    const pending = buildHealthPayload({
+      decision: { kind: 'postgres', reason: 'injected-database' },
+      runtime: { runtime: 'node', declaredEnvironment: null, hyperdriveBinding: false },
+      health: { reachable: true, checkedAt: 'a', latencyMs: 1 },
+      migrations: { status: 'pending', applied: ['0001_identity_and_core'], pending: ['0002_role_permissions_seed'] },
+    });
+    assert(pending.status === 'degraded', 'base joignable avec migrations pending → degraded');
     const payloadOk = buildHealthPayload({
       decision: { kind: 'postgres', reason: 'injected-database' },
       runtime: { runtime: 'node', declaredEnvironment: null, hyperdriveBinding: false },
       health: { reachable: true, checkedAt: 'a', latencyMs: 1 },
+      migrations: { status: 'applied', applied: ['0001_identity_and_core', '0002_role_permissions_seed', '0003_core_nucleus_alignment'], pending: [] },
     });
-    assert(payloadOk.status === 'ok', 'sonde ok → ok');
-    assert(healthStatusCode(payloadOk) === 200 && healthStatusCode(unreachable) === 503, 'codes HTTP attendus');
+    assert(payloadOk.status === 'ok', 'sonde ok + migrations appliquées → ok');
+    assert(healthStatusCode(payloadOk) === 200 && healthStatusCode(pending) === 503 && healthStatusCode(unreachable) === 503, 'codes HTTP attendus');
     assert(healthPayloadContainsSecret(payloadOk, ['0123456789']) === false, 'aucun faux positif');
     assert(healthPayloadContainsSecret({ ...payloadOk, persistence: { mode: 'postgres', reason: 'injected-database', configured: true, durable: true, reachable: true, error: 'fuite 0123456789' } }, ['0123456789']) === true, 'un secret présent doit être détecté');
   });

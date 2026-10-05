@@ -28,6 +28,7 @@ import { fileURLToPath } from 'node:url';
 import { composeWorker } from '../src/backend/api/entry';
 import { SESSION_COOKIE_NAME } from '../src/backend/identity/cookies';
 import { createGoogleCredentialVerifier } from '../src/backend/identity/googleVerifier';
+import { ROLE_PERMISSIONS } from '../src/backend/identity/permissions';
 import { base64UrlEncode, hashSessionToken, newEntityId, newOpaqueSessionToken } from '../src/backend/identity/ids';
 import { createSqlIdentityStores } from '../src/backend/identity/sqlStores';
 import { createSqlPermissionStore } from '../src/backend/identity/permissionStore';
@@ -286,8 +287,13 @@ async function main(): Promise<void> {
       );
       const names = tables.rows.map(row => row.table_name);
       for (const table of expectedTables) assert(names.includes(table), `table absente: ${table}`);
-      const seeded = await database.query<{ count: string }>('SELECT count(*)::text AS count FROM role_permissions WHERE role = $1', ['ADMIN']);
-      assert(Number(seeded.rows[0]?.count ?? 0) > 0, 'permissions ADMIN non seedées');
+      const seeded = await database.query<{ role: keyof typeof ROLE_PERMISSIONS; permission_code: string }>(
+        'SELECT role, permission_code FROM role_permissions ORDER BY role, permission_code',
+      );
+      for (const role of ['ADMIN', 'EMPLOYER', 'CANDIDATE'] as const) {
+        const actual = seeded.rows.filter(row => row.role === role).map(row => row.permission_code).sort();
+        assert(JSON.stringify(actual) === JSON.stringify([...ROLE_PERMISSIONS[role]].sort()), `permissions ${role} non conformes`);
+      }
     });
 
     await check('Transaction COMMIT : écriture visible après validation', async () => {
@@ -359,13 +365,12 @@ async function main(): Promise<void> {
 
     await check('permissions : lecture SQL du RBAC (role_permissions / user_permissions)', async () => {
       const permissions = createSqlPermissionStore(database);
-      const rolePermissions = await permissions.listRolePermissions('ADMIN');
-      assert(rolePermissions.includes('users:read:any'), 'permission ADMIN attendue');
-      const candidateRole = await permissions.listRolePermissions('CANDIDATE');
-      // Constat réel, non masqué : la migration 0002 ne seed que le rôle ADMIN.
-      console.log(`     role_permissions CANDIDATE en base: [${candidateRole.join(', ')}] (seed 0002 = ADMIN uniquement)`);
+      for (const role of ['ADMIN', 'EMPLOYER', 'CANDIDATE'] as const) {
+        const actual = await permissions.listRolePermissions(role);
+        assert(JSON.stringify([...actual].sort()) === JSON.stringify([...ROLE_PERMISSIONS[role]].sort()), `RBAC ${role} divergent`);
+      }
       const effective = await permissions.listEffectivePermissions('usr_absent', 'CANDIDATE');
-      assert(Array.isArray(effective), 'lecture effective attendue');
+      assert(effective.length === 0, 'CANDIDATE ne doit recevoir aucune capacité transverse ADMIN');
     });
 
     const google = await createSignedGoogleCredentials();

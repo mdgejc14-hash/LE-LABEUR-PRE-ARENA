@@ -12,7 +12,7 @@
     "lint": "tsc --noEmit",
     "migrate": "tsx scripts/migrate.ts",
     "verify:postgres": "tsx scripts/verify-postgres-e2e.ts",
-    "dev:worker": "wrangler dev",
+    "dev:worker": "wrangler dev --env local",
     "deploy:worker": "wrangler deploy --env production",
     "verify:workerd": "tsx scripts/verify-workerd-local.ts"
   },
@@ -38,7 +38,7 @@
     "@types/react-dom": "^19.3.0",
     "autoprefixer": "^10.4.21",
     "embedded-postgres": "^17.10.0-beta.17",
-    "esbuild": "^0.25.0",
+    "esbuild": "^0.27.0",
     "tailwindcss": "^4.3.3",
     "tsx": "^4.21.0",
     "typescript": "^7.0.2",

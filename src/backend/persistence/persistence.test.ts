@@ -19,7 +19,7 @@ import { resolveRepositoryMode } from '../../repositories/mode';
 import { getRepositoryMode } from '../../repositories/provider';
 import { composeWorker, resolveWorkerPersistence } from '../api/entry';
 import { createApiWorker } from '../api/worker';
-import { ADMIN_PERMISSIONS } from '../identity/permissions';
+import { ADMIN_PERMISSIONS, ROLE_PERMISSIONS } from '../identity/permissions';
 import {
   PLACEHOLDER_CONNECTION_STRING,
   describePostgresTarget,
@@ -529,11 +529,32 @@ export async function runPostgresFoundationTests(): Promise<PostgresFoundationTe
     }
   });
 
-  await check('Migrations: seed des permissions identique à ADMIN_PERMISSIONS', () => {
-    const seed = read(resolve(MIGRATIONS_DIR, '0002_role_permissions_seed.sql'));
-    const codes = [...seed.matchAll(/\('([a-z:_]+)'\)/g)].map(match => match[1]).sort();
+  await check('P0-D RBAC: catalogue et grants SQL identiques à la matrice canonique', () => {
+    const seed = stripSqlComments(read(resolve(MIGRATIONS_DIR, '0002_role_permissions_seed.sql')));
+    const catalogBlock = /INSERT INTO permissions \(code\) VALUES([\s\S]*?)ON CONFLICT/i.exec(seed)?.[1] ?? '';
+    const codes = [...catalogBlock.matchAll(/\('([a-z:_]+)'\)/g)].map(match => match[1]).sort();
     assert(codes.length === ADMIN_PERMISSIONS.length, `attendu ${ADMIN_PERMISSIONS.length} permissions, trouvé ${codes.length}`);
-    assert(JSON.stringify(codes) === JSON.stringify([...ADMIN_PERMISSIONS].sort()), 'le seed SQL et ADMIN_PERMISSIONS divergent');
+    assert(JSON.stringify(codes) === JSON.stringify([...ADMIN_PERMISSIONS].sort()), 'le catalogue SQL et Permission divergent');
+
+    const grantsBlock = /INSERT INTO role_permissions \(role, permission_code\) VALUES([\s\S]*?)ON CONFLICT/i.exec(seed)?.[1] ?? '';
+    const grants = [...grantsBlock.matchAll(/\('(ADMIN|EMPLOYER|CANDIDATE)',\s*'([a-z:_]+)'\)/g)]
+      .map(match => ({ role: match[1] as keyof typeof ROLE_PERMISSIONS, permission: match[2] }))
+      .sort((left, right) => `${left.role}:${left.permission}`.localeCompare(`${right.role}:${right.permission}`));
+    const expected = Object.entries(ROLE_PERMISSIONS)
+      .flatMap(([role, permissions]) => permissions.map(permission => ({ role, permission })))
+      .sort((left, right) => `${left.role}:${left.permission}`.localeCompare(`${right.role}:${right.permission}`));
+    assert(JSON.stringify(grants) === JSON.stringify(expected), 'les grants SQL divergent de ROLE_PERMISSIONS');
+    assert(!/SELECT\s+'ADMIN'[\s\S]*FROM\s+permissions/i.test(seed), 'ADMIN ne doit pas hériter automatiquement de futures permissions');
+    assert(ROLE_PERMISSIONS.ADMIN.length === 24, 'ADMIN doit recevoir les 24 capacités transverses prévues');
+    assert(ROLE_PERMISSIONS.EMPLOYER.length === 0, 'EMPLOYER ne doit recevoir aucune capacité :any/admin');
+    assert(ROLE_PERMISSIONS.CANDIDATE.length === 0, 'CANDIDATE ne doit recevoir aucune capacité :any/admin');
+  });
+
+  await check('P0-D migrations: aucune opération destructive de données', () => {
+    const sql = stripSqlComments(migrationSql(files));
+    for (const forbidden of [/\bDROP\s+TABLE\b/i, /\bDROP\s+COLUMN\b/i, /\bTRUNCATE\b/i, /\bDELETE\s+FROM\b/i]) {
+      assert(!forbidden.test(sql), `opération destructive interdite: ${forbidden.source}`);
+    }
   });
 
   await check('Migrations: 0003 rejouable, renommage gardé', () => {

@@ -81,12 +81,13 @@ export async function runCloudflareConfigTests(): Promise<CloudflareConfigTestRe
   });
 
   await check('P0-C config: binding Hyperdrive déclaré sans secret, dev/production séparés', () => {
-    assert(/\[\[hyperdrive\]\]/.test(wrangler), 'binding hyperdrive attendu');
+    assert(/\[\[env\.local\.hyperdrive\]\]/.test(wrangler), 'binding Hyperdrive local explicite attendu');
     assert(/binding\s*=\s*"HYPERDRIVE"/.test(wrangler), 'nom de binding HYPERDRIVE attendu');
     assert(/CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE/.test(readRepoFile('.dev.vars.example')), 'développement local documenté via la variable Hyperdrive standard');
     assert(/\[env\.production\]/.test(wrangler), 'profil production explicite attendu');
     assert(/\[env\.production\.vars\]/.test(wrangler), 'les vars ne sont pas héritées : production doit les redéclarer');
     assert(/WORKER_ENV\s*=\s*"production"/.test(wrangler), 'WORKER_ENV=production attendu');
+    assert(/\[env\.local\]/.test(wrangler), 'profil local explicite attendu');
     assert(/WORKER_ENV\s*=\s*"development"/.test(wrangler), 'WORKER_ENV=development attendu');
     // Les bindings ne sont pas hérités : le placeholder de développement ne doit pas
     // être réutilisé tel quel en production.
@@ -99,7 +100,7 @@ export async function runCloudflareConfigTests(): Promise<CloudflareConfigTestRe
     }
   });
 
-  await check('P0-C config: aucun secret PostgreSQL committé', () => {
+  await check('P0-D config: aucun secret PostgreSQL committé, aucun credential dans VITE_*', () => {
     assert(!/postgres(ql)?:\/\//i.test(activeWrangler), 'wrangler.toml ne doit contenir aucune chaîne de connexion active');
     const devVars = readRepoFile('.dev.vars.example');
     // Les lignes commentées sont de la documentation, pas de la configuration active.
@@ -117,6 +118,15 @@ export async function runCloudflareConfigTests(): Promise<CloudflareConfigTestRe
     const gitignore = readRepoFile('.gitignore');
     assert(/^\.dev\.vars$/m.test(gitignore) && /^\.dev\.vars\.\*$/m.test(gitignore), '.dev.vars doit être gitignoré');
     assert(/^!\.dev\.vars\.example$/m.test(gitignore), "l'exemple doit rester versionné");
+
+    const browserEnv = readRepoFile('.env.example');
+    const activeViteValues = browserEnv
+      .split('\n')
+      .map(line => line.trim())
+      .filter(line => /^VITE_[A-Z0-9_]+=/.test(line))
+      .map(line => line.slice(line.indexOf('=') + 1).trim());
+    assert(activeViteValues.every(value => value === '' || value === 'true' || value === 'false'), 'aucun credential ne doit être assigné à VITE_*');
+    assert(!/^VITE_.*(?:SECRET|PASSWORD|PRIVATE_KEY|DATABASE_URL)\s*=/mi.test(browserEnv), 'aucune variable secrète VITE_* ne doit être proposée');
   });
 
   await check('P0-C config: scripts npm de migration/vérification présents', () => {

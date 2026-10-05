@@ -85,10 +85,11 @@ export function buildHealthPayload(inputs: HealthReportInputs): BoundaryHealthRe
     };
   }
 
+  const correctlyConfigured = decision.kind === 'postgres' || decision.kind === 'memory';
   const report: PersistenceHealthReport = {
     mode: decision.kind,
     reason: decision.reason,
-    configured: true,
+    configured: correctlyConfigured,
     durable: decision.kind === 'postgres',
     reachable: inputs.health?.reachable ?? null,
   };
@@ -100,7 +101,13 @@ export function buildHealthPayload(inputs: HealthReportInputs): BoundaryHealthRe
     report.error = inputs.health.error;
   }
 
-  const degraded = decision.kind === 'memory' ? false : report.reachable !== true;
+  // PostgreSQL n'est prêt que si la configuration est valide, la sonde passe
+  // ET le schéma attendu est entièrement appliqué. Une base joignable avec des
+  // migrations pending/unknown ne doit jamais être annoncée prête.
+  const migrationsReady = report.migrations?.status === 'applied';
+  const degraded = decision.kind === 'memory'
+    ? false
+    : !correctlyConfigured || report.reachable !== true || !migrationsReady;
   return {
     status: degraded ? 'degraded' : 'ok',
     apiVersion: 'v1',
