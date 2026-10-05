@@ -14,7 +14,23 @@ export const OUTBOX_EFFECT_CONTRACTS: readonly OutboxEffectContract[] = [
   { eventType: 'PAYMENT_DECLARED', sideEffects: ['notify the relevant reviewer', 'update payment activity feed'], idempotencyKey: 'event.id' },
   { eventType: 'PAYMENT_APPROVED', sideEffects: ['notify employer and employee', 'refresh schedule state'], idempotencyKey: 'event.id' },
   { eventType: 'PAYMENT_REJECTED', sideEffects: ['notify employer with the recorded reason', 'refresh schedule state'], idempotencyKey: 'event.id' },
-  { eventType: 'CONTRACT_SIGNED', sideEffects: ['notify both parties', 'refresh offer and application views'], idempotencyKey: 'event.id' },
+  /**
+   * Cycle CONTRAT — porté par P0-F.
+   *
+   * `CONTRACT_SIGNED` était déjà déclaré ; les autres types du cycle sont
+   * ajoutés ici comme contrats DÉCLARÉS pour le futur moteur Outbox/Queue :
+   * aucun producteur, aucune table, aucun consumer n'existe à ce stade. Les
+   * transitions (création, envoi, signature, activation, fin, rupture) sont
+   * persistées dans la transaction métier sans effet secondaire asynchrone.
+   * Charges utiles et clés de déduplication de référence :
+   * `src/domain/contractTransitions.ts` (`DOCUMENTED_CONTRACT_EVENTS`).
+   */
+  { eventType: 'CONTRACT_SIGNED', sideEffects: ['notify both parties', 'refresh offer and application views'], idempotencyKey: 'contractId + SIGNED + party' },
+  { eventType: 'CONTRACT_CREATED', sideEffects: ['no asynchronous effect in P0-F'], idempotencyKey: 'contractId + CREATED' },
+  { eventType: 'CONTRACT_SENT', sideEffects: ['notify the target employee'], idempotencyKey: 'contractId + SENT' },
+  { eventType: 'CONTRACT_ACTIVATED', sideEffects: ['refresh offer and application views', 'FILLED / HIRED automation stays a later step'], idempotencyKey: 'contractId + ACTIVATED' },
+  { eventType: 'CONTRACT_ENDED', sideEffects: ['close the mission for both parties'], idempotencyKey: 'contractId + ENDED' },
+  { eventType: 'CONTRACT_TERMINATED', sideEffects: ['freeze the schedule and notify both parties (later step)'], idempotencyKey: 'contractId + TERMINATED' },
   { eventType: 'INCIDENT_OPENED', sideEffects: ['notify authorized participants and Admin queue'], idempotencyKey: 'event.id' },
   { eventType: 'INCIDENT_DECIDED', sideEffects: ['notify incident participants of the recorded decision'], idempotencyKey: 'event.id' },
   { eventType: 'REPLACEMENT_CREATED', sideEffects: ['notify the authorized replacement workflow'], idempotencyKey: 'event.id' },

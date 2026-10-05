@@ -1021,13 +1021,11 @@ export async function runProposalDomainTests(): Promise<OfferTestResult[]> {
 
     /* ---------------- 9. PÉRIMÈTRE ET SÉPARATION DEMO/API ---------------- */
 
-    await check('P0-E5 Périmètre: contrats, paiements, incidents, messages et listes de candidatures restent fermés (501)', async () => {
+    await check('P0-E5 Périmètre: paiements, incidents, remplacements, messages et listes de candidatures restent fermés (501)', async () => {
+      // P0-F a ouvert le domaine CONTRAT (`/contracts`) : ce test conserve la
+      // frontière fermée des domaines restants, sans affaiblir le contrôle P0-E5.
       const closed = await Promise.all([
-        harness.worker.fetch(authRequest('/api/v1/contracts', employerToken, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json', 'Idempotency-Key': 'p0e5-closed-contracts-001' },
-          body: '{}',
-        })),
+        harness.worker.fetch(authRequest('/api/v1/replacements/rep_p0e5_absent', employerToken)),
         harness.worker.fetch(authRequest('/api/v1/payments/commission-declarations', employerToken, {
           method: 'POST',
           headers: { 'content-type': 'application/json', 'Idempotency-Key': 'p0e5-closed-payments-001' },
