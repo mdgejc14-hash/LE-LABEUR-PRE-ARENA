@@ -8,7 +8,8 @@ import {
   Edit3,
   BookOpen,
   ArrowRight,
-  FileText
+  FileText,
+  DollarSign
 } from 'lucide-react';
 import { EditProfileModal } from '../components/profiles/EditProfileModal';
 import { BrandLogo } from '../components/brand/BrandLogo';
@@ -130,6 +131,29 @@ export const ProfileScreen: React.FC = () => {
           </div>
           <ArrowRight className="w-4 h-4 text-[#17233B]/40" />
         </button>
+
+        {/* PHASE 4A : raccourci employeur vers les déclarations de paiement */}
+        {currentRole === 'EMPLOYER' && (
+          <button
+            onClick={() => setScreen('PAYMENTS')}
+            className="w-full bg-white border border-[#17233B]/10 rounded-[4px] p-4 flex items-center justify-between text-left hover:border-[#17233B]/25 transition-colors tap-feedback cursor-pointer"
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-[4px] bg-[#17233B]/5 border border-[#17233B]/10 flex items-center justify-center text-[#17233B]">
+                <DollarSign className="w-4 h-4" />
+              </div>
+              <div>
+                <h4 className="text-xs font-semibold text-[#17233B]">
+                  Mes Paiements
+                </h4>
+                <p className="text-[11px] text-[#17233B]/60 mt-0.5">
+                  Déclarations de règlements effectués hors plateforme et justificatifs
+                </p>
+              </div>
+            </div>
+            <ArrowRight className="w-4 h-4 text-[#17233B]/40" />
+          </button>
+        )}
       </div>
 
       {/* Documentation & Fiches pratiques */}

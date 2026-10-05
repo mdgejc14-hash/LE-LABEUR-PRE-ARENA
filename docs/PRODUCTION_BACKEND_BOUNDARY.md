@@ -168,3 +168,15 @@ NAVIGATEUR → POST /api/v1/auth/google (credential Google)
 - `composeWorker()` reste fermé (`mode: 'closed'`) sans `GOOGLE_CLIENT_ID` et sans store : aucune ouverture silencieuse.
 - MODE DEMO (MockRepository) reste le défaut; MODE API exige `VITE_DEMO_MODE=false` + `VITE_API_BASE_PATH` same-origin.
 - WebRTC : inchangé, mock préservé, signaling production toujours non branché.
+
+## 8. Phase 4A — déclaration de paiement externe, côté employeur (2026-10-05)
+
+Périmètre strictement EMPLOYEUR : déclarer un règlement effectué hors plateforme, le rattacher à un justificatif et le retrouver dans « Mes Paiements ». Aucun écran ni aucune opération de contrôle administratif n'a été ajouté.
+
+- Modèle ajouté dans `src/types/index.ts` : `PaymentDeclaration` (+ `PaymentDeclarationInput`), statuts `DRAFT`, `SUBMITTED`, `UNDER_REVIEW`, `APPROVED`, `REJECTED`, `RESUBMITTED`. Seuls `DRAFT` (création/modification employeur) et `SUBMITTED` (donnée de démo) sont produits à cette étape; les quatre autres sont réservés à l'administration.
+- `PaymentRepository` (`src/repositories/interfaces.ts`) reçoit quatre opérations : `createPaymentDeclaration`, `getPaymentDeclaration`, `listEmployerPayments`, `updatePaymentDeclaration`. Elles sont servies par le `MockService` existant, dans le même magasin que le reste du domaine (clé `lelabeur_v5_payment_declarations`, `persistAll()`, `resetAllData()`). Aucun stockage parallèle n'a été introduit.
+- Autorisations côté mock : acteur obligatoire, rôle `EMPLOYER` uniquement, contrat existant et propriété de l'employeur, verrouillage de toute déclaration qui n'est plus `DRAFT`. Les méthodes renvoient des copies détachées : l'état du dépôt n'est pas mutable depuis l'UI.
+- `createPaymentDeclaration` accepte une clé d'idempotence réutilisée par l'appelant (même contrat de rejeu que les autres commandes mock).
+- UI : route `PAYMENTS` (`src/App.tsx`) + écran `src/screens/EmployerPaymentsScreen.tsx`, accessibles depuis le tableau de bord employeur et le profil. Le parcours de commission existant (`declareCommissionPayment`) est inchangé.
+- **Dette API assumée :** `legacyApiAdapter.ts` n'expose aucune de ces quatre opérations; en MODE API elles échouent en 501 plutôt que de retomber sur le mock. Les routes `/api/v1/payments/declarations` (POST/GET/PATCH) et la table `payment_declarations` restent à créer, avec justificatif R2 signé (`proofDocumentId`) et audit transactionnel.
+- **Étape suivante (non commencée) :** soumission par l'employeur, puis contrôle ADMIN (`UNDER_REVIEW` → `APPROVED`/`REJECTED` → `RESUBMITTED`), notifications, et lecture admin des déclarations.

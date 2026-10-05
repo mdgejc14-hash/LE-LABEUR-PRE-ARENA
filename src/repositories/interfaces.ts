@@ -16,6 +16,8 @@ import {
   CallRecord,
   CommunicationEvent,
   ResourceDocument,
+  PaymentDeclaration,
+  PaymentDeclarationInput,
 } from '../types';
 
 export interface RevenueMetrics {
@@ -213,6 +215,15 @@ export interface PaymentRepository {
   verifyCommissionPayment(paymentId: string, actorId: string): Promise<CommissionPaymentRecord>;
   rejectCommissionPayment(paymentId: string, reason: string, actorId: string): Promise<CommissionPaymentRecord>;
   getRevenueMetrics(actorId: string): Promise<RevenueMetrics>;
+  /**
+   * PHASE 4A — déclaration de paiement externe (côté EMPLOYEUR uniquement).
+   * Même abstraction Repository que le reste du domaine : un seul système de
+   * stockage, aucun magasin parallèle.
+   */
+  createPaymentDeclaration(input: PaymentDeclarationInput, actorId: string, idempotencyKey?: string): Promise<PaymentDeclaration>;
+  getPaymentDeclaration(paymentId: string, actorId: string): Promise<PaymentDeclaration | null>;
+  listEmployerPayments(employerId: string, actorId: string): Promise<PaymentDeclaration[]>;
+  updatePaymentDeclaration(paymentId: string, patch: Partial<PaymentDeclarationInput>, actorId: string): Promise<PaymentDeclaration>;
 }
 
 export interface NotificationRepository {

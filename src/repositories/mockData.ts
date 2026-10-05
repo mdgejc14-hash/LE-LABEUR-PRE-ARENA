@@ -9,6 +9,7 @@ import {
   MissionProposal,
   ReplacementDossier,
   CommissionPaymentRecord,
+  PaymentDeclaration,
   AppNotification,
   SystemAuditLog,
   CallRecord,
@@ -960,6 +961,48 @@ export const INITIAL_COMMISSIONS: CommissionPaymentRecord[] = [
     status: 'PENDING_VERIFICATION',
     createdAt: '28/09/2026 19:12',
     notes: 'Paiement effectué via MTN Mobile Money Bénin. En attente de validation comptable LE LABEUR.'
+  }
+];
+
+/**
+ * PHASE 4A (MODE DEMO) — déclarations de paiement externe de l'employeur démo
+ * (Reine Houénou / Atelier Bois & Agencement Bénin, contrat CTR-001).
+ * Un brouillon modifiable + une déclaration déjà soumise, cohérentes avec
+ * l'historique du contrat CTR-001 (salaire direct versé le 28/09/2026).
+ */
+export const INITIAL_PAYMENT_DECLARATIONS: PaymentDeclaration[] = [
+  {
+    paymentId: 'PDECL-DEMO-0002',
+    employerId: 'user-emp-1',
+    contractId: 'CTR-001',
+    amount: 7500,
+    currency: 'FCFA',
+    paymentMethod: 'MOBILE_MONEY',
+    transactionId: 'TXN-MTN-20261003-4471',
+    reference: 'REF-LABEUR-CTR001-M1',
+    paidAt: '2026-10-03T14:30:00.000Z',
+    proofReference: 'RECU-MTN-4471-20261003',
+    comment: 'Part LE LABEUR (25% du Mois 1) réglée par MTN Mobile Money. Reçu conservé, à compléter avant soumission.',
+    status: 'DRAFT',
+    createdAt: '2026-10-03T14:42:00.000Z',
+    updatedAt: '2026-10-03T14:42:00.000Z'
+  },
+  {
+    paymentId: 'PDECL-DEMO-0001',
+    employerId: 'user-emp-1',
+    contractId: 'CTR-001',
+    amount: 22500,
+    currency: 'FCFA',
+    paymentMethod: 'MOBILE_MONEY',
+    transactionId: 'SAL-MTN-8829104',
+    reference: 'SAL-CTR-001-M1',
+    paidAt: '2026-09-28T18:00:00.000Z',
+    proofDocumentId: 'DOC-REC-SAL-CTR001-M1',
+    comment: 'Part nette salariée (75% du Mois 1) versée directement à Amina Dossou et confirmée par elle.',
+    status: 'SUBMITTED',
+    submittedAt: '2026-09-28T18:12:00.000Z',
+    createdAt: '2026-09-28T18:05:00.000Z',
+    updatedAt: '2026-09-28T18:12:00.000Z'
   }
 ];
 
