@@ -58,7 +58,7 @@ async function main(): Promise<void> {
     { name: 'P0-C — runner de migrations (manifeste, enveloppe, idempotence, checksum)', cases: migrationRunner },
     { name: 'P0-C — configuration Cloudflare Worker (bindings, secrets, isolation pg)', cases: cloudflareConfig },
     { name: 'P0-C — entrée Worker Cloudflare (composition, fermeture, cycle de pool)', cases: cloudflareEntry },
-    { name: 'P0-E1 — domaine OFFRES (création, persistance, consultation, rôles, ownership, idempotence, rollback)', cases: offerDomain },
+    { name: 'P0-E1 / P0-E2 — domaine OFFRES (création, cycle de vie des statuts, persistance, rôles, ownership, idempotence, rollback)', cases: offerDomain },
   ];
 
   let total = 0;

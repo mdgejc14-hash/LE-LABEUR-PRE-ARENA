@@ -620,13 +620,6 @@ export async function runOfferDomainTests(): Promise<OfferTestResult[]> {
       const appRoute = await harness.worker.fetch(authRequest('/api/v1/resources', null));
       assert(appRoute.status === 501, `route hors périmètre /resources doit rester 501, reçu ${appRoute.status}`);
 
-      const complexOfferStatus = await harness.worker.fetch(authRequest(`/api/v1/offers/${createdOfferId}/status`, employer1Token, {
-        method: 'PATCH',
-        headers: { 'content-type': 'application/json', 'Idempotency-Key': 'key-status-update' },
-        body: JSON.stringify({ status: 'PAUSED' }),
-      }));
-      assert(complexOfferStatus.status === 501, `transition complexe d’offre réservée P0-E2 doit rester 501, reçu ${complexOfferStatus.status}`);
-
       const favoriteRoute = await harness.worker.fetch(authRequest(`/api/v1/offers/${createdOfferId}/favorite`, employer1Token, {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'Idempotency-Key': 'key-fav-001' },
@@ -636,6 +629,315 @@ export async function runOfferDomainTests(): Promise<OfferTestResult[]> {
       // Mode DEMO reste mock par défaut
       assert(getRepositoryMode() === 'mock', 'le mode par défaut du front reste mock');
       assert(resolveRepositoryMode({}).mode === 'mock', 'résolution sans env reste mock');
+    });
+
+    // -------------------------------------------------------------------------
+    // P0-E2 : CYCLE DE VIE DES OFFRES — WORKER/API + POSTGRESQL
+    // -------------------------------------------------------------------------
+
+    await check('P0-E2 Transition valide: ACTIVE -> PAUSED par l’employeur propriétaire', async () => {
+      const response = await harness.worker.fetch(authRequest(`/api/v1/offers/${createdOfferId}/status`, employer1Token, {
+        method: 'PATCH',
+        headers: {
+          'content-type': 'application/json',
+          'Idempotency-Key': 'p0e2-act-to-paused-1',
+        },
+        body: JSON.stringify({ status: 'PAUSED' }),
+      }));
+      assert(response.status === 200, `200 attendu pour ACTIVE -> PAUSED, reçu ${response.status}`);
+      const body = await response.json() as Offer;
+      assert(body.status === 'PAUSED', `statut attendu PAUSED, reçu ${body.status}`);
+
+      // Vérification en base PostgreSQL
+      const dbCheck = await harness.database.query<{ status: string }>('SELECT status FROM offers WHERE id = $1', [createdOfferId]);
+      assert(dbCheck.rows[0]?.status === 'PAUSED', 'la base PostgreSQL doit avoir le statut PAUSED');
+    });
+
+    await check('P0-E2 Transition valide: PAUSED -> ACTIVE par l’employeur propriétaire', async () => {
+      const response = await harness.worker.fetch(authRequest(`/api/v1/offers/${createdOfferId}/status`, employer1Token, {
+        method: 'PATCH',
+        headers: {
+          'content-type': 'application/json',
+          'Idempotency-Key': 'p0e2-paused-to-act-1',
+        },
+        body: JSON.stringify({ status: 'ACTIVE' }),
+      }));
+      assert(response.status === 200, `200 attendu pour PAUSED -> ACTIVE, reçu ${response.status}`);
+      const body = await response.json() as Offer;
+      assert(body.status === 'ACTIVE', `statut attendu ACTIVE, reçu ${body.status}`);
+
+      const dbCheck = await harness.database.query<{ status: string }>('SELECT status FROM offers WHERE id = $1', [createdOfferId]);
+      assert(dbCheck.rows[0]?.status === 'ACTIVE', 'la base PostgreSQL doit avoir le statut ACTIVE');
+    });
+
+    await check('P0-E2 Transition valide: ACTIVE -> CANCELLED (fermeture) par l’employeur propriétaire', async () => {
+      // Créer une offre dédiée pour tester la fermeture
+      const createRes = await harness.worker.fetch(authRequest('/api/v1/offers', employer1Token, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'Idempotency-Key': 'p0e2-create-for-cancel',
+        },
+        body: JSON.stringify({
+          title: 'Offre à fermer/annuler',
+          contractType: 'CDD',
+          remuneration: 120000,
+          location: 'Parakou',
+        }),
+      }));
+      assert(createRes.status === 201, 'création offre à fermer');
+      const toCancel = await createRes.json() as Offer;
+
+      const response = await harness.worker.fetch(authRequest(`/api/v1/offers/${toCancel.id}/status`, employer1Token, {
+        method: 'PATCH',
+        headers: {
+          'content-type': 'application/json',
+          'Idempotency-Key': 'p0e2-act-to-cancel-1',
+        },
+        body: JSON.stringify({ status: 'CANCELLED' }),
+      }));
+      assert(response.status === 200, `200 attendu pour ACTIVE -> CANCELLED, reçu ${response.status}`);
+      const body = await response.json() as Offer;
+      assert(body.status === 'CANCELLED', `statut attendu CANCELLED, reçu ${body.status}`);
+
+      const dbCheck = await harness.database.query<{ status: string }>('SELECT status FROM offers WHERE id = $1', [toCancel.id]);
+      assert(dbCheck.rows[0]?.status === 'CANCELLED', 'la base PostgreSQL doit avoir le statut CANCELLED');
+    });
+
+    await check('P0-E2 Transition valide: PAUSED -> CANCELLED par l’employeur propriétaire', async () => {
+      // Créer une offre dédiée, la passer en PAUSED puis en CANCELLED
+      const createRes = await harness.worker.fetch(authRequest('/api/v1/offers', employer1Token, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'Idempotency-Key': 'p0e2-create-for-paused-cancel',
+        },
+        body: JSON.stringify({
+          title: 'Offre pause puis annulation',
+          contractType: 'CDD',
+          remuneration: 90000,
+          location: 'Cotonou',
+        }),
+      }));
+      const toPauseCancel = await createRes.json() as Offer;
+
+      await harness.worker.fetch(authRequest(`/api/v1/offers/${toPauseCancel.id}/status`, employer1Token, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json', 'Idempotency-Key': 'p0e2-to-pause' },
+        body: JSON.stringify({ status: 'PAUSED' }),
+      }));
+
+      const cancelRes = await harness.worker.fetch(authRequest(`/api/v1/offers/${toPauseCancel.id}/status`, employer1Token, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json', 'Idempotency-Key': 'p0e2-to-cancel-from-pause' },
+        body: JSON.stringify({ status: 'CANCELLED' }),
+      }));
+      assert(cancelRes.status === 200, `200 attendu pour PAUSED -> CANCELLED, reçu ${cancelRes.status}`);
+      const body = await cancelRes.json() as Offer;
+      assert(body.status === 'CANCELLED', 'statut CANCELLED attendu');
+    });
+
+    await check('P0-E2 Transition interdite: transition directe vers FILLED sans contrat refusée (409)', async () => {
+      const response = await harness.worker.fetch(authRequest(`/api/v1/offers/${createdOfferId}/status`, employer1Token, {
+        method: 'PATCH',
+        headers: {
+          'content-type': 'application/json',
+          'Idempotency-Key': 'p0e2-direct-filled-attempt',
+        },
+        body: JSON.stringify({ status: 'FILLED' }),
+      }));
+      assert(response.status === 409, `409 attendu sur tentative directe de passage à FILLED, reçu ${response.status}`);
+      const payload = await response.json() as { error: { code: string; message: string } };
+      assert(payload.error.code === 'BUSINESS_RULE_VIOLATION', 'code BUSINESS_RULE_VIOLATION attendu');
+
+      // Vérifier qu'aucune mutation n'a eu lieu
+      const dbCheck = await harness.database.query<{ status: string }>('SELECT status FROM offers WHERE id = $1', [createdOfferId]);
+      assert(dbCheck.rows[0]?.status === 'ACTIVE', 'le statut ne doit pas avoir changé');
+    });
+
+    await check('P0-E2 Transition interdite: sortie d’un statut terminal FILLED ou CANCELLED refusée (409)', async () => {
+      // 1. Depuis FILLED (injecté en base car seul un contrat peut y mener)
+      const testOfferFilledId = 'ofr_test_filled_terminal';
+      await harness.database.query(
+        `INSERT INTO offers (id, employer_id, title, contract_type, remuneration, currency, location, status, posted_date, created_at, updated_at)
+         VALUES ($1, $2, 'Offre pourvue', 'CDI', 150000, 'FCFA', 'Cotonou', 'FILLED', now(), now(), now())`,
+        [testOfferFilledId, employer1Id],
+      );
+
+      const tryReactivateFilled = await harness.worker.fetch(authRequest(`/api/v1/offers/${testOfferFilledId}/status`, employer1Token, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json', 'Idempotency-Key': 'p0e2-try-reactivate-filled' },
+        body: JSON.stringify({ status: 'ACTIVE' }),
+      }));
+      assert(tryReactivateFilled.status === 409, `409 attendu sur tentative de sortie de FILLED, reçu ${tryReactivateFilled.status}`);
+
+      // 2. Depuis CANCELLED
+      const testOfferCancelledId = 'ofr_test_cancelled_terminal';
+      await harness.database.query(
+        `INSERT INTO offers (id, employer_id, title, contract_type, remuneration, currency, location, status, posted_date, created_at, updated_at)
+         VALUES ($1, $2, 'Offre annulée', 'CDI', 150000, 'FCFA', 'Cotonou', 'CANCELLED', now(), now(), now())`,
+        [testOfferCancelledId, employer1Id],
+      );
+
+      const tryReactivateCancelled = await harness.worker.fetch(authRequest(`/api/v1/offers/${testOfferCancelledId}/status`, employer1Token, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json', 'Idempotency-Key': 'p0e2-try-reactivate-cancelled' },
+        body: JSON.stringify({ status: 'ACTIVE' }),
+      }));
+      assert(tryReactivateCancelled.status === 409, `409 attendu sur tentative de réactivation de CANCELLED, reçu ${tryReactivateCancelled.status}`);
+    });
+
+    await check('P0-E2 Transition interdite: statut inconnu/invalide refusé (400)', async () => {
+      const response = await harness.worker.fetch(authRequest(`/api/v1/offers/${createdOfferId}/status`, employer1Token, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json', 'Idempotency-Key': 'p0e2-invalid-status-key' },
+        body: JSON.stringify({ status: 'HACKED_STATUS' }),
+      }));
+      assert(response.status === 400, `400 attendu sur statut inconnu, reçu ${response.status}`);
+    });
+
+    await check('P0-E2 Autorisation: un autre employeur est refusé (403)', async () => {
+      const response = await harness.worker.fetch(authRequest(`/api/v1/offers/${createdOfferId}/status`, employer2Token, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json', 'Idempotency-Key': 'p0e2-other-emp-key' },
+        body: JSON.stringify({ status: 'PAUSED' }),
+      }));
+      assert(response.status === 403, `403 attendu sur modification d’offre tierce, reçu ${response.status}`);
+
+      const dbCheck = await harness.database.query<{ status: string }>('SELECT status FROM offers WHERE id = $1', [createdOfferId]);
+      assert(dbCheck.rows[0]?.status === 'ACTIVE', 'statut inchangé après tentative tierce');
+    });
+
+    await check('P0-E2 Autorisation: un candidat est refusé (403)', async () => {
+      const response = await harness.worker.fetch(authRequest(`/api/v1/offers/${createdOfferId}/status`, candidateToken, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json', 'Idempotency-Key': 'p0e2-cand-key' },
+        body: JSON.stringify({ status: 'PAUSED' }),
+      }));
+      assert(response.status === 403, `403 attendu sur tentative par un candidat, reçu ${response.status}`);
+    });
+
+    await check('P0-E2 Autorisation: un appel non authentifié est refusé (401)', async () => {
+      const response = await harness.worker.fetch(authRequest(`/api/v1/offers/${createdOfferId}/status`, null, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json', 'Idempotency-Key': 'p0e2-anon-key' },
+        body: JSON.stringify({ status: 'PAUSED' }),
+      }));
+      assert(response.status === 401, `401 attendu sur tentative sans session, reçu ${response.status}`);
+    });
+
+    await check('P0-E2 Intégrité: offre inexistante retourne 404', async () => {
+      const response = await harness.worker.fetch(authRequest('/api/v1/offers/ofr_inexistant_404/status', employer1Token, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json', 'Idempotency-Key': 'p0e2-not-found-key' },
+        body: JSON.stringify({ status: 'PAUSED' }),
+      }));
+      assert(response.status === 404, `404 attendu pour offre inexistante, reçu ${response.status}`);
+    });
+
+    await check('P0-E2 Autorisation: employeur bloqué refusé (401/403)', async () => {
+      await harness.database.query("UPDATE users SET status = 'BLOCKED' WHERE id = $1", [employer1Id]);
+
+      const response = await harness.worker.fetch(authRequest(`/api/v1/offers/${createdOfferId}/status`, employer1Token, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json', 'Idempotency-Key': 'p0e2-blocked-emp-key' },
+        body: JSON.stringify({ status: 'PAUSED' }),
+      }));
+      assert(response.status === 401 || response.status === 403, `refus attendu pour employeur bloqué, reçu ${response.status}`);
+
+      await harness.database.query("UPDATE users SET status = 'ACTIVE' WHERE id = $1", [employer1Id]);
+    });
+
+    await check('P0-E2 Idempotence: rejeu de la même requête avec même Idempotency-Key retourne le même résultat sans mutation', async () => {
+      // 1ère requête : passer à PAUSED
+      const req1 = await harness.worker.fetch(authRequest(`/api/v1/offers/${createdOfferId}/status`, employer1Token, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json', 'Idempotency-Key': 'p0e2-idem-key-1' },
+        body: JSON.stringify({ status: 'PAUSED' }),
+      }));
+      assert(req1.status === 200, 'première mise en pause');
+      const body1 = await req1.json() as Offer;
+      assert(body1.status === 'PAUSED', 'statut PAUSED');
+
+      // 2nde requête : rejeu exact
+      const req2 = await harness.worker.fetch(authRequest(`/api/v1/offers/${createdOfferId}/status`, employer1Token, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json', 'Idempotency-Key': 'p0e2-idem-key-1' },
+        body: JSON.stringify({ status: 'PAUSED' }),
+      }));
+      assert(req2.status === 200, `rejeu attendu 200, reçu ${req2.status}`);
+      const body2 = await req2.json() as Offer;
+      assert(body2.status === 'PAUSED', 'statut inchangé');
+      assert(body2.id === body1.id, 'même offre retournée');
+    });
+
+    await check('P0-E2 Idempotence: même Idempotency-Key avec charge utile différente retourne 409', async () => {
+      const response = await harness.worker.fetch(authRequest(`/api/v1/offers/${createdOfferId}/status`, employer1Token, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json', 'Idempotency-Key': 'p0e2-idem-key-1' },
+        body: JSON.stringify({ status: 'CANCELLED' }), // Charge utile différente avec la même clé
+      }));
+      assert(response.status === 409, `409 attendu sur conflit de charge utile d'idempotence, reçu ${response.status}`);
+      const err = await response.json() as { error: { code: string } };
+      assert(err.error.code === 'IDEMPOTENCY_CONFLICT', 'code IDEMPOTENCY_CONFLICT attendu');
+    });
+
+    await check('P0-E2 Idempotence: requête sans Idempotency-Key rejetée (400)', async () => {
+      const response = await harness.worker.fetch(authRequest(`/api/v1/offers/${createdOfferId}/status`, employer1Token, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ status: 'ACTIVE' }),
+      }));
+      assert(response.status === 400, `400 attendu en l’absence d’idempotency key, reçu ${response.status}`);
+    });
+
+    await check('P0-E2 Concurrence & Statut déjà modifié: deux transitions concurrentes laissent la base dans un état cohérent', async () => {
+      // Offre actuellement PAUSED. Deux requêtes concurrentes avec clés distinctes :
+      // Requête A : PAUSED -> ACTIVE
+      // Requête B : PAUSED -> CANCELLED
+      const p1 = harness.worker.fetch(authRequest(`/api/v1/offers/${createdOfferId}/status`, employer1Token, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json', 'Idempotency-Key': 'p0e2-concurrent-1' },
+        body: JSON.stringify({ status: 'ACTIVE' }),
+      }));
+      const p2 = harness.worker.fetch(authRequest(`/api/v1/offers/${createdOfferId}/status`, employer1Token, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json', 'Idempotency-Key': 'p0e2-concurrent-2' },
+        body: JSON.stringify({ status: 'CANCELLED' }),
+      }));
+
+      const [res1, res2] = await Promise.all([p1, p2]);
+      // Les deux sont des transitions légales depuis PAUSED, mais l'une passera en premier.
+      // Si ACTIVE passe en premier, la seconde vers CANCELLED est aussi légale depuis ACTIVE.
+      // Si CANCELLED passe en premier, la seconde vers ACTIVE échouera avec 409.
+      // Dans tous les cas, l'état final en base doit être soit ACTIVE soit CANCELLED, sans corruption.
+      const statuses = [res1.status, res2.status];
+      assert(statuses.every(s => s === 200 || s === 409), `statuts attendus 200 ou 409, reçus ${statuses.join(', ')}`);
+
+      const dbCheck = await harness.database.query<{ status: string }>('SELECT status FROM offers WHERE id = $1', [createdOfferId]);
+      assert(
+        dbCheck.rows[0]?.status === 'ACTIVE' || dbCheck.rows[0]?.status === 'CANCELLED',
+        `état final cohérent attendu (ACTIVE ou CANCELLED), reçu ${dbCheck.rows[0]?.status}`,
+      );
+    });
+
+    await check('P0-E2 Rollback: échec SQL lors du changement de statut annule toute transaction', async () => {
+      let rolledBack = false;
+      const initialStatus = (await harness.database.query<{ status: string }>('SELECT status FROM offers WHERE id = $1', [createdOfferId])).rows[0].status;
+
+      try {
+        await harness.database.run(async tx => {
+          const store = createSqlOfferStore(tx);
+          await store.updateStatus(createdOfferId, 'PAUSED', new Date().toISOString());
+          throw new Error('SIMULATED_STATUS_TRANSACTION_FAILURE');
+        });
+      } catch (error) {
+        rolledBack = String((error as Error)?.message ?? error).includes('SIMULATED_STATUS_TRANSACTION_FAILURE');
+      }
+
+      assert(rolledBack, 'erreur de transaction levée');
+      const finalStatus = (await harness.database.query<{ status: string }>('SELECT status FROM offers WHERE id = $1', [createdOfferId])).rows[0].status;
+      assert(finalStatus === initialStatus, 'le statut ne doit pas avoir changé suite au rollback');
     });
   } finally {
     await harness.close();

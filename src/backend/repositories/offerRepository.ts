@@ -261,8 +261,125 @@ export function createOfferRepository(dependencies: OfferRepositoryDependencies)
       };
     },
 
-    async setOfferStatus(): Promise<Offer> {
-      throw new ApiError('NOT_IMPLEMENTED', 'Cette opération backend n’est pas encore configurée.');
+    async setOfferStatus(
+      actor: AuthenticatedActor,
+      offerId: string,
+      targetStatus: Offer['status'],
+      command: ProductionCommandContext,
+    ): Promise<Offer> {
+      if (!actor || actor.role !== 'EMPLOYER') {
+        throw new ApiError('FORBIDDEN', 'Action non autorisée : seul un employeur peut modifier le statut d’une offre.');
+      }
+
+      const user = await stores.users.findById(actor.id);
+      if (!user) {
+        throw new ApiError('UNAUTHENTICATED', 'Acteur introuvable.');
+      }
+      if (user.status === 'BLOCKED') {
+        throw new ApiError('FORBIDDEN', 'COMPTE BLOQUÉ : la modification du statut d’offre est indisponible.');
+      }
+
+      if (!offerId || typeof offerId !== 'string' || !offerId.trim()) {
+        throw new ApiError('NOT_FOUND', 'Offre introuvable.');
+      }
+
+      const normalizedOfferId = offerId.trim();
+
+      // Vérification du statut cible
+      if (!['ACTIVE', 'FILLED', 'CANCELLED', 'PAUSED'].includes(targetStatus)) {
+        throw new ApiError('VALIDATION_ERROR', `Statut cible « ${String(targetStatus)} » invalide.`);
+      }
+
+      const idempotencyKey = command?.idempotencyKey?.trim();
+      const payloadFingerprint = JSON.stringify({ offerId: normalizedOfferId, status: targetStatus });
+      if (idempotencyKey) {
+        const replay = offerIdempotencyCache.get(actor.id, 'offers.status.update', idempotencyKey);
+        if (replay) {
+          if (replay.fingerprint !== payloadFingerprint) {
+            throw new ApiError('IDEMPOTENCY_CONFLICT', 'Clé d’idempotence déjà utilisée avec une commande différente.', undefined, 409);
+          }
+          return replay.result;
+        }
+      }
+
+      // Matrice stricte des transitions autorisées pour l'employeur
+      // - ACTIVE -> PAUSED, CANCELLED
+      // - PAUSED -> ACTIVE, CANCELLED
+      // - FILLED -> aucune transition autorisée (état terminal pourvu)
+      // - CANCELLED -> aucune transition autorisée (état terminal annulé)
+      // Transition FILLED : dans le modèle métier, FILLED est déclenché par l'activation d'un contrat lié.
+      // Si une tentative manuelle directe vers FILLED est faite par l'employeur sans contrat, elle est interdite.
+      const ALLOWED_TRANSITIONS: Record<Offer['status'], readonly Offer['status'][]> = {
+        ACTIVE: ['PAUSED', 'CANCELLED'],
+        PAUSED: ['ACTIVE', 'CANCELLED'],
+        FILLED: [],
+        CANCELLED: [],
+      };
+
+      const nowIso = now().toISOString();
+
+      let updatedRecord: OfferRecord;
+
+      const executeMutation = async (currentStores: OfferRepositoryStores): Promise<OfferRecord> => {
+        const existing = await currentStores.offers.findById(normalizedOfferId);
+        if (!existing) {
+          throw new ApiError('NOT_FOUND', 'Offre non trouvée.');
+        }
+
+        // Ownership strict : seul l'employeur propriétaire peut modifier l'offre
+        if (existing.employerId !== actor.id) {
+          throw new ApiError('FORBIDDEN', 'Action non autorisée : vous n’êtes pas le propriétaire de cette offre.');
+        }
+
+        // Cas idempotent : même statut courant que le statut cible
+        if (existing.status === targetStatus) {
+          return existing;
+        }
+
+        const allowedTargets = ALLOWED_TRANSITIONS[existing.status] ?? [];
+        if (!allowedTargets.includes(targetStatus)) {
+          if (existing.status === 'FILLED') {
+            throw new ApiError('BUSINESS_RULE_VIOLATION', 'Une offre pourvue ne peut pas être réactivée ni modifiée.', undefined, 409);
+          }
+          if (existing.status === 'CANCELLED') {
+            throw new ApiError('BUSINESS_RULE_VIOLATION', 'Une offre annulée ne peut plus changer de statut.', undefined, 409);
+          }
+          if (targetStatus === 'FILLED') {
+            throw new ApiError(
+              'BUSINESS_RULE_VIOLATION',
+              'La transition vers le statut FILLED est réservée à la finalisation et signature d’un contrat actif.',
+              undefined,
+              409,
+            );
+          }
+          throw new ApiError(
+            'BUSINESS_RULE_VIOLATION',
+            `Transition de statut interdite : de « ${existing.status} » vers « ${targetStatus} ».`,
+            undefined,
+            409,
+          );
+        }
+
+        const res = await currentStores.offers.updateStatus(normalizedOfferId, targetStatus, nowIso);
+        if (!res) {
+          throw new ApiError('NOT_FOUND', 'Offre non trouvée lors de la mise à jour.');
+        }
+        return res;
+      };
+
+      if (dependencies.runInTransaction) {
+        updatedRecord = await dependencies.runInTransaction(async txStores => {
+          return await executeMutation(txStores);
+        });
+      } else {
+        updatedRecord = await executeMutation(stores);
+      }
+
+      const offer = toOfferProjection(updatedRecord, user);
+      if (idempotencyKey) {
+        offerIdempotencyCache.set(actor.id, 'offers.status.update', idempotencyKey, payloadFingerprint, offer);
+      }
+      return offer;
     },
   };
 }
@@ -312,6 +429,18 @@ export function createOfferApiHandlers(repository: ServerOfferRepository): Parti
     'offers.mine.list': async context => {
       const pageRequest = context.page ?? { cursor: null, limit: 25 };
       return await repository.getMyOffers(context.actor!, pageRequest);
+    },
+
+    'offers.status.update': async context => {
+      const body = await readJsonBody(context.request);
+      const targetStatus = body.status as Offer['status'];
+      const offer = await repository.setOfferStatus(
+        context.actor!,
+        context.params.offerId,
+        targetStatus,
+        context.command!,
+      );
+      return apiJsonResponse(offer, 200, context.requestId);
     },
   };
 }
