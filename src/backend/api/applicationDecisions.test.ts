@@ -729,11 +729,14 @@ export async function runApplicationDecisionTests(): Promise<OfferTestResult[]> 
 
     /* ---------------- 10. PÉRIMÈTRE ET SÉPARATION DEMO/API ---------------- */
 
-    await check('P0-E4 Périmètre: propositions, contrats, paiements et incidents restent fermés (501)', async () => {
+    await check('P0-E4 Périmètre: contrats, paiements, incidents et messages restent fermés (501)', async () => {
+      // Les propositions ont été ouvertes par P0-E5 (`/conversations/:id/proposals`
+      // n'est plus un handler absent) ; ce test conserve la frontière fermée des
+      // autres domaines, sans affaiblir le contrôle P0-E4.
       const closed = await Promise.all([
-        harness.worker.fetch(authRequest('/api/v1/conversations/cnv_p0e4/proposals', employerToken, {
+        harness.worker.fetch(authRequest('/api/v1/conversations/cnv_p0e4/messages', employerToken, {
           method: 'POST',
-          headers: { 'content-type': 'application/json', 'Idempotency-Key': 'p0e4-closed-proposals-001' },
+          headers: { 'content-type': 'application/json', 'Idempotency-Key': 'p0e4-closed-messages-001' },
           body: '{}',
         })),
         harness.worker.fetch(authRequest('/api/v1/contracts', employerToken, {

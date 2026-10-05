@@ -11,6 +11,8 @@ export const EXPECTED_MIGRATION_IDS: readonly string[] = [
   '0001_identity_and_core',
   '0002_role_permissions_seed',
   '0003_core_nucleus_alignment',
+  // P0-E5 : table `proposals` (propositions d'embauche).
+  '0004_proposals',
 ];
 
 export const SCHEMA_MIGRATIONS_TABLE = 'schema_migrations';

@@ -132,6 +132,12 @@ export interface ServerProposalRepository {
   getAdminProposals(actor: AuthenticatedActor, page: { cursor: string | null; limit: number }): Promise<CursorPage<MissionProposal>>;
   createProposal(actor: AuthenticatedActor, conversationId: string, proposal: ServerCreateProposalInput, command: ProductionCommandContext): Promise<MissionProposal>;
   respondToProposal(actor: AuthenticatedActor, proposalId: string, action: 'ACCEPT' | 'REVISE' | 'DECLINE', notes: string | undefined, command: ProductionCommandContext): Promise<MissionProposal>;
+  /**
+   * P0-E5 — expiration explicite d'une proposition (`SENT → EXPIRED`).
+   * Le moteur Cron/Queue futur produira la même transition ; aucun scheduler
+   * n'existe à cette étape (`src/domain/proposalTransitions.ts`).
+   */
+  expireProposal(actor: AuthenticatedActor, proposalId: string, command: ProductionCommandContext): Promise<MissionProposal>;
 }
 
 export interface ServerContractRepository {

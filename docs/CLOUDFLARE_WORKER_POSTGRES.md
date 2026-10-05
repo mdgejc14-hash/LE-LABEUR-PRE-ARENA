@@ -9,8 +9,8 @@ local**, et prépare la configuration Cloudflare réelle sans jamais la revendiq
 | Élément | État | Preuve / limite |
 |---|---|---|
 | Entrée Worker réelle (`src/backend/worker/cloudflareEntry.ts`) | **RÉEL** | Bundle construit par `wrangler deploy --dry-run` ; exécuté sous workerd |
-| Runtime workerd + binding Hyperdrive local + PostgreSQL réel | **TEST/LOCAL** | `npm run verify:workerd` → 5/5 PASS (3 exécutions consécutives) |
-| Migrations 0001 → 0003 sur un moteur PostgreSQL réel | **RÉEL (local)** | `npm run migrate` et `npm run verify:postgres` → 15/15 PASS |
+| Runtime workerd + binding Hyperdrive local + PostgreSQL réel | **TEST/LOCAL** | `npm run verify:workerd` → 8/8 PASS (3 exécutions consécutives) |
+| Migrations 0001 → 0004 sur un moteur PostgreSQL réel | **RÉEL (local)** | `npm run migrate` et `npm run verify:postgres` → 18/18 PASS |
 | Bibliothèque `pg` 8.23.1 + `embedded-postgres` 17.10.0-beta.17 | **RÉEL** | `pg` en `dependencies` (runtime Worker), moteur embarqué en `devDependencies` |
 | Configuration `wrangler.toml` (bindings, vars, profils) | **PRÉPARÉ** | ID Hyperdrive = placeholder explicite ; profil production volontairement sans binding |
 | Runner de migrations (`scripts/migrate.ts`) | **RÉEL** | Appliqué et rejoué (idempotence) sur PostgreSQL 17.10 |
@@ -59,16 +59,16 @@ ou `.dev.vars` local (gitignoré) avec `CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_S
 ## 4. Vérifications réelles exécutées
 
 ```bash
-npm test                 # 1058/1058 PASS (dont 21 tests P0-C)
+npm test                 # 1191/1191 PASS (dont 29 tests P0-E5 et 10 tests de matrice P0-E5)
 npm run lint             # tsc --noEmit : aucune erreur
 npm run build            # bundle navigateur inchangé (pg absent)
-npm run verify:postgres  # 15/15 PASS — Worker/API → PostgreSQL réel
-npm run verify:workerd   # 5/5 PASS — workerd + binding Hyperdrive + PostgreSQL réel
+npm run verify:postgres  # 18/18 PASS — Worker/API → PostgreSQL réel
+npm run verify:workerd   # 8/8 PASS — workerd + binding Hyperdrive + PostgreSQL réel
 npm run migrate -- --status  # état réel des migrations (aucune valeur secrète affichée)
 ```
 
 Couverture de `npm run verify:postgres` (moteur réel, TEST/LOCAL) : connexion,
-migrations 0001→0003 + idempotence, schéma identité/RBAC/noyau, **COMMIT**,
+migrations 0001→0004 + idempotence, schéma identité/RBAC/noyau, **COMMIT**,
 **ROLLBACK**, lecture/écriture `users`, lecture/écriture `sessions` (seul le
 SHA-256 du jeton est stocké), lecture des permissions, `/healthz` réel sans
 secret, parcours Google signé → session → `/me` → logout, permissions ADMIN
@@ -96,7 +96,7 @@ Trois formes, strictement dérivées de l'état observé :
     "target": { "host": "…", "port": 5432, "database": "…", "source": "HYPERDRIVE",
                 "poolMax": 5, "statementTimeoutMs": 15000, "applicationName": "lelabeur-worker",
                 "sslRequired": false, "secretRedacted": true },
-    "migrations": { "status": "applied", "applied": ["0001…", "0002…", "0003…"], "pending": [] }
+    "migrations": { "status": "applied", "applied": ["0001…", "0002…", "0003…", "0004…"], "pending": [] }
   },
   "runtime": { "runtime": "workerd", "declaredEnvironment": "production", "hyperdriveBinding": true }
 }

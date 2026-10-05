@@ -1,5 +1,5 @@
 /**
- * LE LABEUR — P0-C / P0-E3 / P0-E4 — vérification réelle de bout en bout.
+ * LE LABEUR — P0-C / P0-E3 / P0-E4 / P0-E5 — vérification réelle de bout en bout.
  *
  *   Worker/API → PostgreSQL réel → réponse
  *
@@ -236,7 +236,7 @@ async function main(): Promise<void> {
   const secrets = [connectionString, local?.password, resolved.target.connectionString];
 
   console.log('============================================================');
-  console.log(' LE LABEUR — P0-C / P0-E3 / P0-E4 — vérification Worker/API → PostgreSQL');
+  console.log(' LE LABEUR — P0-C / P0-E3 / P0-E4 / P0-E5 — vérification Worker/API → PostgreSQL');
   console.log('============================================================');
   console.log(`Source base      : ${sourceLabel}`);
   console.log(`Cible (sans secret): ${descriptor.host}:${descriptor.port}/${descriptor.database} (source=${descriptor.source})`);
@@ -272,7 +272,7 @@ async function main(): Promise<void> {
     });
 
     let migrationResult: Awaited<ReturnType<typeof applyMigrations>> | null = null;
-    await check('Migrations 0001→0003 appliquées sur le moteur réel', async () => {
+    await check('Migrations 0001→0004 appliquées sur le moteur réel', async () => {
       migrationResult = await applyMigrations(client, migrations, {
         statementTimeoutMs: 15000,
         onProgress: message => console.log(`     ${message}`),
@@ -292,7 +292,7 @@ async function main(): Promise<void> {
     await check('Schéma attendu présent (identité, RBAC, noyau)', async () => {
       const expectedTables = [
         'users', 'external_identities', 'sessions', 'permissions', 'role_permissions', 'user_permissions',
-        'offers', 'applications', 'contracts',
+        'offers', 'applications', 'contracts', 'proposals',
       ];
       const tables = await database.query<{ table_name: string }>(
         `SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'`,
@@ -460,6 +460,8 @@ async function main(): Promise<void> {
     let p0e3ApplicationId = '';
     let p0e3SecondApplicationId = '';
     let p0e3OfferId = '';
+    /** Réaffecté au bloc P0-E5 : offre dédiée à la vérification PROPOSITION. */
+    let p0e5OfferId = '';
     await check('P0-E3 Worker/API → PostgreSQL : CANDIDATE soumet, EMPLOYER propriétaire consulte, tiers refusé', async () => {
       const employerLogin = await composition.worker.fetch(new Request('https://api.test/api/v1/auth/google/credential', {
         method: 'POST',
@@ -658,6 +660,174 @@ async function main(): Promise<void> {
         rejectedRow.rows[0]?.note === 'Dossier non retenu (vérification PostgreSQL).',
         'motif de rejet persisté dans PostgreSQL',
       );
+    });
+
+
+    await check('P0-E5 Worker/API → PostgreSQL : EMPLOYER envoie, CANDIDATE accepte, expiration et tiers refusés', async () => {
+      assert(employerId && candidateId, 'acteurs P0-E3 nécessaires au cycle PROPOSITION');
+
+      const employerHeaders = (key: string) => ({
+        cookie: `${SESSION_COOKIE_NAME}=${employerCookie}`,
+        'content-type': 'application/json',
+        'Idempotency-Key': key,
+      });
+
+      // 0. Offre dédiée + candidature ADMISSIBLE : le couple (offre, candidat)
+      //    de P0-E3/E4 est déjà consommé et sa candidature est devenue terminale.
+      const dedicatedOffer = await composition.worker.fetch(withSession('/api/v1/offers', employerCookie, {
+        method: 'POST',
+        headers: employerHeaders('p0c-e5-offer-create-001'),
+        body: JSON.stringify({
+          title: 'Offre P0-E5 vérification PostgreSQL',
+          contractType: 'CDI',
+          remuneration: 175000,
+          currency: 'FCFA',
+          location: 'Cotonou',
+          summary: 'Offre créée pour vérifier le cycle PROPOSITION.',
+        }),
+      }));
+      assert(dedicatedOffer.status === 201, `création offre P0-E5 : 201 attendu, reçu ${dedicatedOffer.status}`);
+      const p0e5Offer = await dedicatedOffer.json() as { id: string; status: string };
+      assert(p0e5Offer.status === 'ACTIVE', 'offre P0-E5 ACTIVE attendue');
+      p0e5OfferId = p0e5Offer.id;
+
+      const admissible = await composition.worker.fetch(withSession(`/api/v1/offers/${p0e5Offer.id}/applications`, sessionCookie, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'Idempotency-Key': 'p0c-e5-application-submit-001' },
+        body: JSON.stringify({ note: 'Disponible pour une proposition.' }),
+      }));
+      assert(admissible.status === 201, `soumission admissible 201 attendue, reçue ${admissible.status}`);
+      const admissibleApplication = await admissible.json() as { id: string; status: string };
+      assert(admissibleApplication.status === 'PENDING', 'candidature admissible PENDING attendue');
+
+      const proposalBody = (extra: Record<string, unknown> = {}) => JSON.stringify({
+        offerId: p0e5OfferId,
+        applicationId: admissibleApplication.id,
+        missionTitle: 'Mission P0-E5 vérification PostgreSQL',
+        amount: 175000,
+        currency: 'FCFA',
+        periodicity: 'Mensuel',
+        startDate: '01 Novembre 2026',
+        durationMonths: 6,
+        location: 'Cotonou',
+        conditions: ['Temps plein'],
+        ...extra,
+      });
+
+      // 1. ÉMISSION — EMPLOYER propriétaire : 201, statut SENT persisté.
+      const created = await composition.worker.fetch(withSession('/api/v1/conversations/cnv_p0e5_verify/proposals', employerCookie, {
+        method: 'POST',
+        headers: employerHeaders('p0c-e5-proposal-create-001'),
+        body: proposalBody(),
+      }));
+      assert(created.status === 201, `création proposition 201 attendue, reçue ${created.status}`);
+      const proposal = await created.json() as { id: string; status: string; employerId: string; employeeId: string };
+      assert(proposal.status === 'SENT', `statut SENT attendu, reçu ${proposal.status}`);
+      assert(proposal.employerId === employerId && proposal.employeeId === candidateId, 'parties dérivées côté serveur');
+
+      const storedProposal = await database.query<{ status: string; offer_id: string; application_id: string; amount: string }>(
+        'SELECT status, offer_id, application_id, amount FROM proposals WHERE id = $1', [proposal.id],
+      );
+      assert(storedProposal.rows[0]?.status === 'SENT', 'SENT réellement persisté dans PostgreSQL');
+      assert(storedProposal.rows[0]?.offer_id === p0e5OfferId && storedProposal.rows[0]?.application_id === admissibleApplication.id, 'références SQL attendues');
+      assert(Number(storedProposal.rows[0]?.amount) === 175000, 'montant persisté');
+
+      // 2. Un autre employeur ne peut ni expirer ni répondre (403) ; REVISE reste fermé (501).
+      const otherEmployerExpire = await composition.worker.fetch(withSession(`/api/v1/proposals/${proposal.id}/expire`, otherEmployerCookie, {
+        method: 'POST',
+        headers: employerHeaders('p0c-e5-other-employer-expire-001'),
+        body: '{}',
+      }));
+      assert(otherEmployerExpire.status === 403, `autre employeur refusé (403), reçu ${otherEmployerExpire.status}`);
+      const revise = await composition.worker.fetch(withSession(`/api/v1/proposals/${proposal.id}/respond`, sessionCookie, {
+        method: 'POST',
+        headers: {
+          cookie: `${SESSION_COOKIE_NAME}=${sessionCookie}`,
+          'content-type': 'application/json',
+          'Idempotency-Key': 'p0c-e5-revise-001',
+        },
+        body: JSON.stringify({ action: 'REVISE', notes: 'Ajuster le montant.' }),
+      }));
+      assert(revise.status === 501, `REVISE doit rester fermé (501), reçu ${revise.status}`);
+
+      // 3. ACCEPTATION par le candidat destinataire + rejeu idempotent.
+      const accepted = await composition.worker.fetch(withSession(`/api/v1/proposals/${proposal.id}/respond`, sessionCookie, {
+        method: 'POST',
+        headers: {
+          cookie: `${SESSION_COOKIE_NAME}=${sessionCookie}`,
+          'content-type': 'application/json',
+          'Idempotency-Key': 'p0c-e5-accept-001',
+        },
+        body: JSON.stringify({ action: 'ACCEPT' }),
+      }));
+      assert(accepted.status === 200, `acceptation 200 attendue, reçue ${accepted.status}`);
+      const acceptedBody = await accepted.json() as { status: string };
+      assert(acceptedBody.status === 'ACCEPTED', `ACCEPTED attendu, reçu ${acceptedBody.status}`);
+      const replay = await composition.worker.fetch(withSession(`/api/v1/proposals/${proposal.id}/respond`, sessionCookie, {
+        method: 'POST',
+        headers: {
+          cookie: `${SESSION_COOKIE_NAME}=${sessionCookie}`,
+          'content-type': 'application/json',
+          'Idempotency-Key': 'p0c-e5-accept-001',
+        },
+        body: JSON.stringify({ action: 'ACCEPT' }),
+      }));
+      assert(replay.status === 200, `rejeu idempotent 200 attendu, reçu ${replay.status}`);
+      const afterAccept = await database.query<{ status: string }>('SELECT status FROM proposals WHERE id = $1', [proposal.id]);
+      assert(afterAccept.rows[0]?.status === 'ACCEPTED', 'ACCEPTED persisté une seule fois');
+      const terminal = await composition.worker.fetch(withSession(`/api/v1/proposals/${proposal.id}/respond`, sessionCookie, {
+        method: 'POST',
+        headers: {
+          cookie: `${SESSION_COOKIE_NAME}=${sessionCookie}`,
+          'content-type': 'application/json',
+          'Idempotency-Key': 'p0c-e5-accept-002',
+        },
+        body: JSON.stringify({ action: 'ACCEPT' }),
+      }));
+      assert(terminal.status === 409, `proposition close : 409 attendu, reçu ${terminal.status}`);
+
+      // 4. Aucune conséquence hors périmètre : ni contrat, ni offre FILLED,
+      //    ni candidature modifiée par l'acceptation.
+      const contracts = await database.query<{ count: string }>(
+        'SELECT count(*)::text AS count FROM contracts WHERE application_id = $1', [admissibleApplication.id],
+      );
+      assert(Number(contracts.rows[0]?.count ?? 0) === 0, 'aucun contrat créé par P0-E5');
+      const offerRow = await database.query<{ status: string }>('SELECT status FROM offers WHERE id = $1', [p0e5OfferId]);
+      assert(offerRow.rows[0]?.status === 'ACTIVE', 'l’offre reste ACTIVE (aucun passage FILLED en P0-E5)');
+      const applicationRow = await database.query<{ status: string; contract_id: string | null }>(
+        'SELECT status, contract_id FROM applications WHERE id = $1', [admissibleApplication.id],
+      );
+      assert(applicationRow.rows[0]?.status === 'PENDING', 'la candidature reste PENDING');
+      assert(applicationRow.rows[0]?.contract_id === null, 'aucun contrat lié à la candidature');
+
+      // 5. EXPIRATION — même proposition, seconde émission, puis expiration par l'émetteur.
+      const second = await composition.worker.fetch(withSession('/api/v1/conversations/cnv_p0e5_verify/proposals', employerCookie, {
+        method: 'POST',
+        headers: employerHeaders('p0c-e5-proposal-create-002'),
+        body: proposalBody({ missionTitle: 'Mission P0-E5 à expirer' }),
+      }));
+      assert(second.status === 201, `seconde proposition 201 attendue, reçue ${second.status}`);
+      const secondProposal = await second.json() as { id: string };
+      const expired = await composition.worker.fetch(withSession(`/api/v1/proposals/${secondProposal.id}/expire`, employerCookie, {
+        method: 'POST',
+        headers: employerHeaders('p0c-e5-expire-001'),
+        body: '{}',
+      }));
+      assert(expired.status === 200, `expiration 200 attendue, reçue ${expired.status}`);
+      const expiredBody = await expired.json() as { status: string };
+      assert(expiredBody.status === 'EXPIRED', `EXPIRED attendu, reçu ${expiredBody.status}`);
+      const expiredRow = await database.query<{ status: string }>('SELECT status FROM proposals WHERE id = $1', [secondProposal.id]);
+      assert(expiredRow.rows[0]?.status === 'EXPIRED', 'EXPIRED réellement persisté');
+      const acceptExpired = await composition.worker.fetch(withSession(`/api/v1/proposals/${secondProposal.id}/respond`, sessionCookie, {
+        method: 'POST',
+        headers: {
+          cookie: `${SESSION_COOKIE_NAME}=${sessionCookie}`,
+          'content-type': 'application/json',
+          'Idempotency-Key': 'p0c-e5-accept-expired-001',
+        },
+        body: JSON.stringify({ action: 'ACCEPT' }),
+      }));
+      assert(acceptExpired.status === 409, `proposition expirée : 409 attendu, reçu ${acceptExpired.status}`);
     });
 
     await check('Worker/API → PostgreSQL : ADMIN provisionné côté serveur + permissions SQL', async () => {

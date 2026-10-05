@@ -37,6 +37,21 @@ export const OUTBOX_EFFECT_CONTRACTS: readonly OutboxEffectContract[] = [
   { eventType: 'APPLICATION_SHORTLISTED', sideEffects: ['notify the shortlisted candidate'], idempotencyKey: 'applicationId + SHORTLISTED' },
   { eventType: 'APPLICATION_REJECTED', sideEffects: ['notify the candidate with the recorded reason'], idempotencyKey: 'applicationId + REJECTED' },
   { eventType: 'APPLICATION_WITHDRAWN', sideEffects: ['notify the offer owner of the withdrawal'], idempotencyKey: 'applicationId + WITHDRAWN' },
+  /**
+   * P0-E5 — cycle PROPOSITION d'embauche.
+   *
+   * Contrats DÉCLARÉS pour le futur moteur Outbox/Queue : aucun producteur,
+   * aucune table Outbox, aucun consumer n'existe à ce stade. L'émission,
+   * l'acceptation, la déclinaison et l'expiration sont persistées dans la
+   * transaction métier sans effet secondaire asynchrone. Les charges utiles et
+   * clés de déduplication de référence sont décrites dans
+   * `src/domain/proposalTransitions.ts` (`DOCUMENTED_PROPOSAL_EVENTS`).
+   * La nomenclature du code est conservée : `DECLINED`, jamais `REJECTED`.
+   */
+  { eventType: 'PROPOSAL_SENT', sideEffects: ['notify the target candidate'], idempotencyKey: 'proposalId + SENT' },
+  { eventType: 'PROPOSAL_ACCEPTED', sideEffects: ['notify the emitting employer', 'prepare contract creation in the next step'], idempotencyKey: 'proposalId + ACCEPTED' },
+  { eventType: 'PROPOSAL_DECLINED', sideEffects: ['notify the emitting employer'], idempotencyKey: 'proposalId + DECLINED' },
+  { eventType: 'PROPOSAL_EXPIRED', sideEffects: ['close the proposal for both parties'], idempotencyKey: 'proposalId + EXPIRED' },
 ] as const;
 
 export interface OutboxConsumer {

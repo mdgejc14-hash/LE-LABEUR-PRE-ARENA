@@ -35,10 +35,12 @@ import {
   CORE_TABLES,
   CoreStoreError,
   OFFER_STATUS_VALUES,
+  PROPOSAL_STATUS_VALUES,
   USER_ROLE_VALUES,
   type ApplicationRecord,
   type ContractRecord,
   type OfferRecord,
+  type ProposalRecord,
 } from './coreRecords';
 import { createInMemoryCoreStores } from './coreStores';
 import { createPostgresDatabase } from './postgresDatabase';
@@ -367,6 +369,30 @@ const contractRow: Record<string, unknown> = {
   updated_at: '2026-09-10T00:00:00.000Z',
 };
 
+const proposalRow: Record<string, unknown> = {
+  id: 'prp_test',
+  conversation_id: 'cnv_test',
+  contract_id: null,
+  offer_id: 'ofr_test',
+  application_id: 'app_test',
+  employer_id: 'usr_employer',
+  employee_id: 'usr_candidate',
+  mission_title: 'Mission de test',
+  amount: '75000.00',
+  currency: 'FCFA',
+  periodicity: 'Mensuel',
+  start_date: '01 Novembre 2026',
+  end_date: null,
+  duration_months: 6,
+  location: 'Cotonou',
+  conditions: ['8 h/jour'],
+  status: 'SENT',
+  revision_notes: null,
+  sent_at: '2026-09-12T00:00:00.000Z',
+  created_at: '2026-09-12T00:00:00.000Z',
+  updated_at: '2026-09-12T00:00:00.000Z',
+};
+
 const coreRowResponder: Responder = sql => {
   if (/users/.test(sql)) {
     return {
@@ -385,6 +411,7 @@ const coreRowResponder: Responder = sql => {
   }
   if (/applications/.test(sql)) return { rows: [applicationRow], rowCount: 1 };
   if (/contracts/.test(sql)) return { rows: [contractRow], rowCount: 1 };
+  if (/proposals/.test(sql)) return { rows: [proposalRow], rowCount: 1 };
   return { rows: [offerRow], rowCount: 1 };
 };
 
@@ -420,6 +447,27 @@ const validApplication: ApplicationRecord = {
   history: [],
   createdAt: '2026-09-03T00:00:00.000Z',
   updatedAt: '2026-09-03T00:00:00.000Z',
+};
+
+const validProposal: ProposalRecord = {
+  id: 'prp_test',
+  conversationId: 'cnv_test',
+  offerId: 'ofr_test',
+  applicationId: 'app_test',
+  employerId: 'usr_employer',
+  employeeId: 'usr_candidate',
+  missionTitle: 'Mission de test',
+  amount: 75_000,
+  currency: 'FCFA',
+  periodicity: 'Mensuel',
+  startDate: '01 Novembre 2026',
+  durationMonths: 6,
+  location: 'Cotonou',
+  conditions: ['8 h/jour'],
+  status: 'SENT',
+  sentAt: '2026-09-12T00:00:00.000Z',
+  createdAt: '2026-09-12T00:00:00.000Z',
+  updatedAt: '2026-09-12T00:00:00.000Z',
 };
 
 const validContract: ContractRecord = {
@@ -516,7 +564,7 @@ export async function runPostgresFoundationTests(): Promise<PostgresFoundationTe
     assert(!/\bDROP CONSTRAINT\b(?! IF EXISTS)/i.test(stripped), 'tout DROP CONSTRAINT doit être gardé par IF EXISTS');
   });
 
-  await check('Migrations: les 9 tables du noyau sont créées', () => {
+  await check('Migrations: les 10 tables du noyau sont créées', () => {
     for (const table of CORE_TABLES) {
       assert(schema.has(table), `table manquante: ${table}`);
       assert(schema.get(table)!.size > 0, `table vide: ${table}`);
@@ -533,6 +581,7 @@ export async function runPostgresFoundationTests(): Promise<PostgresFoundationTe
       ['applications.status', APPLICATION_STATUS_VALUES],
       ['contracts.status', CONTRACT_STATUS_VALUES],
       ['contracts.commission_status', COMMISSION_STATUS_VALUES],
+      ['proposals.status', PROPOSAL_STATUS_VALUES],
     ];
     for (const [key, values] of expected) {
       const found = domains.get(key);
@@ -586,9 +635,14 @@ export async function runPostgresFoundationTests(): Promise<PostgresFoundationTe
     await stores.applications.updateStatus('app_test', 'REVIEW', '2026-09-04T00:00:00.000Z', 'ctr_test');
     await stores.contracts.create(validContract);
     await stores.contracts.updateStatus('ctr_test', 'ACTIVE', '2026-09-11T00:00:00.000Z');
+    await stores.proposals.create(validProposal);
+    await stores.proposals.compareAndSetStatus('prp_test', 'SENT', {
+      status: 'ACCEPTED',
+      updatedAt: '2026-09-13T00:00:00.000Z',
+    });
 
     const writes = extractWriteStatements(driver.sqlText);
-    assert(writes.length >= 6, `au moins 6 écritures attendues, trouvées ${writes.length}`);
+    assert(writes.length >= 8, `au moins 8 écritures attendues, trouvées ${writes.length}`);
     for (const write of writes) {
       const columns = schema.get(write.table);
       assert(columns, `table inconnue des migrations: ${write.table}`);
@@ -607,9 +661,10 @@ export async function runPostgresFoundationTests(): Promise<PostgresFoundationTe
     await stores.offers.create(validOffer);
     await stores.applications.create(validApplication);
     await stores.contracts.create(validContract);
+    await stores.proposals.create(validProposal);
 
     const writes = extractWriteStatements(driver.sqlText).filter(write => write.kind === 'insert');
-    for (const table of ['offers', 'applications', 'contracts']) {
+    for (const table of ['offers', 'applications', 'contracts', 'proposals']) {
       const columns = schema.get(table)!;
       const provided = new Set(writes.filter(write => write.table === table).flatMap(write => write.columns));
       assert(provided.size > 0, `aucun INSERT collecté pour ${table}`);
