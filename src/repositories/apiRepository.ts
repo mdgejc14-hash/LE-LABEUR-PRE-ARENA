@@ -11,13 +11,15 @@ import type {
   Incident,
   MissionProposal,
   Offer,
+  PaymentDeclaration,
+  PaymentHistoryEvent,
   ReplacementDossier,
   ResourceDocument,
   UserProfile,
   UserRole,
 } from '../types';
 import type { CursorPage, DocumentMetadata, ProductionAuditEvent, PublicProfileProjection, ScheduleEntrySnapshot, ShortLivedIceConfiguration, ShortLivedSignalingCredential, SignedDocumentUrl } from '../backend/productionContracts';
-import type { RevenueMetrics } from './interfaces';
+import type { PaymentBlockingEvaluation, RevenueMetrics } from './interfaces';
 import { HttpApiClient, type ApiClientOptions } from './apiClient';
 
 export interface ApiPageOptions {
@@ -79,6 +81,42 @@ export interface AudioMessageInput {
   waveform?: number[];
 }
 
+/** PHASE 4 — déclaration de paiement externe par l'employeur. */
+export type CreatePaymentDeclarationInput = {
+  contractId: string;
+  monthNumber: number;
+  kind: PaymentDeclaration['kind'];
+  amount: number;
+  paymentMethod: PaymentDeclaration['paymentMethod'];
+  transactionId: string;
+  reference?: string;
+  paidAt: string;
+  proof: {
+    fileName: string;
+    uri: string;
+    documentId?: string;
+    mimeType?: string;
+    sizeBytes?: number;
+  };
+  comment?: string;
+};
+
+export type UpdatePaymentDeclarationInput = Partial<CreatePaymentDeclarationInput>;
+
+export type PaymentDeclarationFilter = {
+  status?: PaymentDeclaration['status'] | 'ALL';
+  employerId?: string;
+  contractId?: string;
+  kind?: PaymentDeclaration['kind'] | 'ALL';
+  awaitingAdminAction?: boolean;
+  search?: string;
+};
+
+export type EmployerAccountActionResult = {
+  declaration: PaymentDeclaration;
+  employer: UserProfile;
+};
+
 export type CommissionDeclarationInput = {
   contractId: string;
   monthNumber: number;
@@ -113,6 +151,16 @@ export interface AdminCollectionApi {
   unblockUser(userId: string, command: IdempotentCommandOptions): Promise<UserProfile>;
   approvePayment(paymentId: string, command: IdempotentCommandOptions): Promise<CommissionPaymentRecord>;
   rejectPayment(paymentId: string, reason: string, command: IdempotentCommandOptions): Promise<CommissionPaymentRecord>;
+  /* PHASE 4 — contrôle administratif des déclarations de paiement. */
+  listPaymentDeclarations(page?: ApiPageOptions, filter?: Record<string, string>): Promise<CursorPage<PaymentDeclaration>>;
+  getPaymentDeclaration(paymentId: string): Promise<PaymentDeclaration | null>;
+  getPaymentDeclarationHistory(paymentId: string, page?: ApiPageOptions): Promise<CursorPage<PaymentHistoryEvent>>;
+  getPaymentBlockingEvaluation(paymentId: string): Promise<PaymentBlockingEvaluation>;
+  startPaymentDeclarationReview(paymentId: string, command: IdempotentCommandOptions): Promise<PaymentDeclaration>;
+  approvePaymentDeclaration(paymentId: string, note: string | undefined, command: IdempotentCommandOptions): Promise<PaymentDeclaration>;
+  rejectPaymentDeclaration(paymentId: string, reason: string, command: IdempotentCommandOptions): Promise<PaymentDeclaration>;
+  blockEmployerForPayment(paymentId: string, reason: string, command: IdempotentCommandOptions): Promise<EmployerAccountActionResult>;
+  unblockEmployerForPayment(paymentId: string, reason: string, command: IdempotentCommandOptions): Promise<EmployerAccountActionResult>;
   arbitrateIncident(incidentId: string, input: { decision: string; note: string }, command: IdempotentCommandOptions): Promise<Incident>;
   listCalls(page?: ApiPageOptions): Promise<CursorPage<CallRecord>>;
   listMatchEvents(page?: ApiPageOptions): Promise<CursorPage<unknown>>;
@@ -133,6 +181,7 @@ export class ApiRepository {
   readonly proposals;
   readonly contracts;
   readonly payments;
+  readonly paymentDeclarations;
   readonly schedules;
   readonly incidents;
   readonly replacements;
@@ -229,6 +278,22 @@ export class ApiRepository {
         this.http.request<CommissionPaymentRecord>('/payments/commission-declarations', { method: 'POST', body: input, idempotencyKey: command.idempotencyKey }),
     };
 
+    // PHASE 4 : aucune donnée d'acteur n'est envoyée — le serveur dérive tout.
+    this.paymentDeclarations = {
+      getMine: (page: ApiPageOptions = {}, filter: PaymentDeclarationFilter = {}) =>
+        this.page<PaymentDeclaration>('/employer/payment-declarations', page, filter as Record<string, unknown>),
+      getById: (paymentId: string) => this.http.request<PaymentDeclaration | null>(`/payment-declarations/${encodeURIComponent(paymentId)}`),
+      getHistory: (paymentId: string, page: ApiPageOptions = {}) => this.page<PaymentHistoryEvent>(`/payment-declarations/${encodeURIComponent(paymentId)}/history`, page),
+      create: (input: CreatePaymentDeclarationInput, command: IdempotentCommandOptions) =>
+        this.http.request<PaymentDeclaration>('/payment-declarations', { method: 'POST', body: input, idempotencyKey: command.idempotencyKey }),
+      update: (paymentId: string, patch: UpdatePaymentDeclarationInput, command: IdempotentCommandOptions) =>
+        this.http.request<PaymentDeclaration>(`/payment-declarations/${encodeURIComponent(paymentId)}`, { method: 'PATCH', body: patch, idempotencyKey: command.idempotencyKey }),
+      submit: (paymentId: string, command: IdempotentCommandOptions) =>
+        this.http.request<PaymentDeclaration>(`/payment-declarations/${encodeURIComponent(paymentId)}/submit`, { method: 'POST', body: {}, idempotencyKey: command.idempotencyKey }),
+      resubmit: (paymentId: string, patch: UpdatePaymentDeclarationInput, command: IdempotentCommandOptions) =>
+        this.http.request<PaymentDeclaration>(`/payment-declarations/${encodeURIComponent(paymentId)}/resubmit`, { method: 'POST', body: patch, idempotencyKey: command.idempotencyKey }),
+    };
+
     this.schedules = {
       getMine: (page: ApiPageOptions = {}) => this.page<ScheduleEntrySnapshot>('/my/schedules', page),
     };
@@ -289,6 +354,15 @@ export class ApiRepository {
       unblockUser: (userId, command) => this.http.request<UserProfile>(`/admin/users/${encodeURIComponent(userId)}/unblock`, { method: 'POST', body: {}, idempotencyKey: command.idempotencyKey }),
       approvePayment: (paymentId, command) => this.http.request<CommissionPaymentRecord>(`/admin/payments/${encodeURIComponent(paymentId)}/approve`, { method: 'POST', body: {}, idempotencyKey: command.idempotencyKey }),
       rejectPayment: (paymentId, reason, command) => this.http.request<CommissionPaymentRecord>(`/admin/payments/${encodeURIComponent(paymentId)}/reject`, { method: 'POST', body: { reason }, idempotencyKey: command.idempotencyKey }),
+      listPaymentDeclarations: (page, filter) => adminPage<PaymentDeclaration>('payment-declarations', page, filter),
+      getPaymentDeclaration: (paymentId) => this.http.request<PaymentDeclaration | null>(`/admin/payment-declarations/${encodeURIComponent(paymentId)}`),
+      getPaymentDeclarationHistory: (paymentId, page = {}) => this.page<PaymentHistoryEvent>(`/admin/payment-declarations/${encodeURIComponent(paymentId)}/history`, page),
+      getPaymentBlockingEvaluation: (paymentId) => this.http.request<PaymentBlockingEvaluation>(`/admin/payment-declarations/${encodeURIComponent(paymentId)}/blocking-evaluation`),
+      startPaymentDeclarationReview: (paymentId, command) => this.http.request<PaymentDeclaration>(`/admin/payment-declarations/${encodeURIComponent(paymentId)}/review`, { method: 'POST', body: {}, idempotencyKey: command.idempotencyKey }),
+      approvePaymentDeclaration: (paymentId, note, command) => this.http.request<PaymentDeclaration>(`/admin/payment-declarations/${encodeURIComponent(paymentId)}/approve`, { method: 'POST', body: { note }, idempotencyKey: command.idempotencyKey }),
+      rejectPaymentDeclaration: (paymentId, reason, command) => this.http.request<PaymentDeclaration>(`/admin/payment-declarations/${encodeURIComponent(paymentId)}/reject`, { method: 'POST', body: { reason }, idempotencyKey: command.idempotencyKey }),
+      blockEmployerForPayment: (paymentId, reason, command) => this.http.request<EmployerAccountActionResult>(`/admin/payment-declarations/${encodeURIComponent(paymentId)}/block-employer`, { method: 'POST', body: { reason }, idempotencyKey: command.idempotencyKey }),
+      unblockEmployerForPayment: (paymentId, reason, command) => this.http.request<EmployerAccountActionResult>(`/admin/payment-declarations/${encodeURIComponent(paymentId)}/unblock-employer`, { method: 'POST', body: { reason }, idempotencyKey: command.idempotencyKey }),
       arbitrateIncident: (incidentId, input, command) => this.http.request<Incident>(`/admin/incidents/${encodeURIComponent(incidentId)}/arbitrate`, { method: 'POST', body: input, idempotencyKey: command.idempotencyKey }),
       listCalls: (page = {}) => adminPage<CallRecord>('calls', page),
       listMatchEvents: (page = {}) => adminPage<unknown>('match-events', page),

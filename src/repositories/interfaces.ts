@@ -16,6 +16,11 @@ import {
   CallRecord,
   CommunicationEvent,
   ResourceDocument,
+  PaymentDeclaration,
+  PaymentDeclarationKind,
+  PaymentDeclarationStatus,
+  PaymentHistoryEvent,
+  PaymentMethod,
 } from '../types';
 
 export interface RevenueMetrics {
@@ -192,6 +197,64 @@ export interface ResourceRepository {
   getResourceDocumentById(id: string): Promise<ResourceDocument | null>;
 }
 
+/**
+ * PHASE 4 — Déclarations de paiement employeur (paiement externe déclaré).
+ *
+ * Aucune de ces opérations n'encaisse : elles enregistrent et font vérifier
+ * une preuve de paiement externe. Les contrôles d'actorId, de rôle, de
+ * propriété et de transition sont faits côté serveur (garde-fous Phase 4).
+ */
+export interface CreatePaymentDeclarationInput {
+  contractId: string;
+  monthNumber: number;
+  kind: PaymentDeclarationKind;
+  amount: number;
+  paymentMethod: PaymentMethod;
+  transactionId: string;
+  reference?: string;
+  /** Date et heure du paiement externe (ISO). */
+  paidAt: string;
+  proof: {
+    fileName: string;
+    uri: string;
+    documentId?: string;
+    mimeType?: string;
+    sizeBytes?: number;
+  };
+  comment?: string;
+}
+
+export type UpdatePaymentDeclarationPatch = Partial<CreatePaymentDeclarationInput>;
+
+export interface PaymentDeclarationFilter {
+  status?: PaymentDeclarationStatus | 'ALL';
+  employerId?: string;
+  contractId?: string;
+  kind?: PaymentDeclarationKind | 'ALL';
+  /** Uniquement les dossiers nécessitant une action administrative. */
+  awaitingAdminAction?: boolean;
+  search?: string;
+}
+
+/** Résultat d'une mesure de blocage/déblocage : déclaration + compte employeur. */
+export interface PaymentBlockingEvaluation {
+  paymentId: string;
+  employerId: string;
+  employerName: string;
+  employerBlocked: boolean;
+  canBlock: boolean;
+  canUnblock: boolean;
+  rule?: 'J3_OVERDUE' | 'REPEATED_REJECTION' | 'REGULARIZED';
+  label: string;
+  daysLate: number;
+  underVerification: boolean;
+}
+
+export interface EmployerAccountActionResult {
+  declaration: PaymentDeclaration;
+  employer: UserProfile;
+}
+
 export interface PaymentRepository {
   getAllPaymentRecords(actorId: string): Promise<CommissionPaymentRecord[]>;
   getPaymentById(paymentId: string, actorId: string): Promise<CommissionPaymentRecord | null>;
@@ -213,6 +276,27 @@ export interface PaymentRepository {
   verifyCommissionPayment(paymentId: string, actorId: string): Promise<CommissionPaymentRecord>;
   rejectCommissionPayment(paymentId: string, reason: string, actorId: string): Promise<CommissionPaymentRecord>;
   getRevenueMetrics(actorId: string): Promise<RevenueMetrics>;
+
+  // --- PHASE 4 : déclarations de paiement employeur ---
+  createPaymentDeclaration(input: CreatePaymentDeclarationInput, actorId: string): Promise<PaymentDeclaration>;
+  updatePaymentDeclaration(paymentId: string, patch: UpdatePaymentDeclarationPatch, actorId: string): Promise<PaymentDeclaration>;
+  getPaymentDeclaration(paymentId: string, actorId: string): Promise<PaymentDeclaration | null>;
+  listEmployerPayments(employerId: string, actorId: string): Promise<PaymentDeclaration[]>;
+  listAdminPayments(actorId: string, filter?: PaymentDeclarationFilter): Promise<PaymentDeclaration[]>;
+  submitPaymentDeclaration(paymentId: string, actorId: string): Promise<PaymentDeclaration>;
+  startPaymentDeclarationReview(paymentId: string, actorId: string): Promise<PaymentDeclaration>;
+  approvePaymentDeclaration(paymentId: string, actorId: string, note?: string): Promise<PaymentDeclaration>;
+  rejectPaymentDeclaration(paymentId: string, reason: string, actorId: string): Promise<PaymentDeclaration>;
+  resubmitPaymentDeclaration(
+    paymentId: string,
+    patch: UpdatePaymentDeclarationPatch,
+    actorId: string,
+  ): Promise<PaymentDeclaration>;
+  getPaymentHistory(paymentId: string, actorId: string): Promise<PaymentHistoryEvent[]>;
+  /** Évaluation de la règle de blocage/déblocage : même source que l'action. */
+  getPaymentBlockingEvaluation(paymentId: string, actorId: string): Promise<PaymentBlockingEvaluation>;
+  blockEmployerForPayment(paymentId: string, reason: string, actorId: string): Promise<EmployerAccountActionResult>;
+  unblockEmployerForPayment(paymentId: string, reason: string, actorId: string): Promise<EmployerAccountActionResult>;
 }
 
 export interface NotificationRepository {

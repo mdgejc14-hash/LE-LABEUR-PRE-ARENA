@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, CheckCircle2, LockKeyhole, RefreshCw, UnlockKeyhole, XCircle } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, LockKeyhole, RefreshCw, UnlockKeyhole, Wallet, XCircle } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { appRepositories as repositories } from '../repositories/provider';
 import { Contract, CommissionPaymentRecord, UserProfile, Incident, ReplacementDossier } from '../types';
@@ -20,6 +20,7 @@ const hasJ3Due = (contract: Contract): boolean => contract.paymentSchedule.some(
 export const AdminDashboardScreen: React.FC = () => {
   const {
     currentUser,
+    setActiveTab,
     verifyCommissionPayment,
     rejectCommissionPayment,
     blockUser,
@@ -126,6 +127,24 @@ export const AdminDashboardScreen: React.FC = () => {
           <div className="text-xl font-semibold text-[#17233B] mt-1">{blockedCount}</div>
         </div>
       </div>
+
+      {/* PHASE 4 — centre de vérification des déclarations de paiement employeur. */}
+      <section className="rounded-2xl bg-[#17233B] text-white p-4 flex items-center justify-between gap-3">
+        <div>
+          <p className="text-[10px] uppercase tracking-[0.16em] text-white/60">Centre de vérification</p>
+          <p className="text-sm font-semibold mt-0.5">Déclarations de paiement employeur</p>
+          <p className="text-[11px] text-white/70 mt-0.5">
+            Justificatifs, historique, approbation, rejet motivé, blocage.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => setActiveTab('PAYMENTS')}
+          className="h-10 px-4 rounded-xl bg-white text-[#17233B] text-xs font-semibold inline-flex items-center gap-2 shrink-0"
+        >
+          <Wallet className="w-4 h-4" /> Ouvrir
+        </button>
+      </section>
 
       <section className="space-y-2">
         <div className="flex items-center justify-between">

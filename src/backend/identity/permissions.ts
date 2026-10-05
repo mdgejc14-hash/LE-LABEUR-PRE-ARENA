@@ -19,6 +19,7 @@ export const ADMIN_PERMISSIONS: readonly Permission[] = [
   'contracts:read:any',
   'contracts:moderate',
   'payments:read:any',
+  'payments:review',
   'payments:approve',
   'payments:reject',
   'schedules:read:any',

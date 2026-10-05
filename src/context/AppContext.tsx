@@ -12,9 +12,16 @@ import {
   CallRecord,
   Incident,
   ReplacementDossier,
-  GoogleIdPayload
+  GoogleIdPayload,
+  PaymentDeclaration,
+  PaymentHistoryEvent,
 } from '../types';
 import { appRepositories as repositories } from '../repositories/provider';
+import type {
+  CreatePaymentDeclarationInput,
+  EmployerAccountActionResult,
+  UpdatePaymentDeclarationPatch,
+} from '../repositories/interfaces';
 import { callService } from '../services/calls/CallService';
 import { runAllDeterministicTests } from '../domain/businessRules.test';
 import {
@@ -34,7 +41,7 @@ import {
 import { getRepositoryMode } from '../repositories/provider';
 import { IS_DEMO_MODE } from '../utils/config';
 
-export type MainTab = 'DISCOVER' | 'DASHBOARD' | 'OFFERS' | 'APPLICATIONS' | 'FAVORITES' | 'MESSAGES' | 'PROFILE';
+export type MainTab = 'DISCOVER' | 'DASHBOARD' | 'OFFERS' | 'APPLICATIONS' | 'PAYMENTS' | 'FAVORITES' | 'MESSAGES' | 'PROFILE';
 
 export type AppScreen =
   | 'SPLASH'
@@ -109,6 +116,19 @@ export interface AppContextType {
   declareCommission: (data: any) => Promise<any>;
   verifyCommissionPayment: (paymentId: string) => Promise<any>;
   rejectCommissionPayment: (paymentId: string, reason: string) => Promise<any>;
+  // PHASE 4 — Paiements employeur (déclaration de paiement externe)
+  paymentDeclarations: PaymentDeclaration[];
+  refreshPaymentDeclarations: () => Promise<void>;
+  createPaymentDeclaration: (input: CreatePaymentDeclarationInput) => Promise<PaymentDeclaration>;
+  updatePaymentDeclaration: (paymentId: string, patch: UpdatePaymentDeclarationPatch) => Promise<PaymentDeclaration>;
+  submitPaymentDeclaration: (paymentId: string) => Promise<PaymentDeclaration>;
+  resubmitPaymentDeclaration: (paymentId: string, patch: UpdatePaymentDeclarationPatch) => Promise<PaymentDeclaration>;
+  getPaymentHistory: (paymentId: string) => Promise<PaymentHistoryEvent[]>;
+  startPaymentDeclarationReview: (paymentId: string) => Promise<PaymentDeclaration>;
+  approvePaymentDeclaration: (paymentId: string, note?: string) => Promise<PaymentDeclaration>;
+  rejectPaymentDeclaration: (paymentId: string, reason: string) => Promise<PaymentDeclaration>;
+  blockEmployerForPayment: (paymentId: string, reason: string) => Promise<EmployerAccountActionResult>;
+  unblockEmployerForPayment: (paymentId: string, reason: string) => Promise<EmployerAccountActionResult>;
   blockUser: (userId: string, reason: string) => Promise<UserProfile>;
   unblockUser: (userId: string) => Promise<UserProfile>;
   arbitrateIncident: (incidentId: string, decision: 'CONTINUER' | 'ANNULER' | 'REMPLACER' | 'CLÔTURER' | 'SUSPENDRE', note: string) => Promise<Incident>;
@@ -200,6 +220,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [selectedCandidate, setSelectedCandidate] = useState<UserProfile | null>(null);
   const [applications, setApplications] = useState<Application[]>([]);
   const [contracts, setContracts] = useState<Contract[]>([]);
+  const [paymentDeclarations, setPaymentDeclarations] = useState<PaymentDeclaration[]>([]);
   const [favorites, setFavorites] = useState<string[]>([]);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
@@ -660,6 +681,122 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return await repositories.rejectCommissionPayment(paymentId, reason, currentUser.id);
   }, [currentUser]);
 
+  /* ------------------------------------------------------------------ *
+   * PHASE 4 — DÉCLARATIONS DE PAIEMENT EMPLOYEUR (paiement externe)
+   *
+   * Le frontend ne décide jamais d'un statut ni d'un rôle : il appelle des
+   * commandes et affiche le résultat renvoyé par le repository. En MODE API,
+   * les mêmes commandes sont rejouées côté serveur avec la session cookie.
+   * ------------------------------------------------------------------ */
+
+  const loadPaymentDeclarations = useCallback(async (user: UserProfile) => {
+    try {
+      if (user.role === 'ADMIN') {
+        setPaymentDeclarations(await repositories.listAdminPayments(user.id));
+      } else if (user.role === 'EMPLOYER') {
+        setPaymentDeclarations(await repositories.listEmployerPayments(user.id, user.id));
+      } else {
+        setPaymentDeclarations([]);
+      }
+    } catch (err) {
+      console.error('Erreur chargement des déclarations de paiement', err);
+    }
+  }, []);
+
+  const refreshPaymentDeclarations = useCallback(async () => {
+    if (!currentUser) return;
+    await loadPaymentDeclarations(currentUser);
+  }, [currentUser, loadPaymentDeclarations]);
+
+  // Chargement piloté par la session : l'employeur ne reçoit que ses
+  // déclarations, l'administrateur reçoit l'ensemble du périmètre de contrôle.
+  useEffect(() => {
+    if (!currentUser) {
+      setPaymentDeclarations([]);
+      return;
+    }
+    void loadPaymentDeclarations(currentUser);
+  }, [currentUser, loadPaymentDeclarations]);
+
+  const upsertPaymentDeclaration = useCallback((declaration: PaymentDeclaration) => {
+    setPaymentDeclarations(prev => {
+      const index = prev.findIndex(item => item.id === declaration.id);
+      if (index === -1) return [declaration, ...prev];
+      const next = [...prev];
+      next[index] = declaration;
+      return next;
+    });
+  }, []);
+
+  const createPaymentDeclaration = useCallback(async (input: CreatePaymentDeclarationInput) => {
+    if (!currentUser) throw new Error('Utilisateur non connecté');
+    const created = await repositories.createPaymentDeclaration(input, currentUser.id);
+    upsertPaymentDeclaration(created);
+    return created;
+  }, [currentUser, upsertPaymentDeclaration]);
+
+  const updatePaymentDeclaration = useCallback(async (paymentId: string, patch: UpdatePaymentDeclarationPatch) => {
+    if (!currentUser) throw new Error('Utilisateur non connecté');
+    const updated = await repositories.updatePaymentDeclaration(paymentId, patch, currentUser.id);
+    upsertPaymentDeclaration(updated);
+    return updated;
+  }, [currentUser, upsertPaymentDeclaration]);
+
+  const submitPaymentDeclaration = useCallback(async (paymentId: string) => {
+    if (!currentUser) throw new Error('Utilisateur non connecté');
+    const updated = await repositories.submitPaymentDeclaration(paymentId, currentUser.id);
+    upsertPaymentDeclaration(updated);
+    await refreshPaymentDeclarations();
+    return updated;
+  }, [currentUser, upsertPaymentDeclaration, refreshPaymentDeclarations]);
+
+  const resubmitPaymentDeclaration = useCallback(async (paymentId: string, patch: UpdatePaymentDeclarationPatch) => {
+    if (!currentUser) throw new Error('Utilisateur non connecté');
+    const updated = await repositories.resubmitPaymentDeclaration(paymentId, patch, currentUser.id);
+    upsertPaymentDeclaration(updated);
+    return updated;
+  }, [currentUser, upsertPaymentDeclaration]);
+
+  const getPaymentHistory = useCallback(async (paymentId: string) => {
+    if (!currentUser) throw new Error('Utilisateur non connecté');
+    return await repositories.getPaymentHistory(paymentId, currentUser.id);
+  }, [currentUser]);
+
+  const startPaymentDeclarationReview = useCallback(async (paymentId: string) => {
+    if (!currentUser || currentUser.role !== 'ADMIN') throw new Error('Action non autorisée : ADMIN uniquement.');
+    const updated = await repositories.startPaymentDeclarationReview(paymentId, currentUser.id);
+    upsertPaymentDeclaration(updated);
+    return updated;
+  }, [currentUser, upsertPaymentDeclaration]);
+
+  const approvePaymentDeclaration = useCallback(async (paymentId: string, note?: string) => {
+    if (!currentUser || currentUser.role !== 'ADMIN') throw new Error('Action non autorisée : ADMIN uniquement.');
+    const updated = await repositories.approvePaymentDeclaration(paymentId, currentUser.id, note);
+    upsertPaymentDeclaration(updated);
+    return updated;
+  }, [currentUser, upsertPaymentDeclaration]);
+
+  const rejectPaymentDeclaration = useCallback(async (paymentId: string, reason: string) => {
+    if (!currentUser || currentUser.role !== 'ADMIN') throw new Error('Action non autorisée : ADMIN uniquement.');
+    const updated = await repositories.rejectPaymentDeclaration(paymentId, reason, currentUser.id);
+    upsertPaymentDeclaration(updated);
+    return updated;
+  }, [currentUser, upsertPaymentDeclaration]);
+
+  const blockEmployerForPayment = useCallback(async (paymentId: string, reason: string) => {
+    if (!currentUser || currentUser.role !== 'ADMIN') throw new Error('Action non autorisée : ADMIN uniquement.');
+    const result = await repositories.blockEmployerForPayment(paymentId, reason, currentUser.id);
+    upsertPaymentDeclaration(result.declaration);
+    return result;
+  }, [currentUser, upsertPaymentDeclaration]);
+
+  const unblockEmployerForPayment = useCallback(async (paymentId: string, reason: string) => {
+    if (!currentUser || currentUser.role !== 'ADMIN') throw new Error('Action non autorisée : ADMIN uniquement.');
+    const result = await repositories.unblockEmployerForPayment(paymentId, reason, currentUser.id);
+    upsertPaymentDeclaration(result.declaration);
+    return result;
+  }, [currentUser, upsertPaymentDeclaration]);
+
   const blockUser = useCallback(async (userId: string, reason: string) => {
     if (!currentUser || currentUser.role !== 'ADMIN') throw new Error('Action non autorisée : ADMIN uniquement.');
     return await repositories.blockUser(userId, reason, currentUser.id);
@@ -1068,6 +1205,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     declareCommission,
     verifyCommissionPayment,
     rejectCommissionPayment,
+    paymentDeclarations,
+    refreshPaymentDeclarations,
+    createPaymentDeclaration,
+    updatePaymentDeclaration,
+    submitPaymentDeclaration,
+    resubmitPaymentDeclaration,
+    getPaymentHistory,
+    startPaymentDeclarationReview,
+    approvePaymentDeclaration,
+    rejectPaymentDeclaration,
+    blockEmployerForPayment,
+    unblockEmployerForPayment,
     blockUser,
     unblockUser,
     arbitrateIncident,

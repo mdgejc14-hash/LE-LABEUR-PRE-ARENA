@@ -5,6 +5,7 @@ import { runBackendBoundaryTests } from '../src/backend/api/foundation.test';
 import { runCallBoundaryTests } from '../src/services/calls/signalingCredentialClient.test';
 import { runIdentitySessionTests } from '../src/backend/identity/identity.test';
 import { runSessionBridgeTests } from '../src/repositories/sessionBridge.test';
+import { runPaymentDeclarationTests } from '../src/domain/paymentDeclarations.test';
 
 interface TestCase {
   name: string;
@@ -20,6 +21,7 @@ async function main(): Promise<void> {
   const callBoundary = runCallBoundaryTests();
   const identity = await runIdentitySessionTests();
   const sessionBridge = await runSessionBridgeTests();
+  const paymentDeclarations = await runPaymentDeclarationTests();
 
   const suites: Array<{ name: string; cases: TestCase[] }> = [
     { name: 'Domain deterministic', cases: deterministic.results.map(result => ({ name: result.name, success: result.success, detail: result.details })) },
@@ -29,6 +31,7 @@ async function main(): Promise<void> {
     { name: 'Mock/API WebRTC boundary', cases: callBoundary },
     { name: 'Server identity & session', cases: identity },
     { name: 'Frontend ↔ server session bridge', cases: sessionBridge },
+    { name: 'Employer payments & admin control', cases: paymentDeclarations },
   ];
 
   let total = 0;

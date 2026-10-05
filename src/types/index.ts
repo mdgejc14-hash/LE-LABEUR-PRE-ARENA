@@ -187,6 +187,11 @@ export type NotificationType =
   | 'COMMISSION_DECLARED'
   | 'COMMISSION_VERIFIED'
   | 'COMMISSION_REJECTED'
+  /* PHASE 4 — déclarations de paiement employeur (à faire / à informer). */
+  | 'PAYMENT_DECLARATION_SUBMITTED'
+  | 'PAYMENT_DECLARATION_APPROVED'
+  | 'PAYMENT_DECLARATION_REJECTED'
+  | 'PAYMENT_DECLARATION_RESUBMITTED'
   | 'PAYMENT_OVERDUE_J3'
   | 'ACCOUNT_BLOCKED'
   | 'ACCOUNT_UNBLOCKED'
@@ -411,6 +416,116 @@ export interface CommissionLedgerEntry {
   createdAt: string;
   verifiedAt?: string;
   rejectionReason?: string;
+}
+
+/* ------------------------------------------------------------------ *
+ * PHASE 4 — DÉCLARATIONS DE PAIEMENT EMPLOYEUR (paiement externe)
+ * ------------------------------------------------------------------ *
+ * L'employeur paie LE LABEUR **hors application** (Mobile Money, virement,
+ * guichet) puis DÉCLARE le paiement. LE LABEUR n'encaisse jamais : il
+ * enregistre et fait vérifier une preuve de paiement externe.
+ *
+ * La machine d'états ci-dessous est la seule autorisée. Aucun écran, aucun
+ * client et aucun champ de requête ne peut imposer une transition.
+ * ------------------------------------------------------------------ */
+
+export type PaymentDeclarationStatus =
+  | 'DRAFT'
+  | 'SUBMITTED'
+  | 'UNDER_REVIEW'
+  | 'APPROVED'
+  | 'REJECTED'
+  | 'RESUBMITTED';
+
+/**
+ * Nature du versement déclaré. Le montant attendu n'est jamais recalculé
+ * ici : il est repris du calendrier contractuel existant (25% M1 / 0% M2+).
+ */
+export type PaymentDeclarationKind = 'COMMISSION' | 'SALARY';
+
+export type PaymentMethod =
+  | 'MTN_MOMO'
+  | 'MOOV_MONEY'
+  | 'BANK_TRANSFER'
+  | 'CASH_DESK'
+  | 'OTHER';
+
+/** Référence de justificatif. En production : objet R2 + URL signée. */
+export interface PaymentProof {
+  /** Identifiant logique du document (service documents existant). */
+  documentId?: string;
+  fileName: string;
+  /** DEMO : référence locale. PRODUCTION : clé objet / URL signée éphémère. */
+  uri: string;
+  mimeType?: string;
+  sizeBytes?: number;
+  uploadedAt: string;
+}
+
+export type PaymentHistoryEventType =
+  | 'CREATED'
+  | 'UPDATED'
+  | 'SUBMITTED'
+  | 'REVIEW_STARTED'
+  | 'APPROVED'
+  | 'REJECTED'
+  | 'RESUBMITTED'
+  | 'EMPLOYER_BLOCKED'
+  | 'EMPLOYER_UNBLOCKED';
+
+/** Événement d'historique immuable : jamais supprimé, jamais réécrit. */
+export interface PaymentHistoryEvent {
+  id: string;
+  paymentId: string;
+  type: PaymentHistoryEventType;
+  fromStatus?: PaymentDeclarationStatus;
+  toStatus?: PaymentDeclarationStatus;
+  actorId: string;
+  actorName: string;
+  actorRole: UserRole | 'SYSTEM';
+  reason?: string;
+  occurredAt: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface PaymentDeclaration {
+  /** Identifiant métier du paiement (paymentId). */
+  id: string;
+  reference: string;
+  employerId: string;
+  employerName: string;
+  contractId: string;
+  contractTitle: string;
+  monthNumber: number;
+  periodKey: string;
+  kind: PaymentDeclarationKind;
+  /** Montant déclaré par l'employeur. */
+  amount: number;
+  /** Montant attendu, repris du calendrier du contrat (jamais réinventé). */
+  amountDue: number;
+  currency: string;
+  paymentMethod: PaymentMethod;
+  transactionId: string;
+  /** Date/heure du paiement externe (ISO). */
+  paidAt: string;
+  /** Échéance contractuelle de référence (prépare l'automatisation J+3). */
+  dueDate?: string;
+  proof: PaymentProof;
+  comment?: string;
+  status: PaymentDeclarationStatus;
+  createdAt: string;
+  updatedAt: string;
+  submittedAt?: string;
+  reviewedBy?: string;
+  reviewedByName?: string;
+  reviewedAt?: string;
+  rejectionReason?: string;
+  resubmittedAt?: string;
+  resubmissionCount: number;
+  /** Nombre de rejets cumulés (règle de blocage). */
+  rejectionCount: number;
+  /** Régularisation : la dette reste due tant que le statut n'est pas APPROVED. */
+  history: PaymentHistoryEvent[];
 }
 
 export interface CommissionPaymentRecord {

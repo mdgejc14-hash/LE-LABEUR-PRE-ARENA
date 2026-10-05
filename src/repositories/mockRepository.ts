@@ -14,6 +14,10 @@ import {
   CommunicationTrackingRepository,
   ResourceRepository,
   RevenueMetrics,
+  CreatePaymentDeclarationInput,
+  EmployerAccountActionResult,
+  PaymentDeclarationFilter,
+  UpdatePaymentDeclarationPatch,
 } from './interfaces';
 import {
   UserProfile,
@@ -38,6 +42,9 @@ import {
   CallRecord,
   CommunicationEvent,
   ResourceDocument,
+  PaymentDeclaration,
+  PaymentDeclarationKind,
+  PaymentHistoryEvent,
 } from '../types';
 import {
   INITIAL_USERS,
@@ -45,6 +52,7 @@ import {
   INITIAL_APPLICATIONS,
   INITIAL_CONTRACTS,
   INITIAL_PAYMENTS,
+  INITIAL_PAYMENT_DECLARATIONS,
   INITIAL_INCIDENTS,
   INITIAL_REPLACEMENTS,
   INITIAL_PROPOSALS,
@@ -65,6 +73,19 @@ import {
   parseContractStartDate,
   isPaymentDue,
 } from '../domain/businessRules';
+import {
+  assertPaymentDeclarationTransition,
+  assertValidPaymentDeclarationInput,
+  buildPaymentReference,
+  createPaymentHistoryEvent,
+  evaluatePaymentBlockingRule,
+  hasAmountMismatch,
+  isPaymentAwaitingAdminAction,
+  normalizeRejectionReason,
+  PAYMENT_KIND_LABELS,
+  readPaymentHistory,
+  type PaymentDeclarationInput,
+} from '../domain/paymentDeclarations';
 
 const STORAGE_KEYS = {
   USERS: 'lelabeur_v5_users',
@@ -73,6 +94,7 @@ const STORAGE_KEYS = {
   APPLICATIONS: 'lelabeur_v5_applications',
   CONTRACTS: 'lelabeur_v5_contracts',
   PAYMENTS: 'lelabeur_v5_payments',
+  PAYMENT_DECLARATIONS: 'lelabeur_v5_payment_declarations',
   INCIDENTS: 'lelabeur_v5_incidents',
   REPLACEMENTS: 'lelabeur_v5_replacements',
   TRANSFERS: 'lelabeur_v5_transfers',
@@ -128,6 +150,7 @@ export class MockService implements
   private applications: Application[] = getStorage(STORAGE_KEYS.APPLICATIONS, INITIAL_APPLICATIONS);
   private contracts: Contract[] = getStorage(STORAGE_KEYS.CONTRACTS, INITIAL_CONTRACTS) || [];
   private payments: CommissionPaymentRecord[] = getStorage(STORAGE_KEYS.PAYMENTS, INITIAL_PAYMENTS) || [];
+  private paymentDeclarations: PaymentDeclaration[] = getStorage(STORAGE_KEYS.PAYMENT_DECLARATIONS, INITIAL_PAYMENT_DECLARATIONS) || [];
   private incidents: Incident[] = getStorage(STORAGE_KEYS.INCIDENTS, INITIAL_INCIDENTS) || [];
   private replacements: ReplacementDossier[] = getStorage(STORAGE_KEYS.REPLACEMENTS, INITIAL_REPLACEMENTS) || [];
   private transfers: CandidateTransfer[] = getStorage(STORAGE_KEYS.TRANSFERS, []) || [];
@@ -160,6 +183,7 @@ export class MockService implements
     this.applications = clone(this.applications);
     this.contracts = clone(this.contracts).map(contract => this.ensurePaymentSchedule(contract));
     this.payments = clone(this.payments);
+    this.paymentDeclarations = clone(this.paymentDeclarations);
     this.incidents = clone(this.incidents);
     this.replacements = clone(this.replacements);
     this.transfers = clone(this.transfers);
@@ -450,6 +474,7 @@ export class MockService implements
     this.applications = JSON.parse(JSON.stringify(INITIAL_APPLICATIONS));
     this.contracts = JSON.parse(JSON.stringify(INITIAL_CONTRACTS)).map((c: Contract) => this.ensurePaymentSchedule(c));
     this.payments = JSON.parse(JSON.stringify(INITIAL_PAYMENTS));
+    this.paymentDeclarations = JSON.parse(JSON.stringify(INITIAL_PAYMENT_DECLARATIONS));
     this.incidents = JSON.parse(JSON.stringify(INITIAL_INCIDENTS));
     this.replacements = JSON.parse(JSON.stringify(INITIAL_REPLACEMENTS));
     this.transfers = [];
@@ -472,6 +497,7 @@ export class MockService implements
     setStorage(STORAGE_KEYS.APPLICATIONS, this.applications);
     setStorage(STORAGE_KEYS.CONTRACTS, this.contracts);
     setStorage(STORAGE_KEYS.PAYMENTS, this.payments);
+    setStorage(STORAGE_KEYS.PAYMENT_DECLARATIONS, this.paymentDeclarations);
     setStorage(STORAGE_KEYS.INCIDENTS, this.incidents);
     setStorage(STORAGE_KEYS.REPLACEMENTS, this.replacements);
     setStorage(STORAGE_KEYS.TRANSFERS, this.transfers);
@@ -2911,6 +2937,681 @@ export class MockService implements
       });
     }
     this.persistAll(); return payment;
+  }
+
+  /* ================================================================== *
+   * PHASE 4 — DÉCLARATIONS DE PAIEMENT EMPLOYEUR (paiement externe)
+   *
+   * LE LABEUR n'encaisse jamais : l'employeur paie hors application puis
+   * déclare. Le repository enregistre la preuve, contrôle la machine d'états
+   * et conserve un historique immuable. En MODE API, ces méthodes sont
+   * servies par le serveur, qui refait les mêmes contrôles côté serveur.
+   * ================================================================== */
+
+  private findPaymentDeclaration(paymentId: string): PaymentDeclaration | undefined {
+    return this.paymentDeclarations.find(p => p.id === paymentId);
+  }
+
+  private requirePaymentDeclaration(paymentId: string): PaymentDeclaration {
+    const declaration = this.findPaymentDeclaration(paymentId);
+    if (!declaration) throw new Error('Déclaration de paiement introuvable.');
+    return declaration;
+  }
+
+  private requirePaymentDeclarationAdmin(actorId: string): UserProfile {
+    const actor = this.requireActor(actorId);
+    if (actor.role !== 'ADMIN') throw new Error('Action non autorisée : ADMIN uniquement.');
+    return actor;
+  }
+
+  /** Un employeur n'agit que sur SES déclarations (contrôle de propriété). */
+  private requirePaymentDeclarationOwner(actorId: string, declaration: PaymentDeclaration): UserProfile {
+    const actor = this.requireActor(actorId);
+    if (actor.role === 'ADMIN') throw new Error('Action non autorisée : cette action appartient à l’employeur.');
+    if (actor.role !== 'EMPLOYER') throw new Error('Action non autorisée : employeur uniquement.');
+    this.assertOwner(actor.id, declaration.employerId, 'Accès interdit : cette déclaration appartient à un autre employeur.');
+    return actor;
+  }
+
+  private canReadPaymentDeclaration(actor: UserProfile, declaration: PaymentDeclaration): boolean {
+    return actor.role === 'ADMIN' || actor.id === declaration.employerId;
+  }
+
+  private pushPaymentHistory(declaration: PaymentDeclaration, event: PaymentHistoryEvent): void {
+    declaration.history = [...declaration.history, event];
+  }
+
+  /** Montant attendu : relu sur le calendrier contractuel (25% M1 / 0% M2+). */
+  private expectedAmountForDeclaration(kind: PaymentDeclarationKind, entry: PaymentScheduleEntry): number {
+    return kind === 'COMMISSION' ? entry.commissionAmount : entry.employeeShareAmount;
+  }
+
+  private resolveDeclarationSchedule(contractId: string, monthNumber: number): { contract: Contract; entry: PaymentScheduleEntry } {
+    const contract = this.contracts.find(c => c.id === contractId);
+    if (!contract) throw new Error('Contrat introuvable pour cette déclaration de paiement.');
+    this.ensurePaymentSchedule(contract);
+    const entry = contract.paymentSchedule.find(e => e.monthNumber === monthNumber);
+    if (!entry) throw new Error(`Aucune échéance trouvée pour le mois ${monthNumber} de ce contrat.`);
+    return { contract, entry };
+  }
+
+  /**
+   * Répercussion sur le calendrier existant : aucune nouvelle logique de
+   * commission n'est créée, les statuts du calendrier restent la référence.
+   */
+  private applyDeclarationToSchedule(declaration: PaymentDeclaration, status: 'PENDING_VERIFICATION' | 'PAID' | 'DUE'): void {
+    try {
+      const { contract, entry } = this.resolveDeclarationSchedule(declaration.contractId, declaration.monthNumber);
+      if (declaration.kind === 'COMMISSION') {
+        entry.commissionStatus = status;
+        entry.commissionTransactionId = declaration.transactionId;
+        entry.commissionProofFileName = declaration.proof.fileName;
+        if (status === 'PENDING_VERIFICATION') entry.commissionDeclaredAt = declaration.submittedAt || declaration.createdAt;
+        if (status === 'PAID') entry.commissionVerifiedAt = declaration.reviewedAt;
+        const ledger = contract.commissionLedger.find(l => l.monthNumber === declaration.monthNumber);
+        if (ledger) {
+          ledger.status = status === 'PAID' ? 'PAID' : status === 'DUE' ? 'DUE' : 'PENDING_VERIFICATION';
+          ledger.amountSubmitted = declaration.amount;
+          ledger.paymentId = declaration.id;
+          if (status === 'PAID') ledger.verifiedAt = declaration.reviewedAt;
+          if (status === 'DUE') ledger.rejectionReason = declaration.rejectionReason;
+        }
+      } else {
+        entry.salaryStatus = status;
+        entry.salaryTransactionId = declaration.transactionId;
+        entry.salaryProofFileName = declaration.proof.fileName;
+        if (status === 'PENDING_VERIFICATION') entry.salaryDeclaredAt = declaration.submittedAt || declaration.createdAt;
+        if (status === 'PAID') entry.salaryConfirmedAt = declaration.reviewedAt;
+      }
+      if (status === 'PENDING_VERIFICATION') contract.latestPaymentId = declaration.id;
+      const currentEntry = contract.paymentSchedule.find(e => e.monthNumber === contract.currentMonth) || contract.paymentSchedule[0];
+      if (currentEntry) {
+        contract.commissionStatus = currentEntry.commissionStatus;
+        contract.commissionAmountDue = currentEntry.commissionAmount;
+      }
+    } catch {
+      // Le calendrier reste optionnel : la déclaration et son historique font foi.
+    }
+  }
+
+  private async notifyAdminsAboutDeclaration(
+    declaration: PaymentDeclaration,
+    type: 'PAYMENT_DECLARATION_SUBMITTED' | 'PAYMENT_DECLARATION_RESUBMITTED',
+    title: string,
+    message: string,
+  ): Promise<void> {
+    for (const admin of this.getAdminUsers()) {
+      await this.createNotification({
+        recipientId: admin.id,
+        type,
+        title,
+        message,
+        linkRef: { screen: 'PAYMENTS', id: declaration.id },
+        dedupeKey: `${declaration.id}:${type}:${declaration.updatedAt}:${admin.id}`,
+      });
+    }
+  }
+
+  private buildPaymentDeclaration(
+    actor: UserProfile,
+    contract: Contract,
+    entry: PaymentScheduleEntry,
+    input: CreatePaymentDeclarationInput,
+    id: string,
+    now: string,
+  ): PaymentDeclaration {
+    const amountDue = this.expectedAmountForDeclaration(input.kind, entry);
+    const reference = input.reference?.trim() || buildPaymentReference(contract.id, input.monthNumber, input.kind, 1);
+    return {
+      id,
+      reference,
+      employerId: actor.id,
+      employerName: contract.employerName,
+      contractId: contract.id,
+      contractTitle: contract.offerTitle,
+      monthNumber: input.monthNumber,
+      periodKey: entry.periodKey,
+      kind: input.kind,
+      amount: input.amount,
+      amountDue,
+      currency: contract.currency,
+      paymentMethod: input.paymentMethod,
+      transactionId: input.transactionId.trim(),
+      paidAt: new Date(input.paidAt).toISOString(),
+      dueDate: input.kind === 'COMMISSION' ? entry.commissionDueDate : entry.salaryDueDate,
+      proof: {
+        fileName: input.proof.fileName,
+        uri: input.proof.uri,
+        ...(input.proof.documentId ? { documentId: input.proof.documentId } : {}),
+        ...(input.proof.mimeType ? { mimeType: input.proof.mimeType } : {}),
+        ...(input.proof.sizeBytes !== undefined ? { sizeBytes: input.proof.sizeBytes } : {}),
+        uploadedAt: now,
+      },
+      ...(input.comment?.trim() ? { comment: input.comment.trim() } : {}),
+      status: 'DRAFT',
+      createdAt: now,
+      updatedAt: now,
+      resubmissionCount: 0,
+      rejectionCount: 0,
+      history: [
+        createPaymentHistoryEvent({
+          paymentId: id,
+          type: 'CREATED',
+          toStatus: 'DRAFT',
+          actorId: actor.id,
+          actorName: actor.fullName,
+          actorRole: actor.role,
+          occurredAt: now,
+          metadata: {
+            contractId: contract.id,
+            monthNumber: input.monthNumber,
+            kind: input.kind,
+            amount: input.amount,
+            amountDue,
+            paymentMethod: input.paymentMethod,
+            transactionId: input.transactionId.trim(),
+            proofFileName: input.proof.fileName,
+          },
+        }),
+      ],
+    };
+  }
+
+  async createPaymentDeclaration(input: CreatePaymentDeclarationInput, actorId: string): Promise<PaymentDeclaration> {
+    const actor = this.requireActor(actorId);
+    if (actor.role !== 'EMPLOYER') throw new Error('Action non autorisée : employeur uniquement.');
+    assertValidPaymentDeclarationInput(input);
+
+    const { contract, entry } = this.resolveDeclarationSchedule(input.contractId, input.monthNumber);
+    if (contract.employerId !== actor.id) throw new Error('Action non autorisée : ce contrat n’appartient pas à cet employeur.');
+    const amountDue = this.expectedAmountForDeclaration(input.kind, entry);
+    if (amountDue <= 0) {
+      throw new Error(
+        input.kind === 'COMMISSION'
+          ? `Aucune commission n’est due pour ${entry.periodKey} (règle 25% M1 / 0% M2+).`
+          : `Aucune part salarié n’est due pour ${entry.periodKey}.`,
+      );
+    }
+    const alreadyActive = this.paymentDeclarations.some(p =>
+      p.contractId === contract.id &&
+      p.monthNumber === input.monthNumber &&
+      p.kind === input.kind &&
+      ['DRAFT', 'SUBMITTED', 'UNDER_REVIEW', 'RESUBMITTED'].includes(p.status));
+    if (alreadyActive) {
+      throw new Error('Une déclaration est déjà en cours de vérification pour cette échéance.');
+    }
+
+    const now = new Date().toISOString();
+    const sequence = this.paymentDeclarations.filter(p => p.contractId === contract.id && p.monthNumber === input.monthNumber && p.kind === input.kind).length + 1;
+    const id = `PAYD-${new Date().getFullYear()}-${Math.floor(Math.random() * 9000 + 1000)}-${sequence}`;
+    const declaration = this.buildPaymentDeclaration(actor, contract, entry, input, id, now);
+    this.paymentDeclarations.unshift(declaration);
+
+    await this.logEvent({
+      actor: actor.fullName,
+      role: actor.role,
+      action: 'PAYMENT_DECLARATION_CREATED',
+      entity: 'PaymentDeclaration',
+      entityId: declaration.id,
+      summary: `Déclaration ${declaration.reference} créée (${declaration.amount.toLocaleString()} ${declaration.currency}).`,
+    });
+    this.persistAll();
+    return declaration;
+  }
+
+  async updatePaymentDeclaration(
+    paymentId: string,
+    patch: UpdatePaymentDeclarationPatch,
+    actorId: string,
+  ): Promise<PaymentDeclaration> {
+    const declaration = this.requirePaymentDeclaration(paymentId);
+    const actor = this.requirePaymentDeclarationOwner(actorId, declaration);
+    if (declaration.status !== 'DRAFT') {
+      throw new Error('Seul un brouillon peut être modifié ; utilisez la régularisation après un rejet.');
+    }
+    assertValidPaymentDeclarationInput(patch, { partial: true });
+
+    const now = new Date().toISOString();
+    const changes: Record<string, unknown> = {};
+    if (patch.amount !== undefined && patch.amount !== declaration.amount) {
+      declaration.amount = patch.amount;
+      changes.amount = patch.amount;
+    }
+    if (patch.paymentMethod !== undefined && patch.paymentMethod !== declaration.paymentMethod) {
+      declaration.paymentMethod = patch.paymentMethod;
+      changes.paymentMethod = patch.paymentMethod;
+    }
+    if (patch.transactionId !== undefined && patch.transactionId !== declaration.transactionId) {
+      declaration.transactionId = patch.transactionId.trim();
+      changes.transactionId = declaration.transactionId;
+    }
+    if (patch.reference !== undefined && patch.reference !== declaration.reference) {
+      declaration.reference = patch.reference.trim();
+      changes.reference = declaration.reference;
+    }
+    if (patch.paidAt !== undefined && patch.paidAt !== declaration.paidAt) {
+      declaration.paidAt = new Date(patch.paidAt).toISOString();
+      changes.paidAt = declaration.paidAt;
+    }
+    if (patch.proof !== undefined) {
+      declaration.proof = {
+        ...declaration.proof,
+        fileName: patch.proof.fileName || declaration.proof.fileName,
+        uri: patch.proof.uri || declaration.proof.uri,
+        ...(patch.proof.documentId ? { documentId: patch.proof.documentId } : {}),
+        ...(patch.proof.mimeType ? { mimeType: patch.proof.mimeType } : {}),
+        ...(patch.proof.sizeBytes !== undefined ? { sizeBytes: patch.proof.sizeBytes } : {}),
+        uploadedAt: now,
+      };
+      changes.proof = declaration.proof.fileName;
+    }
+    if (patch.comment !== undefined) {
+      if (patch.comment.trim()) declaration.comment = patch.comment.trim();
+      else delete declaration.comment;
+      changes.comment = declaration.comment ?? null;
+    }
+    declaration.updatedAt = now;
+    this.pushPaymentHistory(declaration, createPaymentHistoryEvent({
+      paymentId: declaration.id,
+      type: 'UPDATED',
+      fromStatus: declaration.status,
+      toStatus: declaration.status,
+      actorId: actor.id,
+      actorName: actor.fullName,
+      actorRole: actor.role,
+      occurredAt: now,
+      metadata: changes,
+    }));
+    this.persistAll();
+    return declaration;
+  }
+
+  async getPaymentDeclaration(paymentId: string, actorId: string): Promise<PaymentDeclaration | null> {
+    const actor = this.requireActor(actorId);
+    const declaration = this.findPaymentDeclaration(paymentId);
+    if (!declaration) return null;
+    if (!this.canReadPaymentDeclaration(actor, declaration)) {
+      throw new Error('Action non autorisée : déclaration de paiement étrangère.');
+    }
+    return declaration;
+  }
+
+  async listEmployerPayments(employerId: string, actorId: string): Promise<PaymentDeclaration[]> {
+    const actor = this.requireActor(actorId);
+    if (actor.role !== 'ADMIN' && actor.id !== employerId) {
+      throw new Error('Action non autorisée : paiements d’un autre employeur.');
+    }
+    return this.paymentDeclarations
+      .filter(p => p.employerId === employerId)
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  }
+
+  async listAdminPayments(actorId: string, filter: PaymentDeclarationFilter = {}): Promise<PaymentDeclaration[]> {
+    this.requirePaymentDeclarationAdmin(actorId);
+    const search = (filter.search ?? '').trim().toLowerCase();
+    return this.paymentDeclarations
+      .filter(p => {
+        if (filter.employerId && p.employerId !== filter.employerId) return false;
+        if (filter.contractId && p.contractId !== filter.contractId) return false;
+        if (filter.kind && filter.kind !== 'ALL' && p.kind !== filter.kind) return false;
+        if (filter.status && filter.status !== 'ALL' && p.status !== filter.status) return false;
+        if (filter.awaitingAdminAction && !isPaymentAwaitingAdminAction(p.status)) return false;
+        if (search) {
+          const haystack = [p.id, p.reference, p.transactionId, p.employerName, p.contractTitle, p.periodKey]
+            .join(' ')
+            .toLowerCase();
+          if (!haystack.includes(search)) return false;
+        }
+        return true;
+      })
+      .sort((a, b) => {
+        const aWaiting = isPaymentAwaitingAdminAction(a.status) ? 0 : 1;
+        const bWaiting = isPaymentAwaitingAdminAction(b.status) ? 0 : 1;
+        if (aWaiting !== bWaiting) return aWaiting - bWaiting;
+        return b.updatedAt.localeCompare(a.updatedAt);
+      });
+  }
+
+  async submitPaymentDeclaration(paymentId: string, actorId: string): Promise<PaymentDeclaration> {
+    const declaration = this.requirePaymentDeclaration(paymentId);
+    const actor = this.requirePaymentDeclarationOwner(actorId, declaration);
+    assertPaymentDeclarationTransition(declaration.status, 'SUBMITTED');
+    assertValidPaymentDeclarationInput(declaration as unknown as Partial<PaymentDeclarationInput>);
+
+    const now = new Date().toISOString();
+    const from = declaration.status;
+    declaration.status = 'SUBMITTED';
+    declaration.submittedAt = now;
+    declaration.updatedAt = now;
+    this.pushPaymentHistory(declaration, createPaymentHistoryEvent({
+      paymentId: declaration.id,
+      type: 'SUBMITTED',
+      fromStatus: from,
+      toStatus: 'SUBMITTED',
+      actorId: actor.id,
+      actorName: actor.fullName,
+      actorRole: actor.role,
+      occurredAt: now,
+      metadata: { amount: declaration.amount, amountDue: declaration.amountDue, hasAmountMismatch: hasAmountMismatch(declaration) },
+    }));
+    this.applyDeclarationToSchedule(declaration, 'PENDING_VERIFICATION');
+    await this.logEvent({
+      actor: actor.fullName,
+      role: actor.role,
+      action: 'PAYMENT_DECLARATION_SUBMITTED',
+      entity: 'PaymentDeclaration',
+      entityId: declaration.id,
+      summary: `Déclaration ${declaration.reference} soumise à vérification (${declaration.amount.toLocaleString()} ${declaration.currency}).`,
+    });
+    await this.notifyAdminsAboutDeclaration(
+      declaration,
+      'PAYMENT_DECLARATION_SUBMITTED',
+      'Nouvelle déclaration de paiement à vérifier',
+      `${declaration.employerName} a déclaré ${declaration.amount.toLocaleString()} ${declaration.currency} (${PAYMENT_KIND_LABELS[declaration.kind]}, ${declaration.periodKey}). Dossier ${declaration.id} à vérifier.`,
+    );
+    this.persistAll();
+    return declaration;
+  }
+
+  async startPaymentDeclarationReview(paymentId: string, actorId: string): Promise<PaymentDeclaration> {
+    const declaration = this.requirePaymentDeclaration(paymentId);
+    const actor = this.requirePaymentDeclarationAdmin(actorId);
+    if (declaration.status === 'UNDER_REVIEW') return declaration;
+    assertPaymentDeclarationTransition(declaration.status, 'UNDER_REVIEW');
+
+    const now = new Date().toISOString();
+    const from = declaration.status;
+    declaration.status = 'UNDER_REVIEW';
+    declaration.updatedAt = now;
+    this.pushPaymentHistory(declaration, createPaymentHistoryEvent({
+      paymentId: declaration.id,
+      type: 'REVIEW_STARTED',
+      fromStatus: from,
+      toStatus: 'UNDER_REVIEW',
+      actorId: actor.id,
+      actorName: actor.fullName,
+      actorRole: actor.role,
+      occurredAt: now,
+    }));
+    this.persistAll();
+    return declaration;
+  }
+
+  async approvePaymentDeclaration(paymentId: string, actorId: string, note?: string): Promise<PaymentDeclaration> {
+    const declaration = this.requirePaymentDeclaration(paymentId);
+    const actor = this.requirePaymentDeclarationAdmin(actorId);
+    assertPaymentDeclarationTransition(declaration.status, 'APPROVED');
+
+    const now = new Date().toISOString();
+    const from = declaration.status;
+    declaration.status = 'APPROVED';
+    declaration.reviewedBy = actor.id;
+    declaration.reviewedByName = actor.fullName;
+    declaration.reviewedAt = now;
+    declaration.updatedAt = now;
+    delete declaration.rejectionReason;
+    this.pushPaymentHistory(declaration, createPaymentHistoryEvent({
+      paymentId: declaration.id,
+      type: 'APPROVED',
+      fromStatus: from,
+      toStatus: 'APPROVED',
+      actorId: actor.id,
+      actorName: actor.fullName,
+      actorRole: actor.role,
+      ...(note?.trim() ? { reason: note.trim() } : {}),
+      occurredAt: now,
+      metadata: { amount: declaration.amount, amountDue: declaration.amountDue },
+    }));
+    this.applyDeclarationToSchedule(declaration, 'PAID');
+    await this.logEvent({
+      actor: actor.fullName,
+      role: actor.role,
+      action: 'PAYMENT_DECLARATION_APPROVED',
+      entity: 'PaymentDeclaration',
+      entityId: declaration.id,
+      summary: `Déclaration ${declaration.reference} approuvée${note?.trim() ? ` — ${note.trim()}` : ''}.`,
+    });
+    await this.createNotification({
+      recipientId: declaration.employerId,
+      type: 'PAYMENT_DECLARATION_APPROVED',
+      title: 'Paiement vérifié et approuvé',
+      message: `Votre déclaration ${declaration.reference} (${declaration.amount.toLocaleString()} ${declaration.currency}) a été approuvée par l’administration LE LABEUR.`,
+      linkRef: { screen: 'PAYMENTS', id: declaration.id },
+      dedupeKey: `${declaration.id}:APPROVED:${declaration.status}`,
+    });
+    this.persistAll();
+    return declaration;
+  }
+
+  async rejectPaymentDeclaration(paymentId: string, reason: string, actorId: string): Promise<PaymentDeclaration> {
+    const declaration = this.requirePaymentDeclaration(paymentId);
+    const actor = this.requirePaymentDeclarationAdmin(actorId);
+    const normalizedReason = normalizeRejectionReason(reason);
+    assertPaymentDeclarationTransition(declaration.status, 'REJECTED');
+
+    const now = new Date().toISOString();
+    const from = declaration.status;
+    declaration.status = 'REJECTED';
+    declaration.rejectionReason = normalizedReason;
+    declaration.reviewedBy = actor.id;
+    declaration.reviewedByName = actor.fullName;
+    declaration.reviewedAt = now;
+    declaration.rejectionCount += 1;
+    declaration.updatedAt = now;
+    this.pushPaymentHistory(declaration, createPaymentHistoryEvent({
+      paymentId: declaration.id,
+      type: 'REJECTED',
+      fromStatus: from,
+      toStatus: 'REJECTED',
+      actorId: actor.id,
+      actorName: actor.fullName,
+      actorRole: actor.role,
+      reason: normalizedReason,
+      occurredAt: now,
+      metadata: { amount: declaration.amount, amountDue: declaration.amountDue, rejectionCount: declaration.rejectionCount },
+    }));
+    // RÈGLE 4 : le rejet ne supprime pas la dette — l'échéance redevient DUE.
+    this.applyDeclarationToSchedule(declaration, 'DUE');
+    await this.logEvent({
+      actor: actor.fullName,
+      role: actor.role,
+      action: 'PAYMENT_DECLARATION_REJECTED',
+      entity: 'PaymentDeclaration',
+      entityId: declaration.id,
+      summary: `Déclaration ${declaration.reference} rejetée : ${normalizedReason}. L’échéance reste due.`,
+    });
+    await this.createNotification({
+      recipientId: declaration.employerId,
+      type: 'PAYMENT_DECLARATION_REJECTED',
+      title: 'Paiement rejeté — régularisation requise',
+      message: `Votre déclaration ${declaration.reference} a été rejetée. Motif : ${normalizedReason}. Le montant reste dû : régularisez puis soumettez à nouveau.`,
+      linkRef: { screen: 'PAYMENTS', id: declaration.id },
+      dedupeKey: `${declaration.id}:REJECTED:${declaration.rejectionCount}`,
+    });
+    this.persistAll();
+    return declaration;
+  }
+
+  async resubmitPaymentDeclaration(
+    paymentId: string,
+    patch: UpdatePaymentDeclarationPatch,
+    actorId: string,
+  ): Promise<PaymentDeclaration> {
+    const declaration = this.requirePaymentDeclaration(paymentId);
+    const actor = this.requirePaymentDeclarationOwner(actorId, declaration);
+    assertPaymentDeclarationTransition(declaration.status, 'RESUBMITTED');
+    assertValidPaymentDeclarationInput(patch, { partial: true });
+
+    const now = new Date().toISOString();
+    const from = declaration.status;
+    const changes: Record<string, unknown> = {};
+    if (patch.amount !== undefined) { declaration.amount = patch.amount; changes.amount = patch.amount; }
+    if (patch.paymentMethod !== undefined) { declaration.paymentMethod = patch.paymentMethod; changes.paymentMethod = patch.paymentMethod; }
+    if (patch.transactionId !== undefined) { declaration.transactionId = patch.transactionId.trim(); changes.transactionId = declaration.transactionId; }
+    if (patch.paidAt !== undefined) { declaration.paidAt = new Date(patch.paidAt).toISOString(); changes.paidAt = declaration.paidAt; }
+    if (patch.reference !== undefined) { declaration.reference = patch.reference.trim(); changes.reference = declaration.reference; }
+    if (patch.proof !== undefined) {
+      declaration.proof = {
+        ...declaration.proof,
+        fileName: patch.proof.fileName || declaration.proof.fileName,
+        uri: patch.proof.uri || declaration.proof.uri,
+        ...(patch.proof.documentId ? { documentId: patch.proof.documentId } : {}),
+        ...(patch.proof.mimeType ? { mimeType: patch.proof.mimeType } : {}),
+        ...(patch.proof.sizeBytes !== undefined ? { sizeBytes: patch.proof.sizeBytes } : {}),
+        uploadedAt: now,
+      };
+      changes.proof = declaration.proof.fileName;
+    }
+    if (patch.comment !== undefined) {
+      if (patch.comment.trim()) declaration.comment = patch.comment.trim();
+      else delete declaration.comment;
+      changes.comment = declaration.comment ?? null;
+    }
+
+    declaration.status = 'RESUBMITTED';
+    declaration.resubmittedAt = now;
+    declaration.resubmissionCount += 1;
+    declaration.updatedAt = now;
+    this.pushPaymentHistory(declaration, createPaymentHistoryEvent({
+      paymentId: declaration.id,
+      type: 'RESUBMITTED',
+      fromStatus: from,
+      toStatus: 'RESUBMITTED',
+      actorId: actor.id,
+      actorName: actor.fullName,
+      actorRole: actor.role,
+      ...(patch.comment?.trim() ? { reason: patch.comment.trim() } : {}),
+      occurredAt: now,
+      metadata: { ...changes, resubmissionCount: declaration.resubmissionCount },
+    }));
+    this.applyDeclarationToSchedule(declaration, 'PENDING_VERIFICATION');
+    await this.logEvent({
+      actor: actor.fullName,
+      role: actor.role,
+      action: 'PAYMENT_DECLARATION_RESUBMITTED',
+      entity: 'PaymentDeclaration',
+      entityId: declaration.id,
+      summary: `Déclaration ${declaration.reference} régularisée et soumise à nouveau (tentative ${declaration.resubmissionCount}).`,
+    });
+    await this.notifyAdminsAboutDeclaration(
+      declaration,
+      'PAYMENT_DECLARATION_RESUBMITTED',
+      'Déclaration régularisée à re-vérifier',
+      `${declaration.employerName} a régularisé la déclaration ${declaration.reference} (${declaration.amount.toLocaleString()} ${declaration.currency}). Dossier ${declaration.id} à re-vérifier.`,
+    );
+    this.persistAll();
+    return declaration;
+  }
+
+  async getPaymentHistory(paymentId: string, actorId: string): Promise<PaymentHistoryEvent[]> {
+    const declaration = await this.getPaymentDeclaration(paymentId, actorId);
+    if (!declaration) throw new Error('Déclaration de paiement introuvable.');
+    return readPaymentHistory(declaration);
+  }
+
+  /**
+   * Évaluation unique du blocage/déblocage : la même fonction sert l'action et
+   * l'affichage, afin qu'un écran ne propose jamais une action refusée ensuite.
+   */
+  private evaluateBlockingForDeclaration(declaration: PaymentDeclaration): {
+    evaluation: ReturnType<typeof evaluatePaymentBlockingRule>;
+    employer: UserProfile;
+  } {
+    const employer = this.users.find(u => u.id === declaration.employerId);
+    if (!employer) throw new Error('Compte employeur introuvable.');
+    const scheduleOverdue = this.getOverdueDueEntries(employer.id, 3).length > 0;
+    const evaluation = evaluatePaymentBlockingRule({
+      status: declaration.status,
+      dueDate: declaration.dueDate,
+      rejectionCount: declaration.rejectionCount,
+      employerBlocked: employer.accountStatus === 'BLOCKED',
+      scheduleOverdue,
+    });
+    return { evaluation, employer };
+  }
+
+  async getPaymentBlockingEvaluation(
+    paymentId: string,
+    actorId: string,
+  ): Promise<{
+    paymentId: string;
+    employerId: string;
+    employerName: string;
+    employerBlocked: boolean;
+    canBlock: boolean;
+    canUnblock: boolean;
+    rule?: ReturnType<typeof evaluatePaymentBlockingRule>['rule'];
+    label: string;
+    daysLate: number;
+    underVerification: boolean;
+  }> {
+    const declaration = this.requirePaymentDeclaration(paymentId);
+    this.requirePaymentDeclarationAdmin(actorId);
+    const { evaluation, employer } = this.evaluateBlockingForDeclaration(declaration);
+    return {
+      paymentId: declaration.id,
+      employerId: employer.id,
+      employerName: employer.fullName,
+      employerBlocked: employer.accountStatus === 'BLOCKED',
+      canBlock: evaluation.canBlock,
+      canUnblock: evaluation.canUnblock,
+      ...(evaluation.rule ? { rule: evaluation.rule } : {}),
+      label: evaluation.label,
+      daysLate: evaluation.daysLate,
+      underVerification: evaluation.underVerification,
+    };
+  }
+
+  async blockEmployerForPayment(paymentId: string, reason: string, actorId: string): Promise<EmployerAccountActionResult> {
+    const declaration = this.requirePaymentDeclaration(paymentId);
+    const actor = this.requirePaymentDeclarationAdmin(actorId);
+    const { evaluation, employer } = this.evaluateBlockingForDeclaration(declaration);
+    if (!evaluation.canBlock) {
+      throw new Error(`Blocage refusé : ${evaluation.label}`);
+    }
+    const blocked = await this.blockUser(employer.id, reason?.trim() || evaluation.label, actor.id);
+    const now = new Date().toISOString();
+    this.pushPaymentHistory(declaration, createPaymentHistoryEvent({
+      paymentId: declaration.id,
+      type: 'EMPLOYER_BLOCKED',
+      fromStatus: declaration.status,
+      toStatus: declaration.status,
+      actorId: actor.id,
+      actorName: actor.fullName,
+      actorRole: actor.role,
+      reason: reason?.trim() || evaluation.label,
+      occurredAt: now,
+      metadata: { rule: evaluation.rule, daysLate: evaluation.daysLate },
+    }));
+    declaration.updatedAt = now;
+    this.persistAll();
+    return { declaration, employer: blocked };
+  }
+
+  async unblockEmployerForPayment(paymentId: string, reason: string, actorId: string): Promise<EmployerAccountActionResult> {
+    const declaration = this.requirePaymentDeclaration(paymentId);
+    const actor = this.requirePaymentDeclarationAdmin(actorId);
+    const { evaluation, employer } = this.evaluateBlockingForDeclaration(declaration);
+    if (!evaluation.canUnblock) {
+      throw new Error(`Déblocage refusé : ${evaluation.label}`);
+    }
+    const unblocked = await this.unblockUser(employer.id, actor.id);
+    const now = new Date().toISOString();
+    this.pushPaymentHistory(declaration, createPaymentHistoryEvent({
+      paymentId: declaration.id,
+      type: 'EMPLOYER_UNBLOCKED',
+      fromStatus: declaration.status,
+      toStatus: declaration.status,
+      actorId: actor.id,
+      actorName: actor.fullName,
+      actorRole: actor.role,
+      reason: reason?.trim() || evaluation.label,
+      occurredAt: now,
+      metadata: { rule: evaluation.rule ?? 'REGULARIZED', daysLate: evaluation.daysLate },
+    }));
+    declaration.updatedAt = now;
+    this.persistAll();
+    return { declaration, employer: unblocked };
   }
 
   async getRevenueMetrics(actorId: string): Promise<RevenueMetrics> {

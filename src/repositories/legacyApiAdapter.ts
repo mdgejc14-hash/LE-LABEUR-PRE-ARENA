@@ -1,7 +1,7 @@
-import type { Conversation, FilterState, Offer, SystemAuditLog, UserProfile, UserRole } from '../types';
+import type { Conversation, FilterState, Offer, PaymentDeclaration, PaymentHistoryEvent, SystemAuditLog, UserProfile, UserRole } from '../types';
 import type { ProductionAuditEvent, PublicProfileProjection } from '../backend/productionContracts';
 import { ApiClientError } from './apiClient';
-import { ApiRepository, type CreateContractInput, type CreateOfferInput, type CreateProposalInput, type IncidentReportInput, type SelfProfilePatch } from './apiRepository';
+import { ApiRepository, type CreateContractInput, type CreateOfferInput, type CreatePaymentDeclarationInput, type CreateProposalInput, type IncidentReportInput, type PaymentDeclarationFilter, type SelfProfilePatch, type UpdatePaymentDeclarationInput } from './apiRepository';
 import type { AppRepositoryBundle } from './provider';
 import { mapServerSessionToProfile } from './sessionMapping';
 
@@ -53,6 +53,61 @@ export function createLegacyApiRepositoryAdapter(api: ApiRepository): AppReposit
       ...(event.afterState ? { afterState: event.afterState } : {}),
     },
   });
+
+  /**
+   * PHASE 4 — nettoyage des entrées de déclaration côté client.
+   * Le client ne fait jamais autorité : il transmet uniquement les données
+   * métier, sans statut, sans historique et sans identifiant d'acteur.
+   */
+  const sanitizePaymentDeclarationInput = (input: CreatePaymentDeclarationInput): CreatePaymentDeclarationInput => ({
+    contractId: String(input.contractId ?? ''),
+    monthNumber: Number(input.monthNumber),
+    kind: input.kind === 'SALARY' ? 'SALARY' : 'COMMISSION',
+    amount: Number(input.amount),
+    paymentMethod: input.paymentMethod,
+    transactionId: String(input.transactionId ?? ''),
+    paidAt: String(input.paidAt ?? ''),
+    proof: {
+      fileName: String(input.proof?.fileName ?? ''),
+      uri: String(input.proof?.uri ?? ''),
+      ...(input.proof?.documentId ? { documentId: input.proof.documentId } : {}),
+      ...(input.proof?.mimeType ? { mimeType: input.proof.mimeType } : {}),
+      ...(input.proof?.sizeBytes !== undefined ? { sizeBytes: input.proof.sizeBytes } : {}),
+    },
+    ...(typeof input.reference === 'string' ? { reference: input.reference } : {}),
+    ...(typeof input.comment === 'string' ? { comment: input.comment } : {}),
+  });
+
+  const sanitizePaymentDeclarationPatch = (patch: UpdatePaymentDeclarationInput): UpdatePaymentDeclarationInput => {
+    const result: UpdatePaymentDeclarationInput = {};
+    if (patch.amount !== undefined) result.amount = Number(patch.amount);
+    if (patch.paymentMethod !== undefined) result.paymentMethod = patch.paymentMethod;
+    if (patch.transactionId !== undefined) result.transactionId = String(patch.transactionId);
+    if (patch.paidAt !== undefined) result.paidAt = String(patch.paidAt);
+    if (patch.reference !== undefined) result.reference = String(patch.reference);
+    if (patch.comment !== undefined) result.comment = String(patch.comment);
+    if (patch.proof !== undefined) {
+      result.proof = {
+        fileName: String(patch.proof.fileName ?? ''),
+        uri: String(patch.proof.uri ?? ''),
+        ...(patch.proof.documentId ? { documentId: patch.proof.documentId } : {}),
+        ...(patch.proof.mimeType ? { mimeType: patch.proof.mimeType } : {}),
+        ...(patch.proof.sizeBytes !== undefined ? { sizeBytes: patch.proof.sizeBytes } : {}),
+      };
+    }
+    return result;
+  };
+
+  const paymentFilterToQuery = (filter: PaymentDeclarationFilter = {}): Record<string, string> => {
+    const query: Record<string, string> = {};
+    if (filter.status) query.status = filter.status;
+    if (filter.employerId) query.employerId = filter.employerId;
+    if (filter.contractId) query.contractId = filter.contractId;
+    if (filter.kind) query.kind = filter.kind;
+    if (filter.search) query.search = filter.search;
+    if (filter.awaitingAdminAction) query.awaitingAdminAction = 'true';
+    return query;
+  };
 
   const handlers: Record<string, (...args: any[]) => unknown> = {
     getCurrentUser: () => sessionUser,
@@ -217,6 +272,36 @@ export function createLegacyApiRepositoryAdapter(api: ApiRepository): AppReposit
     verifyCommissionPayment: (paymentId: string, _actorId: string) => api.admin.approvePayment(paymentId, { idempotencyKey: key() }),
     rejectCommissionPayment: (paymentId: string, reason: string, _actorId: string) => api.admin.rejectPayment(paymentId, reason, { idempotencyKey: key() }),
     getRevenueMetrics: () => api.admin.listStats(),
+
+    /* PHASE 4 — déclarations de paiement employeur. Aucun actorId n'est
+       transmis : l'identité est dérivée de la session serveur (cookie). */
+    createPaymentDeclaration: (input: CreatePaymentDeclarationInput, _actorId: string) =>
+      api.paymentDeclarations.create(sanitizePaymentDeclarationInput(input), { idempotencyKey: key() }),
+    updatePaymentDeclaration: (paymentId: string, patch: UpdatePaymentDeclarationInput, _actorId: string) =>
+      api.paymentDeclarations.update(paymentId, sanitizePaymentDeclarationPatch(patch), { idempotencyKey: key() }),
+    getPaymentDeclaration: (paymentId: string, _actorId: string) => api.paymentDeclarations.getById(paymentId),
+    listEmployerPayments: async (_employerId: string, _actorId: string) =>
+      firstPage(api.paymentDeclarations.getMine({ limit: 100 })),
+    listAdminPayments: async (_actorId: string, filter?: PaymentDeclarationFilter) =>
+      firstPage(api.admin.listPaymentDeclarations({ limit: 100 }, paymentFilterToQuery(filter))),
+    submitPaymentDeclaration: (paymentId: string, _actorId: string) =>
+      api.paymentDeclarations.submit(paymentId, { idempotencyKey: key() }),
+    startPaymentDeclarationReview: (paymentId: string, _actorId: string) =>
+      api.admin.startPaymentDeclarationReview(paymentId, { idempotencyKey: key() }),
+    approvePaymentDeclaration: (paymentId: string, _actorId: string, note?: string) =>
+      api.admin.approvePaymentDeclaration(paymentId, note, { idempotencyKey: key() }),
+    rejectPaymentDeclaration: (paymentId: string, reason: string, _actorId: string) =>
+      api.admin.rejectPaymentDeclaration(paymentId, reason, { idempotencyKey: key() }),
+    resubmitPaymentDeclaration: (paymentId: string, patch: UpdatePaymentDeclarationInput, _actorId: string) =>
+      api.paymentDeclarations.resubmit(paymentId, sanitizePaymentDeclarationPatch(patch), { idempotencyKey: key() }),
+    getPaymentHistory: async (paymentId: string, _actorId: string): Promise<PaymentHistoryEvent[]> =>
+      firstPage(api.paymentDeclarations.getHistory(paymentId, { limit: 100 })),
+    getPaymentBlockingEvaluation: (paymentId: string, _actorId: string) =>
+      api.admin.getPaymentBlockingEvaluation(paymentId),
+    blockEmployerForPayment: (paymentId: string, reason: string, _actorId: string) =>
+      api.admin.blockEmployerForPayment(paymentId, reason, { idempotencyKey: key() }),
+    unblockEmployerForPayment: (paymentId: string, reason: string, _actorId: string) =>
+      api.admin.unblockEmployerForPayment(paymentId, reason, { idempotencyKey: key() }),
 
     getNotifications: async (_userId: string, _role?: UserRole) => firstPage(api.notifications.getMine({ limit: 100 })),
     markAsRead: (notificationId: string, _actorId: string) => api.notifications.markRead(notificationId, { idempotencyKey: key() }),

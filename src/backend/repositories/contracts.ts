@@ -11,6 +11,8 @@ import type {
   Incident,
   MissionProposal,
   Offer,
+  PaymentDeclaration,
+  PaymentHistoryEvent,
   ReplacementDossier,
   ResourceDocument,
   SystemAuditLog,
@@ -147,6 +149,66 @@ export interface ServerPaymentRepository {
   rejectPayment(actor: AuthenticatedActor, paymentId: string, reason: string, command: ProductionCommandContext): Promise<CommissionPaymentRecord>;
 }
 
+/**
+ * PHASE 4 — déclarations de paiement employeur.
+ *
+ * L'acteur est injecté par le middleware de session : aucune de ces méthodes
+ * n'accepte un actorId ou un rôle provenant du corps de la requête. Les
+ * contrôles de propriété et de transition sont faits par les garde-fous
+ * `backend/api/paymentDeclarationGuard.ts` avant d'atteindre l'implémentation.
+ */
+export interface ServerCreatePaymentDeclarationInput {
+  contractId: string;
+  monthNumber: number;
+  kind: PaymentDeclaration['kind'];
+  amount: number;
+  paymentMethod: PaymentDeclaration['paymentMethod'];
+  transactionId: string;
+  reference?: string;
+  paidAt: string;
+  proof: {
+    fileName: string;
+    uri: string;
+    documentId?: string;
+    mimeType?: string;
+    sizeBytes?: number;
+  };
+  comment?: string;
+}
+
+export type ServerUpdatePaymentDeclarationInput = Partial<ServerCreatePaymentDeclarationInput>;
+
+export interface ServerPaymentDeclarationFilter {
+  status?: PaymentDeclaration['status'] | 'ALL';
+  employerId?: string;
+  contractId?: string;
+  kind?: PaymentDeclaration['kind'] | 'ALL';
+  awaitingAdminAction?: boolean;
+  search?: string;
+}
+
+export interface ServerEmployerAccountActionResult {
+  declaration: PaymentDeclaration;
+  employer: UserProfile;
+}
+
+export interface ServerPaymentDeclarationRepository {
+  listMine(actor: AuthenticatedActor, page: { cursor: string | null; limit: number }): Promise<CursorPage<PaymentDeclaration>>;
+  get(actor: AuthenticatedActor, paymentId: string): Promise<PaymentDeclaration | null>;
+  create(actor: AuthenticatedActor, input: ServerCreatePaymentDeclarationInput, command: ProductionCommandContext): Promise<PaymentDeclaration>;
+  update(actor: AuthenticatedActor, paymentId: string, patch: ServerUpdatePaymentDeclarationInput, command: ProductionCommandContext): Promise<PaymentDeclaration>;
+  submit(actor: AuthenticatedActor, paymentId: string, command: ProductionCommandContext): Promise<PaymentDeclaration>;
+  resubmit(actor: AuthenticatedActor, paymentId: string, patch: ServerUpdatePaymentDeclarationInput, command: ProductionCommandContext): Promise<PaymentDeclaration>;
+  getHistory(actor: AuthenticatedActor, paymentId: string, page: { cursor: string | null; limit: number }): Promise<CursorPage<PaymentHistoryEvent>>;
+  getAdminList(actor: AuthenticatedActor, filter: ServerPaymentDeclarationFilter, page: { cursor: string | null; limit: number }): Promise<CursorPage<PaymentDeclaration>>;
+  getAdminOne(actor: AuthenticatedActor, paymentId: string): Promise<PaymentDeclaration | null>;
+  startReview(actor: AuthenticatedActor, paymentId: string, command: ProductionCommandContext): Promise<PaymentDeclaration>;
+  approve(actor: AuthenticatedActor, paymentId: string, note: string | undefined, command: ProductionCommandContext): Promise<PaymentDeclaration>;
+  reject(actor: AuthenticatedActor, paymentId: string, reason: string, command: ProductionCommandContext): Promise<PaymentDeclaration>;
+  blockEmployer(actor: AuthenticatedActor, paymentId: string, reason: string, command: ProductionCommandContext): Promise<ServerEmployerAccountActionResult>;
+  unblockEmployer(actor: AuthenticatedActor, paymentId: string, reason: string, command: ProductionCommandContext): Promise<ServerEmployerAccountActionResult>;
+}
+
 export interface ServerScheduleRepository {
   getMySchedules(actor: AuthenticatedActor, page: { cursor: string | null; limit: number }): Promise<CursorPage<ScheduleEntrySnapshot>>;
   getAdminSchedules(actor: AuthenticatedActor, page: { cursor: string | null; limit: number }): Promise<CursorPage<ScheduleEntrySnapshot>>;
@@ -230,6 +292,7 @@ export interface ProductionRepositoryPorts {
   proposals: ServerProposalRepository;
   contracts: ServerContractRepository;
   payments: ServerPaymentRepository;
+  paymentDeclarations: ServerPaymentDeclarationRepository;
   schedules: ServerScheduleRepository;
   incidents: ServerIncidentRepository;
   replacements: ServerReplacementRepository;

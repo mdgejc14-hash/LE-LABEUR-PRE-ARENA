@@ -11,12 +11,16 @@ export const AuthScreen: React.FC = () => {
   const [email, setEmail] = useState(
     currentRole === 'EMPLOYER'
       ? 'reine.houenou@bois-agencement.bj'
-      : 'amina.dossou@lelabeur.bj'
+      : currentRole === 'ADMIN'
+        ? 'admin.benin@lelabeur.bj'
+        : 'amina.dossou@lelabeur.bj'
   );
   const [fullName, setFullName] = useState(
     currentRole === 'EMPLOYER'
       ? 'Reine Houénou'
-      : 'Amina Dossou'
+      : currentRole === 'ADMIN'
+        ? 'Cellule Centrale LE LABEUR'
+        : 'Amina Dossou'
   );
   const [password, setPassword] = useState('Secret2026!');
   const [showPassword, setShowPassword] = useState(false);
@@ -96,7 +100,7 @@ export const AuthScreen: React.FC = () => {
       <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain no-scrollbar p-6 space-y-5 pb-24">
         <div className="space-y-1.5">
           <span className="editorial-kicker">
-            ESPACE PERSONNEL · {currentRole === 'EMPLOYER' ? 'EMPLOYEUR' : 'CANDIDAT'}
+            ESPACE PERSONNEL · {currentRole === 'EMPLOYER' ? 'EMPLOYEUR' : currentRole === 'ADMIN' ? 'ADMINISTRATION' : 'CANDIDAT'}
           </span>
           <h2 className="font-editorial text-3xl sm:text-4xl font-bold text-[#17233B] tracking-tight">
             {mode === 'LOGIN' ? 'Connexion' : 'Créer mon compte'}

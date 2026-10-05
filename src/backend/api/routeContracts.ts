@@ -67,6 +67,16 @@ export const API_ROUTE_CONTRACTS = [
   { key: 'payments.commission.declare', method: 'POST', path: '/api/v1/payments/commission-declarations', authentication: 'required', scope: 'owner', roles: ['EMPLOYER'], idempotency: true, auditOnMutation: true },
   { key: 'schedules.mine.list', method: 'GET', path: '/api/v1/my/schedules', authentication: 'required', scope: 'self', collection: true },
 
+  /* PHASE 4 — déclarations de paiement employeur (paiement externe déclaré).
+     Toutes les mutations exigent une clé d'idempotence et un audit serveur. */
+  { key: 'payments.declarations.create', method: 'POST', path: '/api/v1/payment-declarations', authentication: 'required', scope: 'owner', roles: ['EMPLOYER'], idempotency: true, auditOnMutation: true },
+  { key: 'payments.declarations.mine.list', method: 'GET', path: '/api/v1/employer/payment-declarations', authentication: 'required', scope: 'self', collection: true, roles: ['EMPLOYER'] },
+  { key: 'payments.declarations.read', method: 'GET', path: '/api/v1/payment-declarations/:paymentId', authentication: 'required', scope: 'owner' },
+  { key: 'payments.declarations.update', method: 'PATCH', path: '/api/v1/payment-declarations/:paymentId', authentication: 'required', scope: 'owner', roles: ['EMPLOYER'], idempotency: true, auditOnMutation: true },
+  { key: 'payments.declarations.submit', method: 'POST', path: '/api/v1/payment-declarations/:paymentId/submit', authentication: 'required', scope: 'owner', roles: ['EMPLOYER'], idempotency: true, auditOnMutation: true },
+  { key: 'payments.declarations.resubmit', method: 'POST', path: '/api/v1/payment-declarations/:paymentId/resubmit', authentication: 'required', scope: 'owner', roles: ['EMPLOYER'], idempotency: true, auditOnMutation: true },
+  { key: 'payments.declarations.history', method: 'GET', path: '/api/v1/payment-declarations/:paymentId/history', authentication: 'required', scope: 'owner', collection: true },
+
   { key: 'incidents.mine.list', method: 'GET', path: '/api/v1/my/incidents', authentication: 'required', scope: 'self', collection: true },
   { key: 'incidents.read', method: 'GET', path: '/api/v1/incidents/:incidentId', authentication: 'required', scope: 'owner' },
   { key: 'incidents.report', method: 'POST', path: '/api/v1/incidents', authentication: 'required', scope: 'owner', idempotency: true, auditOnMutation: true },
@@ -112,6 +122,16 @@ export const API_ROUTE_CONTRACTS = [
   { key: 'admin.payments.list', method: 'GET', path: '/api/v1/admin/payments', authentication: 'required', scope: 'admin', permission: 'payments:read:any', collection: true },
   { key: 'admin.payments.approve', method: 'POST', path: '/api/v1/admin/payments/:paymentId/approve', authentication: 'required', scope: 'admin', permission: 'payments:approve', idempotency: true, auditOnMutation: true },
   { key: 'admin.payments.reject', method: 'POST', path: '/api/v1/admin/payments/:paymentId/reject', authentication: 'required', scope: 'admin', permission: 'payments:reject', idempotency: true, auditOnMutation: true },
+  /* PHASE 4 — contrôle administratif des déclarations de paiement. */
+  { key: 'admin.payment-declarations.list', method: 'GET', path: '/api/v1/admin/payment-declarations', authentication: 'required', scope: 'admin', permission: 'payments:read:any', collection: true },
+  { key: 'admin.payment-declarations.read', method: 'GET', path: '/api/v1/admin/payment-declarations/:paymentId', authentication: 'required', scope: 'admin', permission: 'payments:read:any' },
+  { key: 'admin.payment-declarations.history', method: 'GET', path: '/api/v1/admin/payment-declarations/:paymentId/history', authentication: 'required', scope: 'admin', permission: 'payments:read:any', collection: true },
+  { key: 'admin.payment-declarations.blocking', method: 'GET', path: '/api/v1/admin/payment-declarations/:paymentId/blocking-evaluation', authentication: 'required', scope: 'admin', permission: 'payments:read:any' },
+  { key: 'admin.payment-declarations.review', method: 'POST', path: '/api/v1/admin/payment-declarations/:paymentId/review', authentication: 'required', scope: 'admin', permission: 'payments:review', idempotency: true, auditOnMutation: true },
+  { key: 'admin.payment-declarations.approve', method: 'POST', path: '/api/v1/admin/payment-declarations/:paymentId/approve', authentication: 'required', scope: 'admin', permission: 'payments:approve', idempotency: true, auditOnMutation: true },
+  { key: 'admin.payment-declarations.reject', method: 'POST', path: '/api/v1/admin/payment-declarations/:paymentId/reject', authentication: 'required', scope: 'admin', permission: 'payments:reject', idempotency: true, auditOnMutation: true },
+  { key: 'admin.payment-declarations.block-employer', method: 'POST', path: '/api/v1/admin/payment-declarations/:paymentId/block-employer', authentication: 'required', scope: 'admin', permission: 'users:block', idempotency: true, auditOnMutation: true },
+  { key: 'admin.payment-declarations.unblock-employer', method: 'POST', path: '/api/v1/admin/payment-declarations/:paymentId/unblock-employer', authentication: 'required', scope: 'admin', permission: 'users:unblock', idempotency: true, auditOnMutation: true },
   { key: 'admin.schedules.list', method: 'GET', path: '/api/v1/admin/schedules', authentication: 'required', scope: 'admin', permission: 'schedules:read:any', collection: true },
   { key: 'admin.incidents.list', method: 'GET', path: '/api/v1/admin/incidents', authentication: 'required', scope: 'admin', permission: 'incidents:read:any', collection: true },
   { key: 'admin.incidents.arbitrate', method: 'POST', path: '/api/v1/admin/incidents/:incidentId/arbitrate', authentication: 'required', scope: 'admin', permission: 'incidents:arbitrate', idempotency: true, auditOnMutation: true },

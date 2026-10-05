@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
-import { UserCheck, Building2, Check, ArrowRight } from 'lucide-react';
+import { UserCheck, Building2, ShieldCheck, Check, ArrowRight } from 'lucide-react';
 import { EditorialButton } from '../components/common/EditorialButton';
 import { useApp } from '../context/AppContext';
 import { UserRole } from '../types';
 import { BrandLogo } from '../components/brand/BrandLogo';
+import { IS_DEMO_MODE } from '../utils/config';
 
 export const RoleSelectionScreen: React.FC = () => {
   const { setScreen, setRole } = useApp();
@@ -135,6 +136,51 @@ export const RoleSelectionScreen: React.FC = () => {
         </div>
       </div>
 
+          {/* Administration Option (démonstration uniquement) */}
+          {IS_DEMO_MODE && (
+            <div
+              onClick={() => handleSelectRole('ADMIN')}
+              onDoubleClick={() => handleDoubleClick('ADMIN')}
+              className={`p-5 rounded-[4px] border transition-all cursor-pointer tap-feedback ${
+                selectedRole === 'ADMIN'
+                  ? 'border-[#340C24] bg-[#FFFFFF] shadow-none ring-1 ring-[#340C24]'
+                  : 'border-[#17233B]/12 bg-[#FFFFFF]/70 hover:bg-[#FFFFFF]'
+              }`}
+              role="button"
+              tabIndex={0}
+              aria-pressed={selectedRole === 'ADMIN'}
+            >
+              <div className="flex items-start justify-between">
+                <div className="flex items-start gap-3.5">
+                  <div className={`w-10 h-10 rounded-[4px] flex items-center justify-center shrink-0 ${
+                    selectedRole === 'ADMIN' ? 'bg-[#340C24] text-[#F3F3EC]' : 'bg-[#17233B]/5 text-[#17233B]/70'
+                  }`}>
+                    <ShieldCheck className="w-5 h-5 stroke-[1.8]" />
+                  </div>
+                  <div>
+                    <h3 className="font-editorial text-2xl font-bold text-[#17233B] leading-snug">
+                      Administration LE LABEUR
+                    </h3>
+                    <p className="font-operational text-xs text-[#17233B]/70 mt-1 leading-relaxed">
+                      Espace de supervision : vérification des paiements déclarés, contrôle des contrats.
+                    </p>
+                  </div>
+                </div>
+                <div className={`w-5 h-5 rounded-full border flex items-center justify-center mt-1 shrink-0 ${
+                  selectedRole === 'ADMIN' ? 'border-[#340C24] bg-[#340C24] text-white' : 'border-[#17233B]/25'
+                }`}>
+                  {selectedRole === 'ADMIN' && <Check className="w-3.5 h-3.5 stroke-[2.5]" />}
+                </div>
+              </div>
+              {selectedRole === 'ADMIN' && (
+                <div className="mt-3 pt-3 border-t border-[#17233B]/10 flex items-center gap-2 text-[11px] font-operational text-[#17233B]/80 font-medium">
+                  <span className="w-1.5 h-1.5 rounded-full bg-[#C5A059] shrink-0" />
+                  <span>Accès de démonstration : admin.benin@lelabeur.bj</span>
+                </div>
+              )}
+            </div>
+          )}
+
       {/* Sticky Bottom Action Footer - Always visible in viewport */}
       <div className="p-4 px-6 bg-[#F3F3EC] border-t border-[#17233B]/10 shrink-0 z-20 space-y-1.5">
         <EditorialButton
@@ -147,6 +193,8 @@ export const RoleSelectionScreen: React.FC = () => {
               ? 'Veuillez choisir un profil pour continuer'
               : selectedRole === 'CANDIDATE'
               ? 'Continuer vers l espace Candidat'
+              : selectedRole === 'ADMIN'
+              ? 'Continuer vers l espace Administration'
               : 'Continuer vers l espace Employeur'
           }
         >
@@ -155,6 +203,8 @@ export const RoleSelectionScreen: React.FC = () => {
               ? 'Continuer'
               : selectedRole === 'CANDIDATE'
               ? 'Continuer · Espace Candidat'
+              : selectedRole === 'ADMIN'
+              ? 'Continuer · Espace Administration'
               : 'Continuer · Espace Employeur'}
           </span>
           <ArrowRight className="w-4 h-4 ml-2" />

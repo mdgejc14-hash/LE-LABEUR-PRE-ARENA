@@ -327,3 +327,37 @@ PostgreSQL réel, R2, Outbox, Queue, Cron J+3, WhatsApp, WebRTC production, ADMI
 
 ### Prochaine phase suggérée
 Brancher PostgreSQL/Hyperdrive réel + déploiement du Worker, puis ouvrir progressivement les endpoints métier, avant le dashboard ADMIN.
+
+## Phase 4 — Paiements employeur déclarés + contrôle administratif — 2026-10-05
+
+### Point de départ
+- Branche : `arena/01a10b9d-le-labeur-pre-arena` (session Arena verrouillée sur cette branche).
+- Commit de départ : `50ee3d9` (Phase 3 validée, 949/949 PASS).
+- `main` non modifié, aucun merge, aucun force push.
+
+### RÉELLEMENT IMPLÉMENTÉ
+- `src/types/index.ts` : `PaymentDeclaration`, `PaymentStatus`, `PaymentDeclarationKind`, `PaymentMethod`, `PaymentHistoryEvent`, `PaymentHistoryEventType`, `PaymentProof`.
+- `src/domain/paymentDeclarations.ts` : machine à états réelle (DRAFT → SUBMITTED → UNDER_REVIEW → APPROVED/REJECTED → RESUBMITTED), validations (montant > 0, ID transaction, justificatif obligatoire, date de paiement, concordance avec l'échéance), règle de blocage J+3 partagée (`evaluatePaymentBlockingRule`), libellés FR, garde de transition.
+- `src/backend/api/paymentDeclarationGuard.ts` : garde serveur (actorId + rôle + propriété + transition valide) ; aucun rôle n'est jamais accepté depuis le client.
+- `src/repositories/interfaces.ts` + `mockRepository.ts` + `apiRepository.ts` + `legacyApiAdapter.ts` : `createPaymentDeclaration`, `getPaymentDeclaration`, `listEmployerPayments`, `listAdminPayments`, `submitPaymentDeclaration`, `approvePaymentDeclaration`, `rejectPaymentDeclaration` (motif obligatoire), `resubmitPaymentDeclaration`, `getPaymentHistory`, `getPaymentBlockingEvaluation`, `blockEmployerForPayment`, `unblockEmployerForPayment`. Aucun état global parallèle : tout passe par le `MockRepository` existant.
+- `src/backend/api/routeContracts.ts` : routes `payments.declarations.create|read|mine.list|submit|resubmit` et `admin.payment-declarations.list|review|approve|reject|block|unblock|blocking` derrière la frontière serveur existante ; permissions `payments:read:own|read:any|approve|reject|block:employer`.
+- `src/repositories/mockData.ts` : 5 déclarations de démonstration cohérentes (soumise, approuvée, rejetée, régularisée, rejetable) adossées aux contrats existants (CTR-001/002/003).
+- UI employeur `src/screens/EmployerPaymentsScreen.tsx` : liste, statuts, formulaire de déclaration (contrat, mois, nature, montant, moyen, ID transaction, référence, date/heure, justificatif, remarque), soumission, brouillon, régularisation après rejet avec rappel du motif, historique.
+- UI admin `src/screens/AdminPaymentDeclarationsScreen.tsx` : compteurs, filtres (statut, nature, « à traiter uniquement »), table, détail complet (preuve, employeur lié, contrat lié, historique), APPROUVER / REJETER (motif obligatoire) / BLOQUER / DÉBLOQUER tracés.
+- `AdminDashboardScreen` : bloc « Centre de vérification ». `AndroidBottomNav` : onglet « Paiements » + badge (rejets côté employeur, à traiter côté admin). `RoleSelectionScreen` : carte « Administration LE LABEUR » **en MODE DÉMONSTRATION uniquement** (accès admin impossible en self-service).
+- Notifications : réutilisation de `createNotification` + `logEvent` existants (employeur informé du rejet, ADMIN informés des dossiers à traiter). Aucun second système de notification.
+
+### NON IMPLÉMENTÉ
+Aucun encaissement dans l'application (paiement externe uniquement), aucun scheduler J+3 (États préparés seulement), PostgreSQL/R2/Queue/Cron, déploiement Cloudflare, dashboard ADMIN complet, redesign, remplacement du `MockRepository`.
+
+### Commandes et résultats exacts
+- `npm test` : **973/973 PASS, 0 FAIL** — 82/82, 14/14, 800/800, 19/19, 6/6, 14/14, 14/14, **nouvelle suite paiements 24/24**. Aucun test existant supprimé ou modifié pour passer.
+- `npm run lint` (`tsc --noEmit`) : PASS. `npm run build` : PASS.
+- Vérification d'interface : application React réellement montée dans jsdom et pilotée (clics, formulaires) — **48/48 contrôles PASS** sur les 5 parcours (déclaration employeur, rejet → régularisation, approbation admin, rejet motivé + blocage J+3, historique admin).
+
+### Limites
+- MODE API : les routes de déclaration sont contractées et gardées côté serveur, mais non exercées contre un backend déployé.
+- La prévisualisation utilise un `.env` local (`VITE_DEMO_MODE=true`, non versionné) ; sans ce fichier l'application démarre en mock sans la carte d'administration de démonstration.
+
+### Prochaine phase suggérée
+Brancher la persistance réelle (PostgreSQL/Hyperdrive) des déclarations de paiement, puis le scheduler J+3 et les pièces justificatives (R2), sans modifier le modèle de commission (M1 25 %/75 %, M2+ 0 %/100 %).

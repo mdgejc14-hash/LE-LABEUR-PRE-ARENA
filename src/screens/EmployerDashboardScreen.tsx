@@ -12,7 +12,8 @@ import {
   Check,
   X,
   Phone,
-  ShieldCheck
+  ShieldCheck,
+  Wallet
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { EditorialButton } from '../components/common/EditorialButton';
@@ -35,6 +36,7 @@ export const EmployerDashboardScreen: React.FC = () => {
     createOffer,
     setScreen,
     setActiveTab,
+    paymentDeclarations,
     declareCommission,
     confirmMonthlyAction,
     startAudioCall
@@ -401,6 +403,25 @@ export const EmployerDashboardScreen: React.FC = () => {
             <DollarSign className="w-4 h-4 text-[#17233B]/30" />
           </div>
         </div>
+
+        {/* PHASE 4 — espace « Paiements » : déclaration des règlements externes. */}
+        <div 
+          onClick={() => setActiveTab('PAYMENTS')}
+          className="p-3.5 bg-white rounded-[4px] border border-[#17233B]/10 hover:border-[#17233B]/30 cursor-pointer shadow-xs transition-all tap-feedback"
+        >
+          <span className="text-[10px] font-mono uppercase tracking-wider text-[#17233B]/50 block">
+            Mes paiements
+          </span>
+          <div className="flex items-baseline justify-between mt-1">
+            <span className="font-editorial text-2xl font-bold text-[#17233B]">
+              {paymentDeclarations.length}
+            </span>
+            <Wallet className="w-4 h-4 text-[#17233B]/30" />
+          </div>
+          <span className="text-[10px] text-[#17233B]/50 block mt-1">
+            {paymentDeclarations.filter(p => p.status === 'REJECTED').length} à régulariser
+          </span>
+        </div>
       </div>
 
       {/* Échéances contractuelles : calendrier unique du contrat, filtré par état. */}
@@ -411,7 +432,17 @@ export const EmployerDashboardScreen: React.FC = () => {
             <h2 className="font-editorial text-xl font-bold text-[#17233B]">Échéances</h2>
             <p className="text-[11px] text-[#17233B]/60">Salaires et commission du contrat, selon la date d’exigibilité.</p>
           </div>
-          <span className="text-[10px] font-mono text-[#17233B]/50">{scheduleRows.length} opération(s)</span>
+          <div className="flex flex-col items-end gap-1.5 shrink-0">
+            <span className="text-[10px] font-mono text-[#17233B]/50">{scheduleRows.length} opération(s)</span>
+            <button
+              type="button"
+              onClick={() => setActiveTab('PAYMENTS')}
+              className="px-2.5 py-1 bg-[#17233B] text-white rounded-[3px] text-[10px] font-semibold uppercase tracking-wide inline-flex items-center gap-1 cursor-pointer tap-feedback"
+            >
+              <Wallet className="w-3 h-3" />
+              Déclarer un paiement
+            </button>
+          </div>
         </div>
 
         <div className="grid grid-cols-4 gap-1 p-1 bg-white border border-[#17233B]/10 rounded-[4px]">

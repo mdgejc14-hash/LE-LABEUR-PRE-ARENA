@@ -33,6 +33,10 @@ import { ProfileScreen } from './screens/ProfileScreen';
 // Écran Mes Contrats (RÈGLE 3 & 4 : ROUTE CONTRACTS AJOUTÉE)
 import { ContractsScreen } from './screens/ContractsScreen';
 
+// PHASE 4 — Paiements employeur & contrôle administratif
+import { EmployerPaymentsScreen } from './screens/EmployerPaymentsScreen';
+import { AdminPaymentDeclarationsScreen } from './screens/AdminPaymentDeclarationsScreen';
+
 // Overlays & Composants d'appel et de ressources
 import { AudioCallScreen } from './components/calls/AudioCallScreen';
 import { IncomingCallBanner } from './components/calls/IncomingCallBanner';
@@ -70,6 +74,8 @@ const AppContent: React.FC = () => {
           return <EmployerOffersScreen />;
         case 'APPLICATIONS':
           return <EmployerApplicationsScreen />;
+        case 'PAYMENTS':
+          return <EmployerPaymentsScreen />;
         default:
           return <EmployerDashboardScreen />;
       }
@@ -84,6 +90,9 @@ const AppContent: React.FC = () => {
           return <EmployerOffersScreen />;
         case 'APPLICATIONS':
           return <EmployerApplicationsScreen />;
+        // PHASE 4 : centre de vérification des déclarations de paiement.
+        case 'PAYMENTS':
+          return <AdminPaymentDeclarationsScreen />;
         default:
           return <TalentsScreen />;
       }
