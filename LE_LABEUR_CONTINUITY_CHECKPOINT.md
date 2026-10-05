@@ -248,3 +248,82 @@ Move to the real backend Cloudflare implementation only after preserving this ch
 
 ### Next action
 Stop after recording and committing the validated Phase 1/1B changes. Do not start PostgreSQL, Hyperdrive, R2, Cron, Queue, real Outbox, full Admin, redesign, data migration or WhatsApp without a separate Phase 2 authorization.
+
+## Phase 2 — identité serveur, session et fondation de persistance — 2026-10-05
+
+### Périmètre et point de départ
+- Branche de travail : `arena/01a10b78-le-labeur-pre-arena` (branche imposée par la session Arena ; la branche demandée `arena/phase2-server-identity` n'a pas pu être créée, voir « Risques/écarts »).
+- Commit de départ : `f773df3f9b1a34a3f9678db3838d2df7ba5a2834` (Phase 1B validée).
+- `main` n'est ni modifié ni mergé. Aucun force push.
+
+### RÉELLEMENT IMPLÉMENTÉ
+- Vérification serveur du credential Google (RS256 + JWKS Google, `iss`/`aud`/`exp`/`iat`/`email_verified`), `sub` comme identité externe stable : `src/backend/identity/googleVerifier.ts`.
+- Session serveur opaque : jeton 256 bits, SHA-256 seul persisté, expiration, révocation, cookie `__Host-lelabeur_session` HttpOnly/Secure/SameSite=Lax/Path=/ (`sessionService.ts`, `cookies.ts`, `ids.ts`).
+- `getAuthenticatedActor()` : actorId, rôle, statut, permissions dérivés de la ligne `users`, jamais du body/headers/localStorage.
+- RBAC : matrice `permissionsForRole` + réutilisation de `requireAuth/requireRole/requireOwnership/requireParticipant/requireAdmin`. ADMIN non attribuable en self-service.
+- Worker identité (`src/backend/api/identityWorker.ts`) : `/api/v1/auth/google`, `/api/v1/auth/google/credential`, `/api/v1/auth/session`, `/api/v1/auth/logout`, `/api/v1/me`, `/api/v1/users/me` + 9 frontières ADMIN de contrôle protégées (session réelle + rôle + permission).
+- DTO de sortie sans `sub`, sans jeton, sans hash, sans champ interne (`dto.ts`).
+- Composition root `src/backend/api/entry.ts` : `closed` par défaut, `memory` (tests), `postgres` (si DB injectée).
+- Sélection MODE DEMO / MODE API explicite : `src/repositories/mode.ts`. MockRepository conservé et par défaut.
+
+### PRÉPARÉ MAIS NON BRANCHÉ
+- Migrations PostgreSQL `migrations/0001_identity_and_core.sql` et `0002_role_permissions_seed.sql` (users, external_identities, sessions, permissions, role_permissions, user_permissions, offers, applications, contracts ; contraintes + indexes). Aucune base n'est provisionnée : la DB de production n'est PAS opérationnelle.
+- Adaptateur SQL `src/backend/identity/sqlStores.ts` (aucune connexion Hyperdrive/Postgres fournie).
+- Handlers ADMIN : contrôle d'accès uniquement, collections vides `persistence: 'not-configured'` (sauf `admin.users.list` servi par le store d'identité actif).
+
+### NON IMPLÉMENTÉ (hors périmètre)
+R2, Outbox, Queue, Cron J+3, WebRTC production, WhatsApp, dashboard ADMIN complet, migration métier PostgreSQL, statistiques avancées, redesign.
+
+### Commandes et résultats exacts
+- `npm install --ignore-scripts --legacy-peer-deps` : PASS (182 paquets ; la résolution npm standard reste incompatible).
+- `npm test` (référence avant modification) : **921/921 PASS** — 82/82, 14/14, 800/800, 19/19, 6/6.
+- `npm test` (après) : **935/935 PASS, 0 FAIL** — domaine 82/82, stabilisation 14/14, QA 800/800, backend boundary 19/19, WebRTC boundary 6/6, identité/session Phase 2 14/14.
+- `npm run lint` (`tsc --noEmit`) : PASS (2 erreurs introduites puis corrigées : typage `Uint8Array<ArrayBuffer>`, collision `create` du store mémoire).
+- `npm run build` : PASS (avertissement de taille de chunk préexistant).
+- Aucun test supprimé.
+
+### Risques / écarts restants
+- Branche : la session Arena est verrouillée sur `arena/01a10b78-le-labeur-pre-arena` ; `arena/phase2-server-identity` n'a pas été créée.
+- Aucune base PostgreSQL, aucun `GOOGLE_CLIENT_ID` réel, aucune rotation de session ni limitation de débit sur `/api/v1/auth/google`.
+- Vérification Google testée contre un vérificateur injecté + rejet d'un credential malformé ; aucun jeton Google réel n'a été vérifié de bout en bout.
+- AppContext/écrans continuent d'utiliser le MockRepository : le flux UI → session serveur n'est pas encore câblé.
+
+### Prochaine phase suggérée
+Brancher PostgreSQL/Hyperdrive réel + migration identité, puis câbler le frontend sur `/api/v1/auth/google` et `/api/v1/me`, avant d'ouvrir le dashboard ADMIN.
+
+## Phase 3 — pont frontend ↔ session serveur — 2026-10-05
+
+### Point de départ
+- Branche : `arena/01a10b78-le-labeur-pre-arena` (session Arena verrouillée sur cette branche).
+- Commit de départ : `fbc2d4e` (Phase 2 validée, 935/935 PASS).
+- `main` non modifié, aucun merge, aucun force push.
+
+### RÉELLEMENT IMPLÉMENTÉ
+- Point de composition unique `src/bootstrap/appBootstrap.ts`, appelé par `src/main.tsx` avant le rendu : MODE DEMO (mock) ou MODE API (session serveur), jamais les deux.
+- `src/repositories/sessionMapping.ts` : normalisation de `/auth/session` et `/me` (formes Phase 2 et historique). Rôle, id et statut viennent du serveur ; rôle inconnu, `authenticated: false` ou compte non actif ⇒ pas de session.
+- `legacyApiAdapter` : `getCurrentSession()` fait `/auth/session` puis `/me` ; l'échange Google exige une session serveur ; `login`/`register` classiques échouent explicitement (501) au lieu de fabriquer une identité locale ; `switchRole` reste refusé (403).
+- `apiRepository.auth` : ajout de `getMe()`, `getSession()` normalisé.
+- `src/context/sessionRouting.ts` : `landingTabForRole`, `initialRoleForMode`, `shouldRestoreAuthenticatedScreen`, `canReachAdminBoundary`, gestion de la préférence de rôle navigateur.
+- `AppContext` : rôle initial non restauré en ADMIN en MODE API ; au démarrage en MODE API, une session serveur valide restaure directement l'espace du rôle serveur (candidat/employeur/admin) ; logout vide applications/contrats/candidats et supprime la préférence de rôle locale.
+- `identityWorker` : horloge injectable (`now`) pour aligner `Max-Age` du cookie sur l'horloge serveur.
+- `vite.config.ts` : `server.allowedHosts` pour la prévisualisation sandbox.
+
+### PRÉPARÉ MAIS NON BRANCHÉ
+- Login classique email/mot de passe en MODE API : principe posé (session serveur = autorité), route serveur d'échange non exposée ⇒ 501 explicite.
+- Dashboard ADMIN : seule la frontière est vérifiée (ADMIN autorisé, CANDIDATE/EMPLOYER 403).
+
+### NON IMPLÉMENTÉ
+PostgreSQL réel, R2, Outbox, Queue, Cron J+3, WhatsApp, WebRTC production, ADMIN complet, redesign.
+
+### Commandes et résultats exacts
+- `npm test` : **949/949 PASS, 0 FAIL** — 82/82, 14/14, 800/800, 19/19, 6/6, identité/session 14/14, **nouveau pont frontend ↔ session 14/14**. Aucune régression par rapport aux 935/935.
+- `npm run lint` (`tsc --noEmit`) : PASS. `npm run build` : PASS.
+- Runtime : `npm run dev` démarre (Vite 8.3.2, port 3000) en MODE DEMO. Parcours navigateur réel Google → session → refresh → logout : **NON EXÉCUTÉ** (aucun `GOOGLE_CLIENT_ID` ni backend déployé). Le flux complet est testé en intégration contre le vrai Worker Phase 2 avec bocal à cookies.
+
+### Limites
+- MODE API jamais exercé contre un déploiement réel (pas de DB, pas de Worker déployé, pas de client Google).
+- Les écrans métier en MODE API restent majoritairement en 501 : seules AUTH/SESSION/ME/frontières ADMIN sont servies.
+- Le masquage d'écrans côté React reste purement UX ; l'autorisation est serveur.
+
+### Prochaine phase suggérée
+Brancher PostgreSQL/Hyperdrive réel + déploiement du Worker, puis ouvrir progressivement les endpoints métier, avant le dashboard ADMIN.

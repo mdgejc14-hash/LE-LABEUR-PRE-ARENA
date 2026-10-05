@@ -3,6 +3,8 @@ import { runFinalStabilizationTests } from '../src/domain/finalStabilization.tes
 import { runMassiveQaScenarios } from '../src/domain/qaMassive.test';
 import { runBackendBoundaryTests } from '../src/backend/api/foundation.test';
 import { runCallBoundaryTests } from '../src/services/calls/signalingCredentialClient.test';
+import { runIdentitySessionTests } from '../src/backend/identity/identity.test';
+import { runSessionBridgeTests } from '../src/repositories/sessionBridge.test';
 
 interface TestCase {
   name: string;
@@ -16,6 +18,8 @@ async function main(): Promise<void> {
   const massive = await runMassiveQaScenarios(800);
   const boundary = await runBackendBoundaryTests();
   const callBoundary = runCallBoundaryTests();
+  const identity = await runIdentitySessionTests();
+  const sessionBridge = await runSessionBridgeTests();
 
   const suites: Array<{ name: string; cases: TestCase[] }> = [
     { name: 'Domain deterministic', cases: deterministic.results.map(result => ({ name: result.name, success: result.success, detail: result.details })) },
@@ -23,6 +27,8 @@ async function main(): Promise<void> {
     { name: 'Repository QA 800', cases: massive.results.map(result => ({ name: result.label, success: result.success, detail: result.detail })) },
     { name: 'Backend boundary', cases: boundary },
     { name: 'Mock/API WebRTC boundary', cases: callBoundary },
+    { name: 'Server identity & session', cases: identity },
+    { name: 'Frontend ↔ server session bridge', cases: sessionBridge },
   ];
 
   let total = 0;

@@ -142,3 +142,29 @@ Les bindings/valeurs de production seront configurés dans l’environnement Clo
 - construire les pages Admin manquantes ou refaire les écrans publics;
 - activer le scheduler J+3, l’Outbox, la Queue ou le signaling Worker de production;
 - annoncer une garantie distribuée d’idempotence ou de transaction.
+
+## 7. Phase 2 — identité serveur, session et fondation de persistance (2026-10-05)
+
+Chaîne réellement implémentée et testée :
+
+```text
+NAVIGATEUR → POST /api/v1/auth/google (credential Google)
+→ vérification serveur RS256 (JWKS Google, iss/aud/exp/email_verified)
+→ `sub` vérifié = identité externe stable (provider + subject, unique)
+→ utilisateur LE LABEUR (recherche ou création)
+→ session serveur opaque (jeton 256 bits, SHA-256 persisté)
+→ cookie HttpOnly/Secure/SameSite=Lax/Path=/
+→ getAuthenticatedActor() → actorId, rôle, statut, permissions
+→ RBAC (requireAuth/requireRole/requireOwnership/requireParticipant)
+→ API
+```
+
+- Le `sub` n'est jamais accepté seul depuis le navigateur; le frontend n'est pas autorité d'identité.
+- Aucun rôle, aucun identifiant acteur et aucun jeton ne sont lus depuis le body, les headers ou localStorage.
+- Le rôle ADMIN n'est pas attribuable en self-service : seules les valeurs `CANDIDATE`/`EMPLOYER` sont acceptées.
+- Les réponses passent par des DTO (`src/backend/identity/dto.ts`) : ni `sub`, ni hash de session, ni jeton.
+- Routes ADMIN protégées par session réelle + rôle ADMIN + permission; handlers de contrôle minimaux uniquement.
+- `migrations/0001_identity_and_core.sql` et `0002_role_permissions_seed.sql` préparent PostgreSQL (users, external_identities, sessions, permissions, role_permissions, user_permissions, offers, applications, contracts) avec contraintes et indexes. **Aucune base n'est provisionnée ni migrée : la DB de production n'est pas opérationnelle.**
+- `composeWorker()` reste fermé (`mode: 'closed'`) sans `GOOGLE_CLIENT_ID` et sans store : aucune ouverture silencieuse.
+- MODE DEMO (MockRepository) reste le défaut; MODE API exige `VITE_DEMO_MODE=false` + `VITE_API_BASE_PATH` same-origin.
+- WebRTC : inchangé, mock préservé, signaling production toujours non branché.
