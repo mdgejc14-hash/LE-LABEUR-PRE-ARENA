@@ -12,9 +12,11 @@ import {
   CallRecord,
   Incident,
   ReplacementDossier,
-  GoogleIdPayload
+  GoogleIdPayload,
+  PaymentDeclaration,
+  PaymentDeclarationInput
 } from '../types';
-import { mockService } from '../repositories/mockRepository';
+import { appRepositories as repositories } from '../repositories/provider';
 import { callService } from '../services/calls/CallService';
 import { runAllDeterministicTests } from '../domain/businessRules.test';
 import {
@@ -23,6 +25,15 @@ import {
   calculateLaterMonthCommission,
   calculateLaterMonthEmployeeShare,
 } from '../domain/businessRules';
+import {
+  clearStoredRolePreference,
+  initialRoleForMode,
+  landingTabForRole,
+  readStoredRolePreference,
+  ROLE_PREFERENCE_STORAGE_KEY,
+  shouldRestoreAuthenticatedScreen,
+} from './sessionRouting';
+import { getRepositoryMode } from '../repositories/provider';
 import { IS_DEMO_MODE } from '../utils/config';
 
 export type MainTab = 'DISCOVER' | 'DASHBOARD' | 'OFFERS' | 'APPLICATIONS' | 'FAVORITES' | 'MESSAGES' | 'PROFILE';
@@ -35,6 +46,7 @@ export type AppScreen =
   | 'AUTH'
   | 'MAIN'
   | 'CONTRACTS'
+  | 'PAYMENTS'
   | 'OFFER_DETAIL'
   | 'CANDIDATE_DETAIL'
   | 'CHAT_DETAIL';
@@ -107,6 +119,13 @@ export interface AppContextType {
   transferReplacementCandidate: (replacementId: string) => Promise<ReplacementDossier>;
   finalizeReplacementContract: (replacementId: string) => Promise<{ replacement: ReplacementDossier; newContract: Contract }>;
 
+  // Paiements externes déclarés par l'employeur (PHASES 4A/4B)
+  paymentDeclarations: PaymentDeclaration[];
+  refreshPaymentDeclarations: () => Promise<PaymentDeclaration[]>;
+  createPaymentDeclaration: (input: PaymentDeclarationInput) => Promise<PaymentDeclaration>;
+  updatePaymentDeclaration: (paymentId: string, patch: Partial<PaymentDeclarationInput>) => Promise<PaymentDeclaration>;
+  submitPaymentDeclaration: (paymentId: string) => Promise<PaymentDeclaration>;
+
   // Filtres
   filterState: FilterState;
   updateFilterState: (patch: Partial<FilterState>) => void;
@@ -178,15 +197,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [activeTab, setActiveTabState] = useState<MainTab>('DISCOVER');
 
   const [currentRole, setCurrentRoleState] = useState<UserRole>(() => {
-    try {
-      if (typeof localStorage !== 'undefined') {
-        const saved = localStorage.getItem('lelabeur_v5_selected_role');
-        if (saved === 'EMPLOYER' || saved === 'CANDIDATE' || saved === 'ADMIN') {
-          return saved as UserRole;
-        }
-      }
-    } catch {}
-    return 'CANDIDATE';
+    // Préférence d'affichage avant authentification uniquement. En MODE API,
+    // aucun rôle mémorisé n'est traité comme une preuve d'identité.
+    const stored = readStoredRolePreference(typeof localStorage !== 'undefined' ? localStorage : null);
+    return initialRoleForMode(getRepositoryMode(), stored);
   });
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
 
@@ -196,6 +210,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [selectedCandidate, setSelectedCandidate] = useState<UserProfile | null>(null);
   const [applications, setApplications] = useState<Application[]>([]);
   const [contracts, setContracts] = useState<Contract[]>([]);
+  const [paymentDeclarations, setPaymentDeclarations] = useState<PaymentDeclaration[]>([]);
   const [favorites, setFavorites] = useState<string[]>([]);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
@@ -214,30 +229,50 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const [scenarioDrawerOpen, setScenarioDrawerOpen] = useState<boolean>(false);
 
+  /**
+   * PHASES 4A/4B — les déclarations de paiement externe n'existent que pour
+   * un employeur connecté. Toute autre session repart d'une liste vide.
+   */
+  const loadPaymentDeclarations = useCallback(async (user: UserProfile | null): Promise<PaymentDeclaration[]> => {
+    if (!user || user.role !== 'EMPLOYER') {
+      setPaymentDeclarations([]);
+      return [];
+    }
+    try {
+      const declarations = await repositories.listEmployerPayments(user.id, user.id);
+      setPaymentDeclarations(declarations);
+      return declarations;
+    } catch (err) {
+      console.error('Erreur chargement des déclarations de paiement', err);
+      setPaymentDeclarations([]);
+      return [];
+    }
+  }, []);
+
   const loadInitialData = useCallback(async () => {
     try {
-      const persistedUser = mockService.getCurrentUser();
-      const allOffers = await mockService.getAllOffers();
+      const persistedUser = await repositories.getCurrentSession();
+      const allOffers = await repositories.getAllOffers();
       const allCandidates = persistedUser && ['EMPLOYER', 'ADMIN'].includes(persistedUser.role)
-        ? await mockService.getAllCandidates()
+        ? await repositories.getAllCandidates()
         : [];
-      const resDocs = await mockService.getResourceDocuments();
+      const resDocs = await repositories.getResourceDocuments();
       setOffers(allOffers);
       setCandidates(allCandidates);
       setResources(resDocs);
 
       if (persistedUser) {
         const scopedApplicationsPromise = persistedUser.role === 'ADMIN'
-          ? mockService.getAllApplications(persistedUser.id)
+          ? repositories.getAllApplications(persistedUser.id)
           : persistedUser.role === 'EMPLOYER'
-            ? mockService.getApplicationsByEmployer(persistedUser.id)
-            : mockService.getApplicationsByCandidate(persistedUser.id);
-        const scopedContractsPromise = mockService.getContractsByUser(persistedUser.id, persistedUser.role);
+            ? repositories.getApplicationsByEmployer(persistedUser.id)
+            : repositories.getApplicationsByCandidate(persistedUser.id);
+        const scopedContractsPromise = repositories.getContractsByUser(persistedUser.id, persistedUser.role);
         const [userApps, userContracts, userConvs, userFavs] = await Promise.all([
           scopedApplicationsPromise,
           scopedContractsPromise,
-          mockService.getConversations(persistedUser.id),
-          mockService.getFavorites(persistedUser.id)
+          repositories.getConversations(persistedUser.id),
+          repositories.getFavorites(persistedUser.id)
         ]);
         setApplications(userApps);
         setContracts(userContracts);
@@ -245,19 +280,29 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setCurrentRoleState(persistedUser.role);
         setConversations(userConvs);
         setFavorites(userFavs);
+        await loadPaymentDeclarations(persistedUser);
 
         callService.connectSignaling(persistedUser.id, persistedUser.role).catch(err => {
           console.warn('Signaling connect warning:', err);
         });
+
+        // MODE API : une session serveur valide restaure directement l'espace
+        // correspondant au rôle renvoyé par le serveur (candidat/employeur/admin).
+        if (shouldRestoreAuthenticatedScreen(getRepositoryMode(), true)) {
+          historyStackRef.current = [];
+          setScreenState('MAIN');
+          setActiveTabState(landingTabForRole(persistedUser.role));
+        }
       } else {
         setCurrentUser(null);
         setConversations([]);
         setFavorites([]);
+        setPaymentDeclarations([]);
       }
     } catch (err) {
       console.error('Erreur chargement données initiales', err);
     }
-  }, []);
+  }, [loadPaymentDeclarations]);
 
   useEffect(() => {
     loadInitialData();
@@ -367,7 +412,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setCurrentRoleState(newRole);
       try {
         if (typeof localStorage !== 'undefined') {
-          localStorage.setItem('lelabeur_v5_selected_role', newRole);
+          localStorage.setItem(ROLE_PREFERENCE_STORAGE_KEY, newRole);
         }
       } catch {}
       if (newRole === 'EMPLOYER') {
@@ -380,7 +425,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const updateCurrentUserProfile = useCallback(async (patch: Partial<UserProfile>) => {
     if (!currentUser) throw new Error('Utilisateur non connecté');
-    const updated = await mockService.updateProfile(currentUser.id, patch, currentUser.id);
+    const updated = await repositories.updateProfile(currentUser.id, patch, currentUser.id);
     setCurrentUser(updated);
     return updated;
   }, [currentUser]);
@@ -390,23 +435,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setCurrentRoleState(user.role);
     try {
       if (typeof localStorage !== 'undefined') {
-        localStorage.setItem('lelabeur_v5_selected_role', user.role);
+        localStorage.setItem(ROLE_PREFERENCE_STORAGE_KEY, user.role);
       }
     } catch {}
 
     const scopedApplicationsPromise = user.role === 'ADMIN'
-      ? mockService.getAllApplications(user.id)
+      ? repositories.getAllApplications(user.id)
       : user.role === 'EMPLOYER'
-        ? mockService.getApplicationsByEmployer(user.id)
-        : mockService.getApplicationsByCandidate(user.id);
+        ? repositories.getApplicationsByEmployer(user.id)
+        : repositories.getApplicationsByCandidate(user.id);
 
     const [userConvs, userFavs, allOffers, userApps, userContracts, scopedCandidates] = await Promise.all([
-      mockService.getConversations(user.id),
-      mockService.getFavorites(user.id),
-      mockService.getAllOffers(),
+      repositories.getConversations(user.id),
+      repositories.getFavorites(user.id),
+      repositories.getAllOffers(),
       scopedApplicationsPromise,
-      mockService.getContractsByUser(user.id, user.role),
-      ['EMPLOYER', 'ADMIN'].includes(user.role) ? mockService.getAllCandidates() : Promise.resolve([])
+      repositories.getContractsByUser(user.id, user.role),
+      ['EMPLOYER', 'ADMIN'].includes(user.role) ? repositories.getAllCandidates() : Promise.resolve([])
     ]);
 
     setConversations(userConvs);
@@ -415,6 +460,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setApplications(userApps);
     setContracts(userContracts);
     setCandidates(scopedCandidates);
+    await loadPaymentDeclarations(user);
 
     callService.connectSignaling(user.id, user.role).catch(err => {
       console.warn('Signaling connect warning:', err);
@@ -422,8 +468,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     historyStackRef.current = [];
     setScreenState('MAIN');
-    setActiveTabState(user.role === 'EMPLOYER' || user.role === 'ADMIN' ? 'DASHBOARD' : 'DISCOVER');
-  }, []);
+    setActiveTabState(landingTabForRole(user.role));
+  }, [loadPaymentDeclarations]);
 
   const login = useCallback(async (credentialsOrEmail?: string | { email?: string; phone?: string; role?: UserRole }, maybeRole?: UserRole) => {
     let emailToUse = '';
@@ -438,7 +484,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!emailToUse) {
       emailToUse = roleToUse === 'EMPLOYER' ? 'reine.houenou@bois-agencement.bj' : 'amina.dossou@lelabeur.bj';
     }
-    const user = await mockService.login(emailToUse, roleToUse);
+    const user = await repositories.login(emailToUse, roleToUse);
     await hydrateUserSession(user);
   }, [currentRole, hydrateUserSession]);
 
@@ -455,33 +501,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       fullName = emailOrData.fullName;
       role = emailOrData.role;
     }
-    const user = await mockService.register(email, fullName, role);
+    const user = await repositories.register(email, fullName, role);
     await hydrateUserSession(user);
   }, [currentRole, hydrateUserSession]);
 
   const loginWithGoogle = useCallback(async (payload: GoogleIdPayload, requestedRole: UserRole): Promise<UserProfile> => {
-    if (!payload.sub) throw new Error('Identifiant stable Google (sub) obligatoire.');
-    const user = await mockService.loginWithGoogle(payload.sub, requestedRole);
+    if (!payload.credential) throw new Error('Credential Google manquant.');
+    const user = await repositories.authenticateGoogleCredential(payload, requestedRole);
     await hydrateUserSession(user);
     return user;
   }, [hydrateUserSession]);
 
   const registerWithGoogle = useCallback(async (payload: GoogleIdPayload, requestedRole: UserRole): Promise<UserProfile> => {
-    if (!payload.sub) throw new Error('Identifiant stable Google (sub) obligatoire.');
-    const user = await mockService.registerWithGoogle({
-      googleSub: payload.sub,
-      email: payload.email,
-      fullName: payload.name,
-      role: requestedRole,
-      avatarUrl: payload.picture
-    });
+    if (!payload.credential) throw new Error('Credential Google manquant.');
+    const user = await repositories.registerGoogleCredential(payload, requestedRole);
     await hydrateUserSession(user);
     return user;
   }, [hydrateUserSession]);
 
   // RÈGLE 1 & 2 : Déconnexion = SEULE action qui mène à ROLE_SELECTION
   const logout = useCallback(async () => {
-    await mockService.logout();
+    await repositories.logout();
     try {
       if (callService.getActiveCall()) {
         await callService.endCall();
@@ -498,6 +538,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setIncomingCall(null);
     setConversations([]);
     setFavorites([]);
+    setApplications([]);
+    setContracts([]);
+    setCandidates([]);
+    // La session serveur est révoquée côté Worker; aucune trace de rôle ne
+    // doit subsister dans le navigateur.
+    clearStoredRolePreference(typeof localStorage !== 'undefined' ? localStorage : null);
     setCurrentRoleState('CANDIDATE');
     setActiveTabState('DISCOVER');
     historyStackRef.current = [];
@@ -518,49 +564,49 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const applyToOffer = useCallback(async (offerId: string) => {
     if (!currentUser) throw new Error('Utilisateur non connecté');
-    const app = await mockService.applyToOffer(offerId, currentUser.id);
+    const app = await repositories.applyToOffer(offerId, currentUser.id);
     setApplications(prev => [app, ...prev]);
     return app;
   }, [currentUser]);
 
   const withdrawApplication = useCallback(async (appId: string) => {
     if (!currentUser) throw new Error('Utilisateur non connecté');
-    const updated = await mockService.withdrawApplication(appId, currentUser.id);
+    const updated = await repositories.withdrawApplication(appId, currentUser.id);
     setApplications(prev => prev.map(a => a.id === appId ? updated : a));
     return updated;
   }, [currentUser?.id]);
 
   const examineApplication = useCallback(async (appId: string) => {
     if (!currentUser) throw new Error('Utilisateur non connecté');
-    const updated = await mockService.examineApplication(appId, currentUser.id);
+    const updated = await repositories.examineApplication(appId, currentUser.id);
     setApplications(prev => prev.map(a => a.id === appId ? updated : a));
     return updated;
   }, [currentUser?.id]);
 
   const shortlistApplication = useCallback(async (appId: string) => {
     if (!currentUser) throw new Error('Utilisateur non connecté');
-    const updated = await mockService.shortlistApplication(appId, currentUser.id);
+    const updated = await repositories.shortlistApplication(appId, currentUser.id);
     setApplications(prev => prev.map(a => a.id === appId ? updated : a));
     return updated;
   }, [currentUser?.id]);
 
   const rejectApplication = useCallback(async (appId: string, note?: string) => {
     if (!currentUser) throw new Error('Utilisateur non connecté');
-    const updated = await mockService.rejectApplication(appId, note, currentUser.id);
+    const updated = await repositories.rejectApplication(appId, note, currentUser.id);
     setApplications(prev => prev.map(a => a.id === appId ? updated : a));
     return updated;
   }, [currentUser?.id]);
 
   const createOffer = useCallback(async (data: any) => {
     if (!currentUser) throw new Error('Utilisateur non connecté');
-    const newOffer = await mockService.createOffer(data, currentUser.id);
+    const newOffer = await repositories.createOffer(data, currentUser.id);
     setOffers(prev => [newOffer, ...prev]);
     return newOffer;
   }, []);
 
   const toggleFavorite = useCallback(async (offerId: string) => {
     if (!currentUser) throw new Error('Utilisateur non connecté');
-    const isFav = await mockService.toggleFavorite(offerId, currentUser.id);
+    const isFav = await repositories.toggleFavorite(offerId, currentUser.id);
     setFavorites(prev => isFav ? [...prev, offerId] : prev.filter(id => id !== offerId));
     return isFav;
   }, [currentUser?.id]);
@@ -568,13 +614,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Contrats & Actions
   const generateContractFromRecruitment = useCallback(async (data: any) => {
     if (!currentUser) throw new Error('Utilisateur non connecté');
-    const contract = await mockService.generateContract(data, currentUser.id);
+    const contract = await repositories.generateContract(data, currentUser.id);
     setContracts(prev => [contract, ...prev]);
     // Refresh conversations & offers
     if (currentUser) {
       const [userConvs, allOffers] = await Promise.all([
-        mockService.getConversations(currentUser.id),
-        mockService.getAllOffers()
+        repositories.getConversations(currentUser.id),
+        repositories.getAllOffers()
       ]);
       setConversations(userConvs);
       setOffers(allOffers);
@@ -584,9 +630,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const signContract = useCallback(async (contractId: string, role: 'EMPLOYER' | 'EMPLOYEE') => {
     if (!currentUser) throw new Error('Utilisateur non connecté');
-    const contract = await mockService.signContract(contractId, role, currentUser.id);
+    const contract = await repositories.signContract(contractId, role, currentUser.id);
     setContracts(prev => prev.map(c => c.id === contractId ? contract : c));
-    const allOffers = await mockService.getAllOffers();
+    const allOffers = await repositories.getAllOffers();
     setOffers(allOffers);
     return contract;
   }, [currentUser]);
@@ -597,7 +643,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!contract) throw new Error('Contrat non trouvé');
 
     const reportedBy = currentRole === 'EMPLOYER' ? 'EMPLOYER' : 'EMPLOYEE';
-    const incident = await mockService.reportIncident({
+    const incident = await repositories.reportIncident({
       contractId,
       offerTitle: contract.offerTitle,
       employerId: contract.employerId,
@@ -610,21 +656,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       evidenceNote
     }, currentUser.id);
 
-    const updatedContracts = await mockService.getContractsByUser(currentUser.id, currentUser.role);
+    const updatedContracts = await repositories.getContractsByUser(currentUser.id, currentUser.role);
     setContracts(updatedContracts);
     return incident;
   }, [currentUser, currentRole, contracts]);
 
   const terminateMission = useCallback(async (contractId: string, reason: string) => {
     if (!currentUser) throw new Error('Utilisateur non connecté');
-    const updated = await mockService.dissociateMonth2(contractId, reason, currentUser.id, currentRole);
+    const updated = await repositories.dissociateMonth2(contractId, reason, currentUser.id, currentRole);
     setContracts(prev => prev.map(c => c.id === contractId ? updated : c));
     return updated;
   }, [currentUser, currentRole]);
 
   const confirmMonthlyAction = useCallback(async (contractId: string, monthNumber: number, actionType: any, notes?: string, metadata?: any) => {
     if (!currentUser) throw new Error('Utilisateur non connecté');
-    const updated = await mockService.confirmMonthlyAction(contractId, monthNumber, actionType, currentUser.id, notes, metadata);
+    const updated = await repositories.confirmMonthlyAction(contractId, monthNumber, actionType, currentUser.id, notes, metadata);
     setContracts(prev => prev.map(c => c.id === contractId ? updated : c));
     return updated;
   }, [currentUser]);
@@ -632,30 +678,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const declareCommission = useCallback(async (data: any) => {
     if (!currentUser) throw new Error('Utilisateur non connecté');
     if (!Number.isInteger(data?.monthNumber)) throw new Error('monthNumber est obligatoire pour déclarer une commission.');
-    const rec = await mockService.declareCommissionPayment({ ...data, actorId: currentUser.id, monthNumber: data.monthNumber });
-    const updatedContracts = await mockService.getContractsByUser(currentUser.id, currentUser.role);
+    const rec = await repositories.declareCommissionPayment({ ...data, actorId: currentUser.id, monthNumber: data.monthNumber });
+    const updatedContracts = await repositories.getContractsByUser(currentUser.id, currentUser.role);
     setContracts(updatedContracts);
     return rec;
   }, [currentUser]);
 
   const verifyCommissionPayment = useCallback(async (paymentId: string) => {
     if (!currentUser || currentUser.role !== 'ADMIN') throw new Error('Action non autorisée : ADMIN uniquement.');
-    return await mockService.verifyCommissionPayment(paymentId, currentUser.id);
+    return await repositories.verifyCommissionPayment(paymentId, currentUser.id);
   }, [currentUser]);
 
   const rejectCommissionPayment = useCallback(async (paymentId: string, reason: string) => {
     if (!currentUser || currentUser.role !== 'ADMIN') throw new Error('Action non autorisée : ADMIN uniquement.');
-    return await mockService.rejectCommissionPayment(paymentId, reason, currentUser.id);
+    return await repositories.rejectCommissionPayment(paymentId, reason, currentUser.id);
   }, [currentUser]);
 
   const blockUser = useCallback(async (userId: string, reason: string) => {
     if (!currentUser || currentUser.role !== 'ADMIN') throw new Error('Action non autorisée : ADMIN uniquement.');
-    return await mockService.blockUser(userId, reason, currentUser.id);
+    return await repositories.blockUser(userId, reason, currentUser.id);
   }, [currentUser]);
 
   const unblockUser = useCallback(async (userId: string) => {
     if (!currentUser || currentUser.role !== 'ADMIN') throw new Error('Action non autorisée : ADMIN uniquement.');
-    return await mockService.unblockUser(userId, currentUser.id);
+    return await repositories.unblockUser(userId, currentUser.id);
   }, [currentUser]);
 
   const arbitrateIncident = useCallback(async (
@@ -664,22 +710,58 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     note: string
   ) => {
     if (!currentUser || currentUser.role !== 'ADMIN') throw new Error('Action non autorisée : ADMIN uniquement.');
-    return await mockService.arbitrateIncident(incidentId, decision, note, currentUser.fullName, currentUser.id);
+    return await repositories.arbitrateIncident(incidentId, decision, note, currentUser.fullName, currentUser.id);
   }, [currentUser]);
 
   const assignReplacementCandidate = useCallback(async (replacementId: string, candidateId: string) => {
     if (!currentUser || currentUser.role !== 'ADMIN') throw new Error('Action non autorisée : ADMIN uniquement.');
-    return await mockService.assignReplacementCandidate(replacementId, candidateId, currentUser.id);
+    return await repositories.assignReplacementCandidate(replacementId, candidateId, currentUser.id);
   }, [currentUser]);
 
   const transferReplacementCandidate = useCallback(async (replacementId: string) => {
     if (!currentUser || currentUser.role !== 'ADMIN') throw new Error('Action non autorisée : ADMIN uniquement.');
-    return await mockService.transferCandidateToEmployer(replacementId, currentUser.id);
+    return await repositories.transferCandidateToEmployer(replacementId, currentUser.id);
   }, [currentUser]);
 
   const finalizeReplacementContract = useCallback(async (replacementId: string) => {
     if (!currentUser || currentUser.role !== 'ADMIN') throw new Error('Action non autorisée : ADMIN uniquement.');
-    return await mockService.finalizeReplacementContract(replacementId, currentUser.id);
+    return await repositories.finalizeReplacementContract(replacementId, currentUser.id);
+  }, [currentUser]);
+
+  // PHASES 4A/4B — déclarations de paiement externe (EMPLOYEUR). Le contrôle
+  // administratif n'est pas encore implémenté : aucune action de validation ici.
+  const refreshPaymentDeclarations = useCallback(async () => {
+    return await loadPaymentDeclarations(currentUser);
+  }, [currentUser, loadPaymentDeclarations]);
+
+  const createPaymentDeclaration = useCallback(async (input: PaymentDeclarationInput) => {
+    if (!currentUser) throw new Error('Utilisateur non connecté');
+    if (currentUser.role !== 'EMPLOYER') throw new Error('Action non autorisée : EMPLOYER uniquement.');
+    const declaration = await repositories.createPaymentDeclaration(input, currentUser.id);
+    setPaymentDeclarations(prev => [declaration, ...prev.filter(item => item.paymentId !== declaration.paymentId)]);
+    return declaration;
+  }, [currentUser]);
+
+  const updatePaymentDeclaration = useCallback(async (paymentId: string, patch: Partial<PaymentDeclarationInput>) => {
+    if (!currentUser) throw new Error('Utilisateur non connecté');
+    if (currentUser.role !== 'EMPLOYER') throw new Error('Action non autorisée : EMPLOYER uniquement.');
+    const declaration = await repositories.updatePaymentDeclaration(paymentId, patch, currentUser.id);
+    setPaymentDeclarations(prev => {
+      const next = prev.map(item => item.paymentId === paymentId ? declaration : item);
+      return [...next].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    });
+    return declaration;
+  }, [currentUser]);
+
+  const submitPaymentDeclaration = useCallback(async (paymentId: string) => {
+    if (!currentUser) throw new Error('Utilisateur non connecté');
+    if (currentUser.role !== 'EMPLOYER') throw new Error('Action non autorisée : EMPLOYER uniquement.');
+    const declaration = await repositories.submitPaymentDeclaration(paymentId, currentUser.id);
+    setPaymentDeclarations(prev => {
+      const next = prev.map(item => item.paymentId === paymentId ? declaration : item);
+      return [...next].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    });
+    return declaration;
   }, [currentUser]);
 
   const updateFilterState = useCallback((patch: Partial<FilterState>) => {
@@ -709,7 +791,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     // 2. Si aucune conversation pour ce contexte précis, création dédiée
     if (!conv) {
-      conv = await mockService.createOrGetConversation(
+      conv = await repositories.createOrGetConversation(
         currentUser.id,
         {
           id: targetUser.id,
@@ -728,7 +810,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     setSelectedConversation(conv);
     setScreenState('CHAT_DETAIL');
-    await mockService.markConversationAsRead(conv.id, currentUser.id);
+    await repositories.markConversationAsRead(conv.id, currentUser.id);
     return conv;
   }, [currentUser, conversations, pushNavigationState]);
 
@@ -745,7 +827,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           contextTitle: peerInfo.headline || 'Échange direct LE LABEUR',
           contextRefId: `REF-${peerInfo.id || Date.now()}`
         };
-        conv = await mockService.createOrGetConversation(
+        conv = await repositories.createOrGetConversation(
           currentUser.id,
           peerInfo,
           targetContext
@@ -759,15 +841,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setSelectedConversation(conv);
       setScreenState('CHAT_DETAIL');
       if (currentUser) {
-        await mockService.markConversationAsRead(conv.id, currentUser.id);
+        await repositories.markConversationAsRead(conv.id, currentUser.id);
       }
     }
   }, [conversations, currentUser, pushNavigationState]);
 
   const sendMessage = useCallback(async (convId: string, text: string) => {
     if (!currentUser) throw new Error('Non connecté');
-    const msg = await mockService.sendMessage(convId, text, currentUser.id, currentRole);
-    const userConvs = await mockService.getConversations(currentUser.id);
+    const msg = await repositories.sendMessage(convId, text, currentUser.id, currentRole);
+    const userConvs = await repositories.getConversations(currentUser.id);
     setConversations(userConvs);
     return msg;
   }, [currentUser, currentRole]);
@@ -782,17 +864,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     } else if (typeof durationSecOrUrl === 'number') {
       duration = durationSecOrUrl;
     }
-    const msg = await mockService.sendAudioMessage(convId, duration, currentUser.id, currentRole, audioUrl);
-    const userConvs = await mockService.getConversations(currentUser.id);
+    const msg = await repositories.sendAudioMessage(convId, duration, currentUser.id, currentRole, audioUrl);
+    const userConvs = await repositories.getConversations(currentUser.id);
     setConversations(userConvs);
     return msg;
   }, [currentUser, currentRole]);
 
   const respondToProposal = useCallback(async (proposalId: string, action: 'ACCEPT' | 'REVISE' | 'DECLINE', notes?: string) => {
     if (!currentUser) throw new Error('Utilisateur non connecté');
-    const res = await mockService.respondToProposal(proposalId, action, notes, currentUser.id);
+    const res = await repositories.respondToProposal(proposalId, action, notes, currentUser.id);
     if (currentUser) {
-      const scopedContracts = await mockService.getContractsByUser(currentUser.id, currentUser.role);
+      const scopedContracts = await repositories.getContractsByUser(currentUser.id, currentUser.role);
       setContracts(scopedContracts);
     }
     return res;
@@ -800,7 +882,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const getMessagesForConversation = useCallback(async (convId: string) => {
     if (!currentUser) throw new Error('Utilisateur non connecté');
-    return await mockService.getMessages(convId, currentUser.id);
+    return await repositories.getMessages(convId, currentUser.id);
   }, [currentUser]);
 
   // Appels Audio WebRTC
@@ -865,7 +947,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         throw new Error("Impossible de démarrer l'appel pour le moment.");
       }
 
-      const call = await mockService.initiateCall(
+      const call = await repositories.initiateCall(
         currentUser,
         {
           id: targetId,
@@ -899,7 +981,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const acceptIncomingCall = useCallback(async () => {
     if (!incomingCall) return;
     try {
-      const updated = await mockService.acceptCall(incomingCall.id, currentUser?.id || '');
+      const updated = await repositories.acceptCall(incomingCall.id, currentUser?.id || '');
       setActiveCall(updated);
       setIncomingCall(null);
       await callService.acceptCall(incomingCall);
@@ -912,7 +994,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!incomingCall) return;
     try {
       const receiverId = currentUser?.id || incomingCall.receiverId;
-      await mockService.rejectCall(incomingCall.id, receiverId);
+      await repositories.rejectCall(incomingCall.id, receiverId);
       setActiveCall(null);
       setIncomingCall(null);
       await callService.rejectCall(incomingCall.id, incomingCall.callerId, incomingCall.receiverId);
@@ -924,7 +1006,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const endActiveCall = useCallback(async () => {
     if (!activeCall || !currentUser) return;
     try {
-      await mockService.endCall(activeCall.id, callDurationSeconds, currentUser.id);
+      await repositories.endCall(activeCall.id, callDurationSeconds, currentUser.id);
       setActiveCall(null);
       setIncomingCall(null);
       await callService.endCall();
@@ -1062,6 +1144,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     assignReplacementCandidate,
     transferReplacementCandidate,
     finalizeReplacementContract,
+    paymentDeclarations,
+    refreshPaymentDeclarations,
+    createPaymentDeclaration,
+    updatePaymentDeclaration,
+    submitPaymentDeclaration,
     filterState,
     updateFilterState,
     resetFilters,

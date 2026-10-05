@@ -1,0 +1,193 @@
+%% LE LABEUR — Swimlane / BPMN des flux réellement exécutables
+%% Lecture : chaque couloir regroupe les acteurs et composants confirmés par le code.
+%% Les flux en pointillés sont préparés mais NON branchés (contrat seulement) ou conditionnels.
+%% Les décisions (losanges) correspondent à des validations réellement présentes dans MockService.
+
+flowchart LR
+  %% ---------------- CANDIDATE ----------------
+  subgraph L_CAND["CANDIDATE"]
+    direction TB
+    C1["S'inscrire / se connecter<br/>(email pseudo-auth ou Google)"]
+    C2["Découvrir les offres<br/>+ filtres géo/métier"]
+    C3["Consulter une offre"]
+    C4["Postuler"]
+    C5["Suivre ses candidatures<br/>(PENDING/REVIEW/SHORTLISTED)"]
+    C6["Échanger en messagerie<br/>texte + note vocale"]
+    C7["Répondre à une proposition<br/>ACCEPT / REVISE / DECLINE"]
+    C8["Signer le contrat<br/>(employeeSigned)"]
+    C9["Confirmer ou contester<br/>la réception du salaire"]
+    C10["Signaler un incident"]
+    C11["Fin de mission M2+<br/>(dissociateMonth2)"]
+  end
+
+  %% ---------------- EMPLOYER ----------------
+  subgraph L_EMP["EMPLOYER"]
+    direction TB
+    E1["S'inscrire / se connecter"]
+    E2["Publier une offre"]
+    E3["Examiner / Shortlister / Rejeter<br/>une candidature"]
+    E4["Contacter via messagerie contextuelle"]
+    E5["Générer un contrat<br/>(offerId + applicationId obligatoires)"]
+    E6["Signer le contrat<br/>(employerSigned)"]
+    E7["Déclarer le versement du salaire<br/>(DECLARE_SALARY)"]
+    E8["Déclarer la commission LE LABEUR<br/>(preuve + téléphone + montant exact)"]
+    E9["Déclarer un paiement externe<br/>DRAFT → SUBMITTED"]
+    E10["Signaler un incident"]
+    E11["Fin de mission M2+"]
+  end
+
+  %% ---------------- ADMIN ----------------
+  subgraph L_ADM["ADMIN"]
+    direction TB
+    A1["Accès démo (RoleSelection)<br/>ou compte ADMIN seed"]
+    A2["Superviser : compteurs,<br/>employeurs, files d'attente"]
+    A3["Vérifier / Rejeter une commission"]
+    A4["Lire une déclaration soumise"]
+    A5["Décider : APPROVED / REJECTED<br/>(motif obligatoire au rejet)"]
+    A6["Arbitrer un incident<br/>CONTINUER/ANNULER/REMPLACER/CLÔTURER/SUSPENDRE"]
+    A7["Piloter le remplacement<br/>assigner → transférer → finaliser"]
+    A8["Bloquer / Débloquer un employeur"]
+    A9["Consulter l'audit et les stats<br/>[non affiché dans l'écran actif]"]
+  end
+
+  %% ---------------- APPLICATION ----------------
+  subgraph L_APP["APPLICATION / FRONTEND"]
+    direction TB
+    F1["AppContext : état global<br/>+ navigation en mémoire"]
+    F2["Provider : mode mock (défaut)<br/>ou API explicite"]
+    F3["Screens + composants<br/>(ChatDetail, Contracts, EmployerPayments…)"]
+    F4["CallService / WebRTCCallService<br/>RTCPeerConnection réel"]
+    F5["Files d'attente UI :<br/>À vérifier · Incidents · Remplacements · J+3"]
+    F6["Notifications produites<br/>mais AUCUN écran de lecture"]
+  end
+
+  %% ---------------- API / BACKEND ----------------
+  subgraph L_API["API / BACKEND"]
+    direction TB
+    B1["MockService : règles + autorisations<br/>+ persistance localStorage"]
+    B2["HttpApiClient same-origin<br/>+ Idempotency-Key"]
+    B3["Worker : session cookie →<br/>AuthenticatedActor → RBAC"]
+    B4["89 contrats de routes<br/>handlers métier ABSENTS → 501"]
+    B5["Vérification Google RS256/JWKS<br/>+ session opaque + cookie"]
+  end
+
+  %% ---------------- SERVICES BACKGROUND ----------------
+  subgraph L_BG["SERVICES / TRAITEMENTS BACKGROUND"]
+    direction TB
+    BG1["syncPaymentSchedule :<br/>passage SCHEDULED → DUE<br/>+ alertes J+3 (paresseux, à la lecture)"]
+    BG2["Outbox / Queue<br/>[contrat seulement]"]
+    BG3["Cron J+3<br/>[contrat seulement]"]
+    BG4["Durable Object signaling<br/>[template seulement]"]
+    BG5["PostgreSQL / Hyperdrive<br/>[migrations écrites, non appliquées]"]
+    BG6["R2<br/>[ports seulement]"]
+  end
+
+  %% ---------------- SERVICES EXTERNES ----------------
+  subgraph L_EXT["SERVICES EXTERNES"]
+    direction TB
+    X1["Google Identity Services<br/>(navigateur)"]
+    X2["Google JWKS<br/>(Worker)"]
+    X3["Fournisseur TURN<br/>(optionnel, credential court)"]
+    X4["Email / SMS / WhatsApp / Gemini<br/>AUCUN fournisseur"]
+  end
+
+  %% ---------------- FLUX ----------------
+  C1 --> F1
+  E1 --> F1
+  A1 --> F1
+  F1 --> F3
+  F3 --> F2
+  F2 -->|"MODE DEMO (défaut)"| B1
+  F2 -.->|"MODE API explicite"| B2
+  B2 -.-> B3
+  B3 --> B4
+  B3 --> B5
+  F3 --> F4
+  F4 -.->|"wss + token court"| BG4
+  F4 --> X3
+  F3 --> X1
+  B5 --> X2
+
+  C2 --> F3 --> C3 --> C4
+  C4 --> B1
+  E2 --> B1
+  C4 --> E3
+  E3 --> B1
+  E3 --> E4
+  C4 --> C5
+  C6 --> B1
+  C7 --> B1
+  E4 --> C6
+
+  E5 --> D_OFFER{"Offre ACTIVE<br/>et applicationId fourni ?"}
+  D_OFFER -- non --> E5X["Refus explicite<br/>(règle 12 : aucun fallback)"]
+  D_OFFER -- oui --> E5OK["Contrat créé au statut SIGNATURE<br/>+ proposition SENT + carte de chat<br/>+ notification CONTRACT_PENDING_SIGNATURE"]
+  E5OK --> E6
+  E5OK --> C8
+  E6 --> D_SIGN{"employerSigned ET<br/>employeeSigned ?"}
+  C8 --> D_SIGN
+  D_SIGN -- non --> D_SIGN_WAIT["Contrat en attente de la 2e signature"]
+  D_SIGN -- oui --> ACT["Contrat ACTIVE · offre FILLED<br/>candidature HIRED · autres clôturées<br/>échéancier M1..Mn généré (25 % puis 0 %)"]
+  ACT --> BG1
+  ACT --> E7
+  ACT --> E8
+  ACT --> C10
+  ACT --> E10
+  ACT --> C11
+  ACT --> E11
+
+  E7 --> D_SAL{"Salaire déclaré :<br/>statut DUE ou REJECTED,<br/>montant = part salarié,<br/>txnId fourni ?"}
+  D_SAL -- non --> E7X["Refus explicite"]
+  D_SAL -- oui --> SAL_PEND["PENDING_VERIFICATION<br/>+ notification SALARY_DECLARED"]
+  SAL_PEND --> C9
+  C9 --> D_CONF{"Salaire reçu ?"}
+  D_CONF -- oui --> SAL_PAID["PAID"]
+  D_CONF -- non --> SAL_REJ["REJECTED<br/>+ notification employeur et tous les ADMIN"]
+
+  E8 --> D_COM{"Commission due ce mois<br/>et montant exact et preuve ?"}
+  D_COM -- non --> E8X["Refus explicite"]
+  D_COM -- oui --> COM_PEND["PENDING_VERIFICATION<br/>+ notification à tous les ADMIN"]
+  COM_PEND --> A3
+  A3 --> COM_DEC{"Décision ADMIN"}
+  COM_DEC -- approuvée --> COM_PAID["PAID (échéancier + ledger)"]
+  COM_DEC -- rejetée --> COM_REJ["Échéance de nouveau DUE<br/>+ motif + notification employeur"]
+
+  E9 --> DECL["Déclaration DRAFT<br/>montant entier, moyen de paiement,<br/>txnId, référence, date non future,<br/>justificatif (document OU référence)"]
+  DECL --> DECL_EDIT["Modification possible<br/>tant que DRAFT"]
+  DECL_EDIT --> DECL_SUB["SUBMITTED + submittedAt"]
+  DECL_SUB --> A4 --> A5
+  A5 --> DECL_DEC{"Décision ADMIN"}
+  DECL_DEC -- approuvée --> DECL_OK["APPROVED<br/>(reviewedBy + reviewedAt)"]
+  DECL_DEC -- rejetée --> DECL_KO["REJECTED + motif obligatoire"]
+  DECL_OK -.->|"AUCUNE notification,<br/>AUCUN lien échéancier"| F6
+  DECL_KO -.->|"AUCUNE resoumission<br/>possible (RESUBMITTED jamais produit)"| F6
+
+  C10 --> INC["Incident OPEN<br/>contrat INCIDENT<br/>+ notification autre partie et ADMIN"]
+  E10 --> INC
+  INC --> A6
+  A6 --> A6D{"Décision"}
+  A6D -- CONTINUER --> INC_OK["Incident RESOLVED · contrat ACTIVE"]
+  A6D -- SUSPENDRE --> INC_SUS["Incident UNDER_REVIEW · contrat SUSPENDED"]
+  A6D -- CLÔTURER/ANNULER --> INC_END["Incident CLOSED · contrat TERMINATED"]
+  A6D -- REMPLACER --> INC_REP["Incident REPLACEMENT_REQUESTED · contrat REPLACED"]
+  INC_REP --> REP["Dossier de remplacement<br/>SOURCING_CANDIDATES<br/>+ offre urgente ADMIN"]
+  REP --> A7
+  A7 --> REP_SEL["CANDIDATE_SELECTED"] --> REP_TR["TRANSFERRED_TO_EMPLOYER"] --> REP_FIN["CONTRACT_FINALIZED<br/>nouveau contrat en SIGNATURE"]
+
+  BG1 --> D_J3{"Échéance DUE<br/>depuis ≥ 3 jours ?"}
+  D_J3 -- non --> BG1
+  D_J3 -- oui --> J3["Notification PAYMENT_OVERDUE_J3<br/>employeur + chaque ADMIN<br/>(dédupliquée)"]
+  J3 --> A8
+  A8 --> D_BLK{"ADMIN bloque<br/>un employeur ?"}
+  D_BLK -- "aucune échéance ≥ J+3" --> BLK_NO["Refus explicite"]
+  D_BLK -- "échéance ≥ J+3 constatée" --> BLK["COMPTE BLOQUÉ<br/>+ notification + audit"]
+  BLK --> D_UNB{"Déblocage demandé ?"}
+  D_UNB -- "reste une échéance due/rejetée<br/>ou un paiement en vérification" --> UNB_NO["Refus explicite"]
+  D_UNB -- "régularisation complète" --> UNB["COMPTE ACTIF<br/>+ notification + audit"]
+
+  BG1 -.-> BG2
+  BG2 -.-> BG3
+  BG3 -.-> BG5
+  BG5 -.-> BG6
+  BG4 -.-> F6
+  X4 -.-> F5

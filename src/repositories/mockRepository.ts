@@ -38,6 +38,10 @@ import {
   CallRecord,
   CommunicationEvent,
   ResourceDocument,
+  PaymentDeclaration,
+  PaymentDeclarationInput,
+  ExternalPaymentMethod,
+  EXTERNAL_PAYMENT_METHODS,
 } from '../types';
 import {
   INITIAL_USERS,
@@ -45,6 +49,7 @@ import {
   INITIAL_APPLICATIONS,
   INITIAL_CONTRACTS,
   INITIAL_PAYMENTS,
+  INITIAL_PAYMENT_DECLARATIONS,
   INITIAL_INCIDENTS,
   INITIAL_REPLACEMENTS,
   INITIAL_PROPOSALS,
@@ -65,6 +70,7 @@ import {
   parseContractStartDate,
   isPaymentDue,
 } from '../domain/businessRules';
+import { normalizeRejectionReason, sortSubmittedDeclarationsForAdmin } from '../domain/adminPaymentReview';
 
 const STORAGE_KEYS = {
   USERS: 'lelabeur_v5_users',
@@ -73,6 +79,7 @@ const STORAGE_KEYS = {
   APPLICATIONS: 'lelabeur_v5_applications',
   CONTRACTS: 'lelabeur_v5_contracts',
   PAYMENTS: 'lelabeur_v5_payments',
+  PAYMENT_DECLARATIONS: 'lelabeur_v5_payment_declarations',
   INCIDENTS: 'lelabeur_v5_incidents',
   REPLACEMENTS: 'lelabeur_v5_replacements',
   TRANSFERS: 'lelabeur_v5_transfers',
@@ -128,6 +135,7 @@ export class MockService implements
   private applications: Application[] = getStorage(STORAGE_KEYS.APPLICATIONS, INITIAL_APPLICATIONS);
   private contracts: Contract[] = getStorage(STORAGE_KEYS.CONTRACTS, INITIAL_CONTRACTS) || [];
   private payments: CommissionPaymentRecord[] = getStorage(STORAGE_KEYS.PAYMENTS, INITIAL_PAYMENTS) || [];
+  private paymentDeclarations: PaymentDeclaration[] = getStorage(STORAGE_KEYS.PAYMENT_DECLARATIONS, INITIAL_PAYMENT_DECLARATIONS) || [];
   private incidents: Incident[] = getStorage(STORAGE_KEYS.INCIDENTS, INITIAL_INCIDENTS) || [];
   private replacements: ReplacementDossier[] = getStorage(STORAGE_KEYS.REPLACEMENTS, INITIAL_REPLACEMENTS) || [];
   private transfers: CandidateTransfer[] = getStorage(STORAGE_KEYS.TRANSFERS, []) || [];
@@ -160,6 +168,7 @@ export class MockService implements
     this.applications = clone(this.applications);
     this.contracts = clone(this.contracts).map(contract => this.ensurePaymentSchedule(contract));
     this.payments = clone(this.payments);
+    this.paymentDeclarations = clone(this.paymentDeclarations);
     this.incidents = clone(this.incidents);
     this.replacements = clone(this.replacements);
     this.transfers = clone(this.transfers);
@@ -450,6 +459,7 @@ export class MockService implements
     this.applications = JSON.parse(JSON.stringify(INITIAL_APPLICATIONS));
     this.contracts = JSON.parse(JSON.stringify(INITIAL_CONTRACTS)).map((c: Contract) => this.ensurePaymentSchedule(c));
     this.payments = JSON.parse(JSON.stringify(INITIAL_PAYMENTS));
+    this.paymentDeclarations = JSON.parse(JSON.stringify(INITIAL_PAYMENT_DECLARATIONS));
     this.incidents = JSON.parse(JSON.stringify(INITIAL_INCIDENTS));
     this.replacements = JSON.parse(JSON.stringify(INITIAL_REPLACEMENTS));
     this.transfers = [];
@@ -472,6 +482,7 @@ export class MockService implements
     setStorage(STORAGE_KEYS.APPLICATIONS, this.applications);
     setStorage(STORAGE_KEYS.CONTRACTS, this.contracts);
     setStorage(STORAGE_KEYS.PAYMENTS, this.payments);
+    setStorage(STORAGE_KEYS.PAYMENT_DECLARATIONS, this.paymentDeclarations);
     setStorage(STORAGE_KEYS.INCIDENTS, this.incidents);
     setStorage(STORAGE_KEYS.REPLACEMENTS, this.replacements);
     setStorage(STORAGE_KEYS.TRANSFERS, this.transfers);
@@ -2911,6 +2922,267 @@ export class MockService implements
       });
     }
     this.persistAll(); return payment;
+  }
+
+  // --- PaymentRepository — PHASES 4A/4B : déclaration employeur ---
+  // Le règlement est effectué hors plateforme ; l'employeur crée un brouillon,
+  // peut le modifier puis le soumettre une seule fois. Le contrôle
+  // administratif est traité plus bas (PHASE 4D) et reste inaccessible à
+  // l'employeur : aucune de ces opérations ne produit APPROVED ni REJECTED.
+
+  private nowIsoString(): string {
+    return new Date().toISOString();
+  }
+
+  /**
+   * Normalise et valide le contenu saisi par l'employeur. Le contrat doit
+   * exister et appartenir à l'employeur ; aucun champ requis ne peut être vide.
+   */
+  private normalizePaymentDeclarationInput(input: Partial<PaymentDeclarationInput>, employerId: string): PaymentDeclarationInput {
+    const contractId = String(input.contractId ?? '').trim();
+    if (!contractId) throw new Error('Le contrat concerné est obligatoire.');
+    const contract = this.contracts.find(c => c.id === contractId);
+    if (!contract) throw new Error('Contrat introuvable.');
+    if (contract.employerId !== employerId) throw new Error('Action non autorisée : contrat d’un autre employeur.');
+
+    const amount = input.amount;
+    if (typeof amount !== 'number' || !Number.isFinite(amount) || amount <= 0) {
+      throw new Error('Le montant déclaré doit être un nombre supérieur à zéro.');
+    }
+    if (!Number.isInteger(amount)) throw new Error('Le montant doit être un nombre entier de FCFA.');
+
+    const paymentMethod = input.paymentMethod as ExternalPaymentMethod;
+    if (!paymentMethod || !EXTERNAL_PAYMENT_METHODS.includes(paymentMethod)) {
+      throw new Error('Moyen de paiement non reconnu.');
+    }
+
+    const transactionId = String(input.transactionId ?? '').trim();
+    if (!transactionId) throw new Error('L ID de transaction est obligatoire.');
+
+    const reference = String(input.reference ?? '').trim();
+    if (!reference) throw new Error('La référence du paiement est obligatoire.');
+
+    const paidAtRaw = String(input.paidAt ?? '').trim();
+    const paidAtDate = new Date(paidAtRaw);
+    if (!paidAtRaw || Number.isNaN(paidAtDate.getTime())) throw new Error('La date du paiement est invalide.');
+    if (paidAtDate.getTime() > Date.now()) throw new Error('La date du paiement ne peut pas être dans le futur.');
+
+    const proofDocumentId = input.proofDocumentId?.trim() || undefined;
+    const proofReference = input.proofReference?.trim() || undefined;
+    if (!proofDocumentId && !proofReference) throw new Error('Un justificatif est obligatoire : document joint ou référence.');
+
+    return {
+      contractId,
+      amount,
+      paymentMethod,
+      transactionId,
+      reference,
+      paidAt: paidAtDate.toISOString(),
+      proofDocumentId,
+      proofReference,
+      comment: input.comment?.trim() || undefined
+    };
+  }
+
+  /** Résout une déclaration et vérifie que l'acteur en est bien l'employeur propriétaire. */
+  private requireOwnedPaymentDeclaration(paymentId: string, actor: UserProfile): PaymentDeclaration {
+    const declaration = this.paymentDeclarations.find(d => d.paymentId === paymentId);
+    if (!declaration) throw new Error('Déclaration de paiement introuvable.');
+    if (declaration.employerId !== actor.id) throw new Error('Action non autorisée : déclaration de paiement étrangère.');
+    return declaration;
+  }
+
+  async createPaymentDeclaration(input: PaymentDeclarationInput, actorId: string, idempotencyKey?: string): Promise<PaymentDeclaration> {
+    const replay = this.resolveMockIdempotency<PaymentDeclaration>('paymentDeclaration.create', actorId, idempotencyKey, input);
+    if (replay) return replay;
+
+    const actor = this.requireActor(actorId);
+    if (actor.role !== 'EMPLOYER') throw new Error('Action non autorisée : EMPLOYER uniquement.');
+    const normalized = this.normalizePaymentDeclarationInput(input, actor.id);
+    const contract = this.contracts.find(c => c.id === normalized.contractId);
+    if (!contract) throw new Error('Contrat introuvable.');
+
+    const timestamp = this.nowIsoString();
+    const declaration: PaymentDeclaration = {
+      ...normalized,
+      paymentId: this.createId('PDECL'),
+      employerId: actor.id,
+      currency: contract.currency,
+      status: 'DRAFT',
+      createdAt: timestamp,
+      updatedAt: timestamp
+    };
+
+    this.paymentDeclarations.unshift(declaration);
+    await this.logEvent({
+      actor: actor.fullName,
+      role: actor.role,
+      action: 'PAYMENT_DECLARATION_CREATED',
+      entity: 'PaymentDeclaration',
+      entityId: declaration.paymentId,
+      summary: `Déclaration de paiement externe ${declaration.paymentId} enregistrée en brouillon (${declaration.amount} ${declaration.currency}).`
+    });
+    this.persistAll();
+    // Les appelants reçoivent toujours un instantané détaché : aucune mutation
+    // externe ne peut atteindre l'état du dépôt.
+    const snapshot: PaymentDeclaration = { ...declaration };
+    this.rememberMockIdempotency('paymentDeclaration.create', actorId, idempotencyKey, input, snapshot);
+    return snapshot;
+  }
+
+  async getPaymentDeclaration(paymentId: string, actorId: string): Promise<PaymentDeclaration | null> {
+    const actor = this.requireActor(actorId);
+    const declaration = this.paymentDeclarations.find(d => d.paymentId === paymentId) || null;
+    if (!declaration) return null;
+    if (declaration.employerId !== actor.id) throw new Error('Action non autorisée : déclaration de paiement étrangère.');
+    return { ...declaration };
+  }
+
+  async listEmployerPayments(employerId: string, actorId: string): Promise<PaymentDeclaration[]> {
+    const actor = this.requireActor(actorId);
+    if (actor.role !== 'EMPLOYER' || actor.id !== employerId) {
+      throw new Error('Action non autorisée : seul l’employeur peut consulter ses déclarations de paiement.');
+    }
+    return this.paymentDeclarations
+      .filter(declaration => declaration.employerId === employerId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .map(declaration => ({ ...declaration }));
+  }
+
+  async updatePaymentDeclaration(paymentId: string, patch: Partial<PaymentDeclarationInput>, actorId: string): Promise<PaymentDeclaration> {
+    const actor = this.requireActor(actorId);
+    if (actor.role !== 'EMPLOYER') throw new Error('Action non autorisée : EMPLOYER uniquement.');
+    const declaration = this.requireOwnedPaymentDeclaration(paymentId, actor);
+    if (declaration.status !== 'DRAFT') {
+      throw new Error('Seule une déclaration en brouillon peut être modifiée.');
+    }
+    const normalized = this.normalizePaymentDeclarationInput({ ...declaration, ...patch }, actor.id);
+    const contract = this.contracts.find(c => c.id === normalized.contractId);
+    if (!contract) throw new Error('Contrat introuvable.');
+
+    Object.assign(declaration, normalized, { currency: contract.currency, updatedAt: this.nowIsoString() });
+    await this.logEvent({
+      actor: actor.fullName,
+      role: actor.role,
+      action: 'PAYMENT_DECLARATION_UPDATED',
+      entity: 'PaymentDeclaration',
+      entityId: declaration.paymentId,
+      summary: `Déclaration de paiement externe ${declaration.paymentId} mise à jour (${declaration.amount} ${declaration.currency}).`
+    });
+    this.persistAll();
+    return { ...declaration };
+  }
+
+  async submitPaymentDeclaration(paymentId: string, actorId: string): Promise<PaymentDeclaration> {
+    const actor = this.requireActor(actorId);
+    if (actor.role !== 'EMPLOYER') throw new Error('Action non autorisée : EMPLOYER uniquement.');
+    const declaration = this.requireOwnedPaymentDeclaration(paymentId, actor);
+    if (declaration.status !== 'DRAFT') {
+      throw new Error('Seule une déclaration en brouillon peut être soumise.');
+    }
+
+    const submittedAt = this.nowIsoString();
+    declaration.status = 'SUBMITTED';
+    declaration.submittedAt = submittedAt;
+    declaration.updatedAt = submittedAt;
+    await this.logEvent({
+      actor: actor.fullName,
+      role: actor.role,
+      action: 'PAYMENT_DECLARATION_SUBMITTED',
+      entity: 'PaymentDeclaration',
+      entityId: declaration.paymentId,
+      summary: `Déclaration de paiement externe ${declaration.paymentId} soumise par l’employeur.`
+    });
+    this.persistAll();
+    return { ...declaration };
+  }
+
+  // --- PaymentRepository — PHASE 4C : consultation ADMIN des paiements soumis ---
+  // L'administration ne fait que lire les déclarations que les employeurs ont
+  // soumises : aucune décision (UNDER_REVIEW / APPROVED / REJECTED) n'est
+  // produite ici et l'état du dépôt n'est jamais modifié.
+
+  /** Résout un acteur et exige le rôle ADMIN (échec fermé pour tous les autres rôles). */
+  private requireAdminActor(actorId: string): UserProfile {
+    const actor = this.requireActor(actorId);
+    if (actor.role !== 'ADMIN') throw new Error('Action non autorisée : ADMIN uniquement.');
+    return actor;
+  }
+
+  async listSubmittedPaymentDeclarations(actorId: string): Promise<PaymentDeclaration[]> {
+    this.requireAdminActor(actorId);
+    return sortSubmittedDeclarationsForAdmin(this.paymentDeclarations).map(declaration => ({ ...declaration }));
+  }
+
+  async getSubmittedPaymentDeclaration(paymentId: string, actorId: string): Promise<PaymentDeclaration | null> {
+    this.requireAdminActor(actorId);
+    const declaration = this.paymentDeclarations.find(item => item.paymentId === paymentId) || null;
+    if (!declaration) return null;
+    if (declaration.status !== 'SUBMITTED') {
+      throw new Error('Action non autorisée : seules les déclarations soumises sont consultables par l’administration.');
+    }
+    return { ...declaration };
+  }
+
+  // --- PaymentRepository — PHASE 4D : décision administrative ---
+  // SUBMITTED → APPROVED ou SUBMITTED → REJECTED, ADMIN uniquement. La décision
+  // n'altère ni le propriétaire des données (employerId), ni les informations
+  // déclarées par l'employeur, ni l'historique du dossier : elle ajoute le
+  // statut décidé, son auteur, son horodatage et, pour un rejet, son motif.
+
+  /** Résout une déclaration décidable : dossier existant et statut obligatoirement SUBMITTED. */
+  private requireReviewablePaymentDeclaration(paymentId: string): PaymentDeclaration {
+    const declaration = this.paymentDeclarations.find(item => item.paymentId === paymentId);
+    if (!declaration) throw new Error('Déclaration de paiement introuvable.');
+    if (declaration.status !== 'SUBMITTED') {
+      throw new Error('Action non autorisée : seule une déclaration au statut SUBMITTED peut faire l’objet d’une décision administrative.');
+    }
+    return declaration;
+  }
+
+  async approvePaymentDeclaration(paymentId: string, actorId: string): Promise<PaymentDeclaration> {
+    const actor = this.requireAdminActor(actorId);
+    const declaration = this.requireReviewablePaymentDeclaration(paymentId);
+
+    const reviewedAt = this.nowIsoString();
+    declaration.status = 'APPROVED';
+    declaration.reviewedBy = actor.id;
+    declaration.reviewedAt = reviewedAt;
+    declaration.rejectionReason = undefined;
+    declaration.updatedAt = reviewedAt;
+    await this.logEvent({
+      actor: actor.fullName,
+      role: actor.role,
+      action: 'PAYMENT_DECLARATION_APPROVED',
+      entity: 'PaymentDeclaration',
+      entityId: declaration.paymentId,
+      summary: `Déclaration de paiement externe ${declaration.paymentId} approuvée par l’administration (${declaration.amount} ${declaration.currency}).`
+    });
+    this.persistAll();
+    return { ...declaration };
+  }
+
+  async rejectPaymentDeclaration(paymentId: string, actorId: string, rejectionReason: string): Promise<PaymentDeclaration> {
+    const actor = this.requireAdminActor(actorId);
+    const reason = normalizeRejectionReason(rejectionReason);
+    const declaration = this.requireReviewablePaymentDeclaration(paymentId);
+
+    const reviewedAt = this.nowIsoString();
+    declaration.status = 'REJECTED';
+    declaration.reviewedBy = actor.id;
+    declaration.reviewedAt = reviewedAt;
+    declaration.rejectionReason = reason;
+    declaration.updatedAt = reviewedAt;
+    await this.logEvent({
+      actor: actor.fullName,
+      role: actor.role,
+      action: 'PAYMENT_DECLARATION_REJECTED',
+      entity: 'PaymentDeclaration',
+      entityId: declaration.paymentId,
+      summary: `Déclaration de paiement externe ${declaration.paymentId} rejetée par l’administration. Motif : ${reason}${/[.!?]$/.test(reason) ? '' : '.'}`
+    });
+    this.persistAll();
+    return { ...declaration };
   }
 
   async getRevenueMetrics(actorId: string): Promise<RevenueMetrics> {

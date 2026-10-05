@@ -442,6 +442,94 @@ export interface CommissionPaymentRecord {
   notes?: string;
 }
 
+/**
+ * PHASES 4A/4B — Déclaration de paiement externe (employeur).
+ *
+ * Le règlement est effectué HORS plateforme (Mobile Money, virement, espèces…).
+ * L'employeur déclare ensuite l'opération et son justificatif. Cette étape ne
+ * couvre que le versant EMPLOYEUR : le contrôle administratif (UNDER_REVIEW,
+ * APPROVED, REJECTED, RESUBMITTED) est préparé dans le type mais n'est pas
+ * encore piloté par une interface.
+ */
+export type PaymentDeclarationStatus =
+  | 'DRAFT'
+  | 'SUBMITTED'
+  | 'UNDER_REVIEW'
+  | 'APPROVED'
+  | 'REJECTED'
+  | 'RESUBMITTED';
+
+export type ExternalPaymentMethod =
+  | 'MOBILE_MONEY'
+  | 'BANK_TRANSFER'
+  | 'CASH'
+  | 'CHEQUE'
+  | 'OTHER';
+
+/** Statuts réservés à l'administration (étape suivante) : non produits par l'employeur. */
+export const PAYMENT_DECLARATION_ADMIN_STATUSES: readonly PaymentDeclarationStatus[] = [
+  'UNDER_REVIEW',
+  'APPROVED',
+  'REJECTED',
+  'RESUBMITTED',
+];
+
+export const EXTERNAL_PAYMENT_METHODS: readonly ExternalPaymentMethod[] = [
+  'MOBILE_MONEY',
+  'BANK_TRANSFER',
+  'CASH',
+  'CHEQUE',
+  'OTHER',
+];
+
+export const EXTERNAL_PAYMENT_METHOD_LABELS: Record<ExternalPaymentMethod, string> = {
+  MOBILE_MONEY: 'Mobile Money (MTN / Moov)',
+  BANK_TRANSFER: 'Virement bancaire',
+  CASH: 'Espèces',
+  CHEQUE: 'Chèque',
+  OTHER: 'Autre moyen',
+};
+
+export const PAYMENT_DECLARATION_STATUS_LABELS: Record<PaymentDeclarationStatus, string> = {
+  DRAFT: 'Brouillon',
+  SUBMITTED: 'Soumis',
+  UNDER_REVIEW: 'En contrôle',
+  APPROVED: 'Approuvé',
+  REJECTED: 'Rejeté',
+  RESUBMITTED: 'Resoumis',
+};
+
+/** Champs saisis par l'employeur pour créer ou modifier une déclaration. */
+export interface PaymentDeclarationInput {
+  contractId: string;
+  amount: number;
+  paymentMethod: ExternalPaymentMethod;
+  transactionId: string;
+  reference: string;
+  /** ISO 8601 — date/heure réelle du règlement hors plateforme. */
+  paidAt: string;
+  proofDocumentId?: string;
+  proofReference?: string;
+  comment?: string;
+}
+
+export interface PaymentDeclaration extends PaymentDeclarationInput {
+  paymentId: string;
+  employerId: string;
+  currency: string;
+  status: PaymentDeclarationStatus;
+  /** ISO 8601 — renseigné lors de la soumission employeur (Phase 4B). */
+  submittedAt?: string;
+  /** ISO 8601 — renseigné lors de la décision administrative (Phase 4D). */
+  reviewedAt?: string;
+  /** Identifiant interne de l'ADMIN auteur de la décision (Phase 4D). */
+  reviewedBy?: string;
+  /** Motif obligatoire d'un rejet administratif (Phase 4D). */
+  rejectionReason?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface Contract {
   id: string;
   offerId: string;

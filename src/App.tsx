@@ -33,6 +33,9 @@ import { ProfileScreen } from './screens/ProfileScreen';
 // Écran Mes Contrats (RÈGLE 3 & 4 : ROUTE CONTRACTS AJOUTÉE)
 import { ContractsScreen } from './screens/ContractsScreen';
 
+// Écran Mes Paiements (PHASE 4A : déclarations de paiement employeur)
+import { EmployerPaymentsScreen } from './screens/EmployerPaymentsScreen';
+
 // Overlays & Composants d'appel et de ressources
 import { AudioCallScreen } from './components/calls/AudioCallScreen';
 import { IncomingCallBanner } from './components/calls/IncomingCallBanner';
@@ -149,6 +152,27 @@ const AppContent: React.FC = () => {
         />
         <div className="flex-1 min-h-0 flex flex-col overflow-hidden relative">
           <ContractsScreen />
+        </div>
+        <AndroidBottomNav />
+        <IncomingCallBanner />
+        <AudioCallScreen />
+        <MicrophonePermissionModal />
+        <ResourceCatalogSheet />
+      </AndroidDeviceFrame>
+    );
+  }
+
+  // 5bis. PHASE 4A : Route PAYMENTS (Mes Paiements — déclarations employeur)
+  if (screen === 'PAYMENTS') {
+    return (
+      <AndroidDeviceFrame>
+        <AndroidTopBar
+          showBack
+          onBack={navigateBack}
+          title="Mes Paiements"
+        />
+        <div className="flex-1 min-h-0 flex flex-col overflow-hidden relative">
+          <EmployerPaymentsScreen />
         </div>
         <AndroidBottomNav />
         <IncomingCallBanner />
