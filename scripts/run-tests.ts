@@ -10,6 +10,10 @@ import { runPaymentDeclarationTests } from '../src/repositories/paymentDeclarati
 import { runAdminPaymentDeclarationTests } from '../src/repositories/adminPaymentDeclarations.test';
 import { runAdminPaymentDecisionTests } from '../src/repositories/adminPaymentDecisions.test';
 import { runPostgresFoundationTests } from '../src/backend/persistence/persistence.test';
+import { runHealthReportTests } from '../src/backend/api/health.test';
+import { runMigrationRunnerTests } from '../src/backend/persistence/migrationRunner.test';
+import { runCloudflareConfigTests } from '../src/backend/worker/cloudflareConfig.test';
+import { runCloudflareEntryTests } from '../src/backend/worker/cloudflareEntry.test';
 
 interface TestCase {
   name: string;
@@ -30,6 +34,10 @@ async function main(): Promise<void> {
   const adminPaymentDeclarations = await runAdminPaymentDeclarationTests();
   const adminPaymentDecisions = await runAdminPaymentDecisionTests();
   const postgresFoundation = await runPostgresFoundationTests();
+  const healthReport = await runHealthReportTests();
+  const migrationRunner = await runMigrationRunnerTests();
+  const cloudflareConfig = await runCloudflareConfigTests();
+  const cloudflareEntry = await runCloudflareEntryTests();
 
   const suites: Array<{ name: string; cases: TestCase[] }> = [
     { name: 'Domain deterministic', cases: deterministic.results.map(result => ({ name: result.name, success: result.success, detail: result.details })) },
@@ -44,6 +52,10 @@ async function main(): Promise<void> {
     { name: 'Phase 4C — consultation ADMIN des paiements soumis', cases: adminPaymentDeclarations },
     { name: 'Phase 4D — décision ADMIN sur un paiement soumis', cases: adminPaymentDecisions },
     { name: 'P0-A — fondation PostgreSQL (migrations, adaptateur, configuration, séparation DEMO/API)', cases: postgresFoundation },
+    { name: 'P0-C — /healthz réel (persistance sondée, secrets, modes)', cases: healthReport },
+    { name: 'P0-C — runner de migrations (manifeste, enveloppe, idempotence, checksum)', cases: migrationRunner },
+    { name: 'P0-C — configuration Cloudflare Worker (bindings, secrets, isolation pg)', cases: cloudflareConfig },
+    { name: 'P0-C — entrée Worker Cloudflare (composition, fermeture, cycle de pool)', cases: cloudflareEntry },
   ];
 
   let total = 0;

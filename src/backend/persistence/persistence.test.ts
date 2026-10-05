@@ -984,7 +984,15 @@ export async function runPostgresFoundationTests(): Promise<PostgresFoundationTe
           if (!/(from\s+'[^']*(persistence|services\/database|identity\/sqlStores))/.test(line)) continue;
           if (/^\s*import\s+type\b/.test(line)) continue;
           const relative = path.slice(REPO_ROOT.length + 1);
-          if (relative === 'src/backend/api/entry.ts') continue;
+          // Frontières Worker autorisées : composition serveur (P0-A) et runtime
+          // Cloudflare réel (P0-C : entrée Worker + pilote pg). Aucun autre fichier
+          // ne peut importer la persistance au runtime.
+          const workerBoundaryFiles = new Set([
+            'src/backend/api/entry.ts',
+            'src/backend/worker/cloudflareEntry.ts',
+            'src/backend/worker/pgClient.ts',
+          ]);
+          if (workerBoundaryFiles.has(relative)) continue;
           offenders.push(relative);
         }
       }

@@ -1,0 +1,90 @@
+# =============================================================================
+# LE LABEUR — configuration Cloudflare Worker (P0-C)
+# =============================================================================
+# État réel de cette configuration dans la session P0-C :
+#   * code Worker : RÉEL (src/backend/worker/cloudflareEntry.ts) ;
+#   * binding Hyperdrive de développement : PRÉPARÉ — l'ID ci-dessous est un
+#     PLACEHOLDER explicite ; aucun Hyperdrive n'existe côté Cloudflare ;
+#   * environnement `production` : PRÉPARÉ — le binding y est volontairement
+#     absent (voir plus bas) ; le Worker y démarre donc FERMÉ, jamais avec une
+#     base implicite.
+#
+# Secrets : JAMAIS dans ce fichier. Utiliser `wrangler secret put <NOM> --env <env>`
+# ou `.dev.vars` (gitignoré) en développement local.
+# Les `vars` ci-dessous sont non secrets (modes, limites, audience OAuth publique).
+# =============================================================================
+
+name = "lelabeur-api"
+main = "src/backend/worker/cloudflareEntry.ts"
+
+# `nodejs_compat` est REQUIS par node-postgres (`node:net`, `node:tls`, `node:crypto`).
+# La date de compatibilité est volontairement explicite et figée : elle doit être
+# >= 2024-09-23 pour que `pg` fonctionne derrière Hyperdrive.
+compatibility_date = "2026-10-05"
+compatibility_flags = ["nodejs_compat"]
+
+[observability]
+enabled = true
+
+# -----------------------------------------------------------------------------
+# Profil par défaut = DÉVELOPPEMENT (wrangler dev / wrangler deploy sans --env)
+# -----------------------------------------------------------------------------
+[vars]
+PERSISTENCE = "postgres"
+DB_POOL_MAX = "5"
+DB_STATEMENT_TIMEOUT_MS = "15000"
+DB_APPLICATION_NAME = "lelabeur-worker"
+SESSION_TTL_SECONDS = "43200"
+COOKIE_SECURE = "true"
+WORKER_ENV = "development"
+# Audience OAuth Google PUBLIQUE (aucun secret). Vide = frontière fermée (401/501).
+GOOGLE_CLIENT_ID = ""
+
+# Binding Hyperdrive de développement.
+# `id` : PLACEHOLDER — à remplacer par l'ID retourné par
+#   npx wrangler hyperdrive create lelabeur-dev --connection-string="postgresql://…"
+# En local, `wrangler dev` n'utilise PAS cet ID : la connexion vient de
+#   CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE (.dev.vars).
+[[hyperdrive]]
+binding = "HYPERDRIVE"
+id = "00000000-0000-0000-0000-000000000000"
+
+# -----------------------------------------------------------------------------
+# PRODUCTION (wrangler deploy --env production)
+# -----------------------------------------------------------------------------
+# `vars` et les bindings ne sont PAS hérités : chaque environnement doit les
+# redéclarer (sinon le déploiement part avec des vars vides et zéro binding).
+[env.production]
+name = "lelabeur-api"
+
+[env.production.vars]
+PERSISTENCE = "postgres"
+DB_POOL_MAX = "5"
+DB_STATEMENT_TIMEOUT_MS = "15000"
+DB_APPLICATION_NAME = "lelabeur-worker"
+SESSION_TTL_SECONDS = "43200"
+COOKIE_SECURE = "true"
+WORKER_ENV = "production"
+GOOGLE_CLIENT_ID = ""
+
+# Binding Hyperdrive de production : VOLONTAIREMENT ABSENT.
+# Aucun Hyperdrive réel n'existe dans cette session, et le placeholder de
+# développement n'est pas hérité. Conséquence voulue : déployé tel quel, le
+# Worker de production répond 503 sur /healthz (`misconfigured`) et refuse
+# toute route protégée — jamais de base implicite.
+#
+# Pour l'activer :
+#   1. npx wrangler hyperdrive create lelabeur-prod --connection-string="postgresql://…" --caching-disabled=true
+#      (cache désactivé : les lectures d'identité/session exigent un état frais)
+#   2. npx wrangler secret put POSTGRES_CONNECTION_STRING --env production   # (repli optionnel)
+#   3. décommenter le bloc ci-dessous avec l'ID réel, puis redéployer :
+#
+# [[env.production.hyperdrive]]
+# binding = "HYPERDRIVE"
+# id = "<ID_HYPERDRIVE_PRODUCTION>"
+
+# -----------------------------------------------------------------------------
+# Hors périmètre P0-C (volontairement absents) :
+# R2, Queues, Cron Triggers, Durable Objects, KV : aucun binding, aucune
+# migration DO, aucun scheduled handler.
+# -----------------------------------------------------------------------------

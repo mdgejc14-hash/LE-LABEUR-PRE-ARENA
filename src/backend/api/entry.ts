@@ -13,7 +13,7 @@
  * restent 501. Le mode DEMO (MockRepository) reste inchangé et par défaut.
  */
 
-import type { PostgreSqlDatabase } from '../services/database';
+import type { DatabaseHealthProbe, PostgreSqlDatabase } from '../services/database';
 import { createGoogleCredentialVerifier } from '../identity/googleVerifier';
 import type { GoogleCredentialVerifier } from '../productionContracts';
 import { createSessionService } from '../identity/sessionService';
@@ -29,16 +29,25 @@ import {
   type WorkerPersistenceEnvironment,
 } from '../persistence/config';
 import type { CoreStores } from '../persistence/coreRecords';
+import { readMigrationState } from '../persistence/migrationState';
 import { createPostgresDatabase } from '../persistence/postgresDatabase';
 import { createSqlCoreStores } from '../persistence/sqlCoreStores';
 import type { PostgresClientPort } from '../persistence/sqlClient';
-import { createApiWorker } from './worker';
+import { buildHealthPayload, detectWorkerRuntime, type BoundaryHealthResponse } from './health';
+import { createApiWorker, type ApiHealthReporter } from './worker';
 import { createIdentityApiWorker } from './identityWorker';
 
 export interface WorkerEnvironment extends WorkerPersistenceEnvironment {
   GOOGLE_CLIENT_ID?: string;
   SESSION_TTL_SECONDS?: string;
   COOKIE_SECURE?: string;
+  /** Nom déclaré de l'environnement déployé (`development`, `production`…) : informatif, jamais deviné. */
+  WORKER_ENV?: string;
+  /**
+   * UNIQUEMENT pour les vérifications locales : JWKS servi en boucle locale.
+   * Toute valeur non-loopback est ignorée, donc inutilisable en production.
+   */
+  TEST_ONLY_GOOGLE_JWKS_URL?: string;
 }
 
 export type WorkerIdentityMode = 'closed' | 'memory' | 'postgres';
@@ -46,6 +55,8 @@ export type WorkerIdentityMode = 'closed' | 'memory' | 'postgres';
 export interface WorkerPersistenceResolution {
   decision: PersistenceDecision;
   database?: PostgreSqlDatabase;
+  /** Sonde réelle (`SELECT 1`) disponible dès qu'une base est construite. */
+  probe?: DatabaseHealthProbe;
   /** Noyau relationnel résolu. Aucun handler ne le consomme encore en P0-A. */
   core?: CoreStores;
   /** Descripteur SANS secret, utilisable pour l'observabilité. */
@@ -58,6 +69,12 @@ export interface WorkerComposition {
   persistence: PersistenceDecision;
   worker: { fetch(request: Request): Promise<Response> };
   core?: CoreStores;
+  /** Rapport `/healthz` réel (sonde + migrations), sans aucun secret. */
+  health: ApiHealthReporter;
+  /** Sonde réelle ; absente quand aucune base n'est configurée. */
+  probe?: DatabaseHealthProbe;
+  /** Descripteur sûr de la cible, si une cible a été résolue. */
+  target?: SafePostgresDescriptor;
 }
 
 /** Serveur/test only: allows deterministic verification without changing env or DEMO behavior. */
@@ -68,6 +85,26 @@ export interface WorkerCompositionOverrides {
 
 function isInjectedDatabase(value: PostgreSqlDatabase | PostgresClientPort): value is PostgreSqlDatabase {
   return typeof (value as { run?: unknown }).run === 'function';
+}
+
+function isHealthProbe(value: PostgreSqlDatabase): value is PostgreSqlDatabase & DatabaseHealthProbe {
+  return typeof (value as { check?: unknown }).check === 'function';
+}
+
+/**
+ * JWKS de test accepté uniquement en boucle locale (vérifications locales).
+ * Toute autre valeur est ignorée : aucun détournement possible en production.
+ */
+export function resolveTestOnlyJwksUrl(value: string | undefined): string | undefined {
+  const candidate = value?.trim();
+  if (!candidate) return undefined;
+  try {
+    const url = new URL(candidate);
+    const loopback = ['127.0.0.1', 'localhost', '[::1]', '::1'].includes(url.hostname);
+    return url.protocol === 'http:' && loopback ? candidate : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /**
@@ -90,6 +127,7 @@ export function resolveWorkerPersistence(
     return {
       decision,
       database,
+      probe: isHealthProbe(database) ? database : undefined,
       core: createSqlCoreStores(database),
     };
   }
@@ -109,6 +147,7 @@ export function resolveWorkerPersistence(
     return {
       decision,
       database: created,
+      probe: created,
       core: createSqlCoreStores(created),
       target: describePostgresTarget(target.target),
     };
@@ -127,13 +166,41 @@ export function composeWorker(
   overrides: WorkerCompositionOverrides = {},
 ): WorkerComposition {
   const persistence = resolveWorkerPersistence(env, injected);
+  const runtime = {
+    runtime: detectWorkerRuntime(),
+    declaredEnvironment: env.WORKER_ENV?.trim() || null,
+    hyperdriveBinding: Boolean(env.HYPERDRIVE?.connectionString?.trim()),
+  };
+
+  /**
+   * Rapport de santé construit sur l'état OBSERVÉ : sonde `SELECT 1` quand une
+   * base existe, état réel des migrations sinon. Jamais de secret, jamais de
+   * valeur inventée.
+   */
+  const health: ApiHealthReporter = async (): Promise<BoundaryHealthResponse> => {
+    const database = persistence.database;
+    const checked = persistence.probe ? await persistence.probe.check() : undefined;
+    const migrations = database ? await readMigrationState(database) : undefined;
+    return buildHealthPayload({
+      decision: persistence.decision,
+      runtime,
+      health: checked,
+      target: persistence.target,
+      migrations,
+    });
+  };
+
   const audience = env.GOOGLE_CLIENT_ID?.trim();
   if (!audience) {
-    // Aucun vérificateur Google : la frontière reste fermée par défaut.
+    // Aucun vérificateur Google : la frontière reste fermée par défaut,
+    // mais `/healthz` continue de décrire l'état réel de la persistance.
     return {
       mode: 'closed',
       persistence: persistence.decision,
-      worker: createApiWorker({ authenticate: async () => null }),
+      health,
+      probe: persistence.probe,
+      target: persistence.target,
+      worker: createApiWorker({ authenticate: async () => null, health }),
     };
   }
 
@@ -149,13 +216,18 @@ export function composeWorker(
     return {
       mode: 'closed',
       persistence: persistence.decision,
-      worker: createApiWorker({ authenticate: async () => null }),
+      health,
+      probe: persistence.probe,
+      target: persistence.target,
+      worker: createApiWorker({ authenticate: async () => null, health }),
     };
   }
 
+  const testJwksUrl = resolveTestOnlyJwksUrl(env.TEST_ONLY_GOOGLE_JWKS_URL);
   const sessions = createSessionService({
     stores,
-    googleVerifier: overrides.googleVerifier ?? createGoogleCredentialVerifier({ audience }),
+    googleVerifier: overrides.googleVerifier
+      ?? createGoogleCredentialVerifier({ audience, ...(testJwksUrl ? { jwksUrl: testJwksUrl } : {}) }),
     sessionTtlSeconds: env.SESSION_TTL_SECONDS ? Number(env.SESSION_TTL_SECONDS) : undefined,
     now: overrides.now,
   });
@@ -164,9 +236,13 @@ export function composeWorker(
     mode,
     persistence: persistence.decision,
     core: persistence.core,
+    health,
+    probe: persistence.probe,
+    target: persistence.target,
     worker: createIdentityApiWorker({
       sessions,
       stores,
+      health,
       cookie: { secure: env.COOKIE_SECURE !== 'false' },
       now: overrides.now,
     }),

@@ -2,3 +2,12 @@ node_modules/
 dist/
 .env
 .env.local
+
+# Cloudflare / Wrangler : jamais de secrets locaux dans le dépôt
+.wrangler/
+.dev.vars
+.dev.vars.*
+!.dev.vars.example
+
+# Vérifications locales (PostgreSQL embarqué, données temporaires)
+.tmp/

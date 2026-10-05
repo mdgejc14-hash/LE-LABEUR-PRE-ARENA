@@ -22,13 +22,21 @@ export interface DriverQueryResult<Row> {
   rowCount?: number | null;
 }
 
+/**
+ * Un pilote `pg` réel renvoie un TABLEAU de résultats lorsqu'une requête
+ * contient plusieurs instructions (protocole simple, sans paramètres). Les lots
+ * de migration en dépendent : ce n'est pas un cas d'erreur mais un résultat
+ * multi-instructions, agrégé par `normalizeResult`.
+ */
+export type DriverQueryOutcome<Row> = DriverQueryResult<Row> | readonly DriverQueryResult<Row>[];
+
 export interface DriverConnectionLike {
-  query<Row = Record<string, unknown>>(text: string, values?: readonly unknown[]): Promise<DriverQueryResult<Row>>;
+  query<Row = Record<string, unknown>>(text: string, values?: readonly unknown[]): Promise<DriverQueryOutcome<Row>>;
   release?(): void;
 }
 
 export interface DriverPoolLike {
-  query<Row = Record<string, unknown>>(text: string, values?: readonly unknown[]): Promise<DriverQueryResult<Row>>;
+  query<Row = Record<string, unknown>>(text: string, values?: readonly unknown[]): Promise<DriverQueryOutcome<Row>>;
   /** Optionnel : sans `connect()`, les transactions sont refusées. */
   connect?(): Promise<DriverConnectionLike>;
   end?(): Promise<void>;
@@ -54,13 +62,29 @@ export class SqlClientContractError extends Error {
   }
 }
 
-function normalizeResult<Row>(result: DriverQueryResult<Row> | undefined, context: string): SqlQueryResult<Row> {
-  if (!result || !Array.isArray(result.rows)) {
+function normalizeResult<Row>(result: DriverQueryOutcome<Row> | undefined, context: string): SqlQueryResult<Row> {
+  if (Array.isArray(result)) {
+    // Requête multi-instructions : node-postgres renvoie un résultat par
+    // instruction. On agrège les lignes au lieu d'échouer sur `rows === undefined`.
+    const parts = result as readonly DriverQueryResult<Row>[];
+    if (parts.some(part => !part || !Array.isArray(part.rows))) {
+      throw new SqlClientContractError(`Le pilote PostgreSQL n’a pas retourné de lignes exploitables (${context}).`);
+    }
+    return {
+      rows: parts.flatMap(part => part.rows),
+      rowCount: parts.reduce(
+        (total, part) => total + (typeof part.rowCount === 'number' ? part.rowCount : part.rows.length),
+        0,
+      ),
+    };
+  }
+  const single = result as DriverQueryResult<Row> | undefined;
+  if (!single || !Array.isArray(single.rows)) {
     throw new SqlClientContractError(`Le pilote PostgreSQL n’a pas retourné de lignes exploitables (${context}).`);
   }
   return {
-    rows: result.rows,
-    rowCount: typeof result.rowCount === 'number' ? result.rowCount : result.rows.length,
+    rows: single.rows,
+    rowCount: typeof single.rowCount === 'number' ? single.rowCount : single.rows.length,
   };
 }
 

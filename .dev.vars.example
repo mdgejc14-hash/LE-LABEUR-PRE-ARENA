@@ -1,0 +1,18 @@
+# LE LABEUR — variables locales de `wrangler dev` (P0-C).
+#
+# Copier en `.dev.vars` (GITIGNORÉ) et renseigner une base locale ou distante.
+# Ce fichier d'exemple ne contient AUCUN secret réel et n'est jamais chargé tel quel.
+#
+# Chaîne de connexion utilisée par le binding Hyperdrive en développement local :
+# elle remplace l'ID du binding (voir documentation Cloudflare « Local development »).
+#   - base locale   : ajouter ?sslmode=disable (le TLS local n'est pas supporté par Hyperdrive local)
+#   - base distante : ajouter ?sslmode=require
+CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE="postgresql://lelabeur:motdepasse-local@127.0.0.1:55432/lelabeur?sslmode=disable"
+
+# Variable NON standard, acceptée uniquement si elle pointe vers la boucle locale
+# (127.0.0.1 / localhost). Elle permet de vérifier le parcours d'authentification
+# complet contre un JWKS de test servi localement. Ignorée partout ailleurs.
+# TEST_ONLY_GOOGLE_JWKS_URL="http://127.0.0.1:8799/jwks"
+
+# Repli sans Hyperdrive (déconseillé, réservé au dépannage local) :
+# POSTGRES_CONNECTION_STRING="postgresql://…"
