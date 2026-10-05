@@ -7,7 +7,6 @@
  *
  * Garanties :
  *  - transactions réelles sur une connexion dédiée (BEGIN / COMMIT / ROLLBACK) ;
- *  - aucune transaction imbriquée silencieuse (erreur explicite) ;
  *  - `statement_timeout` et `application_name` validés par construction, donc
  *    injectables sans interpolation libre ;
  *  - toute erreur exposée est expurgée des secrets de connexion.
@@ -77,7 +76,6 @@ export function createPostgresDatabase(
   options: PostgresDatabaseOptions = {},
 ): PostgreSqlDatabase & DatabaseHealthProbe {
   const resolved = resolveOptions(options);
-  let transactionOpen = false;
 
   return {
     async query<Row = Record<string, unknown>>(sql: string, values?: readonly unknown[]): Promise<SqlQueryResult<Row>> {
@@ -85,19 +83,15 @@ export function createPostgresDatabase(
     },
 
     async run<T>(operation: (transaction: SqlTransaction) => Promise<T>): Promise<T> {
-      if (transactionOpen) {
-        throw new Error(
-          'PostgreSqlDatabase.run ne supporte pas les transactions imbriquées : une seule transaction par décision métier.',
-        );
-      }
-      transactionOpen = true;
+      // Chaque appel réserve sa propre connexion. Un verrou global ici ferait
+      // échouer les requêtes HTTP simultanées pourtant indépendantes.
       const connection = await client.acquire();
       try {
         await connection.query('BEGIN');
         await connection.query(`SET LOCAL statement_timeout = ${resolved.statementTimeoutMs}`);
         await connection.query(`SET LOCAL application_name = '${resolved.applicationName}'`);
-        // Le contexte expose la MÊME connexion : une transaction n'est correcte
-        // que si toutes ses requêtes passent par cette session.
+        // Le contexte expose la MÊME connexion : toutes les requêtes atomiques
+        // doivent passer par ce transaction handle, pas par la base racine.
         const transaction: SqlTransaction = {
           transactionId: newTransactionId(),
           query: (sql, values) => connection.query(sql, values),
@@ -113,7 +107,6 @@ export function createPostgresDatabase(
         }
         throw error;
       } finally {
-        transactionOpen = false;
         try {
           await connection.release();
         } catch {

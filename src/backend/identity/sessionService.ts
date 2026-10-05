@@ -1,19 +1,20 @@
 /**
- * Service de session serveur et acteur authentifié (Phase 2).
+ * Service de session serveur et acteur authentifié.
  *
- * login  → session créée (jeton opaque, cookie HttpOnly)
- * requête→ session reconnue (hash du jeton, expiration, révocation, compte actif)
+ * login  → credential Google vérifié → identité résolue/créée → session durable
+ * requête→ hash du jeton, expiration, révocation, compte actif et RBAC persisté
  * logout → session révoquée (idempotent)
  *
- * Le rôle provient exclusivement de la ligne `users` chargée par le serveur.
+ * L'utilisateur, son rôle et ses permissions proviennent exclusivement des
+ * stores serveur; le navigateur ne peut fournir aucun de ces attributs.
  */
 
-import type { AuthenticatedActor, GoogleCredentialVerifier } from '../productionContracts';
+import type { AuthenticatedActor, GoogleCredentialVerifier, Permission } from '../productionContracts';
 import { ApiError } from '../api/errors';
 import { readSessionCookie } from './cookies';
 import { newEntityId, newOpaqueSessionToken } from './ids';
-import { isSelfAssignableRole, permissionsForRole, type SelfAssignableRole } from './permissions';
-import type { IdentityStores, ServerUserRecord } from './stores';
+import { isSelfAssignableRole, type SelfAssignableRole } from './permissions';
+import type { IdentityStoreTransaction, IdentityStores, ServerUserRecord } from './stores';
 
 export const DEFAULT_SESSION_TTL_SECONDS = 60 * 60 * 12;
 
@@ -44,13 +45,20 @@ export interface SessionServiceDependencies {
   cookieName?: string;
 }
 
-function toActor(user: ServerUserRecord, sessionId: string): AuthenticatedActor {
+function toActor(user: ServerUserRecord, sessionId: string, permissions: readonly Permission[]): AuthenticatedActor {
   return {
     id: user.id,
     role: user.role,
-    permissions: permissionsForRole(user.role),
+    permissions: [...permissions],
     sessionId,
   };
+}
+
+async function resolveSession(
+  transaction: IdentityStoreTransaction,
+  token: string,
+): Promise<Awaited<ReturnType<IdentityStoreTransaction['sessions']['findByToken']>>> {
+  return transaction.sessions.findByToken(token);
 }
 
 export interface SessionService {
@@ -65,23 +73,22 @@ export function createSessionService(dependencies: SessionServiceDependencies): 
   const ttl = dependencies.sessionTtlSeconds ?? DEFAULT_SESSION_TTL_SECONDS;
   const { stores } = dependencies;
 
-  async function resolveSession(request: Request) {
-    const token = readSessionCookie(request, dependencies.cookieName);
-    if (!token) return null;
-    const session = await stores.sessions.findByToken(token);
-    if (!session) return null;
-    if (session.revokedAt) return null;
-    if (Date.parse(session.expiresAt) <= now().getTime()) return null;
-    return session;
-  }
-
   return {
     async getAuthenticatedActor(request: Request): Promise<AuthenticatedPrincipal | null> {
-      const session = await resolveSession(request);
-      if (!session) return null;
-      const user = await stores.users.findById(session.userId);
-      if (!user || user.status !== 'ACTIVE') return null;
-      return { actor: toActor(user, session.id), user };
+      const token = readSessionCookie(request, dependencies.cookieName);
+      if (!token) return null;
+
+      return stores.transaction(async transaction => {
+        const session = await resolveSession(transaction, token);
+        if (!session) return null;
+        if (session.revokedAt) return null;
+        if (Date.parse(session.expiresAt) <= now().getTime()) return null;
+
+        const user = await transaction.users.findById(session.userId);
+        if (!user || user.status !== 'ACTIVE') return null;
+        const permissions = await transaction.permissions.listEffectivePermissions(user.id, user.role);
+        return { actor: toActor(user, session.id, permissions), user };
+      });
     },
 
     async loginWithGoogleCredential(input: GoogleLoginInput): Promise<GoogleLoginResult> {
@@ -99,64 +106,97 @@ export function createSessionService(dependencies: SessionServiceDependencies): 
       } catch {
         throw new ApiError('UNAUTHENTICATED', 'Credential Google invalide.');
       }
-      if (!identity?.subject || !identity.emailVerified) {
+      if (
+        !identity
+        || typeof identity.subject !== 'string'
+        || identity.subject.trim().length === 0
+        || typeof identity.email !== 'string'
+        || identity.email.trim().length === 0
+        || !identity.emailVerified
+      ) {
         throw new ApiError('UNAUTHENTICATED', 'Credential Google invalide.');
       }
 
-      const timestamp = now().toISOString();
-      const link = await stores.identities.findByExternalSubject('GOOGLE', identity.subject);
-      let user = link ? await stores.users.findById(link.userId) : null;
-      let created = false;
-
-      if (!user) {
-        const existingByEmail = await stores.users.findByEmail(identity.email);
-        if (existingByEmail) {
-          user = existingByEmail;
-        } else {
-          user = await stores.users.create({
-            id: newEntityId('usr'),
-            role: input.requestedRole ?? 'CANDIDATE',
-            status: 'ACTIVE',
-            email: identity.email,
-            displayName: identity.displayName ?? identity.email,
-            avatarUrl: identity.avatarUrl,
-          });
-          created = true;
-        }
-        await stores.identities.link({
-          userId: user.id,
-          provider: 'GOOGLE',
-          subject: identity.subject,
-          verifiedEmail: identity.email,
-          linkedAt: timestamp,
-        });
-      }
-
-      if (user.status === 'BLOCKED') {
-        throw new ApiError('FORBIDDEN', 'Compte bloqué.');
-      }
-
+      const verifiedEmail = identity.email.trim().toLowerCase();
       const sessionToken = newOpaqueSessionToken();
+      const timestamp = now().toISOString();
       const expiresAt = new Date(now().getTime() + ttl * 1000).toISOString();
-      const session = await stores.sessions.create({
-        userId: user.id,
-        token: sessionToken,
-        createdAt: timestamp,
-        expiresAt,
-      });
 
-      return {
-        principal: { actor: toActor(user, session.id), user },
-        sessionToken,
-        expiresAt,
-        created,
-      };
+      // Une même transaction couvre l'utilisateur, le lien Google, la session
+      // et les permissions qui seront renvoyées. Une erreur à n'importe quelle
+      // étape annule toutes les écritures PostgreSQL.
+      return stores.transaction(async transaction => {
+        await transaction.lockIdentityResolution('GOOGLE', identity.subject, verifiedEmail);
+
+        const link = await transaction.identities.findByExternalSubject('GOOGLE', identity.subject);
+        let user: ServerUserRecord | null = link
+          ? await transaction.users.findById(link.userId)
+          : null;
+        let created = false;
+
+        if (link && !user) {
+          throw new Error('L’identité Google persistée référence un utilisateur absent.');
+        }
+
+        if (!user) {
+          user = await transaction.users.findByEmail(verifiedEmail);
+          if (!user) {
+            user = await transaction.users.create({
+              id: newEntityId('usr'),
+              role: input.requestedRole ?? 'CANDIDATE',
+              status: 'ACTIVE',
+              email: verifiedEmail,
+              displayName: identity.displayName?.trim() || verifiedEmail,
+              avatarUrl: identity.avatarUrl,
+            });
+            created = true;
+          }
+
+          const persistedLink = await transaction.identities.link({
+            userId: user.id,
+            provider: 'GOOGLE',
+            subject: identity.subject,
+            verifiedEmail,
+            linkedAt: timestamp,
+          });
+          if (persistedLink.userId !== user.id) {
+            // Défense supplémentaire en cas de conflit de clé unique observé
+            // par un autre processus; `user_id` existant reste autoritaire.
+            const canonicalUser = await transaction.users.findById(persistedLink.userId);
+            if (!canonicalUser) throw new Error('L’identité Google canonique référence un utilisateur absent.');
+            user = canonicalUser;
+            created = false;
+          }
+        }
+
+        if (user.status !== 'ACTIVE') {
+          throw new ApiError('FORBIDDEN', user.status === 'BLOCKED' ? 'Compte bloqué.' : 'Compte non actif.');
+        }
+
+        const session = await transaction.sessions.create({
+          userId: user.id,
+          token: sessionToken,
+          createdAt: timestamp,
+          expiresAt,
+        });
+        const permissions = await transaction.permissions.listEffectivePermissions(user.id, user.role);
+        return {
+          principal: { actor: toActor(user, session.id, permissions), user },
+          sessionToken,
+          expiresAt,
+          created,
+        };
+      });
     },
 
     async logout(request: Request): Promise<void> {
-      const session = await resolveSession(request);
-      if (!session) return;
-      await stores.sessions.revoke(session.id, now().toISOString());
+      const token = readSessionCookie(request, dependencies.cookieName);
+      if (!token) return;
+      await stores.transaction(async transaction => {
+        const session = await resolveSession(transaction, token);
+        if (!session || session.revokedAt) return;
+        await transaction.sessions.revoke(session.id, now().toISOString());
+      });
     },
   };
 }

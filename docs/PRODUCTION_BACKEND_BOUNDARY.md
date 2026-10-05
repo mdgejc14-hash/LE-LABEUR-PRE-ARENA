@@ -164,8 +164,9 @@ NAVIGATEUR → POST /api/v1/auth/google (credential Google)
 - Le rôle ADMIN n'est pas attribuable en self-service : seules les valeurs `CANDIDATE`/`EMPLOYER` sont acceptées.
 - Les réponses passent par des DTO (`src/backend/identity/dto.ts`) : ni `sub`, ni hash de session, ni jeton.
 - Routes ADMIN protégées par session réelle + rôle ADMIN + permission; handlers de contrôle minimaux uniquement.
-- `migrations/0001_identity_and_core.sql` et `0002_role_permissions_seed.sql` préparent PostgreSQL (users, external_identities, sessions, permissions, role_permissions, user_permissions, offers, applications, contracts) avec contraintes et indexes. **Aucune base n'est provisionnée ni migrée : la DB de production n'est pas opérationnelle.**
-- `composeWorker()` reste fermé (`mode: 'closed'`) sans `GOOGLE_CLIENT_ID` et sans store : aucune ouverture silencieuse.
+- `migrations/0001_identity_and_core.sql` et `0002_role_permissions_seed.sql` préparent PostgreSQL (users, external_identities, sessions, permissions, role_permissions, user_permissions, offers, applications, contracts) avec contraintes et indexes. Aucune base de production n'est provisionnée ni migrée.
+- **P0-B :** les stores PostgreSQL d'identité/session et les permissions persistées sont branchés à `composeWorker()` lorsqu'une base ou un client SQL lui est fourni. La création/résolution de l'identité Google et la session sont transactionnelles; `/auth/session` et `/me` sont testés sur PGlite. Cela ne constitue ni un binding Hyperdrive ni un déploiement réel.
+- `composeWorker()` reste fermé (`mode: 'closed'`) sans `GOOGLE_CLIENT_ID` ou sans store persistant explicitement sélectionné : aucune ouverture silencieuse.
 - MODE DEMO (MockRepository) reste le défaut; MODE API exige `VITE_DEMO_MODE=false` + `VITE_API_BASE_PATH` same-origin.
 - WebRTC : inchangé, mock préservé, signaling production toujours non branché.
 

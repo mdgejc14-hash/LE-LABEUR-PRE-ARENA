@@ -644,7 +644,7 @@ export async function runPostgresFoundationTests(): Promise<PostgresFoundationTe
     });
     const value = await database.run(async transaction => {
       assert(typeof transaction.transactionId === 'string' && transaction.transactionId.length > 0, 'transactionId requis');
-      await database.query('SELECT 1');
+      await transaction.query('SELECT 1');
       return 'ok';
     });
     assert(value === 'ok', 'la transaction doit restituer le résultat');
@@ -673,19 +673,25 @@ export async function runPostgresFoundationTests(): Promise<PostgresFoundationTe
     assert(driver.released === 1, 'la connexion doit être libérée après échec');
   });
 
-  await check('Adaptateur: transactions imbriquées refusées', async () => {
+  await check('Adaptateur: transactions HTTP simultanées utilisent des connexions indépendantes', async () => {
     const driver = new ScriptedDriver(respondWith(offerRow));
     const database = createPostgresDatabase(toPostgresClientPort(driver));
-    let message = '';
-    try {
-      await database.run(async () => {
-        await database.run(async () => 'interne');
-      });
-    } catch (error) {
-      message = String((error as Error)?.message ?? error);
-    }
-    assert(/imbriqu/.test(message), `message d’imbrication attendu, reçu « ${message} »`);
-    assert(driver.connects === 1, 'aucune connexion supplémentaire ne doit être ouverte pour la transaction imbriquée');
+    let entered = 0;
+    let releaseBarrier = () => {};
+    const barrier = new Promise<void>(resolve => { releaseBarrier = resolve; });
+    const transaction = () => database.run(async connection => {
+      entered += 1;
+      if (entered === 2) releaseBarrier();
+      await barrier;
+      await connection.query('SELECT 1');
+      return connection.transactionId;
+    });
+
+    const ids = await Promise.all([transaction(), transaction()]);
+    assert(ids[0] !== ids[1], 'chaque transaction doit avoir son propre identifiant.');
+    assert(driver.connects === 2 && driver.released === 2, 'deux connexions dédiées doivent être acquises et libérées.');
+    assert(driver.statements.filter(statement => statement.sql === 'BEGIN').length === 2, 'les deux transactions doivent démarrer.');
+    assert(driver.statements.filter(statement => statement.sql === 'COMMIT').length === 2, 'les deux transactions doivent valider.');
   });
 
   await check('Adaptateur: timeout et application_name validés (aucune injection)', () => {

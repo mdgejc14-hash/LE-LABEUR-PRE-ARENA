@@ -4,6 +4,7 @@ import { runMassiveQaScenarios } from '../src/domain/qaMassive.test';
 import { runBackendBoundaryTests } from '../src/backend/api/foundation.test';
 import { runCallBoundaryTests } from '../src/services/calls/signalingCredentialClient.test';
 import { runIdentitySessionTests } from '../src/backend/identity/identity.test';
+import { runPostgresIdentityTests } from '../src/backend/identity/postgresIdentity.test';
 import { runSessionBridgeTests } from '../src/repositories/sessionBridge.test';
 import { runPaymentDeclarationTests } from '../src/repositories/paymentDeclarations.test';
 import { runAdminPaymentDeclarationTests } from '../src/repositories/adminPaymentDeclarations.test';
@@ -23,6 +24,7 @@ async function main(): Promise<void> {
   const boundary = await runBackendBoundaryTests();
   const callBoundary = runCallBoundaryTests();
   const identity = await runIdentitySessionTests();
+  const postgresIdentity = await runPostgresIdentityTests();
   const sessionBridge = await runSessionBridgeTests();
   const paymentDeclarations = await runPaymentDeclarationTests();
   const adminPaymentDeclarations = await runAdminPaymentDeclarationTests();
@@ -36,6 +38,7 @@ async function main(): Promise<void> {
     { name: 'Backend boundary', cases: boundary },
     { name: 'Mock/API WebRTC boundary', cases: callBoundary },
     { name: 'Server identity & session', cases: identity },
+    { name: 'P0-B — identité et sessions PostgreSQL (PGlite)', cases: postgresIdentity },
     { name: 'Frontend ↔ server session bridge', cases: sessionBridge },
     { name: 'Phases 4A/4B — déclarations de paiement employeur', cases: paymentDeclarations },
     { name: 'Phase 4C — consultation ADMIN des paiements soumis', cases: adminPaymentDeclarations },

@@ -1,13 +1,16 @@
 /**
- * Ports de persistance identité (Phase 2).
+ * Ports de persistance identité (Phase 2 / P0-B).
  *
- * Deux implémentations sont prévues :
- *  - `InMemoryIdentityStore` : tests et mode démo serveur, jamais production ;
- *  - `SqlIdentityStore` (src/backend/identity/sqlStores.ts) : PostgreSQL via
- *    Hyperdrive, préparé mais non branché tant qu'aucune connexion n'est fournie.
+ * Les opérations de création d'une identité et de sa session sont exécutées
+ * via `IdentityStores.transaction`. Le store PostgreSQL fournit une vue liée
+ * à une connexion transactionnelle dédiée; le store mémoire ne sert qu'aux
+ * tests et au mode serveur `memory` explicite.
  */
 
 import type { UserRole } from '../../types';
+import type { Permission } from '../productionContracts';
+import type { PermissionStore } from '../persistence/coreRecords';
+import { ADMIN_PERMISSIONS, permissionsForRole } from './permissions';
 import { hashSessionToken, newEntityId, newOpaqueSessionToken } from './ids';
 
 export type AccountStatus = 'ACTIVE' | 'BLOCKED' | 'PENDING';
@@ -53,6 +56,7 @@ export interface UserStore {
 
 export interface ExternalIdentityStore {
   findByExternalSubject(provider: 'GOOGLE', subject: string): Promise<ExternalIdentityRecord | null>;
+  /** Returns the canonical persisted link when a unique-key race was resolved by PostgreSQL. */
   link(input: Omit<ExternalIdentityRecord, 'id'>): Promise<ExternalIdentityRecord>;
 }
 
@@ -63,13 +67,21 @@ export interface SessionStore {
   revokeAllForUser(userId: string, revokedAt: string): Promise<void>;
 }
 
-export interface IdentityStores {
+/** Transaction-scoped view; it deliberately does not expose another transaction method. */
+export interface IdentityStoreTransaction {
   users: UserStore;
   identities: ExternalIdentityStore;
   sessions: SessionStore;
+  permissions: PermissionStore;
+  /** Serializes resolution by stable Google subject and verified email in PostgreSQL. */
+  lockIdentityResolution(provider: 'GOOGLE', subject: string, verifiedEmail: string): Promise<void>;
 }
 
-/** Implémentation mémoire : tests, mode démo et environnements sans PostgreSQL. */
+export interface IdentityStores extends IdentityStoreTransaction {
+  transaction<T>(operation: (transaction: IdentityStoreTransaction) => Promise<T>): Promise<T>;
+}
+
+/** Implémentation mémoire : tests, mode serveur explicite, jamais le MODE DEMO frontend. */
 export class InMemoryIdentityStore implements UserStore, ExternalIdentityStore {
   private readonly usersById = new Map<string, ServerUserRecord>();
   private readonly identitiesByKey = new Map<string, ExternalIdentityRecord>();
@@ -112,11 +124,7 @@ export class InMemoryIdentityStore implements UserStore, ExternalIdentityStore {
     return record;
   }
 
-  async create_session(input: { userId: string; token: string; createdAt: string; expiresAt: string }): Promise<SessionRecord> {
-    return this.create_sessionInternal(input);
-  }
-
-  private async create_sessionInternal(input: { userId: string; token: string; createdAt: string; expiresAt: string }): Promise<SessionRecord> {
+  async createSession(input: { userId: string; token: string; createdAt: string; expiresAt: string }): Promise<SessionRecord> {
     const tokenHash = await hashSessionToken(input.token);
     const record: SessionRecord = {
       id: newEntityId('ses'),
@@ -152,17 +160,49 @@ export class InMemoryIdentityStore implements UserStore, ExternalIdentityStore {
   }
 }
 
-/** `SessionStore.create` ne peut pas partager le nom de `UserStore.create`. */
-export function createInMemoryIdentityStores(): IdentityStores {
-  const store = new InMemoryIdentityStore();
+function createInMemoryPermissionStore(): PermissionStore {
+  const rolePermissions: Record<UserRole, readonly Permission[]> = {
+    CANDIDATE: permissionsForRole('CANDIDATE'),
+    EMPLOYER: permissionsForRole('EMPLOYER'),
+    ADMIN: ADMIN_PERMISSIONS,
+  };
+  const userPermissions = new Map<string, readonly Permission[]>();
+  const effective = (userId: string, role: UserRole) =>
+    [...new Set<Permission>([...rolePermissions[role], ...(userPermissions.get(userId) ?? [])])].sort();
   return {
+    async listRolePermissions(role) { return [...rolePermissions[role]]; },
+    async listUserPermissions(userId) { return [...(userPermissions.get(userId) ?? [])]; },
+    async listEffectivePermissions(userId, role) { return effective(userId, role); },
+  };
+}
+
+/**
+ * Le store mémoire est volontairement hors de la garantie PostgreSQL; il
+ * conserve un seul état serveur pour les tests et les compositions explicites
+ * `memory`. Le parcours frontend DEMO reste celui de MockRepository.
+ */
+export function createInMemoryIdentityStores(permissionStore?: PermissionStore): IdentityStores {
+  const store = new InMemoryIdentityStore();
+  const permissions = permissionStore ?? createInMemoryPermissionStore();
+  const transactionView: IdentityStoreTransaction = {
     users: store,
     identities: store,
     sessions: {
-      create: input => store.create_session(input),
+      create: input => store.createSession(input),
       findByToken: token => store.findByToken(token),
       revoke: (sessionId, revokedAt) => store.revoke(sessionId, revokedAt),
       revokeAllForUser: (userId, revokedAt) => store.revokeAllForUser(userId, revokedAt),
+    },
+    permissions,
+    async lockIdentityResolution() {
+      // Single-process memory store; only PostgreSQL requires transaction locks.
+    },
+  };
+
+  return {
+    ...transactionView,
+    async transaction(operation) {
+      return operation(transactionView);
     },
   };
 }

@@ -13,12 +13,12 @@
  *  - JSONB lu en tolérant les pilotes qui renvoient du texte ;
  *  - erreurs PostgreSQL traduites en `CoreStoreError` stable (23505, 23514,
  *    23503) ; toute autre erreur est propagée telle quelle, jamais avalée ;
- *  - aucune route ne consomme encore ces stores (P0-A : handlers métier 501).
+ *  - les stores métier offres/candidatures/contrats ne sont pas branchés : leurs routes restent 501 ;
+ *  - la lecture des permissions est partagée avec le flux d'identité P0-B.
  */
 
-import type { Permission } from '../productionContracts';
 import type { PostgreSqlDatabase, SqlQueryResult } from '../services/database';
-import type { UserRole } from '../../types';
+import { createSqlPermissionStore } from '../identity/permissionStore';
 import {
   APPLICATION_STATUS_VALUES,
   assertStatusDomain,
@@ -34,7 +34,6 @@ import {
   type CoreStores,
   type OfferRecord,
   type OfferStore,
-  type PermissionStore,
 } from './coreRecords';
 import { postgresErrorCode } from './sqlClient';
 
@@ -533,34 +532,6 @@ export function createSqlContractStore(db: PostgreSqlDatabase): ContractStore {
       } catch (error) {
         return translateSqlError(error, 'contracts', `Statut « ${status} » refusé pour le contrat ${contractId}.`);
       }
-    },
-  };
-}
-
-export function createSqlPermissionStore(db: PostgreSqlDatabase): PermissionStore {
-  const codes = async (sql: string, values: readonly unknown[]): Promise<Permission[]> => {
-    const result = await db.query<{ permission_code: string }>(sql, values);
-    return result.rows.map(row => row.permission_code as Permission);
-  };
-
-  return {
-    async listRolePermissions(role: UserRole) {
-      return codes('SELECT permission_code FROM role_permissions WHERE role = $1 ORDER BY permission_code ASC', [role]);
-    },
-
-    async listUserPermissions(userId) {
-      return codes('SELECT permission_code FROM user_permissions WHERE user_id = $1 ORDER BY permission_code ASC', [userId]);
-    },
-
-    async listEffectivePermissions(userId, role) {
-      const result = await db.query<{ permission_code: string }>(
-        `SELECT permission_code FROM role_permissions WHERE role = $1
-         UNION
-         SELECT permission_code FROM user_permissions WHERE user_id = $2
-         ORDER BY permission_code ASC`,
-        [role, userId],
-      );
-      return result.rows.map(row => row.permission_code as Permission);
     },
   };
 }
