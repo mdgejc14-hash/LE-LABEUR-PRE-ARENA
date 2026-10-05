@@ -217,6 +217,7 @@ export function createLegacyApiRepositoryAdapter(api: ApiRepository): AppReposit
     verifyCommissionPayment: (paymentId: string, _actorId: string) => api.admin.approvePayment(paymentId, { idempotencyKey: key() }),
     rejectCommissionPayment: (paymentId: string, reason: string, _actorId: string) => api.admin.rejectPayment(paymentId, reason, { idempotencyKey: key() }),
     getRevenueMetrics: () => api.admin.listStats(),
+    submitPaymentDeclaration: unsupported('paymentDeclarations.submit'),
 
     getNotifications: async (_userId: string, _role?: UserRole) => firstPage(api.notifications.getMine({ limit: 100 })),
     markAsRead: (notificationId: string, _actorId: string) => api.notifications.markRead(notificationId, { idempotencyKey: key() }),

@@ -119,11 +119,12 @@ export interface AppContextType {
   transferReplacementCandidate: (replacementId: string) => Promise<ReplacementDossier>;
   finalizeReplacementContract: (replacementId: string) => Promise<{ replacement: ReplacementDossier; newContract: Contract }>;
 
-  // Paiements externes déclarés par l'employeur (PHASE 4A)
+  // Paiements externes déclarés par l'employeur (PHASES 4A/4B)
   paymentDeclarations: PaymentDeclaration[];
   refreshPaymentDeclarations: () => Promise<PaymentDeclaration[]>;
   createPaymentDeclaration: (input: PaymentDeclarationInput) => Promise<PaymentDeclaration>;
   updatePaymentDeclaration: (paymentId: string, patch: Partial<PaymentDeclarationInput>) => Promise<PaymentDeclaration>;
+  submitPaymentDeclaration: (paymentId: string) => Promise<PaymentDeclaration>;
 
   // Filtres
   filterState: FilterState;
@@ -229,8 +230,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [scenarioDrawerOpen, setScenarioDrawerOpen] = useState<boolean>(false);
 
   /**
-   * PHASE 4A — les déclarations de paiement externe n'existent que pour un
-   * employeur connecté. Toute autre session repart d'une liste vide.
+   * PHASES 4A/4B — les déclarations de paiement externe n'existent que pour
+   * un employeur connecté. Toute autre session repart d'une liste vide.
    */
   const loadPaymentDeclarations = useCallback(async (user: UserProfile | null): Promise<PaymentDeclaration[]> => {
     if (!user || user.role !== 'EMPLOYER') {
@@ -727,7 +728,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return await repositories.finalizeReplacementContract(replacementId, currentUser.id);
   }, [currentUser]);
 
-  // PHASE 4A — déclarations de paiement externe (EMPLOYEUR). Le contrôle
+  // PHASES 4A/4B — déclarations de paiement externe (EMPLOYEUR). Le contrôle
   // administratif n'est pas encore implémenté : aucune action de validation ici.
   const refreshPaymentDeclarations = useCallback(async () => {
     return await loadPaymentDeclarations(currentUser);
@@ -745,6 +746,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!currentUser) throw new Error('Utilisateur non connecté');
     if (currentUser.role !== 'EMPLOYER') throw new Error('Action non autorisée : EMPLOYER uniquement.');
     const declaration = await repositories.updatePaymentDeclaration(paymentId, patch, currentUser.id);
+    setPaymentDeclarations(prev => {
+      const next = prev.map(item => item.paymentId === paymentId ? declaration : item);
+      return [...next].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    });
+    return declaration;
+  }, [currentUser]);
+
+  const submitPaymentDeclaration = useCallback(async (paymentId: string) => {
+    if (!currentUser) throw new Error('Utilisateur non connecté');
+    if (currentUser.role !== 'EMPLOYER') throw new Error('Action non autorisée : EMPLOYER uniquement.');
+    const declaration = await repositories.submitPaymentDeclaration(paymentId, currentUser.id);
     setPaymentDeclarations(prev => {
       const next = prev.map(item => item.paymentId === paymentId ? declaration : item);
       return [...next].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
@@ -1136,6 +1148,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     refreshPaymentDeclarations,
     createPaymentDeclaration,
     updatePaymentDeclaration,
+    submitPaymentDeclaration,
     filterState,
     updateFilterState,
     resetFilters,

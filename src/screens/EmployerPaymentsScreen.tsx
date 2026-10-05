@@ -1,13 +1,13 @@
 /**
- * PHASE 4A — Espace EMPLOYEUR « Mes Paiements ».
+ * PHASES 4A/4B — Espace EMPLOYEUR « Mes Paiements ».
  *
  * L'employeur déclare un règlement effectué HORS plateforme (Mobile Money,
  * virement, espèces…) : contrat concerné, montant, moyen de paiement, ID de
  * transaction, référence, date/heure, justificatif et commentaire.
  *
- * Périmètre de cette étape : création, modification d'un brouillon et liste des
- * déclarations. Le contrôle administratif (validation / rejet) est l'étape
- * suivante et n'est volontairement pas exposé ici.
+ * Périmètre employeur des Phases 4A/4B : création, modification d'un brouillon,
+ * soumission explicite et liste des déclarations. Le contrôle administratif
+ * (validation / rejet) est l'étape suivante et n'est pas exposé ici.
  */
 
 import React, { useMemo, useState } from 'react';
@@ -19,6 +19,7 @@ import {
   Pencil,
   Plus,
   Receipt,
+  Send,
   ScrollText
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
@@ -135,6 +136,7 @@ export const EmployerPaymentsScreen: React.FC = () => {
     paymentDeclarations,
     createPaymentDeclaration,
     updatePaymentDeclaration,
+    submitPaymentDeclaration,
     refreshPaymentDeclarations
   } = useApp();
 
@@ -143,6 +145,7 @@ export const EmployerPaymentsScreen: React.FC = () => {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<PaymentFormState>(EMPTY_PAYMENT_FORM);
   const [submitting, setSubmitting] = useState(false);
+  const [submittingPaymentId, setSubmittingPaymentId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
@@ -245,6 +248,21 @@ export const EmployerPaymentsScreen: React.FC = () => {
     }
   };
 
+  const handleSubmitDeclaration = async (paymentId: string) => {
+    setSubmittingPaymentId(paymentId);
+    setErrorMessage(null);
+    setSuccessMessage(null);
+    try {
+      const declaration = await submitPaymentDeclaration(paymentId);
+      setFilter('SUBMITTED');
+      setSuccessMessage(`Paiement ${declaration.paymentId} soumis avec succès. Le brouillon n’est plus modifiable.`);
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : 'Soumission impossible.');
+    } finally {
+      setSubmittingPaymentId(null);
+    }
+  };
+
   const updateField = <K extends keyof PaymentFormState>(field: K, value: PaymentFormState[K]) => {
     setForm(prev => ({ ...prev, [field]: value }));
   };
@@ -295,8 +313,13 @@ export const EmployerPaymentsScreen: React.FC = () => {
         </EditorialButton>
       </div>
 
+      {errorMessage && !sheetOpen && (
+        <div role="alert" className="mb-4 p-3 bg-[#E23D3D]/8 border border-[#E23D3D]/25 rounded-[4px] text-xs text-[#E23D3D] font-medium">
+          {errorMessage}
+        </div>
+      )}
       {successMessage && !sheetOpen && (
-        <div className="mb-4 p-3 bg-[#1BA64B]/10 border border-[#1BA64B]/30 rounded-[4px] text-xs text-[#1BA64B] font-medium">
+        <div role="status" className="mb-4 p-3 bg-[#1BA64B]/10 border border-[#1BA64B]/30 rounded-[4px] text-xs text-[#1BA64B] font-medium">
           {successMessage}
         </div>
       )}
@@ -389,10 +412,16 @@ export const EmployerPaymentsScreen: React.FC = () => {
                   {declaration.updatedAt !== declaration.createdAt && <span>Modifié le {formatDateTime(declaration.updatedAt)}</span>}
                 </div>
                 {declaration.status === 'DRAFT' && (
-                  <EditorialButton variant="outline" size="sm" onClick={() => openEditSheet(declaration)}>
-                    <Pencil className="w-3.5 h-3.5 mr-1 text-[#17233B]/60" />
-                    <span>Modifier</span>
-                  </EditorialButton>
+                  <div className="flex items-center gap-2">
+                    <EditorialButton variant="outline" size="sm" onClick={() => openEditSheet(declaration)} disabled={submittingPaymentId === declaration.paymentId}>
+                      <Pencil className="w-3.5 h-3.5 mr-1 text-[#17233B]/60" />
+                      <span>Modifier</span>
+                    </EditorialButton>
+                    <EditorialButton variant="primary" size="sm" onClick={() => void handleSubmitDeclaration(declaration.paymentId)} disabled={submittingPaymentId !== null}>
+                      <Send className="w-3.5 h-3.5 mr-1" />
+                      <span>{submittingPaymentId === declaration.paymentId ? 'Soumission...' : 'Soumettre'}</span>
+                    </EditorialButton>
+                  </div>
                 )}
               </div>
             </article>
