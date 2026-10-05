@@ -49,6 +49,8 @@ export interface SessionRecord {
 
 export interface UserStore {
   findById(userId: string): Promise<ServerUserRecord | null>;
+  /** Locks the user row against account-status changes in a PostgreSQL transaction. */
+  findByIdForShare(userId: string): Promise<ServerUserRecord | null>;
   findByEmail(email: string): Promise<ServerUserRecord | null>;
   create(input: Omit<ServerUserRecord, 'createdAt' | 'updatedAt'>): Promise<ServerUserRecord>;
   list(limit: number): Promise<ServerUserRecord[]>;
@@ -90,6 +92,11 @@ export class InMemoryIdentityStore implements UserStore, ExternalIdentityStore {
 
   async findById(userId: string): Promise<ServerUserRecord | null> {
     return this.usersById.get(userId) ?? null;
+  }
+
+  async findByIdForShare(userId: string): Promise<ServerUserRecord | null> {
+    // The memory identity store is single-process and has no database row locks.
+    return this.findById(userId);
   }
 
   async findByEmail(email: string): Promise<ServerUserRecord | null> {

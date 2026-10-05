@@ -18,8 +18,8 @@ export interface ApiRouteContract {
 }
 
 /**
- * Contract catalog only. The Phase 1 Worker enforces authentication/RBAC and
- * returns NOT_IMPLEMENTED until a persistent domain handler is installed.
+ * Route contract catalog. The Worker enforces authentication/RBAC and returns
+ * NOT_IMPLEMENTED for every operation without an explicitly installed handler.
  */
 export const API_ROUTE_CONTRACTS = [
   { key: 'auth.session', method: 'GET', path: '/api/v1/auth/session', authentication: 'required', scope: 'self' },

@@ -27,7 +27,7 @@ export type ApiHealthReporter = () => Promise<BoundaryHealthResponse> | Boundary
 export interface ApiWorkerDependencies {
   /** Must verify a server session cookie/token; never read actor fields from request data. */
   authenticate(request: Request): Promise<AuthenticatedActor | null>;
-  /** Persistent domain handlers are intentionally absent in the foundation pass. */
+  /** Only explicitly installed persistent domain handlers are reachable; all others stay 501. */
   handlers?: Partial<Record<ApiRouteKey, ApiRouteHandler>>;
   createRequestId?: () => string;
   /**

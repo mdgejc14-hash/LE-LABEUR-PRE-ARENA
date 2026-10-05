@@ -24,7 +24,8 @@ import { composeWorker } from './entry';
 import { SESSION_COOKIE_NAME } from '../identity/cookies';
 import { base64UrlEncode } from '../identity/ids';
 import { createGoogleCredentialVerifier } from '../identity/googleVerifier';
-import type { GoogleCredentialVerifier, GoogleExternalIdentity } from '../productionContracts';
+import type { AuthenticatedActor, GoogleCredentialVerifier, GoogleExternalIdentity } from '../productionContracts';
+import type { ServerApplicationRepository } from '../repositories/contracts';
 import type { PostgreSqlDatabase } from '../services/database';
 import { createPostgresDatabase } from '../persistence/postgresDatabase';
 import { createSqlOfferStore } from '../persistence/sqlCoreStores';
@@ -152,16 +153,17 @@ async function buildTestCredentials(clock: { value: Date }): Promise<{
   return { verifier, credentials };
 }
 
-interface TestHarness {
+export interface TestHarness {
   database: PostgreSqlDatabase;
   pg: PGlite;
   worker: { fetch(request: Request): Promise<Response> };
+  applications?: Pick<ServerApplicationRepository, 'applyToOffer' | 'listApplicationsForOffer'>;
   clock: { value: Date };
   credentials: Record<string, string>;
   close: () => Promise<void>;
 }
 
-async function createOffersTestHarness(): Promise<TestHarness> {
+export async function createOffersTestHarness(): Promise<TestHarness> {
   offerIdempotencyCache.clear();
   const pg = new PGlite();
   const migrationFiles = readdirSync(MIGRATIONS_DIR).filter(file => file.endsWith('.sql')).sort();
@@ -186,6 +188,7 @@ async function createOffersTestHarness(): Promise<TestHarness> {
     database,
     pg,
     worker: composition.worker,
+    applications: composition.applications,
     clock,
     credentials: google.credentials,
     close: async () => {
@@ -202,7 +205,7 @@ function cookieFrom(response: Response): string {
   return match[1];
 }
 
-async function authenticateActor(harness: TestHarness, identityKey: string, requestedRole: string): Promise<{
+export async function authenticateActor(harness: TestHarness, identityKey: string, requestedRole: string): Promise<{
   token: string;
   userId: string;
 }> {
@@ -216,7 +219,7 @@ async function authenticateActor(harness: TestHarness, identityKey: string, requ
   return { token: cookieFrom(response), userId: body.user.id };
 }
 
-function authRequest(path: string, token: string | null, init: RequestInit = {}): Request {
+export function authRequest(path: string, token: string | null, init: RequestInit = {}): Request {
   const headers = new Headers(init.headers);
   if (token) headers.set('cookie', `${SESSION_COOKIE_NAME}=${token}`);
   return new Request(`https://api.test${path}`, { ...init, headers });

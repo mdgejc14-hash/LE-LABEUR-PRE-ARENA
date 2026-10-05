@@ -4,9 +4,9 @@
  * NAVIGATEUR → AUTH GOOGLE (vérifiée serveur) → SESSION SERVEUR → ACTEUR
  * → RÔLE → PERMISSIONS → API.
  *
- * Ce Worker n'ajoute aucun handler métier : seules les routes AUTH/SESSION/ME
- * et les frontières ADMIN de contrôle sont branchées. Tout le reste conserve le
- * comportement fermé de la Phase 1 (401 / 403 / 501).
+ * Ce Worker ajoute les handlers métier fournis explicitement par la composition.
+ * Les routes AUTH/SESSION/ME et les frontières ADMIN de contrôle restent celles
+ * de cette couche; toute opération métier non injectée demeure fermée (501).
  */
 
 import { serializeExpiredSessionCookie, serializeSessionCookie, type SessionCookieOptions } from '../identity/cookies';
@@ -26,7 +26,7 @@ export interface IdentityWorkerOptions {
   /** Horloge serveur, alignée sur celle du service de session (tests). */
   now?: () => Date;
   createRequestId?: () => string;
-  /** Handlers métier supplémentaires; aucun n'est fourni par cette phase. */
+  /** Handlers métier explicitement ouverts par la composition de persistance. */
   handlers?: Partial<Record<ApiRouteKey, ApiRouteHandler>>;
   /** Rapport de santé réel de la persistance (P0-C); absent = frontière nue. */
   health?: ApiHealthReporter;

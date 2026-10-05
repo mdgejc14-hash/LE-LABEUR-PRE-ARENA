@@ -13,7 +13,8 @@
  *  - JSONB lu en tolérant les pilotes qui renvoient du texte ;
  *  - erreurs PostgreSQL traduites en `CoreStoreError` stable (23505, 23514,
  *    23503) ; toute autre erreur est propagée telle quelle, jamais avalée ;
- *  - les stores métier offres/candidatures/contrats ne sont pas branchés : leurs routes restent 501 ;
+ *  - les stores OFFRES et les opérations P0-E3 de soumission/consultation ciblée
+ *    des candidatures sont branchés; les autres cycles métier restent fermés ;
  *  - la lecture des permissions est partagée avec le flux d'identité P0-B.
  */
 
@@ -230,6 +231,11 @@ export function createSqlOfferStore(db: SqlQueryExecutor): OfferStore {
       return result.rows[0] ? toOfferRecord(result.rows[0]) : null;
     },
 
+    async findByIdForShare(offerId) {
+      const result = await db.query<OfferRow>('SELECT * FROM offers WHERE id = $1 FOR SHARE', [offerId]);
+      return result.rows[0] ? toOfferRecord(result.rows[0]) : null;
+    },
+
     async listByEmployer(employerId, limit) {
       const result = await db.query<OfferRow>(
         'SELECT * FROM offers WHERE employer_id = $1 ORDER BY posted_date DESC, id ASC LIMIT $2',
@@ -321,7 +327,7 @@ function toApplicationRecord(row: ApplicationRow): ApplicationRecord {
   };
 }
 
-export function createSqlApplicationStore(db: PostgreSqlDatabase): ApplicationStore {
+export function createSqlApplicationStore(db: SqlQueryExecutor): ApplicationStore {
   return {
     async create(record) {
       assertStatusDomain(record.status, APPLICATION_STATUS_VALUES, 'applications');
@@ -360,11 +366,34 @@ export function createSqlApplicationStore(db: PostgreSqlDatabase): ApplicationSt
       return result.rows[0] ? toApplicationRecord(result.rows[0]) : null;
     },
 
-    async listByOffer(offerId) {
+    async findByOfferAndCandidate(offerId, candidateId) {
       const result = await db.query<ApplicationRow>(
-        'SELECT * FROM applications WHERE offer_id = $1 ORDER BY applied_date ASC, id ASC',
-        [offerId],
+        'SELECT * FROM applications WHERE offer_id = $1 AND candidate_id = $2',
+        [offerId, candidateId],
       );
+      return result.rows[0] ? toApplicationRecord(result.rows[0]) : null;
+    },
+
+    async listByOffer(offerId, limit, afterId) {
+      const boundedLimit = clampStoreLimit(limit);
+      const result = afterId
+        ? await db.query<ApplicationRow>(
+            `SELECT a.*
+               FROM applications AS a
+              WHERE a.offer_id = $1
+                AND (a.applied_date, a.id) > (
+                  SELECT c.applied_date, c.id
+                    FROM applications AS c
+                   WHERE c.id = $2 AND c.offer_id = $1
+                )
+              ORDER BY a.applied_date ASC, a.id ASC
+              LIMIT $3`,
+            [offerId, afterId, boundedLimit],
+          )
+        : await db.query<ApplicationRow>(
+            'SELECT * FROM applications WHERE offer_id = $1 ORDER BY applied_date ASC, id ASC LIMIT $2',
+            [offerId, boundedLimit],
+          );
       return result.rows.map(toApplicationRecord);
     },
 

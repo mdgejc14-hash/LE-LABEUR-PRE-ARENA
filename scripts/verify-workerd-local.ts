@@ -1,6 +1,6 @@
 /**
- * LE LABEUR — P0-C — vérification du Worker dans le RUNTIME Cloudflare (workerd)
- * avec un binding Hyperdrive réel en mode local.
+ * LE LABEUR — P0-C / P0-E3 — vérification du Worker dans le runtime workerd
+ * avec un binding Hyperdrive local.
  *
  *   Requête HTTP → workerd → binding HYPERDRIVE → PostgreSQL réel → réponse
  *
@@ -81,8 +81,7 @@ function cookieToken(response: Response): string {
 interface TestJwks {
   server: Server;
   port: number;
-  credential: string;
-  subject: string;
+  credentials: Record<string, string>;
 }
 
 /** JWKS de test servi en boucle locale (jamais joignable hors de la machine). */
@@ -107,30 +106,33 @@ async function startTestJwks(): Promise<TestJwks> {
   const address = server.address();
   assert(address && typeof address === 'object', 'port JWKS introuvable');
 
-  const subject = 'google-sub-p0c-workerd';
-  const issuedAt = Math.floor(Date.now() / 1000);
-  const header = base64UrlEncode(new TextEncoder().encode(JSON.stringify({ alg: 'RS256', kid })));
-  const payload = base64UrlEncode(new TextEncoder().encode(JSON.stringify({
-    iss: 'https://accounts.google.com',
-    aud: AUDIENCE,
-    sub: subject,
-    iat: issuedAt,
-    exp: issuedAt + 300,
-    email: 'workerd.p0c@example.com',
-    email_verified: true,
-    name: 'Workerd P0-C',
-  })));
-  const signature = await crypto.subtle.sign(
-    'RSASSA-PKCS1-v1_5',
-    pair.privateKey,
-    new TextEncoder().encode(`${header}.${payload}`),
-  );
-  return {
-    server,
-    port: address.port,
-    credential: `${header}.${payload}.${base64UrlEncode(new Uint8Array(signature))}`,
-    subject,
+  const identities = {
+    candidate: { subject: 'google-sub-p0e3-candidate', email: 'workerd.candidate@example.com', name: 'Workerd Candidate' },
+    employer: { subject: 'google-sub-p0e3-employer', email: 'workerd.employer@example.com', name: 'Workerd Employer' },
+    otherEmployer: { subject: 'google-sub-p0e3-other-employer', email: 'workerd.other-employer@example.com', name: 'Workerd Other Employer' },
   };
+  const credentials: Record<string, string> = {};
+  for (const [key, identity] of Object.entries(identities)) {
+    const issuedAt = Math.floor(Date.now() / 1000);
+    const header = base64UrlEncode(new TextEncoder().encode(JSON.stringify({ alg: 'RS256', kid })));
+    const payload = base64UrlEncode(new TextEncoder().encode(JSON.stringify({
+      iss: 'https://accounts.google.com',
+      aud: AUDIENCE,
+      sub: identity.subject,
+      iat: issuedAt,
+      exp: issuedAt + 300,
+      email: identity.email,
+      email_verified: true,
+      name: identity.name,
+    })));
+    const signature = await crypto.subtle.sign(
+      'RSASSA-PKCS1-v1_5',
+      pair.privateKey,
+      new TextEncoder().encode(`${header}.${payload}`),
+    );
+    credentials[key] = `${header}.${payload}.${base64UrlEncode(new Uint8Array(signature))}`;
+  }
+  return { server, port: address.port, credentials };
 }
 
 async function main(): Promise<void> {
@@ -138,7 +140,7 @@ async function main(): Promise<void> {
   mkdirSync(WORK_DIR, { recursive: true });
 
   console.log('============================================================');
-  console.log(' LE LABEUR — P0-C — runtime workerd + binding Hyperdrive local');
+  console.log(' LE LABEUR — P0-C / P0-E3 — runtime workerd + binding Hyperdrive local');
   console.log('============================================================');
   console.log('Runtime          : workerd (wrangler dev --local) — PAS un déploiement Cloudflare');
   console.log('Base             : PostgreSQL 17.10 RÉEL local (binaire embarqué, TEST/LOCAL)');
@@ -169,6 +171,10 @@ async function main(): Promise<void> {
   const wranglerLog = resolve(WORK_DIR, 'wrangler.log');
   let sessionCookie = '';
   let userId = '';
+  let employerCookie = '';
+  let employerId = '';
+  let otherEmployerCookie = '';
+  let otherEmployerId = '';
 
   try {
     await postgres.initialise();
@@ -257,7 +263,7 @@ async function main(): Promise<void> {
       const response = await fetch(`${base}/api/v1/auth/google/credential`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ credential: jwks.credential, requestedRole: 'CANDIDATE' }),
+        body: JSON.stringify({ credential: jwks.credentials.candidate, requestedRole: 'CANDIDATE' }),
       });
       assert(response.status === 201, `201 attendu, reçu ${response.status}`);
       const body = await response.json() as { authenticated: boolean; user: { id: string; role: string } };
@@ -271,6 +277,92 @@ async function main(): Promise<void> {
       );
       assert(users.rows[0]?.role === 'CANDIDATE', 'utilisateur écrit par le Worker dans PostgreSQL');
       assert(sessions.rows[0]?.token_hash === await hashSessionToken(sessionCookie), 'session hashée écrite par le Worker');
+    });
+
+    await check('P0-E3 workerd → PostgreSQL : soumission candidature et lecture par le propriétaire', async () => {
+      const employerLogin = await fetch(`${base}/api/v1/auth/google/credential`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ credential: jwks.credentials.employer, requestedRole: 'EMPLOYER' }),
+      });
+      assert(employerLogin.status === 201, `connexion employeur 201 attendue, reçue ${employerLogin.status}`);
+      employerId = ((await employerLogin.json()) as { user: { id: string } }).user.id;
+      employerCookie = cookieToken(employerLogin);
+
+      const otherEmployerLogin = await fetch(`${base}/api/v1/auth/google/credential`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ credential: jwks.credentials.otherEmployer, requestedRole: 'EMPLOYER' }),
+      });
+      assert(otherEmployerLogin.status === 201, `connexion autre employeur 201 attendue, reçue ${otherEmployerLogin.status}`);
+      otherEmployerId = ((await otherEmployerLogin.json()) as { user: { id: string } }).user.id;
+      otherEmployerCookie = cookieToken(otherEmployerLogin);
+
+      const createOffer = await fetch(`${base}/api/v1/offers`, {
+        method: 'POST',
+        headers: {
+          cookie: `${SESSION_COOKIE_NAME}=${employerCookie}`,
+          'content-type': 'application/json',
+          'Idempotency-Key': 'p0e3-workerd-offer-001',
+        },
+        body: JSON.stringify({
+          title: 'Offre workerd P0-E3',
+          contractType: 'CDI',
+          remuneration: 180000,
+          currency: 'FCFA',
+          location: 'Cotonou',
+          summary: 'Offre utilisée pour vérifier le flux worker réel.',
+        }),
+      });
+      assert(createOffer.status === 201, `création offre 201 attendue, reçue ${createOffer.status}`);
+      const offer = await createOffer.json() as { id: string; employerId: string };
+      assert(offer.employerId === employerId, 'offre rattachée à l’employeur connecté');
+
+      const submission = await fetch(`${base}/api/v1/offers/${offer.id}/applications`, {
+        method: 'POST',
+        headers: {
+          cookie: `${SESSION_COOKIE_NAME}=${sessionCookie}`,
+          'content-type': 'application/json',
+          'Idempotency-Key': 'p0e3-workerd-application-001',
+        },
+        body: JSON.stringify({ note: 'Disponible pour un entretien.' }),
+      });
+      assert(submission.status === 201, `POST candidature 201 attendu, reçu ${submission.status}`);
+      const application = await submission.json() as { id: string; offerId: string; candidateId: string; status: string };
+      assert(application.offerId === offer.id && application.candidateId === userId, 'candidature reliée à la bonne offre et au bon candidat');
+      assert(application.status === 'PENDING', 'statut PENDING attendu');
+
+      const stored = await pool.query<{ offer_id: string; candidate_id: string; status: string; note: string | null }>(
+        'SELECT offer_id, candidate_id, status, note FROM applications WHERE id = $1', [application.id],
+      );
+      assert(stored.rows.length === 1 && stored.rows[0].candidate_id === userId, 'ligne candidature persistée dans PostgreSQL');
+      assert(stored.rows[0].offer_id === offer.id && stored.rows[0].status === 'PENDING', 'offre et statut persistés');
+      assert(stored.rows[0].note === 'Disponible pour un entretien.', 'note persistée');
+
+      const ownerHeaders = { cookie: `${SESSION_COOKIE_NAME}=${employerCookie}` };
+      const path = `${base}/api/v1/offers/${offer.id}/applications?limit=10`;
+      const [ownerListA, ownerListB] = await Promise.all([fetch(path, { headers: ownerHeaders }), fetch(path, { headers: ownerHeaders })]);
+      assert(ownerListA.status === 200 && ownerListB.status === 200, 'consultations simultanées du propriétaire autorisées');
+      const [listA, listB] = await Promise.all([
+        ownerListA.json() as Promise<{ items: Array<{ id: string; candidateId: string }> }>,
+        ownerListB.json() as Promise<{ items: Array<{ id: string; candidateId: string }> }>,
+      ]);
+      assert(listA.items.length === 1 && listB.items.length === 1, 'les deux consultations retournent une seule candidature');
+      assert(listA.items[0].id === application.id && listB.items[0].id === application.id, 'même résultat PostgreSQL');
+
+      const otherEmployer = await fetch(`${base}/api/v1/offers/${offer.id}/applications`, {
+        headers: { cookie: `${SESSION_COOKIE_NAME}=${otherEmployerCookie}` },
+      });
+      assert(otherEmployer.status === 403, `autre employeur refusé (403), reçu ${otherEmployer.status}`);
+      const candidateRead = await fetch(`${base}/api/v1/offers/${offer.id}/applications`, {
+        headers: { cookie: `${SESSION_COOKIE_NAME}=${sessionCookie}` },
+      });
+      assert(candidateRead.status === 403, `candidat refusé sur la liste privée (403), reçu ${candidateRead.status}`);
+      const closedLifecycle = await fetch(`${base}/api/v1/my/applications`, {
+        headers: { cookie: `${SESSION_COOKIE_NAME}=${sessionCookie}` },
+      });
+      assert(closedLifecycle.status === 501, `la liste générale des candidatures reste fermée (501), reçu ${closedLifecycle.status}`);
+      assert(otherEmployerId !== employerId, 'employeurs distincts');
     });
 
     await check('workerd → PostgreSQL : session relue, /me résolu, logout révoqué en base', async () => {

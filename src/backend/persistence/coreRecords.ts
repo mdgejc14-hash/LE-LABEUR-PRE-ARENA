@@ -158,6 +158,8 @@ export type ContractRecord = Pick<Contract,
 export interface OfferStore {
   create(record: OfferRecord): Promise<OfferRecord>;
   findById(offerId: string): Promise<OfferRecord | null>;
+  /** Locks the offer against status updates when called through a PostgreSQL transaction. */
+  findByIdForShare(offerId: string): Promise<OfferRecord | null>;
   listByEmployer(employerId: string, limit?: number): Promise<OfferRecord[]>;
   updateStatus(offerId: string, status: Offer['status'], updatedAt: string): Promise<OfferRecord | null>;
   listPublic(limit?: number, filter?: Partial<FilterState>): Promise<OfferRecord[]>;
@@ -166,7 +168,9 @@ export interface OfferStore {
 export interface ApplicationStore {
   create(record: ApplicationRecord): Promise<ApplicationRecord>;
   findById(applicationId: string): Promise<ApplicationRecord | null>;
-  listByOffer(offerId: string): Promise<ApplicationRecord[]>;
+  findByOfferAndCandidate(offerId: string, candidateId: string): Promise<ApplicationRecord | null>;
+  /** Keyset-paged by (appliedDate, id), oldest first; cursor is an application ID. */
+  listByOffer(offerId: string, limit?: number, afterId?: string | null): Promise<ApplicationRecord[]>;
   listByCandidate(candidateId: string, limit?: number): Promise<ApplicationRecord[]>;
   updateStatus(
     applicationId: string,
