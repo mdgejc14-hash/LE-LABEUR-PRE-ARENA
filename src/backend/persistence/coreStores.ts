@@ -20,6 +20,7 @@ import {
   CONTRACT_STATUS_VALUES,
   CoreStoreError,
   OFFER_STATUS_VALUES,
+  PROPOSAL_STATUS_VALUES,
   type ApplicationRecord,
   type ApplicationStore,
   type ContractRecord,
@@ -28,12 +29,15 @@ import {
   type OfferRecord,
   type OfferStore,
   type PermissionStore,
+  type ProposalRecord,
+  type ProposalStore,
 } from './coreRecords';
 
 export interface InMemoryCoreStoreSeed {
   offers?: readonly OfferRecord[];
   applications?: readonly ApplicationRecord[];
   contracts?: readonly ContractRecord[];
+  proposals?: readonly ProposalRecord[];
   rolePermissions?: Partial<Record<UserRole, readonly Permission[]>>;
   userPermissions?: Record<string, readonly Permission[]>;
 }
@@ -42,6 +46,7 @@ export function createInMemoryCoreStores(seed: InMemoryCoreStoreSeed = {}): Core
   const offers = new Map<string, OfferRecord>();
   const applications = new Map<string, ApplicationRecord>();
   const contracts = new Map<string, ContractRecord>();
+  const proposals = new Map<string, ProposalRecord>();
 
   for (const offer of seed.offers ?? []) {
     assertStatusDomain(offer.status, OFFER_STATUS_VALUES, 'offers');
@@ -54,6 +59,10 @@ export function createInMemoryCoreStores(seed: InMemoryCoreStoreSeed = {}): Core
   for (const contract of seed.contracts ?? []) {
     assertStatusDomain(contract.status, CONTRACT_STATUS_VALUES, 'contracts');
     contracts.set(contract.id, { ...contract });
+  }
+  for (const proposal of seed.proposals ?? []) {
+    assertStatusDomain(proposal.status, PROPOSAL_STATUS_VALUES, 'proposals');
+    proposals.set(proposal.id, { ...proposal });
   }
 
   const rolePermissions: Partial<Record<UserRole, readonly Permission[]>> = {
@@ -242,6 +251,52 @@ export function createInMemoryCoreStores(seed: InMemoryCoreStoreSeed = {}): Core
     },
   };
 
+  const proposalStore: ProposalStore = {
+    async create(record) {
+      assertStatusDomain(record.status, PROPOSAL_STATUS_VALUES, 'proposals');
+      if (proposals.has(record.id)) {
+        throw new CoreStoreError('DUPLICATE', 'proposals', `Proposition ${record.id} déjà persistée.`);
+      }
+      proposals.set(record.id, { ...record });
+      return { ...record };
+    },
+    async findById(proposalId) {
+      const record = proposals.get(proposalId);
+      return record ? { ...record } : null;
+    },
+    async findByIdForUpdate(proposalId) {
+      // Aucun verrou de ligne en mémoire : le compare-and-set ci-dessous reste
+      // la garantie d'atomicité de cet adaptateur.
+      return proposalStore.findById(proposalId);
+    },
+    async compareAndSetStatus(proposalId, expectedStatus, patch) {
+      assertStatusDomain(patch.status, PROPOSAL_STATUS_VALUES, 'proposals');
+      assertStatusDomain(expectedStatus, PROPOSAL_STATUS_VALUES, 'proposals');
+      const record = proposals.get(proposalId);
+      if (!record || record.status !== expectedStatus) return null;
+      const updated: ProposalRecord = {
+        ...record,
+        status: patch.status,
+        updatedAt: patch.updatedAt,
+        ...(patch.revisionNotes !== undefined ? { revisionNotes: patch.revisionNotes } : {}),
+      };
+      proposals.set(proposalId, updated);
+      return { ...updated };
+    },
+    async listAll(limit, afterId) {
+      const bounded = clampStoreLimit(limit);
+      const ordered = [...proposals.values()]
+        .sort((left, right) => right.sentAt.localeCompare(left.sentAt) || left.id.localeCompare(right.id));
+      let start = 0;
+      if (afterId) {
+        const cursorIndex = ordered.findIndex(proposal => proposal.id === afterId);
+        if (cursorIndex < 0) return [];
+        start = cursorIndex + 1;
+      }
+      return ordered.slice(start, start + bounded).map(proposal => ({ ...proposal }));
+    },
+  };
+
   const permissionStore: PermissionStore = {
     async listRolePermissions(role) {
       return [...(rolePermissions[role] ?? [])];
@@ -255,5 +310,11 @@ export function createInMemoryCoreStores(seed: InMemoryCoreStoreSeed = {}): Core
     },
   };
 
-  return { offers: offerStore, applications: applicationStore, contracts: contractStore, permissions: permissionStore };
+  return {
+    offers: offerStore,
+    applications: applicationStore,
+    contracts: contractStore,
+    proposals: proposalStore,
+    permissions: permissionStore,
+  };
 }

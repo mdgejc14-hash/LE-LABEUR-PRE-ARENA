@@ -18,6 +18,8 @@ import { runOfferDomainTests } from '../src/backend/api/offers.test';
 import { runApplicationDomainTests } from '../src/backend/api/applications.test';
 import { runApplicationDecisionTests } from '../src/backend/api/applicationDecisions.test';
 import { runApplicationTransitionTests } from '../src/domain/applicationTransitions.test';
+import { runProposalDomainTests } from '../src/backend/api/proposals.test';
+import { runProposalTransitionTests } from '../src/domain/proposalTransitions.test';
 
 interface TestCase {
   name: string;
@@ -46,6 +48,8 @@ async function main(): Promise<void> {
   const applicationDomain = await runApplicationDomainTests();
   const applicationDecisionMatrix = runApplicationTransitionTests();
   const applicationDecisions = await runApplicationDecisionTests();
+  const proposalMatrix = runProposalTransitionTests();
+  const proposalDomain = await runProposalDomainTests();
 
   const suites: Array<{ name: string; cases: TestCase[] }> = [
     { name: 'Domain deterministic', cases: deterministic.results.map(result => ({ name: result.name, success: result.success, detail: result.details })) },
@@ -68,6 +72,8 @@ async function main(): Promise<void> {
     { name: 'P0-E3 — soumission et consultation propriétaire des CANDIDATURES (PostgreSQL, rôles, ownership, idempotence, concurrence, rollback)', cases: applicationDomain },
     { name: 'P0-E4 — matrice de décision CANDIDATURE (statuts du code, transitions refusées, motifs, événements documentés)', cases: applicationDecisionMatrix },
     { name: 'P0-E4 — cycle de décision CANDIDATURE (examen, shortlist, rejet, retrait; PostgreSQL, autorisation, idempotence, concurrence, rollback)', cases: applicationDecisions },
+    { name: 'P0-E5 — cycle PROPOSITION (statuts réels, transitions ouvertes et refusées, éligibilité, événements documentés)', cases: proposalMatrix },
+    { name: 'P0-E5 — émission et cycle PROPOSITION (PostgreSQL, autorisation, ownership, idempotence, concurrence, rollback, lecture ADMIN)', cases: proposalDomain },
   ];
 
   let total = 0;

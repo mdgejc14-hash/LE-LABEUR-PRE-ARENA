@@ -1,8 +1,8 @@
 /**
  * LE LABEUR — P0-A — contrats de persistance du noyau relationnel.
  *
- * Périmètre strict (celui de l'audit `ca99324`) : utilisateurs, identités
- * externes, sessions, permissions, offres, candidatures, contrats.
+ * Périmètre strict : utilisateurs, identités externes, sessions, permissions,
+ * offres, candidatures, contrats (P0-A) et propositions d'embauche (P0-E5).
  * Aucun autre domaine (paiements, incidents, remplacements, messages,
  * notifications, documents) n'est modélisé ici.
  *
@@ -21,7 +21,9 @@ import type {
   Contract,
   ContractStatus,
   FilterState,
+  MissionProposal,
   Offer,
+  ProposalStatus,
   UserRole,
 } from '../../types';
 
@@ -68,6 +70,19 @@ export const COMMISSION_STATUS_VALUES = [
   'REJECTED',
   'NOT_APPLICABLE',
 ] as const;
+/**
+ * P0-E5 — statuts réellement déclarés par `ProposalStatus` : le vocabulaire
+ * fonctionnel du plan (SENT/ACCEPTED/REJECTED/EXPIRED) n'est jamais substitué
+ * aux noms du code (SENT/ACCEPTED/DECLINED/EXPIRED).
+ */
+export const PROPOSAL_STATUS_VALUES = [
+  'DRAFT',
+  'SENT',
+  'REVISION_REQUESTED',
+  'ACCEPTED',
+  'DECLINED',
+  'EXPIRED',
+] as const;
 
 /**
  * Garde-fou de compilation : si `src/types/index.ts` ou la migration
@@ -80,10 +95,11 @@ export const CORE_DOMAIN_EXACTNESS = [
   true satisfies ExactDomain<ApplicationStatus, typeof APPLICATION_STATUS_VALUES>,
   true satisfies ExactDomain<ContractStatus, typeof CONTRACT_STATUS_VALUES>,
   true satisfies ExactDomain<CommissionPaymentStatus, typeof COMMISSION_STATUS_VALUES>,
+  true satisfies ExactDomain<ProposalStatus, typeof PROPOSAL_STATUS_VALUES>,
 ] as const;
 
-/** Tables du noyau : seules celles créées par les migrations 0001/0002/0003. */
-export const CORE_TABLES = ['users', 'external_identities', 'sessions', 'permissions', 'role_permissions', 'user_permissions', 'offers', 'applications', 'contracts'] as const;
+/** Tables du noyau : migrations 0001/0002/0003 et `proposals` (P0-E5, migration 0004). */
+export const CORE_TABLES = ['users', 'external_identities', 'sessions', 'permissions', 'role_permissions', 'user_permissions', 'offers', 'applications', 'contracts', 'proposals'] as const;
 
 export type CoreTable = (typeof CORE_TABLES)[number];
 
@@ -98,7 +114,7 @@ export function clampStoreLimit(limit: number | undefined, fallback: number = DE
   return Math.min(truncated, max);
 }
 
-export type CoreStoreName = 'offers' | 'applications' | 'contracts' | 'permissions';
+export type CoreStoreName = 'offers' | 'applications' | 'contracts' | 'proposals' | 'permissions';
 
 export type CoreStoreFailure =
   | 'NOT_FOUND'
@@ -140,6 +156,55 @@ export type OfferRecord = Pick<Offer,
 export type ApplicationRecord = Pick<Application,
   | 'id' | 'offerId' | 'candidateId' | 'status' | 'appliedDate' | 'note' | 'remuneration' | 'contractId' | 'history'
 > & { createdAt: string; updatedAt: string };
+
+/**
+ * P0-E5 — enregistrement d'une PROPOSITION d'embauche.
+ *
+ * Dérivé de `MissionProposal` : `employerName` et `employeeName` sont OMIS
+ * volontairement — comme `ApplicationRecord` omet les libellés de l'offre et du
+ * candidat, les noms affichés sont résolus depuis `users` à la projection, jamais
+ * dupliqués en base. Aucun champ d'échéance n'est ajouté : le modèle réel n'en
+ * possède aucun (voir `PROPOSAL_EXPIRATION_AUTOMATION_REQUIREMENTS`).
+ */
+export type ProposalRecord = Pick<MissionProposal,
+  | 'id' | 'conversationId' | 'contractId' | 'offerId' | 'applicationId'
+  | 'employerId' | 'employeeId'
+  | 'missionTitle' | 'amount' | 'currency' | 'periodicity' | 'startDate' | 'endDate'
+  | 'durationMonths' | 'location' | 'conditions' | 'status' | 'revisionNotes'
+  | 'sentAt' | 'updatedAt'
+> & { createdAt: string };
+
+/** Transition atomique d'une proposition (P0-E5) : statut cible + horodatage. */
+export interface ProposalTransitionPatch {
+  status: ProposalStatus;
+  updatedAt: string;
+  /** Renseigné uniquement par une future révision (`REVISE`, hors périmètre P0-E5). */
+  revisionNotes?: string;
+}
+
+export interface ProposalStore {
+  create(record: ProposalRecord): Promise<ProposalRecord>;
+  findById(proposalId: string): Promise<ProposalRecord | null>;
+  /**
+   * P0-E5 — verrou pessimiste de la ligne proposition (`SELECT … FOR UPDATE`).
+   * Sérialise deux réponses ou expirations concurrentes; l'adaptateur mémoire
+   * rend simplement la ligne courante (processus unique, sans verrou).
+   */
+  findByIdForUpdate(proposalId: string): Promise<ProposalRecord | null>;
+  /**
+   * P0-E5 — transition conditionnelle (compare-and-set).
+   * Retourne `null` si la ligne n'existe pas ou si son statut n'est plus
+   * `expectedStatus` : une transition concurrente a gagné, l'appelant relit puis
+   * refuse ou rejoue de façon idempotente.
+   */
+  compareAndSetStatus(
+    proposalId: string,
+    expectedStatus: ProposalStatus,
+    patch: ProposalTransitionPatch,
+  ): Promise<ProposalRecord | null>;
+  /** Lecture ADMIN (route existante `admin.proposals.list`), keyset par (sentAt, id). */
+  listAll(limit?: number, afterId?: string | null): Promise<ProposalRecord[]>;
+}
 
 export type ContractRecord = Pick<Contract,
   | 'id' | 'offerId' | 'applicationId' | 'employerId' | 'employeeId' | 'status'
@@ -233,5 +298,6 @@ export interface CoreStores {
   offers: OfferStore;
   applications: ApplicationStore;
   contracts: ContractStore;
+  proposals: ProposalStore;
   permissions: PermissionStore;
 }

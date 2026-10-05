@@ -12,9 +12,11 @@
  * base/client est injecté. OFFRES est ouvert pour son périmètre P0-E1/E2 et
  * CANDIDATURES pour la soumission, la consultation de l'offre propriétaire
  * (P0-E3) et le premier cycle de décision EXAMINE / SHORTLIST / REJECT /
- * WITHDRAW (P0-E4) ; les autres opérations métier — propositions, contrats,
- * paiements, commissions, plaintes, remplacements, notifications générales —
- * restent fermées. Le mode DEMO demeure séparé, inchangé et par défaut.
+ * WITHDRAW (P0-E4) ; PROPOSITIONS pour l'émission, l'acceptation, la
+ * déclinaison, l'expiration et la lecture ADMIN (P0-E5) ; les autres opérations
+ * métier — contrats, paiements, commissions, plaintes, remplacements,
+ * notifications générales — restent fermées. Le mode DEMO demeure séparé,
+ * inchangé et par défaut.
  */
 
 import type { DatabaseHealthProbe, PostgreSqlDatabase } from '../services/database';
@@ -35,7 +37,12 @@ import {
 import type { CoreStores, OfferStore } from '../persistence/coreRecords';
 import { readMigrationState } from '../persistence/migrationState';
 import { createPostgresDatabase } from '../persistence/postgresDatabase';
-import { createSqlApplicationStore, createSqlCoreStores, createSqlOfferStore } from '../persistence/sqlCoreStores';
+import {
+  createSqlApplicationStore,
+  createSqlCoreStores,
+  createSqlOfferStore,
+  createSqlProposalStore,
+} from '../persistence/sqlCoreStores';
 import type { PostgresClientPort } from '../persistence/sqlClient';
 import { buildHealthPayload, detectWorkerRuntime, type BoundaryHealthResponse } from './health';
 import { createApiWorker, type ApiHealthReporter } from './worker';
@@ -48,6 +55,12 @@ import {
 import { createOfferApiHandlers, createOfferRepository } from '../repositories/offerRepository';
 import type { ServerOfferRepository } from '../repositories/contracts';
 import type { ApplicationRepositoryStores } from '../repositories/applicationRepository';
+import {
+  createProposalApiHandlers,
+  createProposalRepository,
+  type OpenProposalRepository,
+  type ProposalRepositoryStores,
+} from '../repositories/proposalRepository';
 
 export interface WorkerEnvironment extends WorkerPersistenceEnvironment {
   GOOGLE_CLIENT_ID?: string;
@@ -90,6 +103,8 @@ export interface WorkerComposition {
   offers?: ServerOfferRepository;
   /** P0-E3 + P0-E4 : soumission, consultation par offre propriétaire et cycle de décision. */
   applications?: OpenApplicationRepository;
+  /** P0-E5 : émission, acceptation, déclinaison, expiration et lecture ADMIN. */
+  proposals?: OpenProposalRepository;
 }
 
 /** Serveur/test only: allows deterministic verification without changing env or DEMO behavior. */
@@ -296,7 +311,35 @@ export function composeWorker(
   const applicationHandlers = applicationRepository
     ? createApplicationApiHandlers(applicationRepository)
     : {};
-  const domainHandlers = { ...offerHandlers, ...applicationHandlers };
+
+  const runProposalInTransaction = persistence.database
+    ? async <T>(operation: (stores: ProposalRepositoryStores) => Promise<T>): Promise<T> => {
+        return persistence.database!.run(async tx => operation({
+          proposals: createSqlProposalStore(tx),
+          applications: createSqlApplicationStore(tx),
+          offers: createSqlOfferStore(tx),
+          users: createSqlUserStore(tx),
+        }));
+      }
+    : undefined;
+
+  const proposalRepository = persistence.core
+    ? createProposalRepository({
+        stores: {
+          proposals: persistence.core.proposals,
+          applications: persistence.core.applications,
+          offers: persistence.core.offers,
+          users: stores.users,
+        },
+        runInTransaction: runProposalInTransaction,
+        now: overrides.now,
+      })
+    : undefined;
+
+  const proposalHandlers = proposalRepository
+    ? createProposalApiHandlers(proposalRepository)
+    : {};
+  const domainHandlers = { ...offerHandlers, ...applicationHandlers, ...proposalHandlers };
 
   return {
     mode,
@@ -304,6 +347,7 @@ export function composeWorker(
     core: persistence.core,
     offers: offerRepository,
     applications: applicationRepository,
+    proposals: proposalRepository,
     health,
     probe: persistence.probe,
     target: persistence.target,

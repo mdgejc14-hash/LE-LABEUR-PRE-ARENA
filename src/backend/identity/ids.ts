@@ -8,7 +8,7 @@
 
 const BASE32 = '0123456789abcdefghjkmnpqrstvwxyz';
 
-export type IdPrefix = 'usr' | 'ses' | 'ofr' | 'app' | 'ctr' | 'idn';
+export type IdPrefix = 'usr' | 'ses' | 'ofr' | 'app' | 'ctr' | 'prp' | 'idn';
 
 function randomBytes(length: number): Uint8Array {
   const bytes = new Uint8Array(length);

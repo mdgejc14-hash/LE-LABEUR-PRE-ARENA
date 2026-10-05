@@ -1,5 +1,5 @@
 /**
- * LE LABEUR — P0-C / P0-E3 / P0-E4 — vérification du Worker dans le runtime workerd
+ * LE LABEUR — P0-C / P0-E3 / P0-E4 / P0-E5 — vérification du Worker dans le runtime workerd
  * avec un binding Hyperdrive local.
  *
  *   Requête HTTP → workerd → binding HYPERDRIVE → PostgreSQL réel → réponse
@@ -13,7 +13,9 @@
  *  - le parcours Google signé → session → /me → logout écrit réellement dans
  *    PostgreSQL, sans jamais exposer de secret ;
  *  - le cycle de décision P0-E4 (examine, shortlist, rejet refusé à un tiers,
- *    withdraw) s'exécute sous workerd et persiste dans PostgreSQL.
+ *    withdraw) s'exécute sous workerd et persiste dans PostgreSQL ;
+ *  - le cycle PROPOSITION P0-E5 (émission, acceptation, expiration, REVISE
+ *    fermé, tiers refusé) s'exécute sous workerd et persiste dans PostgreSQL.
  *
  * Ce que ce script NE prouve PAS :
  *  - il n'y a ni compte Cloudflare, ni Hyperdrive déployé, ni `wrangler deploy`,
@@ -142,7 +144,7 @@ async function main(): Promise<void> {
   mkdirSync(WORK_DIR, { recursive: true });
 
   console.log('============================================================');
-  console.log(' LE LABEUR — P0-C / P0-E3 / P0-E4 — runtime workerd + binding Hyperdrive local');
+  console.log(' LE LABEUR — P0-C / P0-E3 / P0-E4 / P0-E5 — runtime workerd + binding Hyperdrive local');
   console.log('============================================================');
   console.log('Runtime          : workerd (wrangler dev --local) — PAS un déploiement Cloudflare');
   console.log('Base             : PostgreSQL 17.10 RÉEL local (binaire embarqué, TEST/LOCAL)');
@@ -187,7 +189,7 @@ async function main(): Promise<void> {
     await check('Migrations réelles appliquées avant démarrage du Worker', async () => {
       const client = toPostgresClientPort(pool);
       const applied = await applyMigrations(client, loadMigrations(MIGRATIONS_DIR));
-      assert(applied.applied.length === 3, `3 migrations attendues, reçues ${applied.applied.length}`);
+      assert(applied.applied.length === 4, `4 migrations attendues, reçues ${applied.applied.length}`);
     });
 
     const logStream = (chunk: Buffer | string) => writeFileSync(wranglerLog, chunk, { flag: 'a' });
@@ -451,6 +453,155 @@ async function main(): Promise<void> {
         body: '{}',
       });
       assert(afterWithdraw.status === 409, `décision après retrait: 409 attendu, reçu ${afterWithdraw.status}`);
+    });
+
+
+    await check('P0-E5 workerd → PostgreSQL : proposition émise, acceptée, expirée ; REVISE et tiers refusés', async () => {
+      // Offre dédiée (le couple offre/candidat de P0-E3/E4 est déjà consommé).
+      const createOffer = await fetch(`${base}/api/v1/offers`, {
+        method: 'POST',
+        headers: {
+          cookie: `${SESSION_COOKIE_NAME}=${employerCookie}`,
+          'content-type': 'application/json',
+          'Idempotency-Key': 'p0e5-workerd-offer-001',
+        },
+        body: JSON.stringify({
+          title: 'Offre workerd P0-E5',
+          contractType: 'CDI',
+          remuneration: 175000,
+          currency: 'FCFA',
+          location: 'Cotonou',
+          summary: 'Offre utilisée pour vérifier le cycle PROPOSITION worker réel.',
+        }),
+      });
+      assert(createOffer.status === 201, `création offre P0-E5 : 201 attendu, reçu ${createOffer.status}`);
+      const offer = await createOffer.json() as { id: string; status: string };
+      assert(offer.status === 'ACTIVE', 'offre P0-E5 ACTIVE attendue');
+
+      const submission = await fetch(`${base}/api/v1/offers/${offer.id}/applications`, {
+        method: 'POST',
+        headers: {
+          cookie: `${SESSION_COOKIE_NAME}=${sessionCookie}`,
+          'content-type': 'application/json',
+          'Idempotency-Key': 'p0e5-workerd-application-001',
+        },
+        body: JSON.stringify({ note: 'Candidature pour le cycle PROPOSITION.' }),
+      });
+      assert(submission.status === 201, `soumission P0-E5 : 201 attendu, reçu ${submission.status}`);
+      const application = await submission.json() as { id: string; status: string };
+      assert(application.status === 'PENDING', 'candidature admissible PENDING attendue');
+
+      const employerProposalHeaders = (key: string) => ({
+        cookie: `${SESSION_COOKIE_NAME}=${employerCookie}`,
+        'content-type': 'application/json',
+        'Idempotency-Key': key,
+      });
+      const candidateProposalHeaders = (key: string) => ({
+        cookie: `${SESSION_COOKIE_NAME}=${sessionCookie}`,
+        'content-type': 'application/json',
+        'Idempotency-Key': key,
+      });
+      const proposalBody = {
+        offerId: offer.id,
+        applicationId: application.id,
+        missionTitle: 'Mission workerd P0-E5',
+        amount: 175000,
+        currency: 'FCFA',
+        periodicity: 'Mensuel',
+        startDate: '01 Novembre 2026',
+        durationMonths: 6,
+        location: 'Cotonou',
+        conditions: ['Temps plein'],
+      };
+
+      // 1. ÉMISSION — SENT réellement persisté par workerd.
+      const created = await fetch(`${base}/api/v1/conversations/cnv_p0e5_workerd/proposals`, {
+        method: 'POST',
+        headers: employerProposalHeaders('p0e5-workerd-proposal-001'),
+        body: JSON.stringify(proposalBody),
+      });
+      assert(created.status === 201, `création proposition 201 attendue, reçue ${created.status}`);
+      const proposal = await created.json() as { id: string; status: string; employerId: string; employeeId: string };
+      assert(proposal.status === 'SENT', `SENT attendu, reçu ${proposal.status}`);
+      assert(proposal.employerId === employerId && proposal.employeeId === userId, 'parties dérivées côté serveur');
+      const stored = await pool.query<{ status: string; application_id: string; amount: string }>(
+        'SELECT status, application_id, amount FROM proposals WHERE id = $1', [proposal.id],
+      );
+      assert(stored.rows[0]?.status === 'SENT', 'SENT persisté dans PostgreSQL par workerd');
+      assert(stored.rows[0]?.application_id === application.id && Number(stored.rows[0]?.amount) === 175000, 'données métier persistées');
+
+      // 2. Tiers refusé (403) et REVISE fermé (501), sans écriture.
+      const otherEmployerExpire = await fetch(`${base}/api/v1/proposals/${proposal.id}/expire`, {
+        method: 'POST',
+        headers: {
+          cookie: `${SESSION_COOKIE_NAME}=${otherEmployerCookie}`,
+          'content-type': 'application/json',
+          'Idempotency-Key': 'p0e5-workerd-other-employer-001',
+        },
+        body: '{}',
+      });
+      assert(otherEmployerExpire.status === 403, `autre employeur refusé (403), reçu ${otherEmployerExpire.status}`);
+      const revise = await fetch(`${base}/api/v1/proposals/${proposal.id}/respond`, {
+        method: 'POST',
+        headers: candidateProposalHeaders('p0e5-workerd-revise-001'),
+        body: JSON.stringify({ action: 'REVISE', notes: 'Ajuster.' }),
+      });
+      assert(revise.status === 501, `REVISE doit rester fermé (501), reçu ${revise.status}`);
+
+      // 3. ACCEPTATION + rejeu idempotent + refus d'une seconde réponse.
+      const accepted = await fetch(`${base}/api/v1/proposals/${proposal.id}/respond`, {
+        method: 'POST',
+        headers: candidateProposalHeaders('p0e5-workerd-accept-001'),
+        body: JSON.stringify({ action: 'ACCEPT' }),
+      });
+      assert(accepted.status === 200, `acceptation 200 attendue, reçue ${accepted.status}`);
+      assert(((await accepted.json()) as { status: string }).status === 'ACCEPTED', 'ACCEPTED attendu');
+      const replay = await fetch(`${base}/api/v1/proposals/${proposal.id}/respond`, {
+        method: 'POST',
+        headers: candidateProposalHeaders('p0e5-workerd-accept-001'),
+        body: JSON.stringify({ action: 'ACCEPT' }),
+      });
+      assert(replay.status === 200, `rejeu idempotent 200 attendu, reçu ${replay.status}`);
+      const afterAccept = await pool.query<{ status: string }>('SELECT status FROM proposals WHERE id = $1', [proposal.id]);
+      assert(afterAccept.rows[0]?.status === 'ACCEPTED', 'ACCEPTED persisté une seule fois');
+      const closed = await fetch(`${base}/api/v1/proposals/${proposal.id}/respond`, {
+        method: 'POST',
+        headers: candidateProposalHeaders('p0e5-workerd-accept-002'),
+        body: JSON.stringify({ action: 'ACCEPT' }),
+      });
+      assert(closed.status === 409, `proposition close : 409 attendu, reçu ${closed.status}`);
+
+      // 4. Aucune conséquence hors périmètre : ni contrat, ni offre FILLED.
+      const contracts = await pool.query<{ count: string }>(
+        'SELECT count(*)::text AS count FROM contracts WHERE application_id = $1', [application.id],
+      );
+      assert(Number(contracts.rows[0]?.count ?? 0) === 0, 'aucun contrat créé par P0-E5');
+      const offerRow = await pool.query<{ status: string }>('SELECT status FROM offers WHERE id = $1', [offer.id]);
+      assert(offerRow.rows[0]?.status === 'ACTIVE', 'l’offre reste ACTIVE (aucun FILLED en P0-E5)');
+
+      // 5. EXPIRATION explicite par l'émetteur, puis réponse refusée.
+      const second = await fetch(`${base}/api/v1/conversations/cnv_p0e5_workerd/proposals`, {
+        method: 'POST',
+        headers: employerProposalHeaders('p0e5-workerd-proposal-002'),
+        body: JSON.stringify({ ...proposalBody, missionTitle: 'Mission workerd P0-E5 à expirer' }),
+      });
+      assert(second.status === 201, `seconde proposition 201 attendue, reçue ${second.status}`);
+      const secondProposal = await second.json() as { id: string };
+      const expired = await fetch(`${base}/api/v1/proposals/${secondProposal.id}/expire`, {
+        method: 'POST',
+        headers: employerProposalHeaders('p0e5-workerd-expire-001'),
+        body: '{}',
+      });
+      assert(expired.status === 200, `expiration 200 attendue, reçue ${expired.status}`);
+      assert(((await expired.json()) as { status: string }).status === 'EXPIRED', 'EXPIRED attendu');
+      const expiredRow = await pool.query<{ status: string }>('SELECT status FROM proposals WHERE id = $1', [secondProposal.id]);
+      assert(expiredRow.rows[0]?.status === 'EXPIRED', 'EXPIRED persisté dans PostgreSQL');
+      const acceptExpired = await fetch(`${base}/api/v1/proposals/${secondProposal.id}/respond`, {
+        method: 'POST',
+        headers: candidateProposalHeaders('p0e5-workerd-accept-expired-001'),
+        body: JSON.stringify({ action: 'ACCEPT' }),
+      });
+      assert(acceptExpired.status === 409, `proposition expirée : 409 attendu, reçu ${acceptExpired.status}`);
     });
 
     await check('workerd → PostgreSQL : session relue, /me résolu, logout révoqué en base', async () => {

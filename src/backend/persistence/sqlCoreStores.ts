@@ -16,8 +16,9 @@
  *  - les stores OFFRES sont branchés; côté CANDIDATURES, seules la soumission
  *    et la consultation ciblée (P0-E3) puis les quatre décisions du cycle
  *    examine/shortlist/reject/withdraw (P0-E4, transition conditionnelle
- *    `compareAndSetStatus`) sont ouvertes; les autres cycles métier restent
- *    fermés ;
+ *    `compareAndSetStatus`) sont ouvertes; côté PROPOSITIONS (P0-E5), seules
+ *    l'émission, l'acceptation, la déclinaison, l'expiration et la lecture
+ *    autorisée le sont; les autres cycles métier restent fermés ;
  *  - la lecture des permissions est partagée avec le flux d'identité P0-B.
  */
 
@@ -30,6 +31,7 @@ import {
   CONTRACT_STATUS_VALUES,
   CoreStoreError,
   OFFER_STATUS_VALUES,
+  PROPOSAL_STATUS_VALUES,
   type ApplicationRecord,
   type ApplicationStore,
   type ContractRecord,
@@ -38,6 +40,8 @@ import {
   type CoreStores,
   type OfferRecord,
   type OfferStore,
+  type ProposalRecord,
+  type ProposalStore,
 } from './coreRecords';
 import { postgresErrorCode } from './sqlClient';
 
@@ -647,11 +651,176 @@ export function createSqlContractStore(db: PostgreSqlDatabase): ContractStore {
   };
 }
 
+interface ProposalRow {
+  id: string;
+  conversation_id: string;
+  contract_id: string | null;
+  offer_id: string;
+  application_id: string | null;
+  employer_id: string;
+  employee_id: string;
+  mission_title: string;
+  amount: unknown;
+  currency: string;
+  periodicity: ProposalRecord['periodicity'];
+  start_date: string;
+  end_date: string | null;
+  duration_months: number;
+  location: string;
+  conditions: unknown;
+  status: ProposalRecord['status'];
+  revision_notes: string | null;
+  sent_at: unknown;
+  created_at: unknown;
+  updated_at: unknown;
+}
+
+function toProposalRecord(row: ProposalRow): ProposalRecord {
+  return {
+    id: row.id,
+    conversationId: row.conversation_id,
+    offerId: row.offer_id,
+    employerId: row.employer_id,
+    employeeId: row.employee_id,
+    missionTitle: row.mission_title,
+    amount: readNumeric(row.amount),
+    currency: row.currency,
+    periodicity: row.periodicity,
+    startDate: row.start_date,
+    durationMonths: row.duration_months,
+    location: row.location,
+    conditions: readJsonArray<string>(row.conditions, 'proposals', 'conditions', []),
+    status: row.status,
+    sentAt: readTimestamp(row.sent_at),
+    createdAt: readTimestamp(row.created_at),
+    updatedAt: readTimestamp(row.updated_at),
+    ...(readNullableString(row.contract_id) !== undefined ? { contractId: readNullableString(row.contract_id) } : {}),
+    ...(readNullableString(row.application_id) !== undefined ? { applicationId: readNullableString(row.application_id) } : {}),
+    ...(readNullableString(row.end_date) !== undefined ? { endDate: readNullableString(row.end_date) } : {}),
+    ...(readNullableString(row.revision_notes) !== undefined ? { revisionNotes: readNullableString(row.revision_notes) } : {}),
+  };
+}
+
+export function createSqlProposalStore(db: SqlQueryExecutor): ProposalStore {
+  return {
+    async create(record) {
+      assertStatusDomain(record.status, PROPOSAL_STATUS_VALUES, 'proposals');
+      try {
+        const result = await db.query<ProposalRow>(
+          `INSERT INTO proposals (
+             id, conversation_id, contract_id, offer_id, application_id,
+             employer_id, employee_id, mission_title, amount, currency, periodicity,
+             start_date, end_date, duration_months, location, conditions,
+             status, revision_notes, sent_at, created_at, updated_at
+           ) VALUES (
+             $1, $2, $3, $4, $5,
+             $6, $7, $8, $9, $10, $11,
+             $12, $13, $14, $15, $16::jsonb,
+             $17, $18, $19, $20, $21
+           ) RETURNING *`,
+          [
+            record.id,
+            record.conversationId,
+            record.contractId ?? null,
+            record.offerId,
+            record.applicationId ?? null,
+            record.employerId,
+            record.employeeId,
+            record.missionTitle,
+            record.amount,
+            record.currency,
+            record.periodicity,
+            record.startDate,
+            record.endDate ?? null,
+            record.durationMonths,
+            record.location,
+            JSON.stringify(record.conditions ?? []),
+            record.status,
+            record.revisionNotes ?? null,
+            record.sentAt,
+            record.createdAt,
+            record.updatedAt,
+          ],
+        );
+        return toProposalRecord(result.rows[0]);
+      } catch (error) {
+        return translateSqlError(error, 'proposals', `Proposition ${record.id} déjà persistée.`);
+      }
+    },
+
+    async findById(proposalId) {
+      const result = await db.query<ProposalRow>('SELECT * FROM proposals WHERE id = $1', [proposalId]);
+      return result.rows[0] ? toProposalRecord(result.rows[0]) : null;
+    },
+
+    async findByIdForUpdate(proposalId) {
+      // Verrou de ligne réel : deux réponses (ou une réponse et une expiration)
+      // concurrentes sur la même proposition sont sérialisées par PostgreSQL.
+      const result = await db.query<ProposalRow>(
+        'SELECT * FROM proposals WHERE id = $1 FOR UPDATE',
+        [proposalId],
+      );
+      return result.rows[0] ? toProposalRecord(result.rows[0]) : null;
+    },
+
+    async compareAndSetStatus(proposalId, expectedStatus, patch) {
+      assertStatusDomain(patch.status, PROPOSAL_STATUS_VALUES, 'proposals');
+      assertStatusDomain(expectedStatus, PROPOSAL_STATUS_VALUES, 'proposals');
+      try {
+        const result = await db.query<ProposalRow>(
+          `UPDATE proposals
+              SET status = $2,
+                  updated_at = $3,
+                  revision_notes = COALESCE($4, revision_notes)
+            WHERE id = $1
+              AND status = $5
+          RETURNING *`,
+          [
+            proposalId,
+            patch.status,
+            patch.updatedAt,
+            patch.revisionNotes ?? null,
+            expectedStatus,
+          ],
+        );
+        return result.rows[0] ? toProposalRecord(result.rows[0]) : null;
+      } catch (error) {
+        return translateSqlError(
+          error,
+          'proposals',
+          `Statut « ${patch.status} » refusé pour la proposition ${proposalId}.`,
+        );
+      }
+    },
+
+    async listAll(limit, afterId) {
+      const bounded = clampStoreLimit(limit);
+      const result = afterId
+        ? await db.query<ProposalRow>(
+            `SELECT *
+               FROM proposals
+              WHERE (sent_at, id) < (
+                SELECT c.sent_at, c.id FROM proposals AS c WHERE c.id = $1
+              )
+              ORDER BY sent_at DESC, id ASC
+              LIMIT $2`,
+            [afterId, bounded],
+          )
+        : await db.query<ProposalRow>(
+            'SELECT * FROM proposals ORDER BY sent_at DESC, id ASC LIMIT $1',
+            [bounded],
+          );
+      return result.rows.map(toProposalRecord);
+    },
+  };
+}
+
 export function createSqlCoreStores(db: PostgreSqlDatabase): CoreStores {
   return {
     offers: createSqlOfferStore(db),
     applications: createSqlApplicationStore(db),
     contracts: createSqlContractStore(db),
+    proposals: createSqlProposalStore(db),
     permissions: createSqlPermissionStore(db),
   };
 }

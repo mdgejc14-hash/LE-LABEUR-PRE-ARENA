@@ -54,6 +54,8 @@ export const API_ROUTE_CONTRACTS = [
 
   { key: 'proposals.create', method: 'POST', path: '/api/v1/conversations/:conversationId/proposals', authentication: 'required', scope: 'participant', roles: ['EMPLOYER'], idempotency: true, auditOnMutation: true },
   { key: 'proposals.respond', method: 'POST', path: '/api/v1/proposals/:proposalId/respond', authentication: 'required', scope: 'participant', roles: ['CANDIDATE'], idempotency: true, auditOnMutation: true },
+  // P0-E5 : expiration explicite par l'émetteur (le moteur Cron/Queue futur produira la même transition).
+  { key: 'proposals.expire', method: 'POST', path: '/api/v1/proposals/:proposalId/expire', authentication: 'required', scope: 'owner', roles: ['EMPLOYER'], idempotency: true, auditOnMutation: true },
 
   { key: 'contracts.mine.list', method: 'GET', path: '/api/v1/my/contracts', authentication: 'required', scope: 'self', collection: true },
   { key: 'contracts.read', method: 'GET', path: '/api/v1/contracts/:contractId', authentication: 'required', scope: 'owner' },

@@ -153,7 +153,19 @@ export type OutboxEventType =
   | 'APPLICATION_EXAMINED'
   | 'APPLICATION_SHORTLISTED'
   | 'APPLICATION_REJECTED'
-  | 'APPLICATION_WITHDRAWN';
+  | 'APPLICATION_WITHDRAWN'
+  /**
+   * P0-E5 — cycle PROPOSITION d'embauche : types DÉCLARÉS pour le futur moteur
+   * transactional Outbox/Queue, non encore produits. P0-E5 persiste uniquement
+   * la transition dans la transaction PostgreSQL; aucun événement n'est écrit,
+   * aucune file n'est créée, aucun consumer n'est installé.
+   * Contrats documentés : `src/domain/proposalTransitions.ts`
+   * (`DOCUMENTED_PROPOSAL_EVENTS`).
+   */
+  | 'PROPOSAL_SENT'
+  | 'PROPOSAL_ACCEPTED'
+  | 'PROPOSAL_DECLINED'
+  | 'PROPOSAL_EXPIRED';
 
 export interface OutboxEvent {
   id: string;

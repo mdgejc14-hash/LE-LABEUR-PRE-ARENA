@@ -80,7 +80,7 @@ export async function runHealthReportTests(): Promise<HealthTestResult[]> {
         HYPERDRIVE: { connectionString },
       },
       toPostgresClientPort(createScriptedDriver({
-        migrationIds: ['0001_identity_and_core', '0002_role_permissions_seed', '0003_core_nucleus_alignment'],
+        migrationIds: ['0001_identity_and_core', '0002_role_permissions_seed', '0003_core_nucleus_alignment', '0004_proposals'],
       })),
     );
     assert(composition.mode === 'postgres', 'mode postgres attendu');
