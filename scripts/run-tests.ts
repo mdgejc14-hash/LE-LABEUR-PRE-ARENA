@@ -16,6 +16,8 @@ import { runCloudflareConfigTests } from '../src/backend/worker/cloudflareConfig
 import { runCloudflareEntryTests } from '../src/backend/worker/cloudflareEntry.test';
 import { runOfferDomainTests } from '../src/backend/api/offers.test';
 import { runApplicationDomainTests } from '../src/backend/api/applications.test';
+import { runApplicationDecisionTests } from '../src/backend/api/applicationDecisions.test';
+import { runApplicationTransitionTests } from '../src/domain/applicationTransitions.test';
 
 interface TestCase {
   name: string;
@@ -42,6 +44,8 @@ async function main(): Promise<void> {
   const cloudflareEntry = await runCloudflareEntryTests();
   const offerDomain = await runOfferDomainTests();
   const applicationDomain = await runApplicationDomainTests();
+  const applicationDecisionMatrix = runApplicationTransitionTests();
+  const applicationDecisions = await runApplicationDecisionTests();
 
   const suites: Array<{ name: string; cases: TestCase[] }> = [
     { name: 'Domain deterministic', cases: deterministic.results.map(result => ({ name: result.name, success: result.success, detail: result.details })) },
@@ -62,6 +66,8 @@ async function main(): Promise<void> {
     { name: 'P0-C — entrée Worker Cloudflare (composition, fermeture, cycle de pool)', cases: cloudflareEntry },
     { name: 'P0-E1 / P0-E2 — domaine OFFRES (création, cycle de vie des statuts, persistance, rôles, ownership, idempotence, rollback)', cases: offerDomain },
     { name: 'P0-E3 — soumission et consultation propriétaire des CANDIDATURES (PostgreSQL, rôles, ownership, idempotence, concurrence, rollback)', cases: applicationDomain },
+    { name: 'P0-E4 — matrice de décision CANDIDATURE (statuts du code, transitions refusées, motifs, événements documentés)', cases: applicationDecisionMatrix },
+    { name: 'P0-E4 — cycle de décision CANDIDATURE (examen, shortlist, rejet, retrait; PostgreSQL, autorisation, idempotence, concurrence, rollback)', cases: applicationDecisions },
   ];
 
   let total = 0;

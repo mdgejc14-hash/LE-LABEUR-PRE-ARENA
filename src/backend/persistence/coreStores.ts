@@ -82,6 +82,7 @@ export function createInMemoryCoreStores(seed: InMemoryCoreStoreSeed = {}): Core
       const record = offers.get(offerId);
       return record ? { ...record } : null;
     },
+
     async listByEmployer(employerId, limit) {
       const bounded = clampStoreLimit(limit);
       return [...offers.values()]
@@ -139,6 +140,26 @@ export function createInMemoryCoreStores(seed: InMemoryCoreStoreSeed = {}): Core
     async findById(applicationId) {
       const record = applications.get(applicationId);
       return record ? { ...record } : null;
+    },
+    async findByIdForUpdate(applicationId) {
+      // Aucun verrou de ligne en mémoire : le compare-and-set ci-dessous reste
+      // la garantie d'atomicité de cet adaptateur.
+      return applicationStore.findById(applicationId);
+    },
+    async compareAndSetStatus(applicationId, expectedStatus, patch) {
+      assertStatusDomain(patch.status, APPLICATION_STATUS_VALUES, 'applications');
+      assertStatusDomain(expectedStatus, APPLICATION_STATUS_VALUES, 'applications');
+      const record = applications.get(applicationId);
+      if (!record || record.status !== expectedStatus) return null;
+      const updated: ApplicationRecord = {
+        ...record,
+        status: patch.status,
+        updatedAt: patch.updatedAt,
+        history: [...record.history, { ...patch.historyEntry }],
+        ...(patch.note !== undefined ? { note: patch.note } : {}),
+      };
+      applications.set(applicationId, updated);
+      return { ...updated, history: updated.history.map(entry => ({ ...entry })) };
     },
     async findByOfferAndCandidate(offerId, candidateId) {
       const record = [...applications.values()].find(

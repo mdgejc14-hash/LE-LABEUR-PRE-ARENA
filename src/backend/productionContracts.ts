@@ -140,7 +140,20 @@ export type OutboxEventType =
   | 'CANDIDATE_TRANSFERRED'
   | 'ACCOUNT_BLOCKED'
   | 'ACCOUNT_UNBLOCKED'
-  | 'PAYMENT_OVERDUE_J3';
+  | 'PAYMENT_OVERDUE_J3'
+  /**
+   * P0-E3/P0-E4 — cycle CANDIDATURE : types DÉCLARÉS pour le futur moteur
+   * transactional Outbox/Queue, non encore produits. P0-E4 persiste uniquement
+   * la transition dans la transaction PostgreSQL; aucun événement n'est écrit,
+   * aucune file n'est créée, aucun consumer n'est installé.
+   * Contrats documentés : `src/domain/applicationTransitions.ts`
+   * (`DOCUMENTED_APPLICATION_EVENTS`).
+   */
+  | 'APPLICATION_SUBMITTED'
+  | 'APPLICATION_EXAMINED'
+  | 'APPLICATION_SHORTLISTED'
+  | 'APPLICATION_REJECTED'
+  | 'APPLICATION_WITHDRAWN';
 
 export interface OutboxEvent {
   id: string;

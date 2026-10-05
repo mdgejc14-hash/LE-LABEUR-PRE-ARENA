@@ -165,9 +165,43 @@ export interface OfferStore {
   listPublic(limit?: number, filter?: Partial<FilterState>): Promise<OfferRecord[]>;
 }
 
+/** Entrée d'historique d'une candidature (même forme que `Application['history']`). */
+export type ApplicationHistoryEntry = Application['history'][number];
+
+/**
+ * P0-E4 — décision atomique sur une candidature.
+ * `historyEntry` est AJOUTÉ au tableau `history` côté SQL (`history || jsonb`),
+ * jamais réécrit depuis une valeur lue : deux décisions concurrentes ne peuvent
+ * pas se perdre une entrée d'historique.
+ */
+export interface ApplicationTransitionPatch {
+  status: ApplicationStatus;
+  updatedAt: string;
+  historyEntry: ApplicationHistoryEntry;
+  /** Motif de rejet (P0-E4) : renseigné uniquement par `REJECT`. */
+  note?: string;
+}
+
 export interface ApplicationStore {
   create(record: ApplicationRecord): Promise<ApplicationRecord>;
   findById(applicationId: string): Promise<ApplicationRecord | null>;
+  /**
+   * P0-E4 — verrou pessimiste de la ligne candidature (`SELECT … FOR UPDATE`).
+   * Sérialise deux décisions concurrentes sur la même candidature; l'adaptateur
+   * mémoire rend simplement la ligne courante (processus unique, sans verrou).
+   */
+  findByIdForUpdate(applicationId: string): Promise<ApplicationRecord | null>;
+  /**
+   * P0-E4 — transition conditionnelle (compare-and-set).
+   * Retourne `null` si la ligne n'existe pas ou si son statut n'est plus
+   * `expectedStatus` : une décision concurrente a gagné, l'appelant relit puis
+   * refuse ou rejoue de façon idempotente.
+   */
+  compareAndSetStatus(
+    applicationId: string,
+    expectedStatus: ApplicationStatus,
+    patch: ApplicationTransitionPatch,
+  ): Promise<ApplicationRecord | null>;
   findByOfferAndCandidate(offerId: string, candidateId: string): Promise<ApplicationRecord | null>;
   /** Keyset-paged by (appliedDate, id), oldest first; cursor is an application ID. */
   listByOffer(offerId: string, limit?: number, afterId?: string | null): Promise<ApplicationRecord[]>;

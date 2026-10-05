@@ -1,5 +1,5 @@
 /**
- * LE LABEUR — P0-C / P0-E3 — vérification réelle de bout en bout.
+ * LE LABEUR — P0-C / P0-E3 / P0-E4 — vérification réelle de bout en bout.
  *
  *   Worker/API → PostgreSQL réel → réponse
  *
@@ -32,6 +32,7 @@ import { base64UrlEncode, hashSessionToken, newEntityId, newOpaqueSessionToken }
 import { createSqlIdentityStores } from '../src/backend/identity/sqlStores';
 import { createSqlPermissionStore } from '../src/backend/identity/permissionStore';
 import { createSqlUserStore } from '../src/backend/identity/sqlStores';
+import { createSqlApplicationStore } from '../src/backend/persistence/sqlCoreStores';
 import { describePostgresTarget, resolvePostgresTarget } from '../src/backend/persistence/config';
 import { applyMigrations, loadMigrations, migrationStatus } from '../src/backend/persistence/migrationRunner';
 import { createPostgresDatabase } from '../src/backend/persistence/postgresDatabase';
@@ -235,7 +236,7 @@ async function main(): Promise<void> {
   const secrets = [connectionString, local?.password, resolved.target.connectionString];
 
   console.log('============================================================');
-  console.log(' LE LABEUR — P0-C / P0-E3 — vérification Worker/API → PostgreSQL');
+  console.log(' LE LABEUR — P0-C / P0-E3 / P0-E4 — vérification Worker/API → PostgreSQL');
   console.log('============================================================');
   console.log(`Source base      : ${sourceLabel}`);
   console.log(`Cible (sans secret): ${descriptor.host}:${descriptor.port}/${descriptor.database} (source=${descriptor.source})`);
@@ -456,6 +457,9 @@ async function main(): Promise<void> {
     let employerCookie = '';
     let otherEmployerId = '';
     let otherEmployerCookie = '';
+    let p0e3ApplicationId = '';
+    let p0e3SecondApplicationId = '';
+    let p0e3OfferId = '';
     await check('P0-E3 Worker/API → PostgreSQL : CANDIDATE soumet, EMPLOYER propriétaire consulte, tiers refusé', async () => {
       const employerLogin = await composition.worker.fetch(new Request('https://api.test/api/v1/auth/google/credential', {
         method: 'POST',
@@ -490,6 +494,7 @@ async function main(): Promise<void> {
       assert(createOffer.status === 201, `création offre 201 attendue, reçue ${createOffer.status}`);
       const offer = await createOffer.json() as { id: string; employerId: string };
       assert(offer.employerId === employerId, 'offre reliée à l’employeur authentifié');
+      p0e3OfferId = offer.id;
 
       const submission = await composition.worker.fetch(withSession(`/api/v1/offers/${offer.id}/applications`, sessionCookie, {
         method: 'POST',
@@ -500,6 +505,7 @@ async function main(): Promise<void> {
       const application = await submission.json() as { id: string; offerId: string; candidateId: string; status: string };
       assert(application.offerId === offer.id && application.candidateId === candidateId, 'candidature reliée au bon offerId/candidateId');
       assert(application.status === 'PENDING', 'statut PENDING attendu');
+      p0e3ApplicationId = application.id;
 
       const persisted = await database.query<{ offer_id: string; candidate_id: string; status: string; note: string | null }>(
         'SELECT offer_id, candidate_id, status, note FROM applications WHERE id = $1', [application.id],
@@ -519,6 +525,139 @@ async function main(): Promise<void> {
       const candidateList = await composition.worker.fetch(withSession(`/api/v1/offers/${offer.id}/applications`, sessionCookie));
       assert(candidateList.status === 403, `candidate refusé sur la liste privée: 403 attendu, reçu ${candidateList.status}`);
       assert(otherEmployerId !== employerId, 'comptes employeurs distincts');
+    });
+
+
+    await check('P0-E4 Worker/API → PostgreSQL : EMPLOYER examine, shortliste, rejette; CANDIDATE retire', async () => {
+      assert(p0e3ApplicationId, 'la candidature P0-E3 doit exister pour enchaîner le cycle de décision');
+
+      // Seconde candidature PENDING (même offre, autre candidat) : support du
+      // rejet avec motif, sans toucher à la candidature du cycle principal.
+      const secondCandidateId = newEntityId('usr');
+      await createSqlUserStore(database).create({
+        id: secondCandidateId,
+        role: 'CANDIDATE',
+        status: 'ACTIVE',
+        email: `p0e4.${secondCandidateId.toLowerCase()}@example.com`,
+        displayName: 'Candidat P0-E4',
+      });
+      p0e3SecondApplicationId = `app_p0e4_${secondCandidateId.slice(4).toLowerCase()}`;
+      const secondAppliedAt = new Date().toISOString();
+      await createSqlApplicationStore(database).create({
+        id: p0e3SecondApplicationId,
+        offerId: p0e3OfferId,
+        candidateId: secondCandidateId,
+        status: 'PENDING',
+        appliedDate: secondAppliedAt,
+        history: [{ action: 'Candidature transmise', timestamp: secondAppliedAt, actor: 'Candidat P0-E4' }],
+        createdAt: secondAppliedAt,
+        updatedAt: secondAppliedAt,
+      });
+
+      const employerHeaders = (key: string) => ({
+        cookie: `${SESSION_COOKIE_NAME}=${employerCookie}`,
+        'content-type': 'application/json',
+        'Idempotency-Key': key,
+      });
+
+      // 1. EXAMINE — PENDING → REVIEW
+      const examined = await composition.worker.fetch(withSession(`/api/v1/applications/${p0e3ApplicationId}/examine`, employerCookie, {
+        method: 'POST',
+        headers: employerHeaders('p0c-e4-examine-001'),
+        body: '{}',
+      }));
+      assert(examined.status === 200, `examen 200 attendu, reçu ${examined.status}`);
+      let stored: { rows: Array<{ status: string; history: unknown }> } = await database.query<{ status: string; history: unknown }>(
+        'SELECT status, history FROM applications WHERE id = $1', [p0e3ApplicationId],
+      );
+      assert(stored.rows[0]?.status === 'REVIEW', 'REVIEW persisté dans PostgreSQL par le Worker');
+      let history = (typeof stored.rows[0]?.history === 'string'
+        ? JSON.parse(String(stored.rows[0]?.history))
+        : stored.rows[0]?.history) as Array<{ action: string }>;
+      assert(history.length === 2, `historique P0-E4 alimenté, reçu ${history.length} entrée(s)`);
+
+      // 2. SHORTLIST — REVIEW → SHORTLISTED
+      const shortlisted = await composition.worker.fetch(withSession(`/api/v1/applications/${p0e3ApplicationId}/shortlist`, employerCookie, {
+        method: 'POST',
+        headers: employerHeaders('p0c-e4-shortlist-001'),
+        body: '{}',
+      }));
+      assert(shortlisted.status === 200, `shortlist 200 attendu, reçu ${shortlisted.status}`);
+      stored = await database.query<{ status: string; history: unknown }>(
+        'SELECT status, history FROM applications WHERE id = $1', [p0e3ApplicationId],
+      );
+      assert(stored.rows[0]?.status === 'SHORTLISTED', 'SHORTLISTED persisté dans PostgreSQL');
+
+      // 3. Un autre employeur ne décide jamais sur cette offre (403)
+      const otherEmployerDecision = await composition.worker.fetch(withSession(
+        `/api/v1/applications/${p0e3ApplicationId}/reject`,
+        otherEmployerCookie,
+        {
+          method: 'POST',
+          headers: {
+            cookie: `${SESSION_COOKIE_NAME}=${otherEmployerCookie}`,
+            'content-type': 'application/json',
+            'Idempotency-Key': 'p0c-e4-other-employer-reject-001',
+          },
+          body: JSON.stringify({ note: 'Refus non autorisé.' }),
+        },
+      ));
+      assert(otherEmployerDecision.status === 403, `autre employeur refusé (403), reçu ${otherEmployerDecision.status}`);
+
+      // 4. Idempotence — même clé, même résultat, une seule transition
+      const replay = await composition.worker.fetch(withSession(`/api/v1/applications/${p0e3ApplicationId}/shortlist`, employerCookie, {
+        method: 'POST',
+        headers: employerHeaders('p0c-e4-shortlist-001'),
+        body: '{}',
+      }));
+      assert(replay.status === 200, `rejeu 200 attendu, reçu ${replay.status}`);
+      stored = await database.query<{ status: string; history: unknown }>(
+        'SELECT status, history FROM applications WHERE id = $1', [p0e3ApplicationId],
+      );
+      history = (typeof stored.rows[0]?.history === 'string'
+        ? JSON.parse(String(stored.rows[0]?.history))
+        : stored.rows[0]?.history) as Array<{ action: string }>;
+      assert(history.length === 3, `aucune entrée d’historique dupliquée au rejeu, reçu ${history.length}`);
+
+      // 5. WITHDRAW par le candidat — SHORTLISTED → WITHDRAWN
+      const withdrawn = await composition.worker.fetch(withSession(`/api/v1/applications/${p0e3ApplicationId}/withdraw`, sessionCookie, {
+        method: 'POST',
+        headers: {
+          cookie: `${SESSION_COOKIE_NAME}=${sessionCookie}`,
+          'content-type': 'application/json',
+          'Idempotency-Key': 'p0c-e4-withdraw-001',
+        },
+        body: '{}',
+      }));
+      assert(withdrawn.status === 200, `retrait 200 attendu, reçu ${withdrawn.status}`);
+      stored = await database.query<{ status: string; history: unknown }>(
+        'SELECT status, history FROM applications WHERE id = $1', [p0e3ApplicationId],
+      );
+      assert(stored.rows[0]?.status === 'WITHDRAWN', 'WITHDRAWN persisté dans PostgreSQL');
+
+      // 6. État terminal : plus aucune décision n'est acceptée (409)
+      const afterWithdraw = await composition.worker.fetch(withSession(`/api/v1/applications/${p0e3ApplicationId}/examine`, employerCookie, {
+        method: 'POST',
+        headers: employerHeaders('p0c-e4-examine-after-withdraw-001'),
+        body: '{}',
+      }));
+      assert(afterWithdraw.status === 409, `décision après retrait: 409 attendu, reçu ${afterWithdraw.status}`);
+
+      // 7. REJECT avec motif sur une candidature restée PENDING (seconde candidature)
+      const rejected = await composition.worker.fetch(withSession(`/api/v1/applications/${p0e3SecondApplicationId}/reject`, employerCookie, {
+        method: 'POST',
+        headers: employerHeaders('p0c-e4-reject-001'),
+        body: JSON.stringify({ note: 'Dossier non retenu (vérification PostgreSQL).' }),
+      }));
+      assert(rejected.status === 200, `rejet 200 attendu, reçu ${rejected.status}`);
+      const rejectedRow = await database.query<{ status: string; note: string | null }>(
+        'SELECT status, note FROM applications WHERE id = $1', [p0e3SecondApplicationId],
+      );
+      assert(rejectedRow.rows[0]?.status === 'REJECTED', 'REJECTED persisté dans PostgreSQL');
+      assert(
+        rejectedRow.rows[0]?.note === 'Dossier non retenu (vérification PostgreSQL).',
+        'motif de rejet persisté dans PostgreSQL',
+      );
     });
 
     await check('Worker/API → PostgreSQL : ADMIN provisionné côté serveur + permissions SQL', async () => {

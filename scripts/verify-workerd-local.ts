@@ -1,5 +1,5 @@
 /**
- * LE LABEUR — P0-C / P0-E3 — vérification du Worker dans le runtime workerd
+ * LE LABEUR — P0-C / P0-E3 / P0-E4 — vérification du Worker dans le runtime workerd
  * avec un binding Hyperdrive local.
  *
  *   Requête HTTP → workerd → binding HYPERDRIVE → PostgreSQL réel → réponse
@@ -11,7 +11,9 @@
  *    alimenté par `CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE`) ;
  *  - `/healthz` décrit l'état réel (base joignable, migrations appliquées) ;
  *  - le parcours Google signé → session → /me → logout écrit réellement dans
- *    PostgreSQL, sans jamais exposer de secret.
+ *    PostgreSQL, sans jamais exposer de secret ;
+ *  - le cycle de décision P0-E4 (examine, shortlist, rejet refusé à un tiers,
+ *    withdraw) s'exécute sous workerd et persiste dans PostgreSQL.
  *
  * Ce que ce script NE prouve PAS :
  *  - il n'y a ni compte Cloudflare, ni Hyperdrive déployé, ni `wrangler deploy`,
@@ -140,7 +142,7 @@ async function main(): Promise<void> {
   mkdirSync(WORK_DIR, { recursive: true });
 
   console.log('============================================================');
-  console.log(' LE LABEUR — P0-C / P0-E3 — runtime workerd + binding Hyperdrive local');
+  console.log(' LE LABEUR — P0-C / P0-E3 / P0-E4 — runtime workerd + binding Hyperdrive local');
   console.log('============================================================');
   console.log('Runtime          : workerd (wrangler dev --local) — PAS un déploiement Cloudflare');
   console.log('Base             : PostgreSQL 17.10 RÉEL local (binaire embarqué, TEST/LOCAL)');
@@ -172,6 +174,7 @@ async function main(): Promise<void> {
   let sessionCookie = '';
   let userId = '';
   let employerCookie = '';
+  let workerdApplicationId = '';
   let employerId = '';
   let otherEmployerCookie = '';
   let otherEmployerId = '';
@@ -331,6 +334,7 @@ async function main(): Promise<void> {
       const application = await submission.json() as { id: string; offerId: string; candidateId: string; status: string };
       assert(application.offerId === offer.id && application.candidateId === userId, 'candidature reliée à la bonne offre et au bon candidat');
       assert(application.status === 'PENDING', 'statut PENDING attendu');
+      workerdApplicationId = application.id;
 
       const stored = await pool.query<{ offer_id: string; candidate_id: string; status: string; note: string | null }>(
         'SELECT offer_id, candidate_id, status, note FROM applications WHERE id = $1', [application.id],
@@ -363,6 +367,90 @@ async function main(): Promise<void> {
       });
       assert(closedLifecycle.status === 501, `la liste générale des candidatures reste fermée (501), reçu ${closedLifecycle.status}`);
       assert(otherEmployerId !== employerId, 'employeurs distincts');
+    });
+
+    await check('P0-E4 workerd → PostgreSQL : EMPLOYER examine et shortliste, tiers refusé, CANDIDATE retire', async () => {
+      assert(workerdApplicationId, 'la candidature P0-E3 doit exister pour enchaîner le cycle de décision');
+      const ownerHeaders = (key: string) => ({
+        cookie: `${SESSION_COOKIE_NAME}=${employerCookie}`,
+        'content-type': 'application/json',
+        'Idempotency-Key': key,
+      });
+      const path = (action: string) => `${base}/api/v1/applications/${workerdApplicationId}/${action}`;
+
+      // 1. EXAMINE — PENDING → REVIEW, réellement écrit par workerd.
+      const examined = await fetch(path('examine'), {
+        method: 'POST',
+        headers: ownerHeaders('p0e4-workerd-examine-001'),
+        body: '{}',
+      });
+      assert(examined.status === 200, `examen 200 attendu, reçu ${examined.status}`);
+      let stored = await pool.query<{ status: string; history: unknown }>(
+        'SELECT status, history FROM applications WHERE id = $1', [workerdApplicationId],
+      );
+      assert(stored.rows[0]?.status === 'REVIEW', 'REVIEW persisté par workerd dans PostgreSQL');
+      const historyAfterExamine = (typeof stored.rows[0]?.history === 'string'
+        ? JSON.parse(String(stored.rows[0]?.history))
+        : stored.rows[0]?.history) as Array<{ action: string }>;
+      assert(historyAfterExamine.length === 2, `historique alimenté, reçu ${historyAfterExamine.length} entrée(s)`);
+
+      // 2. Un autre employeur ne décide jamais sur cette offre (403).
+      const otherEmployerDecision = await fetch(path('shortlist'), {
+        method: 'POST',
+        headers: {
+          cookie: `${SESSION_COOKIE_NAME}=${otherEmployerCookie}`,
+          'content-type': 'application/json',
+          'Idempotency-Key': 'p0e4-workerd-other-employer-001',
+        },
+        body: '{}',
+      });
+      assert(otherEmployerDecision.status === 403, `autre employeur refusé (403), reçu ${otherEmployerDecision.status}`);
+
+      // 3. SHORTLIST — REVIEW → SHORTLISTED, puis rejeu idempotent (même clé).
+      const shortlisted = await fetch(path('shortlist'), {
+        method: 'POST',
+        headers: ownerHeaders('p0e4-workerd-shortlist-001'),
+        body: '{}',
+      });
+      assert(shortlisted.status === 200, `shortlist 200 attendu, reçu ${shortlisted.status}`);
+      const replay = await fetch(path('shortlist'), {
+        method: 'POST',
+        headers: ownerHeaders('p0e4-workerd-shortlist-001'),
+        body: '{}',
+      });
+      assert(replay.status === 200, `rejeu 200 attendu, reçu ${replay.status}`);
+      stored = await pool.query<{ status: string; history: unknown }>(
+        'SELECT status, history FROM applications WHERE id = $1', [workerdApplicationId],
+      );
+      assert(stored.rows[0]?.status === 'SHORTLISTED', 'SHORTLISTED persisté dans PostgreSQL');
+      const historyAfterShortlist = (typeof stored.rows[0]?.history === 'string'
+        ? JSON.parse(String(stored.rows[0]?.history))
+        : stored.rows[0]?.history) as Array<{ action: string }>;
+      assert(historyAfterShortlist.length === 3, `aucune entrée dupliquée au rejeu, reçu ${historyAfterShortlist.length}`);
+
+      // 4. WITHDRAW par le candidat — SHORTLISTED → WITHDRAWN.
+      const withdrawn = await fetch(path('withdraw'), {
+        method: 'POST',
+        headers: {
+          cookie: `${SESSION_COOKIE_NAME}=${sessionCookie}`,
+          'content-type': 'application/json',
+          'Idempotency-Key': 'p0e4-workerd-withdraw-001',
+        },
+        body: '{}',
+      });
+      assert(withdrawn.status === 200, `retrait 200 attendu, reçu ${withdrawn.status}`);
+      stored = await pool.query<{ status: string; history: unknown }>(
+        'SELECT status, history FROM applications WHERE id = $1', [workerdApplicationId],
+      );
+      assert(stored.rows[0]?.status === 'WITHDRAWN', 'WITHDRAWN persisté dans PostgreSQL');
+
+      // 5. État terminal : plus aucune décision acceptée (409).
+      const afterWithdraw = await fetch(path('examine'), {
+        method: 'POST',
+        headers: ownerHeaders('p0e4-workerd-examine-after-withdraw-001'),
+        body: '{}',
+      });
+      assert(afterWithdraw.status === 409, `décision après retrait: 409 attendu, reçu ${afterWithdraw.status}`);
     });
 
     await check('workerd → PostgreSQL : session relue, /me résolu, logout révoqué en base', async () => {

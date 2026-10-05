@@ -10,9 +10,11 @@
  *
  * P0-B : l'identité, la session et le RBAC utilisent les stores SQL quand une
  * base/client est injecté. OFFRES est ouvert pour son périmètre P0-E1/E2 et
- * CANDIDATURES uniquement pour soumission + consultation de l'offre propriétaire
- * (P0-E3); les autres opérations métier restent fermées. Le mode DEMO demeure
- * séparé, inchangé et par défaut.
+ * CANDIDATURES pour la soumission, la consultation de l'offre propriétaire
+ * (P0-E3) et le premier cycle de décision EXAMINE / SHORTLIST / REJECT /
+ * WITHDRAW (P0-E4) ; les autres opérations métier — propositions, contrats,
+ * paiements, commissions, plaintes, remplacements, notifications générales —
+ * restent fermées. Le mode DEMO demeure séparé, inchangé et par défaut.
  */
 
 import type { DatabaseHealthProbe, PostgreSqlDatabase } from '../services/database';
@@ -38,9 +40,13 @@ import type { PostgresClientPort } from '../persistence/sqlClient';
 import { buildHealthPayload, detectWorkerRuntime, type BoundaryHealthResponse } from './health';
 import { createApiWorker, type ApiHealthReporter } from './worker';
 import { createIdentityApiWorker } from './identityWorker';
-import { createApplicationApiHandlers, createApplicationRepository } from '../repositories/applicationRepository';
+import {
+  createApplicationApiHandlers,
+  createApplicationRepository,
+  type OpenApplicationRepository,
+} from '../repositories/applicationRepository';
 import { createOfferApiHandlers, createOfferRepository } from '../repositories/offerRepository';
-import type { ServerApplicationRepository, ServerOfferRepository } from '../repositories/contracts';
+import type { ServerOfferRepository } from '../repositories/contracts';
 import type { ApplicationRepositoryStores } from '../repositories/applicationRepository';
 
 export interface WorkerEnvironment extends WorkerPersistenceEnvironment {
@@ -82,8 +88,8 @@ export interface WorkerComposition {
   /** Descripteur sûr de la cible, si une cible a été résolue. */
   target?: SafePostgresDescriptor;
   offers?: ServerOfferRepository;
-  /** P0-E3 partiel : seulement soumission et consultation par offre propriétaire. */
-  applications?: Pick<ServerApplicationRepository, 'applyToOffer' | 'listApplicationsForOffer'>;
+  /** P0-E3 + P0-E4 : soumission, consultation par offre propriétaire et cycle de décision. */
+  applications?: OpenApplicationRepository;
 }
 
 /** Serveur/test only: allows deterministic verification without changing env or DEMO behavior. */
