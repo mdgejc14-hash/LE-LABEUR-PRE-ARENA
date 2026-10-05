@@ -132,6 +132,8 @@ export function createApiWorker(dependencies: ApiWorkerDependencies): { fetch(re
         let actor: AuthenticatedActor | null = null;
         if (route.authentication === 'required') {
           actor = await dependencies.authenticate(request);
+        } else {
+          actor = await dependencies.authenticate(request).catch(() => null);
         }
         actor = validateRouteAccess(route, actor);
 

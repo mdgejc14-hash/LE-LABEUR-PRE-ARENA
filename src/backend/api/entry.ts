@@ -28,14 +28,16 @@ import {
   type SafePostgresDescriptor,
   type WorkerPersistenceEnvironment,
 } from '../persistence/config';
-import type { CoreStores } from '../persistence/coreRecords';
+import type { CoreStores, OfferStore } from '../persistence/coreRecords';
 import { readMigrationState } from '../persistence/migrationState';
 import { createPostgresDatabase } from '../persistence/postgresDatabase';
-import { createSqlCoreStores } from '../persistence/sqlCoreStores';
+import { createSqlCoreStores, createSqlOfferStore } from '../persistence/sqlCoreStores';
 import type { PostgresClientPort } from '../persistence/sqlClient';
 import { buildHealthPayload, detectWorkerRuntime, type BoundaryHealthResponse } from './health';
 import { createApiWorker, type ApiHealthReporter } from './worker';
 import { createIdentityApiWorker } from './identityWorker';
+import { createOfferApiHandlers, createOfferRepository } from '../repositories/offerRepository';
+import type { ServerOfferRepository } from '../repositories/contracts';
 
 export interface WorkerEnvironment extends WorkerPersistenceEnvironment {
   GOOGLE_CLIENT_ID?: string;
@@ -75,6 +77,7 @@ export interface WorkerComposition {
   probe?: DatabaseHealthProbe;
   /** Descripteur sûr de la cible, si une cible a été résolue. */
   target?: SafePostgresDescriptor;
+  offers?: ServerOfferRepository;
 }
 
 /** Serveur/test only: allows deterministic verification without changing env or DEMO behavior. */
@@ -232,10 +235,35 @@ export function composeWorker(
     now: overrides.now,
   });
 
+  const runInTransaction = persistence.database
+    ? async <T>(operation: (txStores: { offers: OfferStore; users: IdentityStores['users'] }) => Promise<T>): Promise<T> => {
+        return persistence.database!.run(async tx => {
+          return operation({
+            offers: createSqlOfferStore(tx),
+            users: stores.users,
+          });
+        });
+      }
+    : undefined;
+
+  const offerRepository = persistence.core
+    ? createOfferRepository({
+        stores: {
+          offers: persistence.core.offers,
+          users: stores.users,
+        },
+        runInTransaction,
+        now: overrides.now,
+      })
+    : undefined;
+
+  const offerHandlers = offerRepository ? createOfferApiHandlers(offerRepository) : {};
+
   return {
     mode,
     persistence: persistence.decision,
     core: persistence.core,
+    offers: offerRepository,
     health,
     probe: persistence.probe,
     target: persistence.target,
@@ -245,6 +273,7 @@ export function composeWorker(
       health,
       cookie: { secure: env.COOKIE_SECURE !== 'false' },
       now: overrides.now,
+      handlers: offerHandlers,
     }),
   };
 }

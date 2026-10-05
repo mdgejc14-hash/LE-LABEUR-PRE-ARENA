@@ -93,6 +93,27 @@ export function createInMemoryCoreStores(seed: InMemoryCoreStoreSeed = {}): Core
       offers.set(offerId, updated);
       return { ...updated };
     },
+    async listPublic(limit, filter) {
+      const bounded = clampStoreLimit(limit);
+      return [...offers.values()]
+        .filter(offer => {
+          if (offer.status !== 'ACTIVE') return false;
+          if (filter?.departmentId?.trim() && offer.departmentId !== filter.departmentId.trim()) return false;
+          if (filter?.communeId?.trim() && offer.municipalityId !== filter.communeId.trim()) return false;
+          if (filter?.contractType?.trim() && offer.contractType !== filter.contractType.trim()) return false;
+          if (filter?.searchQuery?.trim()) {
+            const q = filter.searchQuery.trim().toLowerCase();
+            const matches = offer.title.toLowerCase().includes(q)
+              || (offer.summary || '').toLowerCase().includes(q)
+              || offer.location.toLowerCase().includes(q);
+            if (!matches) return false;
+          }
+          return true;
+        })
+        .sort((left, right) => right.postedDate.localeCompare(left.postedDate) || left.id.localeCompare(right.id))
+        .slice(0, bounded)
+        .map(offer => ({ ...offer }));
+    },
   };
 
   const applicationStore: ApplicationStore = {

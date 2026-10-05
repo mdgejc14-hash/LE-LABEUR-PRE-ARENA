@@ -20,6 +20,7 @@ import type {
   CommissionPaymentStatus,
   Contract,
   ContractStatus,
+  FilterState,
   Offer,
   UserRole,
 } from '../../types';
@@ -159,6 +160,7 @@ export interface OfferStore {
   findById(offerId: string): Promise<OfferRecord | null>;
   listByEmployer(employerId: string, limit?: number): Promise<OfferRecord[]>;
   updateStatus(offerId: string, status: Offer['status'], updatedAt: string): Promise<OfferRecord | null>;
+  listPublic(limit?: number, filter?: Partial<FilterState>): Promise<OfferRecord[]>;
 }
 
 export interface ApplicationStore {
