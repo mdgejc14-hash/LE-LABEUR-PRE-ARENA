@@ -140,7 +140,7 @@ async function main(): Promise<void> {
   console.log('============================================================');
   console.log(' LE LABEUR — P0-C — runtime workerd + binding Hyperdrive local');
   console.log('============================================================');
-  console.log('Runtime          : workerd (wrangler dev --local) — PAS un déploiement Cloudflare');
+  console.log('Runtime          : workerd (wrangler dev --env local --local) — PAS un déploiement Cloudflare');
   console.log('Base             : PostgreSQL 17.10 RÉEL local (binaire embarqué, TEST/LOCAL)');
   console.log('Hyperdrive réel  : NON — binding alimenté par la variable locale, aucun Hyperdrive déployé');
   console.log('------------------------------------------------------------');
@@ -185,6 +185,7 @@ async function main(): Promise<void> {
     writeFileSync(wranglerLog, '');
     wrangler = spawn(resolve(REPO_ROOT, 'node_modules', '.bin', 'wrangler'), [
       'dev',
+      '--env', 'local',
       '--local',
       '--port', String(WRANGLER_PORT),
       '--var', `GOOGLE_CLIENT_ID:${AUDIENCE}`,

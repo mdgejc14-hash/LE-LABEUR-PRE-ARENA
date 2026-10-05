@@ -1,6 +1,6 @@
 # LE LABEUR — Worker Cloudflare + PostgreSQL (P0-C)
 
-**État au 2026-10-05.** P0-C branche la fondation PostgreSQL de P0-A/P0-B sur une
+**État au 2026-10-05 (P0-D).** P0-C branche la fondation PostgreSQL de P0-A/P0-B sur une
 chaîne d'exécution Worker → Hyperdrive → PostgreSQL **réellement exécutée en
 local**, et prépare la configuration Cloudflare réelle sans jamais la revendiquer.
 
@@ -47,9 +47,9 @@ déployé remplace la variable locale. Le code Worker est identique.
 | `main` | `src/backend/worker/cloudflareEntry.ts` | Entrée Worker réelle |
 | `compatibility_flags` | `["nodejs_compat"]` | Requis par `pg` (`node:net`, `node:tls`, `node:crypto`) |
 | `compatibility_date` | `2026-10-05` | Doit rester ≥ 2024-09-23 |
-| `[[hyperdrive]] binding` | `HYPERDRIVE` | Binding lu par le Worker |
-| `[[hyperdrive]] id` | `00000000-0000-0000-0000-000000000000` | **PLACEHOLDER** — à remplacer après `wrangler hyperdrive create` |
-| `[vars]` (défaut) | `PERSISTENCE=postgres`, `WORKER_ENV=development`, limites de pool/timeout, `COOKIE_SECURE=true` | Développement (`wrangler dev`) |
+| `[[env.local.hyperdrive]] binding` | `HYPERDRIVE` | Binding lu par le Worker |
+| `[[env.local.hyperdrive]] id` | `00000000-0000-0000-0000-000000000000` | **PLACEHOLDER** — à remplacer après `wrangler hyperdrive create` |
+| `[env.local.vars]` | `PERSISTENCE=postgres`, `WORKER_ENV=development`, limites de pool/timeout, `COOKIE_SECURE=true` | Développement (`wrangler dev --env local`) |
 | `[env.production.vars]` | mêmes clés, `WORKER_ENV=production` | **Redéclarées** : les `vars` et bindings ne sont pas hérités par les environnements Wrangler |
 | `[env.production]` Hyperdrive | **absent (voulu)** | Déployé tel quel, le Worker répond 503 (`misconfigured`) au lieu d'utiliser une base implicite |
 
@@ -150,10 +150,11 @@ d'origine, comportement des verrous consultatifs à travers un Hyperdrive déplo
   connexions standby invalides sous workerd (« code hung »). Le pool est donc
   créé par requête puis fermé via `ctx.waitUntil`, conformément aux
   recommandations Hyperdrive.
-- **RBAC SQL partiel** : la migration `0002` ne seed que le rôle `ADMIN`. Les
-  permissions `CANDIDATE`/`EMPLOYER` restent définies côté mémoire uniquement :
-  en mode PostgreSQL, un candidat a donc zéro permission effective tant que le
-  seed des rôles n'est pas complété (à traiter en P0-D, sans invention).
+- **RBAC fermé explicitement** : la migration `0002` seed une liste explicite des 24
+  capacités transverses ADMIN. `CANDIDATE` et `EMPLOYER` ont volontairement zéro
+  capacité `:any`/modération : leurs futurs accès relèvent du rôle et de
+  l’ownership/participation. Les trois rôles sont comparés à la matrice TypeScript
+  par les tests SQL ; aucune permission métier nouvelle n’a été inventée.
 - **`vars`/bindings non hérités** : le profil `production` redéclare
   explicitement ses vars ; il ne déclare aucun Hyperdrive tant qu'aucun n'existe.
 

@@ -13,6 +13,7 @@ import { tmpdir } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { ROLE_PERMISSIONS } from '../identity/permissions';
 import { EXPECTED_MIGRATION_IDS } from './migrationManifest';
 import {
   MigrationError,
@@ -149,10 +150,14 @@ export async function runMigrationRunnerTests(): Promise<MigrationRunnerTestResu
         assert(row?.checksum === migration.checksum, `trace manquante ou divergente: ${migration.id}`);
       }
 
-      const seeded = await client.query<{ count: string }>(
-        `SELECT count(*)::text AS count FROM role_permissions WHERE role = 'ADMIN'`,
+      const seeded = await client.query<{ role: keyof typeof ROLE_PERMISSIONS; permission_code: string }>(
+        'SELECT role, permission_code FROM role_permissions ORDER BY role, permission_code',
       );
-      assert(Number(seeded.rows[0]?.count ?? 0) > 0, 'le seed 0002 doit être appliqué (permissions ADMIN)');
+      for (const role of ['ADMIN', 'EMPLOYER', 'CANDIDATE'] as const) {
+        const actual = seeded.rows.filter(row => row.role === role).map(row => row.permission_code).sort();
+        const expected = [...ROLE_PERMISSIONS[role]].sort();
+        assert(JSON.stringify(actual) === JSON.stringify(expected), `permissions ${role} divergentes: ${actual.join(', ')}`);
+      }
 
       const second = await applyMigrations(client, migrations);
       assert(second.applied.length === 0, 'aucune migration ne doit être rejouée');

@@ -35,9 +35,23 @@ export const ADMIN_PERMISSIONS: readonly Permission[] = [
   'stats:read',
 ];
 
-/** CANDIDATE et EMPLOYER n'ont aucune permission transverse. */
+/**
+ * Matrice RBAC canonique de la fondation.
+ *
+ * Les 24 permissions existantes sont toutes des capacités transverses ADMIN
+ * (`:any`, modération, arbitrage, audit…). CANDIDATE et EMPLOYER sont
+ * autorisés par rôle + ownership/participation dans les futurs handlers : leur
+ * attribuer une capacité `:any` élargirait indûment leurs droits. Les tableaux
+ * vides sont donc intentionnels et testés, pas un oubli de seed.
+ */
+export const ROLE_PERMISSIONS: Readonly<Record<UserRole, readonly Permission[]>> = {
+  ADMIN: ADMIN_PERMISSIONS,
+  EMPLOYER: [],
+  CANDIDATE: [],
+};
+
 export function permissionsForRole(role: UserRole): readonly Permission[] {
-  return role === 'ADMIN' ? ADMIN_PERMISSIONS : [];
+  return ROLE_PERMISSIONS[role];
 }
 
 export type SelfAssignableRole = Exclude<UserRole, 'ADMIN'>;

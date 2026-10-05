@@ -27,9 +27,14 @@ compatibility_flags = ["nodejs_compat"]
 enabled = true
 
 # -----------------------------------------------------------------------------
-# Profil par défaut = DÉVELOPPEMENT (wrangler dev / wrangler deploy sans --env)
+# Profil LOCAL explicite (`wrangler dev --env local`)
+# Le profil par défaut n’a volontairement ni vars ni binding : aucun déploiement
+# accidentel sans `--env production`.
 # -----------------------------------------------------------------------------
-[vars]
+[env.local]
+name = "lelabeur-api-local"
+
+[env.local.vars]
 PERSISTENCE = "postgres"
 DB_POOL_MAX = "5"
 DB_STATEMENT_TIMEOUT_MS = "15000"
@@ -43,9 +48,9 @@ GOOGLE_CLIENT_ID = ""
 # Binding Hyperdrive de développement.
 # `id` : PLACEHOLDER — à remplacer par l'ID retourné par
 #   npx wrangler hyperdrive create lelabeur-dev --connection-string="postgresql://…"
-# En local, `wrangler dev` n'utilise PAS cet ID : la connexion vient de
+# En local, `wrangler dev --env local` n'utilise PAS cet ID : la connexion vient de
 #   CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE (.dev.vars).
-[[hyperdrive]]
+[[env.local.hyperdrive]]
 binding = "HYPERDRIVE"
 id = "00000000-0000-0000-0000-000000000000"
 
@@ -76,8 +81,7 @@ GOOGLE_CLIENT_ID = ""
 # Pour l'activer :
 #   1. npx wrangler hyperdrive create lelabeur-prod --connection-string="postgresql://…" --caching-disabled=true
 #      (cache désactivé : les lectures d'identité/session exigent un état frais)
-#   2. npx wrangler secret put POSTGRES_CONNECTION_STRING --env production   # (repli optionnel)
-#   3. décommenter le bloc ci-dessous avec l'ID réel, puis redéployer :
+#   2. décommenter le bloc ci-dessous avec l'ID réel, puis redéployer :
 #
 # [[env.production.hyperdrive]]
 # binding = "HYPERDRIVE"
