@@ -23,6 +23,12 @@ export interface DatabaseHealth {
   reachable: boolean;
   checkedAt: string;
   latencyMs?: number;
+  /**
+   * Motif d'échec, déjà expurgé de tout secret (voir redactSqlSecrets).
+   * Optionnel : `reachable: false` suffit à un consommateur qui n'affiche pas
+   * le détail.
+   */
+  error?: string;
 }
 
 export interface DatabaseHealthProbe {
