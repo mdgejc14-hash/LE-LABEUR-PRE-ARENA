@@ -2,7 +2,8 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, CheckCircle2, LockKeyhole, RefreshCw, UnlockKeyhole, XCircle } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { appRepositories as repositories } from '../repositories/provider';
-import { Contract, CommissionPaymentRecord, UserProfile, Incident, ReplacementDossier } from '../types';
+import { Contract, CommissionPaymentRecord, PaymentDeclaration, SystemAuditLog, UserProfile, Incident, ReplacementDossier } from '../types';
+import { AdminPaymentDeclarationDetail, AdminPaymentsVerification } from './admin/AdminPaymentsVerification';
 
 const daysLateFor = (dateValue?: string): number => {
   if (!dateValue) return 0;
@@ -34,6 +35,13 @@ export const AdminDashboardScreen: React.FC = () => {
   const [payments, setPayments] = useState<CommissionPaymentRecord[]>([]);
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [replacements, setReplacements] = useState<ReplacementDossier[]>([]);
+  // PHASE 4C — consultation ADMIN des paiements soumis (lecture seule).
+  const [submittedDeclarations, setSubmittedDeclarations] = useState<PaymentDeclaration[]>([]);
+  const [declarationDetail, setDeclarationDetail] = useState<PaymentDeclaration | null>(null);
+  const [declarationsLoading, setDeclarationsLoading] = useState(true);
+  const [declarationError, setDeclarationError] = useState<string>('');
+  const [openingDeclarationId, setOpeningDeclarationId] = useState<string>('');
+  const [auditLogs, setAuditLogs] = useState<SystemAuditLog[]>([]);
   const [replacementSelections, setReplacementSelections] = useState<Record<string, string>>({});
   const [incidentNotes, setIncidentNotes] = useState<Record<string, string>>({});
   const [busyId, setBusyId] = useState<string>('');
@@ -43,21 +51,44 @@ export const AdminDashboardScreen: React.FC = () => {
   const refresh = useCallback(async () => {
     if (!currentUser || currentUser.role !== 'ADMIN') return;
     setError('');
+    setDeclarationsLoading(true);
     try {
-      const [nextUsers, nextContracts, nextPayments, nextIncidents, nextReplacements] = await Promise.all([
+      const [nextUsers, nextContracts, nextPayments, nextIncidents, nextReplacements, nextDeclarations, nextAuditLogs] = await Promise.all([
         repositories.getAllUsers(currentUser.id),
         repositories.getContractsByUser(currentUser.id, 'ADMIN'),
         repositories.getAllPaymentRecords(currentUser.id),
         repositories.getAllIncidents(currentUser.id),
-        repositories.getAllReplacements(currentUser.id)
+        repositories.getAllReplacements(currentUser.id),
+        repositories.listSubmittedPaymentDeclarations(currentUser.id),
+        repositories.getAllAuditLogs(currentUser.id)
       ]);
       setUsers(nextUsers);
       setContracts(nextContracts);
       setPayments(nextPayments);
       setIncidents(nextIncidents);
       setReplacements(nextReplacements);
+      setSubmittedDeclarations(nextDeclarations);
+      setAuditLogs(nextAuditLogs);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Impossible de charger la supervision.');
+    } finally {
+      setDeclarationsLoading(false);
+    }
+  }, [currentUser]);
+
+  /** Ouvre une déclaration soumise : la lecture passe par l'opération ADMIN du Repository. */
+  const openDeclarationDetail = useCallback(async (paymentId: string) => {
+    if (!currentUser || currentUser.role !== 'ADMIN') return;
+    setOpeningDeclarationId(paymentId);
+    setDeclarationError('');
+    try {
+      const declaration = await repositories.getSubmittedPaymentDeclaration(paymentId, currentUser.id);
+      if (!declaration) throw new Error('Déclaration de paiement introuvable.');
+      setDeclarationDetail(declaration);
+    } catch (err) {
+      setDeclarationError(err instanceof Error ? err.message : 'Impossible d’ouvrir cette déclaration.');
+    } finally {
+      setOpeningDeclarationId('');
     }
   }, [currentUser]);
 
@@ -88,6 +119,21 @@ export const AdminDashboardScreen: React.FC = () => {
   };
 
   if (!currentUser || currentUser.role !== 'ADMIN') return null;
+
+  // PHASE 4C — détail d'une déclaration soumise, ouvert depuis la liste.
+  if (declarationDetail) {
+    return (
+      <div className="p-4 pb-6 font-operational">
+        <AdminPaymentDeclarationDetail
+          declaration={declarationDetail}
+          contracts={contracts}
+          employers={users}
+          auditLogs={auditLogs}
+          onBack={() => setDeclarationDetail(null)}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="p-4 space-y-4 font-operational">
@@ -127,9 +173,20 @@ export const AdminDashboardScreen: React.FC = () => {
         </div>
       </div>
 
+      {/* PHASE 4C — déclarations de paiement externes soumises par les employeurs (lecture seule) */}
+      <AdminPaymentsVerification
+        declarations={submittedDeclarations}
+        contracts={contracts}
+        employers={users}
+        loading={declarationsLoading}
+        error={declarationError}
+        onOpenDeclaration={paymentId => void openDeclarationDetail(paymentId)}
+        openingId={openingDeclarationId}
+      />
+
       <section className="space-y-2">
         <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-[#17233B]">Paiements à vérifier</h2>
+          <h2 className="text-sm font-semibold text-[#17233B]">Commissions à vérifier</h2>
           <span className="text-xs text-[#17233B]/50">{pendingPayments.length}</span>
         </div>
         {pendingPayments.length === 0 ? (

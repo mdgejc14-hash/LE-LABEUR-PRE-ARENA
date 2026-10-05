@@ -70,6 +70,7 @@ import {
   parseContractStartDate,
   isPaymentDue,
 } from '../domain/businessRules';
+import { sortSubmittedDeclarationsForAdmin } from '../domain/adminPaymentReview';
 
 const STORAGE_KEYS = {
   USERS: 'lelabeur_v5_users',
@@ -3092,6 +3093,33 @@ export class MockService implements
       summary: `Déclaration de paiement externe ${declaration.paymentId} soumise par l’employeur.`
     });
     this.persistAll();
+    return { ...declaration };
+  }
+
+  // --- PaymentRepository — PHASE 4C : consultation ADMIN des paiements soumis ---
+  // L'administration ne fait que lire les déclarations que les employeurs ont
+  // soumises : aucune décision (UNDER_REVIEW / APPROVED / REJECTED) n'est
+  // produite ici et l'état du dépôt n'est jamais modifié.
+
+  /** Résout un acteur et exige le rôle ADMIN (échec fermé pour tous les autres rôles). */
+  private requireAdminActor(actorId: string): UserProfile {
+    const actor = this.requireActor(actorId);
+    if (actor.role !== 'ADMIN') throw new Error('Action non autorisée : ADMIN uniquement.');
+    return actor;
+  }
+
+  async listSubmittedPaymentDeclarations(actorId: string): Promise<PaymentDeclaration[]> {
+    this.requireAdminActor(actorId);
+    return sortSubmittedDeclarationsForAdmin(this.paymentDeclarations).map(declaration => ({ ...declaration }));
+  }
+
+  async getSubmittedPaymentDeclaration(paymentId: string, actorId: string): Promise<PaymentDeclaration | null> {
+    this.requireAdminActor(actorId);
+    const declaration = this.paymentDeclarations.find(item => item.paymentId === paymentId) || null;
+    if (!declaration) return null;
+    if (declaration.status !== 'SUBMITTED') {
+      throw new Error('Action non autorisée : seules les déclarations soumises sont consultables par l’administration.');
+    }
     return { ...declaration };
   }
 

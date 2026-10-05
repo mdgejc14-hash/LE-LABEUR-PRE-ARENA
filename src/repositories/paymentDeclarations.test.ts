@@ -117,8 +117,13 @@ export async function runPaymentDeclarationTests(): Promise<PaymentDeclarationTe
     assert(list.some(item => item.status === 'SUBMITTED'), 'seed sans déclaration SUBMITTED');
     for (const declaration of list) assertCompleteDeclaration(declaration, EMPLOYER);
     assert(
-      INITIAL_PAYMENT_DECLARATIONS.every(seed => seed.employerId === EMPLOYER && seed.contractId === OWN_CONTRACT),
-      'le seed doit porter sur le contrat de l’employeur démo',
+      INITIAL_PAYMENT_DECLARATIONS.filter(seed => seed.employerId === EMPLOYER).every(seed => seed.contractId === OWN_CONTRACT),
+      'le seed de l’employeur démo doit porter sur son propre contrat',
+    );
+    // PHASE 4C : le même magasin de démonstration alimente la consultation ADMIN.
+    assert(
+      INITIAL_PAYMENT_DECLARATIONS.filter(seed => seed.status === 'SUBMITTED').length >= 2,
+      'le seed doit exposer au moins deux déclarations soumises',
     );
   });
 

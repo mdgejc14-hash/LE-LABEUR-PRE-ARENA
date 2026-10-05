@@ -969,6 +969,10 @@ export const INITIAL_COMMISSIONS: CommissionPaymentRecord[] = [
  * (Reine Houénou / Atelier Bois & Agencement Bénin, contrat CTR-001).
  * Un brouillon modifiable + une déclaration déjà soumise, cohérentes avec
  * l'historique du contrat CTR-001 (salaire direct versé le 28/09/2026).
+ *
+ * PHASE 4C (MODE DEMO) — une deuxième déclaration soumise, portée par un autre
+ * employeur (Les Bâtisseurs du Golfe Bénin, contrat CTR-003), afin que l'écran
+ * ADMIN « Paiements à vérifier » liste au moins deux dossiers réels.
  */
 export const INITIAL_PAYMENT_DECLARATIONS: PaymentDeclaration[] = [
   {
@@ -1003,6 +1007,23 @@ export const INITIAL_PAYMENT_DECLARATIONS: PaymentDeclaration[] = [
     submittedAt: '2026-09-28T18:12:00.000Z',
     createdAt: '2026-09-28T18:05:00.000Z',
     updatedAt: '2026-09-28T18:12:00.000Z'
+  },
+  {
+    paymentId: 'PDECL-DEMO-0003',
+    employerId: 'user-emp-2',
+    contractId: 'CTR-003',
+    amount: 35000,
+    currency: 'FCFA',
+    paymentMethod: 'BANK_TRANSFER',
+    transactionId: 'VIR-BOA-20261001-55210',
+    reference: 'COMM-CTR-003-M1',
+    paidAt: '2026-10-01T09:20:00.000Z',
+    proofReference: 'BORDEREAU-BOA-55210',
+    comment: 'Part LE LABEUR (25% du Mois 1) réglée par virement bancaire BOA. Bordereau signé transmis à l’administration.',
+    status: 'SUBMITTED',
+    submittedAt: '2026-10-01T09:35:00.000Z',
+    createdAt: '2026-10-01T09:30:00.000Z',
+    updatedAt: '2026-10-01T09:35:00.000Z'
   }
 ];
 
