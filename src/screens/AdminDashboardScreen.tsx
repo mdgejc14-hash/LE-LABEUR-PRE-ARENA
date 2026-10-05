@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, CheckCircle2, LockKeyhole, RefreshCw, UnlockKeyhole, XCircle } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { appRepositories as repositories } from '../repositories/provider';
-import { Contract, CommissionPaymentRecord, PaymentDeclaration, SystemAuditLog, UserProfile, Incident, ReplacementDossier } from '../types';
+import { Contract, CommissionPaymentRecord, PAYMENT_DECLARATION_STATUS_LABELS, PaymentDeclaration, SystemAuditLog, UserProfile, Incident, ReplacementDossier } from '../types';
 import { AdminPaymentDeclarationDetail, AdminPaymentsVerification } from './admin/AdminPaymentsVerification';
 
 const daysLateFor = (dateValue?: string): number => {
@@ -35,11 +35,13 @@ export const AdminDashboardScreen: React.FC = () => {
   const [payments, setPayments] = useState<CommissionPaymentRecord[]>([]);
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [replacements, setReplacements] = useState<ReplacementDossier[]>([]);
-  // PHASE 4C — consultation ADMIN des paiements soumis (lecture seule).
+  // PHASE 4C — consultation ADMIN des paiements soumis.
+  // PHASE 4D — décision administrative (APPROVED / REJECTED) depuis le détail.
   const [submittedDeclarations, setSubmittedDeclarations] = useState<PaymentDeclaration[]>([]);
   const [declarationDetail, setDeclarationDetail] = useState<PaymentDeclaration | null>(null);
   const [declarationsLoading, setDeclarationsLoading] = useState(true);
   const [declarationError, setDeclarationError] = useState<string>('');
+  const [decisionError, setDecisionError] = useState<string>('');
   const [openingDeclarationId, setOpeningDeclarationId] = useState<string>('');
   const [auditLogs, setAuditLogs] = useState<SystemAuditLog[]>([]);
   const [replacementSelections, setReplacementSelections] = useState<Record<string, string>>({});
@@ -92,6 +94,36 @@ export const AdminDashboardScreen: React.FC = () => {
     }
   }, [currentUser]);
 
+  /**
+   * PHASE 4D — décision administrative sur une déclaration SUBMITTED.
+   * L'écriture passe par le Repository : l'écran affiche le dossier renvoyé,
+   * puis recharge la liste (le dossier décidé quitte « Paiements à vérifier »).
+   */
+  const decideDeclaration = useCallback(async (
+    action: 'approve' | 'reject',
+    paymentId: string,
+    rejectionReason?: string,
+  ) => {
+    if (!currentUser || currentUser.role !== 'ADMIN') return;
+    setBusyId(paymentId);
+    setDecisionError('');
+    setMessage('');
+    try {
+      const decided = action === 'approve'
+        ? await repositories.approvePaymentDeclaration(paymentId, currentUser.id)
+        : await repositories.rejectPaymentDeclaration(paymentId, currentUser.id, rejectionReason ?? '');
+      setDeclarationDetail(decided);
+      setMessage(action === 'approve'
+        ? `Déclaration ${decided.paymentId} approuvée — nouveau statut : ${PAYMENT_DECLARATION_STATUS_LABELS[decided.status]}.`
+        : `Déclaration ${decided.paymentId} rejetée — nouveau statut : ${PAYMENT_DECLARATION_STATUS_LABELS[decided.status]}.`);
+      await refresh();
+    } catch (err) {
+      setDecisionError(err instanceof Error ? err.message : 'Décision administrative impossible.');
+    } finally {
+      setBusyId('');
+    }
+  }, [currentUser, refresh]);
+
   useEffect(() => { void refresh(); }, [refresh]);
 
   const employers = useMemo(() => users.filter(user => user.role === 'EMPLOYER'), [users]);
@@ -120,16 +152,24 @@ export const AdminDashboardScreen: React.FC = () => {
 
   if (!currentUser || currentUser.role !== 'ADMIN') return null;
 
-  // PHASE 4C — détail d'une déclaration soumise, ouvert depuis la liste.
+  // PHASES 4C/4D — détail d'une déclaration soumise, ouvert depuis la liste et
+  // support de la décision administrative.
   if (declarationDetail) {
     return (
-      <div className="p-4 pb-6 font-operational">
+      <div className="p-4 pb-6 font-operational space-y-4">
+        {message && (
+          <div className="rounded-2xl bg-emerald-50 text-emerald-700 px-4 py-3 text-sm">{message}</div>
+        )}
         <AdminPaymentDeclarationDetail
           declaration={declarationDetail}
           contracts={contracts}
           employers={users}
           auditLogs={auditLogs}
           onBack={() => setDeclarationDetail(null)}
+          onApprove={paymentId => void decideDeclaration('approve', paymentId)}
+          onReject={(paymentId, rejectionReason) => void decideDeclaration('reject', paymentId, rejectionReason)}
+          decidingId={busyId}
+          decisionError={decisionError}
         />
       </div>
     );

@@ -70,7 +70,7 @@ import {
   parseContractStartDate,
   isPaymentDue,
 } from '../domain/businessRules';
-import { sortSubmittedDeclarationsForAdmin } from '../domain/adminPaymentReview';
+import { normalizeRejectionReason, sortSubmittedDeclarationsForAdmin } from '../domain/adminPaymentReview';
 
 const STORAGE_KEYS = {
   USERS: 'lelabeur_v5_users',
@@ -2926,8 +2926,9 @@ export class MockService implements
 
   // --- PaymentRepository — PHASES 4A/4B : déclaration employeur ---
   // Le règlement est effectué hors plateforme ; l'employeur crée un brouillon,
-  // peut le modifier puis le soumettre une seule fois. Le contrôle administratif
-  // (UNDER_REVIEW / APPROVED / REJECTED / RESUBMITTED) reste hors périmètre.
+  // peut le modifier puis le soumettre une seule fois. Le contrôle
+  // administratif est traité plus bas (PHASE 4D) et reste inaccessible à
+  // l'employeur : aucune de ces opérations ne produit APPROVED ni REJECTED.
 
   private nowIsoString(): string {
     return new Date().toISOString();
@@ -3120,6 +3121,67 @@ export class MockService implements
     if (declaration.status !== 'SUBMITTED') {
       throw new Error('Action non autorisée : seules les déclarations soumises sont consultables par l’administration.');
     }
+    return { ...declaration };
+  }
+
+  // --- PaymentRepository — PHASE 4D : décision administrative ---
+  // SUBMITTED → APPROVED ou SUBMITTED → REJECTED, ADMIN uniquement. La décision
+  // n'altère ni le propriétaire des données (employerId), ni les informations
+  // déclarées par l'employeur, ni l'historique du dossier : elle ajoute le
+  // statut décidé, son auteur, son horodatage et, pour un rejet, son motif.
+
+  /** Résout une déclaration décidable : dossier existant et statut obligatoirement SUBMITTED. */
+  private requireReviewablePaymentDeclaration(paymentId: string): PaymentDeclaration {
+    const declaration = this.paymentDeclarations.find(item => item.paymentId === paymentId);
+    if (!declaration) throw new Error('Déclaration de paiement introuvable.');
+    if (declaration.status !== 'SUBMITTED') {
+      throw new Error('Action non autorisée : seule une déclaration au statut SUBMITTED peut faire l’objet d’une décision administrative.');
+    }
+    return declaration;
+  }
+
+  async approvePaymentDeclaration(paymentId: string, actorId: string): Promise<PaymentDeclaration> {
+    const actor = this.requireAdminActor(actorId);
+    const declaration = this.requireReviewablePaymentDeclaration(paymentId);
+
+    const reviewedAt = this.nowIsoString();
+    declaration.status = 'APPROVED';
+    declaration.reviewedBy = actor.id;
+    declaration.reviewedAt = reviewedAt;
+    declaration.rejectionReason = undefined;
+    declaration.updatedAt = reviewedAt;
+    await this.logEvent({
+      actor: actor.fullName,
+      role: actor.role,
+      action: 'PAYMENT_DECLARATION_APPROVED',
+      entity: 'PaymentDeclaration',
+      entityId: declaration.paymentId,
+      summary: `Déclaration de paiement externe ${declaration.paymentId} approuvée par l’administration (${declaration.amount} ${declaration.currency}).`
+    });
+    this.persistAll();
+    return { ...declaration };
+  }
+
+  async rejectPaymentDeclaration(paymentId: string, actorId: string, rejectionReason: string): Promise<PaymentDeclaration> {
+    const actor = this.requireAdminActor(actorId);
+    const reason = normalizeRejectionReason(rejectionReason);
+    const declaration = this.requireReviewablePaymentDeclaration(paymentId);
+
+    const reviewedAt = this.nowIsoString();
+    declaration.status = 'REJECTED';
+    declaration.reviewedBy = actor.id;
+    declaration.reviewedAt = reviewedAt;
+    declaration.rejectionReason = reason;
+    declaration.updatedAt = reviewedAt;
+    await this.logEvent({
+      actor: actor.fullName,
+      role: actor.role,
+      action: 'PAYMENT_DECLARATION_REJECTED',
+      entity: 'PaymentDeclaration',
+      entityId: declaration.paymentId,
+      summary: `Déclaration de paiement externe ${declaration.paymentId} rejetée par l’administration. Motif : ${reason}${/[.!?]$/.test(reason) ? '' : '.'}`
+    });
+    this.persistAll();
     return { ...declaration };
   }
 

@@ -7,6 +7,7 @@ import { runIdentitySessionTests } from '../src/backend/identity/identity.test';
 import { runSessionBridgeTests } from '../src/repositories/sessionBridge.test';
 import { runPaymentDeclarationTests } from '../src/repositories/paymentDeclarations.test';
 import { runAdminPaymentDeclarationTests } from '../src/repositories/adminPaymentDeclarations.test';
+import { runAdminPaymentDecisionTests } from '../src/repositories/adminPaymentDecisions.test';
 
 interface TestCase {
   name: string;
@@ -24,6 +25,7 @@ async function main(): Promise<void> {
   const sessionBridge = await runSessionBridgeTests();
   const paymentDeclarations = await runPaymentDeclarationTests();
   const adminPaymentDeclarations = await runAdminPaymentDeclarationTests();
+  const adminPaymentDecisions = await runAdminPaymentDecisionTests();
 
   const suites: Array<{ name: string; cases: TestCase[] }> = [
     { name: 'Domain deterministic', cases: deterministic.results.map(result => ({ name: result.name, success: result.success, detail: result.details })) },
@@ -35,6 +37,7 @@ async function main(): Promise<void> {
     { name: 'Frontend ↔ server session bridge', cases: sessionBridge },
     { name: 'Phases 4A/4B — déclarations de paiement employeur', cases: paymentDeclarations },
     { name: 'Phase 4C — consultation ADMIN des paiements soumis', cases: adminPaymentDeclarations },
+    { name: 'Phase 4D — décision ADMIN sur un paiement soumis', cases: adminPaymentDecisions },
   ];
 
   let total = 0;

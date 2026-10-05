@@ -520,6 +520,12 @@ export interface PaymentDeclaration extends PaymentDeclarationInput {
   status: PaymentDeclarationStatus;
   /** ISO 8601 — renseigné lors de la soumission employeur (Phase 4B). */
   submittedAt?: string;
+  /** ISO 8601 — renseigné lors de la décision administrative (Phase 4D). */
+  reviewedAt?: string;
+  /** Identifiant interne de l'ADMIN auteur de la décision (Phase 4D). */
+  reviewedBy?: string;
+  /** Motif obligatoire d'un rejet administratif (Phase 4D). */
+  rejectionReason?: string;
   createdAt: string;
   updatedAt: string;
 }

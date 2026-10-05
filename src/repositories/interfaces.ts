@@ -229,11 +229,20 @@ export interface PaymentRepository {
    * PHASE 4C — consultation administrative, strictement en lecture seule.
    * `listSubmittedPaymentDeclarations` expose à l'ADMIN les déclarations que
    * les employeurs ont soumises ; `getSubmittedPaymentDeclaration` en ouvre le
-   * détail. Aucune de ces deux opérations ne produit de transition de statut
-   * (UNDER_REVIEW / APPROVED / REJECTED restent hors périmètre).
+   * détail. Aucune de ces deux opérations ne produit de transition de statut.
    */
   listSubmittedPaymentDeclarations(actorId: string): Promise<PaymentDeclaration[]>;
   getSubmittedPaymentDeclaration(paymentId: string, actorId: string): Promise<PaymentDeclaration | null>;
+  /**
+   * PHASE 4D — décision administrative sur une déclaration SUBMITTED.
+   * ADMIN uniquement : `approvePaymentDeclaration` passe le dossier en
+   * APPROVED, `rejectPaymentDeclaration` le passe en REJECTED et exige un
+   * motif. Les deux opérations horodatent la décision (`reviewedAt`) et en
+   * conservent l'auteur (`reviewedBy`), sans jamais modifier le propriétaire
+   * des données ni l'historique du dossier.
+   */
+  approvePaymentDeclaration(paymentId: string, actorId: string): Promise<PaymentDeclaration>;
+  rejectPaymentDeclaration(paymentId: string, actorId: string, rejectionReason: string): Promise<PaymentDeclaration>;
 }
 
 export interface NotificationRepository {
