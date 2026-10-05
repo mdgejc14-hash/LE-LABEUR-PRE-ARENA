@@ -1,11 +1,10 @@
 /**
- * LE LABEUR — Phase 4A — déclarations de paiement externe (côté EMPLOYEUR).
+ * LE LABEUR — Phases 4A/4B — déclarations de paiement externe (côté EMPLOYEUR).
  *
- * Ces tests ciblent uniquement la première moitié de la fonctionnalité :
- * création d'une déclaration, lecture, liste « Mes paiements » et mise à jour
- * d'un brouillon, à travers l'abstraction Repository existante (aucun magasin
- * de stockage parallèle). Le contrôle administratif n'est pas testé ici : il
- * n'est pas encore implémenté.
+ * Ces tests couvrent la création, lecture, liste, mise à jour des brouillons et
+ * la transition DRAFT → SUBMITTED à travers le Repository existant (aucun
+ * magasin de stockage parallèle). Le contrôle administratif n'est pas testé :
+ * il n'est pas encore implémenté.
  */
 
 import { MockService } from './mockRepository';
@@ -102,8 +101,8 @@ export async function runPaymentDeclarationTests(): Promise<PaymentDeclarationTe
     }
   };
 
-  await check('1. Abstraction Repository : les 4 opérations sont exposées par le bundle applicatif', () => {
-    const operations = ['createPaymentDeclaration', 'getPaymentDeclaration', 'listEmployerPayments', 'updatePaymentDeclaration'] as const;
+  await check('1. Abstraction Repository : les 5 opérations sont exposées par le bundle applicatif', () => {
+    const operations = ['createPaymentDeclaration', 'getPaymentDeclaration', 'listEmployerPayments', 'updatePaymentDeclaration', 'submitPaymentDeclaration'] as const;
     for (const operation of operations) {
       assert(typeof appRepositories[operation] === 'function', `${operation} absent du bundle de repositories`);
       assert(typeof new MockService()[operation] === 'function', `${operation} absent du MockService`);
@@ -201,6 +200,8 @@ export async function runPaymentDeclarationTests(): Promise<PaymentDeclarationTe
     assert(await expectReject(() => service.createPaymentDeclaration(declarationInput(), ADMIN), 'EMPLOYER'), 'un admin peut créer une déclaration employeur');
     assert(await expectReject(() => service.listEmployerPayments(EMPLOYER, CANDIDATE), 'non autorisée'), 'un candidat peut lister les paiements d’un employeur');
     assert(await expectReject(() => service.listEmployerPayments(EMPLOYER, ADMIN), 'non autorisée'), 'un admin peut lister les paiements d’un employeur (étape suivante)');
+    assert(await expectReject(() => service.submitPaymentDeclaration('PDECL-DEMO-0002', CANDIDATE), 'EMPLOYER'), 'un candidat peut soumettre une déclaration');
+    assert(await expectReject(() => service.submitPaymentDeclaration('PDECL-DEMO-0002', ADMIN), 'EMPLOYER'), 'un admin peut soumettre une déclaration employeur (hors périmètre)');
     assert(await expectReject(() => service.listEmployerPayments(EMPLOYER, ''), 'actorId'), 'actorId vide accepté');
     assert(await expectReject(() => service.createPaymentDeclaration(declarationInput(), 'user-inconnu'), 'introuvable'), 'acteur inconnu accepté');
   });
@@ -308,6 +309,14 @@ export async function runPaymentDeclarationTests(): Promise<PaymentDeclarationTe
       listFailed = error instanceof ApiClientError && error.status === 501;
     }
     assert(listFailed, 'listEmployerPayments doit échouer en 501 tant que l’API ne l’expose pas');
+
+    let submitFailed = false;
+    try {
+      await adapter.submitPaymentDeclaration('PDECL-API-001', EMPLOYER);
+    } catch (error) {
+      submitFailed = error instanceof ApiClientError && error.status === 501;
+    }
+    assert(submitFailed, 'submitPaymentDeclaration doit échouer en 501 tant que l’API ne l’expose pas');
   });
 
 
@@ -348,6 +357,113 @@ export async function runPaymentDeclarationTests(): Promise<PaymentDeclarationTe
       EMPLOYER,
     );
     assert(edited.amount === 8000 && edited.reference === 'REF-LABEUR-CTR001-M1-BIS', 'modification depuis le formulaire non appliquée');
+  });
+
+  await check('17. Soumission réussie : le propriétaire fait passer DRAFT à SUBMITTED avec submittedAt', async () => {
+    const service = new MockService();
+    const draft = await service.createPaymentDeclaration(declarationInput(), EMPLOYER);
+    const submitted = await service.submitPaymentDeclaration(draft.paymentId, EMPLOYER);
+
+    assert(submitted.status === 'SUBMITTED', `statut attendu SUBMITTED, reçu ${submitted.status}`);
+    assert(submitted.employerId === EMPLOYER, 'la soumission doit rester attachée à son employeur propriétaire');
+    assert(Boolean(submitted.submittedAt), 'submittedAt doit être renseigné lors de la soumission');
+    assert(!Number.isNaN(new Date(submitted.submittedAt!).getTime()), 'submittedAt doit être un horodatage valide');
+    assert(submitted.updatedAt === submitted.submittedAt, 'updatedAt doit refléter la soumission');
+  });
+
+  await check('18. Un autre employeur ne peut pas soumettre le paiement du propriétaire', async () => {
+    const service = new MockService();
+    const draft = await service.createPaymentDeclaration(declarationInput(), EMPLOYER);
+    assert(await expectReject(
+      () => service.submitPaymentDeclaration(draft.paymentId, OTHER_EMPLOYER),
+      'étrangère',
+    ), 'un autre employeur a pu soumettre la déclaration');
+    const unchanged = await service.getPaymentDeclaration(draft.paymentId, EMPLOYER);
+    assert(unchanged?.status === 'DRAFT' && unchanged.submittedAt === undefined, 'la déclaration a changé après le refus');
+  });
+
+  await check('19. Une déclaration inexistante ne peut pas être soumise', async () => {
+    const service = new MockService();
+    assert(await expectReject(
+      () => service.submitPaymentDeclaration('PDECL-INEXISTANT', EMPLOYER),
+      'introuvable',
+    ), 'un paiement inexistant a été accepté');
+  });
+
+  await check('20. Une déclaration déjà SUBMITTED ne peut pas être soumise une seconde fois', async () => {
+    const service = new MockService();
+    const draft = await service.createPaymentDeclaration(declarationInput(), EMPLOYER);
+    const firstSubmission = await service.submitPaymentDeclaration(draft.paymentId, EMPLOYER);
+    assert(await expectReject(
+      () => service.submitPaymentDeclaration(draft.paymentId, EMPLOYER),
+      'brouillon',
+    ), 'une deuxième soumission a été acceptée');
+    const persistedState = await service.getPaymentDeclaration(draft.paymentId, EMPLOYER);
+    assert(persistedState?.status === 'SUBMITTED', 'la déclaration n’est plus SUBMITTED après le refus');
+    assert(persistedState?.submittedAt === firstSubmission.submittedAt, 'le premier horodatage de soumission a été écrasé');
+  });
+
+  await check('21. Un statut autre que DRAFT refuse la transition vers SUBMITTED', async () => {
+    const storage = new MemoryStorage();
+    const globalRef = globalThis as unknown as { localStorage?: unknown };
+    const previous = globalRef.localStorage;
+    globalRef.localStorage = storage;
+    try {
+      const service = new MockService();
+      const draft = await service.createPaymentDeclaration(declarationInput(), EMPLOYER);
+      const declarations = JSON.parse(storage.getItem('lelabeur_v5_payment_declarations')!) as PaymentDeclaration[];
+      const changed = declarations.find(item => item.paymentId === draft.paymentId);
+      assert(changed, 'déclaration absente du dépôt avant préparation de l’état de test');
+      changed.status = 'UNDER_REVIEW';
+      storage.setItem('lelabeur_v5_payment_declarations', JSON.stringify(declarations));
+
+      const serviceWithOtherState = new MockService();
+      assert(await expectReject(
+        () => serviceWithOtherState.submitPaymentDeclaration(draft.paymentId, EMPLOYER),
+        'brouillon',
+      ), 'un statut UNDER_REVIEW a accepté la transition employeur');
+      const unchanged = await serviceWithOtherState.getPaymentDeclaration(draft.paymentId, EMPLOYER);
+      assert(unchanged?.status === 'UNDER_REVIEW', 'le statut non DRAFT a été altéré');
+    } finally {
+      if (previous === undefined) delete globalRef.localStorage;
+      else globalRef.localStorage = previous;
+    }
+  });
+
+  await check('22. Après soumission, la modification normale du brouillon est refusée', async () => {
+    const service = new MockService();
+    const draft = await service.createPaymentDeclaration(declarationInput(), EMPLOYER);
+    await service.submitPaymentDeclaration(draft.paymentId, EMPLOYER);
+    assert(await expectReject(
+      () => service.updatePaymentDeclaration(draft.paymentId, { amount: 1 }, EMPLOYER),
+      'brouillon',
+    ), 'une déclaration soumise a été modifiable');
+    const unchanged = await service.getPaymentDeclaration(draft.paymentId, EMPLOYER);
+    assert(unchanged?.status === 'SUBMITTED' && unchanged.amount === draft.amount, 'les données soumises ont été modifiées');
+  });
+
+  await check('23. Le statut SUBMITTED et submittedAt persistent dans le dépôt du Repository', async () => {
+    const storage = new MemoryStorage();
+    const globalRef = globalThis as unknown as { localStorage?: unknown };
+    const previous = globalRef.localStorage;
+    globalRef.localStorage = storage;
+    try {
+      const service = new MockService();
+      const draft = await service.createPaymentDeclaration(declarationInput(), EMPLOYER);
+      const submitted = await service.submitPaymentDeclaration(draft.paymentId, EMPLOYER);
+      const stored = JSON.parse(storage.getItem('lelabeur_v5_payment_declarations')!) as PaymentDeclaration[];
+      const persisted = stored.find(item => item.paymentId === draft.paymentId);
+      assert(persisted?.status === 'SUBMITTED', 'le dépôt ne contient pas le statut SUBMITTED');
+      assert(persisted?.submittedAt === submitted.submittedAt, 'submittedAt non persisté');
+
+      const reloaded = new MockService();
+      const reloadedDeclaration = await reloaded.getPaymentDeclaration(draft.paymentId, EMPLOYER);
+      assert(reloadedDeclaration?.status === 'SUBMITTED', 'la nouvelle instance Repository n’a pas relu SUBMITTED');
+      assert(reloadedDeclaration?.submittedAt === submitted.submittedAt, 'la nouvelle instance Repository n’a pas relu submittedAt');
+    } finally {
+      if (previous === undefined) delete globalRef.localStorage;
+      else globalRef.localStorage = previous;
+    }
   });
 
   return results;

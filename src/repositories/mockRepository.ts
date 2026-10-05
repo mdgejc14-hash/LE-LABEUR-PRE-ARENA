@@ -2923,10 +2923,10 @@ export class MockService implements
     this.persistAll(); return payment;
   }
 
-  // --- PaymentRepository — PHASE 4A : déclaration de paiement externe (EMPLOYEUR) ---
-  // Le règlement est effectué hors plateforme ; l'employeur déclare l'opération.
-  // Le contrôle administratif (UNDER_REVIEW / APPROVED / REJECTED / RESUBMITTED)
-  // n'est volontairement pas exposé ici : étape suivante.
+  // --- PaymentRepository — PHASES 4A/4B : déclaration employeur ---
+  // Le règlement est effectué hors plateforme ; l'employeur crée un brouillon,
+  // peut le modifier puis le soumettre une seule fois. Le contrôle administratif
+  // (UNDER_REVIEW / APPROVED / REJECTED / RESUBMITTED) reste hors périmètre.
 
   private nowIsoString(): string {
     return new Date().toISOString();
@@ -3066,6 +3066,30 @@ export class MockService implements
       entity: 'PaymentDeclaration',
       entityId: declaration.paymentId,
       summary: `Déclaration de paiement externe ${declaration.paymentId} mise à jour (${declaration.amount} ${declaration.currency}).`
+    });
+    this.persistAll();
+    return { ...declaration };
+  }
+
+  async submitPaymentDeclaration(paymentId: string, actorId: string): Promise<PaymentDeclaration> {
+    const actor = this.requireActor(actorId);
+    if (actor.role !== 'EMPLOYER') throw new Error('Action non autorisée : EMPLOYER uniquement.');
+    const declaration = this.requireOwnedPaymentDeclaration(paymentId, actor);
+    if (declaration.status !== 'DRAFT') {
+      throw new Error('Seule une déclaration en brouillon peut être soumise.');
+    }
+
+    const submittedAt = this.nowIsoString();
+    declaration.status = 'SUBMITTED';
+    declaration.submittedAt = submittedAt;
+    declaration.updatedAt = submittedAt;
+    await this.logEvent({
+      actor: actor.fullName,
+      role: actor.role,
+      action: 'PAYMENT_DECLARATION_SUBMITTED',
+      entity: 'PaymentDeclaration',
+      entityId: declaration.paymentId,
+      summary: `Déclaration de paiement externe ${declaration.paymentId} soumise par l’employeur.`
     });
     this.persistAll();
     return { ...declaration };

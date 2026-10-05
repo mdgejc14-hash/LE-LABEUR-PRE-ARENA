@@ -443,7 +443,7 @@ export interface CommissionPaymentRecord {
 }
 
 /**
- * PHASE 4A — Déclaration de paiement externe (employeur).
+ * PHASES 4A/4B — Déclaration de paiement externe (employeur).
  *
  * Le règlement est effectué HORS plateforme (Mobile Money, virement, espèces…).
  * L'employeur déclare ensuite l'opération et son justificatif. Cette étape ne
@@ -518,7 +518,7 @@ export interface PaymentDeclaration extends PaymentDeclarationInput {
   employerId: string;
   currency: string;
   status: PaymentDeclarationStatus;
-  /** ISO 8601 — renseigné uniquement après soumission (étape suivante). */
+  /** ISO 8601 — renseigné lors de la soumission employeur (Phase 4B). */
   submittedAt?: string;
   createdAt: string;
   updatedAt: string;

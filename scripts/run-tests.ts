@@ -31,7 +31,7 @@ async function main(): Promise<void> {
     { name: 'Mock/API WebRTC boundary', cases: callBoundary },
     { name: 'Server identity & session', cases: identity },
     { name: 'Frontend ↔ server session bridge', cases: sessionBridge },
-    { name: 'Phase 4A — déclarations de paiement employeur', cases: paymentDeclarations },
+    { name: 'Phases 4A/4B — déclarations de paiement employeur', cases: paymentDeclarations },
   ];
 
   let total = 0;
