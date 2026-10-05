@@ -220,6 +220,8 @@ export function createLegacyApiRepositoryAdapter(api: ApiRepository): AppReposit
     submitPaymentDeclaration: unsupported('paymentDeclarations.submit'),
     listSubmittedPaymentDeclarations: unsupported('paymentDeclarations.adminList'),
     getSubmittedPaymentDeclaration: unsupported('paymentDeclarations.adminDetail'),
+    approvePaymentDeclaration: unsupported('paymentDeclarations.adminApprove'),
+    rejectPaymentDeclaration: unsupported('paymentDeclarations.adminReject'),
 
     getNotifications: async (_userId: string, _role?: UserRole) => firstPage(api.notifications.getMine({ limit: 100 })),
     markAsRead: (notificationId: string, _actorId: string) => api.notifications.markRead(notificationId, { idempotencyKey: key() }),
