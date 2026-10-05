@@ -4,6 +4,7 @@ import { EditorialButton } from '../components/common/EditorialButton';
 import { useApp } from '../context/AppContext';
 import { UserRole } from '../types';
 import { BrandLogo } from '../components/brand/BrandLogo';
+import { IS_DEMO_MODE } from '../utils/config';
 
 export const RoleSelectionScreen: React.FC = () => {
   const { setScreen, setRole } = useApp();
@@ -132,6 +133,25 @@ export const RoleSelectionScreen: React.FC = () => {
               </div>
             )}
           </div>
+
+          {/* Accès ADMIN — MODE DEMO uniquement (le RBAC reste appliqué côté Repository) */}
+          {IS_DEMO_MODE && (
+            <button
+              type="button"
+              onClick={() => void handleContinue('ADMIN')}
+              className="w-full text-left p-4 rounded-[4px] border border-dashed border-[#340C24]/30 bg-[#340C24]/5 hover:bg-[#340C24]/10 transition-colors tap-feedback cursor-pointer"
+            >
+              <span className="text-[10px] font-mono uppercase tracking-widest text-[#340C24] font-semibold">
+                Démonstration
+              </span>
+              <span className="block font-editorial text-lg font-bold text-[#17233B] mt-0.5">
+                Espace de contrôle LE LABEUR
+              </span>
+              <span className="block text-[11px] font-operational text-[#17233B]/65 mt-0.5">
+                Supervision nationale et vérification des paiements soumis — accès ADMIN de démonstration.
+              </span>
+            </button>
+          )}
         </div>
       </div>
 

@@ -225,6 +225,15 @@ export interface PaymentRepository {
   listEmployerPayments(employerId: string, actorId: string): Promise<PaymentDeclaration[]>;
   updatePaymentDeclaration(paymentId: string, patch: Partial<PaymentDeclarationInput>, actorId: string): Promise<PaymentDeclaration>;
   submitPaymentDeclaration(paymentId: string, actorId: string): Promise<PaymentDeclaration>;
+  /**
+   * PHASE 4C — consultation administrative, strictement en lecture seule.
+   * `listSubmittedPaymentDeclarations` expose à l'ADMIN les déclarations que
+   * les employeurs ont soumises ; `getSubmittedPaymentDeclaration` en ouvre le
+   * détail. Aucune de ces deux opérations ne produit de transition de statut
+   * (UNDER_REVIEW / APPROVED / REJECTED restent hors périmètre).
+   */
+  listSubmittedPaymentDeclarations(actorId: string): Promise<PaymentDeclaration[]>;
+  getSubmittedPaymentDeclaration(paymentId: string, actorId: string): Promise<PaymentDeclaration | null>;
 }
 
 export interface NotificationRepository {

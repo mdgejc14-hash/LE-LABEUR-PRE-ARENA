@@ -6,6 +6,7 @@ import { runCallBoundaryTests } from '../src/services/calls/signalingCredentialC
 import { runIdentitySessionTests } from '../src/backend/identity/identity.test';
 import { runSessionBridgeTests } from '../src/repositories/sessionBridge.test';
 import { runPaymentDeclarationTests } from '../src/repositories/paymentDeclarations.test';
+import { runAdminPaymentDeclarationTests } from '../src/repositories/adminPaymentDeclarations.test';
 
 interface TestCase {
   name: string;
@@ -22,6 +23,7 @@ async function main(): Promise<void> {
   const identity = await runIdentitySessionTests();
   const sessionBridge = await runSessionBridgeTests();
   const paymentDeclarations = await runPaymentDeclarationTests();
+  const adminPaymentDeclarations = await runAdminPaymentDeclarationTests();
 
   const suites: Array<{ name: string; cases: TestCase[] }> = [
     { name: 'Domain deterministic', cases: deterministic.results.map(result => ({ name: result.name, success: result.success, detail: result.details })) },
@@ -32,6 +34,7 @@ async function main(): Promise<void> {
     { name: 'Server identity & session', cases: identity },
     { name: 'Frontend ↔ server session bridge', cases: sessionBridge },
     { name: 'Phases 4A/4B — déclarations de paiement employeur', cases: paymentDeclarations },
+    { name: 'Phase 4C — consultation ADMIN des paiements soumis', cases: adminPaymentDeclarations },
   ];
 
   let total = 0;
