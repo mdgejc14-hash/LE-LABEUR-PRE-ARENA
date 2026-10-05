@@ -49,6 +49,11 @@ export function createWorkerPostgresClient(
     // Un isolate Workers peut être recyclé : le pool ne doit pas retenir le processus.
     allowExitOnIdle: true,
   });
+  // Une connexion inactive coupée par l'infrastructure (redémarrage, recyclage
+  // d'isolate, extinction du moteur local) ne doit jamais faire tomber le
+  // processus : `pg` émet `error` sur le pool, et un événement non traité est
+  // fatal. La prochaine requête rouvre simplement une connexion.
+  pool.on('error', () => undefined);
   return {
     client: toPostgresClientPort(pool),
     async end() {

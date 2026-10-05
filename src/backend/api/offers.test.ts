@@ -27,6 +27,7 @@ import { createGoogleCredentialVerifier } from '../identity/googleVerifier';
 import type { AuthenticatedActor, GoogleCredentialVerifier, GoogleExternalIdentity } from '../productionContracts';
 import type { OpenApplicationRepository } from '../repositories/applicationRepository';
 import type { OpenProposalRepository } from '../repositories/proposalRepository';
+import type { OpenContractRepository } from '../repositories/contractRepository';
 import type { PostgreSqlDatabase } from '../services/database';
 import { createPostgresDatabase } from '../persistence/postgresDatabase';
 import { createSqlOfferStore } from '../persistence/sqlCoreStores';
@@ -167,6 +168,8 @@ export interface TestHarness {
   applications?: OpenApplicationRepository;
   /** P0-E5 : repository PROPOSITION (émission, réponse, expiration, lecture ADMIN). */
   proposals?: OpenProposalRepository;
+  /** P0-F : repository CONTRAT (création, envoi, signature, activation, fin, rupture). */
+  contracts?: OpenContractRepository;
   clock: { value: Date };
   credentials: Record<string, string>;
   close: () => Promise<void>;
@@ -199,6 +202,7 @@ export async function createOffersTestHarness(): Promise<TestHarness> {
     worker: composition.worker,
     applications: composition.applications,
     proposals: composition.proposals,
+    contracts: composition.contracts,
     clock,
     credentials: google.credentials,
     close: async () => {

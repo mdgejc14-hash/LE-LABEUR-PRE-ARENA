@@ -19,7 +19,7 @@ autres opérations APPLICATION restent fermées.
 | Contrats du noyau | `src/backend/persistence/coreRecords.ts` | Enregistrements domaine, stores offres/candidatures/contrats/permissions, domaines d'états |
 | Adaptateur PostgreSQL | `src/backend/persistence/postgresDatabase.ts` | Transactions dédiées `BEGIN`/`COMMIT`/`ROLLBACK`, timeouts, sonde et expurgation des secrets |
 | Ports SQL bas niveau | `src/backend/persistence/sqlClient.ts` | Frontière pilote (`pg` compatible) → `PostgresClientPort`, erreurs PostgreSQL |
-| Manifeste et runner de migrations | `src/backend/persistence/migrationManifest.ts`, `migrationRunner.ts`, `migrationState.ts` | IDs attendus, checksum SHA-256, application atomique `0001 → 0004`, état lu en base |
+| Manifeste et runner de migrations | `src/backend/persistence/migrationManifest.ts`, `migrationRunner.ts`, `migrationState.ts` | IDs attendus, checksum SHA-256, application atomique `0001 → 0005`, état lu en base |
 | CLI de migration | `scripts/migrate.ts` | `--status`, `--dry-run`, application réelle ; n'affiche jamais la chaîne de connexion |
 | Client PostgreSQL du Worker | `src/backend/worker/pgClient.ts` | Seul importateur de `pg` ; pool par requête (≤ 5), `allowExitOnIdle`, fermeture |
 | Entrée Cloudflare Worker | `src/backend/worker/cloudflareEntry.ts` | Hyperdrive → `pg` → `composeWorker` ; fermé sans binding ; aucun secret dans les logs |
@@ -28,7 +28,7 @@ autres opérations APPLICATION restent fermées.
 | Composition Worker | `src/backend/api/entry.ts` | Décision fermée par défaut ; stores SQL utilisés en mode `postgres` avec DB/client fourni |
 | Repository APPLICATIONS | `src/backend/repositories/applicationRepository.ts` | P0-E3 : soumission candidate et consultation limitée à l’offre de l’employeur propriétaire |
 | Rapport `/healthz` | `src/backend/api/health.ts` | État de persistance réel, expurgé, sans secret ; 503 si la base demandée est injoignable |
-| Migrations | `migrations/0001_identity_and_core.sql` → `0002_role_permissions_seed.sql` → `0003_core_nucleus_alignment.sql` → `0004_proposals.sql` | Schéma réel ; appliquées aux moteurs locaux de vérification |
+| Migrations | `migrations/0001_identity_and_core.sql` → `0002_role_permissions_seed.sql` → `0003_core_nucleus_alignment.sql` → `0004_proposals.sql` → `0005_contract_lifecycle.sql` | Schéma réel ; appliquées aux moteurs locaux de vérification |
 | Tests moteur PostgreSQL | `src/backend/identity/postgresIdentity.test.ts` (PGlite), `scripts/verify-postgres-e2e.ts`, `scripts/verify-workerd-local.ts` | Parcours Worker/API complet : WASM pour `npm test`, moteur 17.10 réel pour les vérifications dédiées |
 
 Tables identité/RBAC utilisées : `users`, `external_identities`, `sessions`,
@@ -118,7 +118,7 @@ credential Google
 Requête → workerd → env.HYPERDRIVE → pool pg par requête → PostgreSQL 17.10
 ```
 
-- `scripts/verify-postgres-e2e.ts` (`npm run verify:postgres`) exécute le même parcours que P0-B contre un moteur **réel** : connexion, migrations `0001 → 0004` et idempotence, schéma identité/RBAC/noyau, `COMMIT`, `ROLLBACK`, lecture/écriture `users`, lecture/écriture `sessions`, lecture des permissions, `/healthz`, login Google signé, session relue, logout, provisionnement ADMIN et séparation DEMO/API.
+- `scripts/verify-postgres-e2e.ts` (`npm run verify:postgres`) exécute le même parcours que P0-B contre un moteur **réel** : connexion, migrations `0001 → 0005` et idempotence, schéma identité/RBAC/noyau, `COMMIT`, `ROLLBACK`, lecture/écriture `users`, lecture/écriture `sessions`, lecture des permissions, `/healthz`, login Google signé, session relue, logout, provisionnement ADMIN et séparation DEMO/API.
 - `scripts/verify-workerd-local.ts` (`npm run verify:workerd`) répète le parcours **à travers workerd** via HTTP, avec binding Hyperdrive local et JWKS de test en boucle locale ; `/healthz` y prouve la source `HYPERDRIVE`, l'état `workerd` et les migrations appliquées.
 - `/healthz` ne renvoie jamais de chaîne de connexion : `target` est un descripteur public (`host`, `port`, `database`, `source`, limites, `secretRedacted: true`) et toute erreur de sonde est expurgée. Trois formes : `boundary-only` (aucune persistance), `ok`/`degraded` avec rapport de persistance, et `503 degraded` si la base demandée est injoignable.
 - Un pool `pg` conservé entre requêtes a produit des connexions invalides sous workerd ; le Worker construit donc un pool **par requête** et le ferme via `ctx.waitUntil` (Hyperdrive reste le pool réel).
@@ -165,7 +165,7 @@ EMPLOYER authentifié et propriétaire
 
 ## 11. Piste d'infrastructure (P0-D)
 
-- Provisionner une vraie base et un Hyperdrive Cloudflare, appliquer `0001 → 0004` dessus, déployer le Worker et exécuter `wrangler dev --remote`.
+- Provisionner une vraie base et un Hyperdrive Cloudflare, appliquer `0001 → 0005` dessus, déployer le Worker et exécuter `wrangler dev --remote`.
 - Confirmer en recette le comportement des verrous consultatifs transactionnels et des lectures d'identité à travers un Hyperdrive déployé (cache désactivé requis).
 - Compléter le seed RBAC des rôles non ADMIN (aujourd'hui un candidat a zéro permission effective en mode PostgreSQL).
 - Activer les services Cloudflare éventuels (R2, Queue, Cron, Durable Objects) uniquement lorsqu'un domaine les exige.

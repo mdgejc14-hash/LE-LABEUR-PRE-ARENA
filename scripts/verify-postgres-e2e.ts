@@ -246,6 +246,10 @@ async function main(): Promise<void> {
   await waitForDatabase(connectionString);
 
   const pool = new Pool({ connectionString, max: 5, application_name: 'lelabeur-p0c-verify' });
+  // Une connexion inactive coupée par l'extinction du moteur local ne doit pas
+  // produire d'événement 'error' non traité (le résumé de vérification serait
+  // perdu alors que tous les contrôles ont réussi).
+  pool.on('error', () => undefined);
   const client = toPostgresClientPort(pool);
   const database = createPostgresDatabase(client, { redactSecrets: secrets });
   // Client réel du Worker (pg + pool plafonné), construit exactement comme
@@ -272,7 +276,7 @@ async function main(): Promise<void> {
     });
 
     let migrationResult: Awaited<ReturnType<typeof applyMigrations>> | null = null;
-    await check('Migrations 0001→0004 appliquées sur le moteur réel', async () => {
+    await check('Migrations 0001→0005 appliquées sur le moteur réel', async () => {
       migrationResult = await applyMigrations(client, migrations, {
         statementTimeoutMs: 15000,
         onProgress: message => console.log(`     ${message}`),
@@ -786,12 +790,13 @@ async function main(): Promise<void> {
       }));
       assert(terminal.status === 409, `proposition close : 409 attendu, reçu ${terminal.status}`);
 
-      // 4. Aucune conséquence hors périmètre : ni contrat, ni offre FILLED,
-      //    ni candidature modifiée par l'acceptation.
+      // 4. Frontière exacte : l'acceptation seule ne crée aucun contrat (la
+      //    création est une action P0-F explicite), ni offre FILLED, ni
+      //    candidature modifiée.
       const contracts = await database.query<{ count: string }>(
         'SELECT count(*)::text AS count FROM contracts WHERE application_id = $1', [admissibleApplication.id],
       );
-      assert(Number(contracts.rows[0]?.count ?? 0) === 0, 'aucun contrat créé par P0-E5');
+      assert(Number(contracts.rows[0]?.count ?? 0) === 0, 'l’acceptation P0-E5 ne crée aucun contrat (création explicite en P0-F)');
       const offerRow = await database.query<{ status: string }>('SELECT status FROM offers WHERE id = $1', [p0e5OfferId]);
       assert(offerRow.rows[0]?.status === 'ACTIVE', 'l’offre reste ACTIVE (aucun passage FILLED en P0-E5)');
       const applicationRow = await database.query<{ status: string; contract_id: string | null }>(
@@ -830,6 +835,205 @@ async function main(): Promise<void> {
       assert(acceptExpired.status === 409, `proposition expirée : 409 attendu, reçu ${acceptExpired.status}`);
     });
 
+    await check('P0-F Worker/API → PostgreSQL : contrat créé depuis ACCEPTED, envoyé, signé, activé, terminé', async () => {
+      assert(employerId && candidateId, 'acteurs P0-E3 nécessaires au cycle CONTRAT');
+
+      const employerHeaders = (key: string) => ({
+        cookie: `${SESSION_COOKIE_NAME}=${employerCookie}`,
+        'content-type': 'application/json',
+        'Idempotency-Key': key,
+      });
+      const candidateHeaders = (key: string) => ({
+        cookie: `${SESSION_COOKIE_NAME}=${sessionCookie}`,
+        'content-type': 'application/json',
+        'Idempotency-Key': key,
+      });
+
+      // 0. Chaîne dédiée : offre ACTIVE → candidature → proposition acceptée.
+      const offerResponse = await composition.worker.fetch(withSession('/api/v1/offers', employerCookie, {
+        method: 'POST',
+        headers: employerHeaders('p0f-e2e-offer-001'),
+        body: JSON.stringify({
+          title: 'Offre P0-F vérification PostgreSQL',
+          contractType: 'CDI',
+          remuneration: 175000,
+          currency: 'FCFA',
+          location: 'Cotonou',
+          summary: 'Offre créée pour vérifier le cycle CONTRAT.',
+        }),
+      }));
+      assert(offerResponse.status === 201, `création offre P0-F : 201 attendu, reçu ${offerResponse.status}`);
+      const p0fOffer = await offerResponse.json() as { id: string; status: string };
+
+      const applicationResponse = await composition.worker.fetch(withSession(`/api/v1/offers/${p0fOffer.id}/applications`, sessionCookie, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'Idempotency-Key': 'p0f-e2e-application-001' },
+        body: JSON.stringify({ note: 'Candidature pour le cycle CONTRAT.' }),
+      }));
+      assert(applicationResponse.status === 201, `soumission P0-F : 201 attendu, reçue ${applicationResponse.status}`);
+      const p0fApplication = await applicationResponse.json() as { id: string; status: string };
+
+      const proposalResponse = await composition.worker.fetch(withSession('/api/v1/conversations/cnv_p0f_verify/proposals', employerCookie, {
+        method: 'POST',
+        headers: employerHeaders('p0f-e2e-proposal-001'),
+        body: JSON.stringify({
+          offerId: p0fOffer.id,
+          applicationId: p0fApplication.id,
+          missionTitle: 'Mission P0-F vérification PostgreSQL',
+          amount: 175000,
+          currency: 'FCFA',
+          periodicity: 'Mensuel',
+          startDate: '01 Novembre 2026',
+          durationMonths: 6,
+          location: 'Cotonou',
+          conditions: ['Temps plein'],
+        }),
+      }));
+      assert(proposalResponse.status === 201, `proposition P0-F : 201 attendu, reçu ${proposalResponse.status}`);
+      const p0fProposal = await proposalResponse.json() as { id: string; status: string };
+
+      const acceptedProposal = await composition.worker.fetch(withSession(`/api/v1/proposals/${p0fProposal.id}/respond`, sessionCookie, {
+        method: 'POST',
+        headers: candidateHeaders('p0f-e2e-proposal-accept-001'),
+        body: JSON.stringify({ action: 'ACCEPT' }),
+      }));
+      assert(acceptedProposal.status === 200, `acceptation P0-F : 200 attendu, reçu ${acceptedProposal.status}`);
+      assert(((await acceptedProposal.json()) as { status: string }).status === 'ACCEPTED', 'ACCEPTED requis avant contrat');
+
+      // 1. CRÉATION — DRAFT réellement persisté, liens proposition/candidature posés.
+      const created = await composition.worker.fetch(withSession('/api/v1/contracts', employerCookie, {
+        method: 'POST',
+        headers: employerHeaders('p0f-e2e-contract-create-001'),
+        body: JSON.stringify({ proposalId: p0fProposal.id }),
+      }));
+      assert(created.status === 201, `création contrat 201 attendue, reçue ${created.status}`);
+      const contract = await created.json() as {
+        id: string; status: string; proposalId: string; applicationId: string;
+        employerId: string; employeeId: string; monthlySalary: number;
+        employerSigned: boolean; employeeSigned: boolean;
+      };
+      assert(contract.status === 'DRAFT', `DRAFT attendu, reçu ${contract.status}`);
+      assert(contract.proposalId === p0fProposal.id && contract.applicationId === p0fApplication.id, 'références de proposition et candidature');
+      assert(contract.employerId === employerId && contract.employeeId === candidateId, 'parties dérivées côté serveur');
+      assert(contract.monthlySalary === 175000, 'montant accepté repris, jamais imposé par le client');
+      assert(contract.employerSigned === false && contract.employeeSigned === false, 'signatures vierges en brouillon');
+
+      const storedContract = await database.query<{
+        status: string; proposal_id: string; application_id: string; employer_id: string;
+        candidate_id: string; employer_signed: boolean; employee_signed: boolean; history: unknown;
+      }>(
+        `SELECT status, proposal_id, application_id, employer_id, candidate_id,
+                employer_signed, employee_signed, history
+           FROM contracts WHERE id = $1`,
+        [contract.id],
+      );
+      assert(storedContract.rows[0]?.status === 'DRAFT', 'DRAFT réellement persisté dans PostgreSQL');
+      assert(storedContract.rows[0]?.proposal_id === p0fProposal.id, 'proposals.contract_id → contracts.proposal_id persisté');
+      assert(storedContract.rows[0]?.application_id === p0fApplication.id, 'candidature rattachée au contrat');
+      assert(storedContract.rows[0]?.employer_signed === false && storedContract.rows[0]?.employee_signed === false, 'drapeaux persistés à faux');
+
+      const linked = await database.query<{ contract_id: string | null }>(
+        'SELECT contract_id FROM proposals WHERE id = $1', [p0fProposal.id],
+      );
+      assert(linked.rows[0]?.contract_id === contract.id, 'la proposition acceptée est consommée une seule fois');
+
+      // 2. Proposition déjà utilisée : la seconde création est refusée sans écriture.
+      const duplicate = await composition.worker.fetch(withSession('/api/v1/contracts', employerCookie, {
+        method: 'POST',
+        headers: employerHeaders('p0f-e2e-contract-create-002'),
+        body: JSON.stringify({ proposalId: p0fProposal.id }),
+      }));
+      assert(duplicate.status === 409, `proposition déjà utilisée : 409 attendu, reçu ${duplicate.status}`);
+      const contractCount = await database.query<{ count: string }>(
+        'SELECT count(*)::text AS count FROM contracts WHERE proposal_id = $1', [p0fProposal.id],
+      );
+      assert(Number(contractCount.rows[0]?.count ?? 0) === 1, 'un seul contrat par proposition');
+
+      // 3. ENVOI — EMPLOYER propriétaire uniquement (le candidat est refusé).
+      const candidateSend = await composition.worker.fetch(withSession(`/api/v1/contracts/${contract.id}/send`, sessionCookie, {
+        method: 'POST',
+        headers: candidateHeaders('p0f-e2e-contract-send-candidate-001'),
+        body: '{}',
+      }));
+      assert(candidateSend.status === 403, `envoi par le candidat refusé (403), reçu ${candidateSend.status}`);
+      const sent = await composition.worker.fetch(withSession(`/api/v1/contracts/${contract.id}/send`, employerCookie, {
+        method: 'POST',
+        headers: employerHeaders('p0f-e2e-contract-send-001'),
+        body: '{}',
+      }));
+      assert(sent.status === 200, `envoi 200 attendu, reçu ${sent.status}`);
+      const sentBody = await sent.json() as { status: string; employerSigned: boolean; employeeSigned: boolean };
+      assert(sentBody.status === 'SIGNATURE', `SIGNATURE attendu (SENT du plan), reçu ${sentBody.status}`);
+      assert(sentBody.employerSigned === true && sentBody.employeeSigned === false, 'SENT : une seule signature (employeur)');
+
+      // 4. ACTIVATION refusée avant la signature du salarié, puis SIGNED → ACTIVE.
+      const premature = await composition.worker.fetch(withSession(`/api/v1/contracts/${contract.id}/activate`, employerCookie, {
+        method: 'POST',
+        headers: employerHeaders('p0f-e2e-contract-activate-early-001'),
+        body: '{}',
+      }));
+      assert(premature.status === 409, `activation avant signature : 409 attendu, reçu ${premature.status}`);
+      const signed = await composition.worker.fetch(withSession(`/api/v1/contracts/${contract.id}/sign`, sessionCookie, {
+        method: 'POST',
+        headers: candidateHeaders('p0f-e2e-contract-sign-001'),
+        body: '{}',
+      }));
+      assert(signed.status === 200, `signature salarié 200 attendue, reçue ${signed.status}`);
+      const signedBody = await signed.json() as { status: string; employerSigned: boolean; employeeSigned: boolean };
+      assert(signedBody.status === 'SIGNATURE', 'SIGNED reste porté par le statut réel SIGNATURE + double drapeau');
+      assert(signedBody.employerSigned === true && signedBody.employeeSigned === true, 'double signature persistée');
+      const activated = await composition.worker.fetch(withSession(`/api/v1/contracts/${contract.id}/activate`, employerCookie, {
+        method: 'POST',
+        headers: employerHeaders('p0f-e2e-contract-activate-001'),
+        body: '{}',
+      }));
+      assert(activated.status === 200, `activation 200 attendue, reçue ${activated.status}`);
+      assert(((await activated.json()) as { status: string }).status === 'ACTIVE', 'ACTIVE attendu');
+
+      // 5. Année 1 : la rupture directe reste protégée (incident obligatoire, hors P0-F).
+      const terminatedInFirstMonth = await composition.worker.fetch(withSession(`/api/v1/contracts/${contract.id}/terminate`, employerCookie, {
+        method: 'POST',
+        headers: employerHeaders('p0f-e2e-contract-terminate-m1-001'),
+        body: JSON.stringify({ reason: 'Rupture M1 interdite.' }),
+      }));
+      assert(terminatedInFirstMonth.status === 409, `terminaison M1 : 409 attendu, reçu ${terminatedInFirstMonth.status}`);
+
+      // 6. FIN normale — ACTIVE → COMPLETED, puis état terminal.
+      const ended = await composition.worker.fetch(withSession(`/api/v1/contracts/${contract.id}/end`, employerCookie, {
+        method: 'POST',
+        headers: employerHeaders('p0f-e2e-contract-end-001'),
+        body: '{}',
+      }));
+      assert(ended.status === 200, `fin 200 attendue, reçue ${ended.status}`);
+      assert(((await ended.json()) as { status: string }).status === 'COMPLETED', 'COMPLETED attendu (ENDED du plan)');
+      const endedAgain = await composition.worker.fetch(withSession(`/api/v1/contracts/${contract.id}/end`, employerCookie, {
+        method: 'POST',
+        headers: employerHeaders('p0f-e2e-contract-end-002'),
+        body: '{}',
+      }));
+      assert(endedAgain.status === 409, `fin après fin : 409 attendu, reçu ${endedAgain.status}`);
+
+      const finalRow = await database.query<{ status: string; history: unknown }>(
+        'SELECT status, history FROM contracts WHERE id = $1', [contract.id],
+      );
+      assert(finalRow.rows[0]?.status === 'COMPLETED', 'COMPLETED réellement persisté');
+      const contractHistory = (typeof finalRow.rows[0]?.history === 'string'
+        ? JSON.parse(String(finalRow.rows[0]?.history))
+        : finalRow.rows[0]?.history) as Array<{ event: string }>;
+      for (const event of ['CONTRACT_CREATED', 'EMPLOYER_SIGNED', 'EMPLOYEE_SIGNED', 'CONTRACT_ACTIVATED_BILATERAL', 'CONTRACT_COMPLETED']) {
+        assert(contractHistory.some(entry => entry.event === event), `événement ${event} absent de l’historique persisté`);
+      }
+
+      // 7. Aucune automatisation post-contrat : offre ACTIVE, candidature non HIRED.
+      const offerRow = await database.query<{ status: string }>('SELECT status FROM offers WHERE id = $1', [p0fOffer.id]);
+      assert(offerRow.rows[0]?.status === 'ACTIVE', 'FILLED + fermeture des autres candidatures = automatisation post-contrat à venir');
+      const applicationRow = await database.query<{ status: string; contract_id: string | null }>(
+        'SELECT status, contract_id FROM applications WHERE id = $1', [p0fApplication.id],
+      );
+      assert(applicationRow.rows[0]?.status === 'PENDING', 'HIRED/CONTRACTED restent l’étape d’automatisation post-contrat');
+      assert(applicationRow.rows[0]?.contract_id === contract.id, 'la candidature reste rattachée à son contrat');
+    });
+
     await check('Worker/API → PostgreSQL : ADMIN provisionné côté serveur + permissions SQL', async () => {
       const adminId = newEntityId('usr');
       const adminToken = newOpaqueSessionToken();
@@ -857,6 +1061,12 @@ async function main(): Promise<void> {
       assert(allowed.status === 200, `200 attendu avec permission SQL, reçu ${allowed.status}`);
       const body = await allowed.json() as { items: Array<{ id: string; role: string }> };
       assert(body.items.some(item => item.id === adminId || item.id === candidateId), 'lecture users via l’API attendue');
+
+      // P0-F : la lecture ADMIN des contrats reste bornée à la permission seedée.
+      const adminContracts = await composition.worker.fetch(withSession('/api/v1/admin/contracts?limit=5', adminToken));
+      assert(adminContracts.status === 200, `lecture ADMIN des contrats : 200 attendu, reçu ${adminContracts.status}`);
+      const adminContractsBody = await adminContracts.json() as { items: Array<{ id: string }> };
+      assert(adminContractsBody.items.length > 0, 'l’ADMIN doit lire les contrats persistés via contracts:read:any');
 
       await database.query('DELETE FROM sessions WHERE user_id = $1', [adminId]);
       await database.query('DELETE FROM users WHERE id = $1', [adminId]);
