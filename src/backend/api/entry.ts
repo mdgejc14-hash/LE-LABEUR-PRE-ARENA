@@ -1,5 +1,5 @@
 /**
- * Composition root du Worker LE LABEUR (Phase 2, étendue P0-A).
+ * Composition root du Worker LE LABEUR (identité Phase 2 / persistance P0-B).
  *
  * États possibles, explicites et sans retombée silencieuse :
  *  - `closed`      : aucun `GOOGLE_CLIENT_ID`, ou persistance non configurée →
@@ -8,13 +8,14 @@
  *  - `postgres`    : stores SQL via PostgreSQL/Hyperdrive — nécessite une
  *                    connexion injectée (database ou client + binding).
  *
- * P0-A : la composition peut construire les stores SQL du noyau, mais AUCUN
- * handler métier n'est branché : les routes du noyau restent 501. Le mode DEMO
- * du navigateur (MockRepository) est inchangé et reste le défaut.
+ * P0-B : l'identité, la session et le RBAC utilisent les stores SQL quand une
+ * base/client est injecté. Les handlers métier offres/candidatures/contrats
+ * restent 501. Le mode DEMO (MockRepository) reste inchangé et par défaut.
  */
 
 import type { PostgreSqlDatabase } from '../services/database';
 import { createGoogleCredentialVerifier } from '../identity/googleVerifier';
+import type { GoogleCredentialVerifier } from '../productionContracts';
 import { createSessionService } from '../identity/sessionService';
 import { createSqlIdentityStores } from '../identity/sqlStores';
 import { createInMemoryIdentityStores, type IdentityStores } from '../identity/stores';
@@ -57,6 +58,12 @@ export interface WorkerComposition {
   persistence: PersistenceDecision;
   worker: { fetch(request: Request): Promise<Response> };
   core?: CoreStores;
+}
+
+/** Serveur/test only: allows deterministic verification without changing env or DEMO behavior. */
+export interface WorkerCompositionOverrides {
+  googleVerifier?: GoogleCredentialVerifier;
+  now?: () => Date;
 }
 
 function isInjectedDatabase(value: PostgreSqlDatabase | PostgresClientPort): value is PostgreSqlDatabase {
@@ -117,6 +124,7 @@ export function resolveWorkerPersistence(
 export function composeWorker(
   env: WorkerEnvironment,
   injected?: PostgreSqlDatabase | PostgresClientPort,
+  overrides: WorkerCompositionOverrides = {},
 ): WorkerComposition {
   const persistence = resolveWorkerPersistence(env, injected);
   const audience = env.GOOGLE_CLIENT_ID?.trim();
@@ -147,8 +155,9 @@ export function composeWorker(
 
   const sessions = createSessionService({
     stores,
-    googleVerifier: createGoogleCredentialVerifier({ audience }),
+    googleVerifier: overrides.googleVerifier ?? createGoogleCredentialVerifier({ audience }),
     sessionTtlSeconds: env.SESSION_TTL_SECONDS ? Number(env.SESSION_TTL_SECONDS) : undefined,
+    now: overrides.now,
   });
 
   return {
@@ -159,6 +168,7 @@ export function composeWorker(
       sessions,
       stores,
       cookie: { secure: env.COOKIE_SECURE !== 'false' },
+      now: overrides.now,
     }),
   };
 }

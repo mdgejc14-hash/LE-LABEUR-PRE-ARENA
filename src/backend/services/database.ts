@@ -5,18 +5,19 @@ export interface SqlQueryResult<Row> {
   rowCount: number;
 }
 
-export interface SqlTransaction extends TransactionContext {
+export interface SqlQueryExecutor {
   query<Row = Record<string, unknown>>(sql: string, values?: readonly unknown[]): Promise<SqlQueryResult<Row>>;
 }
 
+export interface SqlTransaction extends TransactionContext, SqlQueryExecutor {}
+
 /**
- * Server-only PostgreSQL port. A future Cloudflare adapter will obtain a
- * connection through Hyperdrive. No browser package or DB credential belongs
- * in this interface, and no implementation is installed in Phase 1.
+ * Server-only PostgreSQL port. The Worker composition receives its driver
+ * through this boundary (for example, a client backed by Cloudflare Hyperdrive).
+ * No browser package or database credential belongs in this interface.
  */
-export interface PostgreSqlDatabase extends TransactionBoundary {
+export interface PostgreSqlDatabase extends TransactionBoundary, SqlQueryExecutor {
   run<T>(operation: (transaction: SqlTransaction) => Promise<T>): Promise<T>;
-  query<Row = Record<string, unknown>>(sql: string, values?: readonly unknown[]): Promise<SqlQueryResult<Row>>;
 }
 
 export interface DatabaseHealth {
