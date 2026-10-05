@@ -25,7 +25,7 @@ import { SESSION_COOKIE_NAME } from '../identity/cookies';
 import { base64UrlEncode } from '../identity/ids';
 import { createGoogleCredentialVerifier } from '../identity/googleVerifier';
 import type { AuthenticatedActor, GoogleCredentialVerifier, GoogleExternalIdentity } from '../productionContracts';
-import type { ServerApplicationRepository } from '../repositories/contracts';
+import type { OpenApplicationRepository } from '../repositories/applicationRepository';
 import type { PostgreSqlDatabase } from '../services/database';
 import { createPostgresDatabase } from '../persistence/postgresDatabase';
 import { createSqlOfferStore } from '../persistence/sqlCoreStores';
@@ -92,6 +92,12 @@ const testIdentities: Record<string, GoogleExternalIdentity> = {
     emailVerified: true,
     displayName: 'Jean Candidat',
   },
+  'candidate-2': {
+    subject: 'google-sub-candidate-2',
+    email: 'candidate2@example.com',
+    emailVerified: true,
+    displayName: 'Marie Candidat',
+  },
 };
 
 async function buildTestCredentials(clock: { value: Date }): Promise<{
@@ -157,7 +163,7 @@ export interface TestHarness {
   database: PostgreSqlDatabase;
   pg: PGlite;
   worker: { fetch(request: Request): Promise<Response> };
-  applications?: Pick<ServerApplicationRepository, 'applyToOffer' | 'listApplicationsForOffer'>;
+  applications?: OpenApplicationRepository;
   clock: { value: Date };
   credentials: Record<string, string>;
   close: () => Promise<void>;

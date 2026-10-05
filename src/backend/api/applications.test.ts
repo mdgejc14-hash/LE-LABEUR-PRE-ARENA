@@ -438,27 +438,44 @@ export async function runApplicationDomainTests(): Promise<OfferTestResult[]> {
       assert(found.rows.length === 0, 'aucune candidature ne survit au ROLLBACK');
     });
 
-    await check('P0-E3 Limite stricte: seuls POST candidature et GET propriétaire sont ouverts; autres handlers APPLICATION à 501', async () => {
+    await check('P0-E3/P0-E4 Périmètre: les listes générales restent fermées (501); les quatre décisions sont ouvertes par P0-E4', async () => {
+      // P0-E3 n'ouvrait que la soumission et la consultation par offre
+      // propriétaire. P0-E4 ouvre les quatre décisions du cycle (examine,
+      // shortlist, reject, withdraw) : elles ne doivent plus répondre 501.
       const closedResponses = await Promise.all([
         harness.worker.fetch(authRequest('/api/v1/my/applications', candidateToken)),
         harness.worker.fetch(authRequest('/api/v1/employer/applications', employerToken)),
         harness.worker.fetch(authRequest(`/api/v1/applications/${primaryApplicationId}`, candidateToken)),
-        ...(['withdraw', 'examine', 'shortlist', 'reject'] as const).map((action, index) => {
-          const token = action === 'withdraw' ? candidateToken : employerToken;
-          return harness.worker.fetch(authRequest(
-            `/api/v1/applications/${primaryApplicationId}/${action}`,
-            token,
-            {
-              method: 'POST',
-              headers: { 'content-type': 'application/json', 'Idempotency-Key': `p0e3-stays-closed-${index}` },
-              body: '{}',
-            },
-          ));
-        }),
       ]);
-      assert(closedResponses.length === 7, 'sept opérations APPLICATION non ouvertes sont contrôlées');
+      assert(closedResponses.length === 3, 'trois opérations APPLICATION non ouvertes sont contrôlées');
       assert(closedResponses.every(response => response.status === 501),
-        `tous les handlers non ouverts doivent répondre 501, reçus ${closedResponses.map(response => response.status).join('/')}`);
+        `les handlers non ouverts doivent répondre 501, reçus ${closedResponses.map(response => response.status).join('/')}`);
+
+      const decisions: Array<[string, 'withdraw' | 'examine' | 'shortlist' | 'reject', string]> = [
+        ['examine', 'examine', employerToken],
+        ['shortlist', 'shortlist', employerToken],
+        ['reject', 'reject', employerToken],
+        ['withdraw', 'withdraw', candidateToken],
+      ];
+      const statuses: string[] = [];
+      for (const [label, action, token] of decisions) {
+        const response = await harness.worker.fetch(authRequest(
+          `/api/v1/applications/${primaryApplicationId}/${action}`,
+          token,
+          {
+            method: 'POST',
+            headers: { 'content-type': 'application/json', 'Idempotency-Key': `p0e4-open-${label}-001` },
+            body: action === 'reject' ? JSON.stringify({ note: 'Contrôle de périmètre P0-E4.' }) : '{}',
+          },
+        ));
+        assert(response.status !== 501, `${label} doit être ouvert par P0-E4, reçu 501`);
+        statuses.push(`${label}:${response.status}`);
+      }
+      // PENDING → REVIEW → SHORTLISTED → REJECTED, puis retrait refusé (terminal).
+      assert(
+        statuses.join(' ') === 'examine:200 shortlist:200 reject:200 withdraw:409',
+        `enchaînement P0-E4 attendu, reçu ${statuses.join(' ')}`,
+      );
     });
 
     await check('P0-E3 Séparation DEMO/API: DEMO reste Mock par défaut, API activée explicitement', async () => {

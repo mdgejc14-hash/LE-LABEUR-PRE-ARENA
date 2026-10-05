@@ -13,8 +13,11 @@
  *  - JSONB lu en tolérant les pilotes qui renvoient du texte ;
  *  - erreurs PostgreSQL traduites en `CoreStoreError` stable (23505, 23514,
  *    23503) ; toute autre erreur est propagée telle quelle, jamais avalée ;
- *  - les stores OFFRES et les opérations P0-E3 de soumission/consultation ciblée
- *    des candidatures sont branchés; les autres cycles métier restent fermés ;
+ *  - les stores OFFRES sont branchés; côté CANDIDATURES, seules la soumission
+ *    et la consultation ciblée (P0-E3) puis les quatre décisions du cycle
+ *    examine/shortlist/reject/withdraw (P0-E4, transition conditionnelle
+ *    `compareAndSetStatus`) sont ouvertes; les autres cycles métier restent
+ *    fermés ;
  *  - la lecture des permissions est partagée avec le flux d'identité P0-B.
  */
 
@@ -364,6 +367,49 @@ export function createSqlApplicationStore(db: SqlQueryExecutor): ApplicationStor
     async findById(applicationId) {
       const result = await db.query<ApplicationRow>('SELECT * FROM applications WHERE id = $1', [applicationId]);
       return result.rows[0] ? toApplicationRecord(result.rows[0]) : null;
+    },
+
+    async findByIdForUpdate(applicationId) {
+      // Verrou de ligne réel : deux décisions concurrentes sur la même
+      // candidature sont sérialisées par PostgreSQL, la seconde relit l'état
+      // validé par la première.
+      const result = await db.query<ApplicationRow>(
+        'SELECT * FROM applications WHERE id = $1 FOR UPDATE',
+        [applicationId],
+      );
+      return result.rows[0] ? toApplicationRecord(result.rows[0]) : null;
+    },
+
+    async compareAndSetStatus(applicationId, expectedStatus, patch) {
+      assertStatusDomain(patch.status, APPLICATION_STATUS_VALUES, 'applications');
+      assertStatusDomain(expectedStatus, APPLICATION_STATUS_VALUES, 'applications');
+      try {
+        const result = await db.query<ApplicationRow>(
+          `UPDATE applications
+              SET status = $2,
+                  updated_at = $3,
+                  history = history || $4::jsonb,
+                  note = COALESCE($5, note)
+            WHERE id = $1
+              AND status = $6
+          RETURNING *`,
+          [
+            applicationId,
+            patch.status,
+            patch.updatedAt,
+            JSON.stringify([patch.historyEntry]),
+            patch.note ?? null,
+            expectedStatus,
+          ],
+        );
+        return result.rows[0] ? toApplicationRecord(result.rows[0]) : null;
+      } catch (error) {
+        return translateSqlError(
+          error,
+          'applications',
+          `Statut « ${patch.status} » refusé pour la candidature ${applicationId}.`,
+        );
+      }
     },
 
     async findByOfferAndCandidate(offerId, candidateId) {

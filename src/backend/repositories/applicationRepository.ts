@@ -1,12 +1,27 @@
 /**
- * LE LABEUR — P0-E3 — soumission et consultation ciblée des CANDIDATURES.
+ * LE LABEUR — P0-E3/P0-E4 — cycle restreint des CANDIDATURES.
  *
  * Chaîne : Worker/API → repository métier → stores noyau → PostgreSQL.
- * Seules la soumission par un candidat et la consultation par l'employeur
- * propriétaire d'une offre sont implémentées ici; le reste du cycle demeure fermé.
+ *
+ * P0-E3 : soumission par un candidat, consultation par l'employeur propriétaire.
+ * P0-E4 : premier cycle de décision, sans propositions ni contrats —
+ *   EMPLOYER propriétaire : EXAMINE (PENDING → REVIEW),
+ *                           SHORTLIST (PENDING|REVIEW → SHORTLISTED),
+ *                           REJECT (PENDING|REVIEW|SHORTLISTED → REJECTED) ;
+ *   CANDIDATE             : WITHDRAW (PENDING|REVIEW|SHORTLISTED → WITHDRAWN).
+ *
+ * Toute autre transition reste fermée : la matrice est portée par
+ * `src/domain/applicationTransitions.ts`, dérivée du modèle réel.
  */
 
 import type { Application } from '../../types';
+import {
+  APPLICATION_DECISION_RULES,
+  DEFAULT_REJECTION_NOTE,
+  evaluateApplicationDecision,
+  normalizeRejectionNote,
+  type ApplicationDecision,
+} from '../../domain/applicationTransitions';
 import { ApiError, apiJsonResponse } from '../api/errors';
 import type { ApiRouteKey } from '../api/routeContracts';
 import type { ApiRouteHandler, ApiRouteContext } from '../api/worker';
@@ -151,9 +166,19 @@ function requireEmployer(actor: AuthenticatedActor): void {
   }
 }
 
+/** Sous-ensemble CANDIDATURES réellement ouvert par P0-E3 + P0-E4. */
+export type OpenApplicationRepository = Pick<ServerApplicationRepository,
+  | 'applyToOffer'
+  | 'listApplicationsForOffer'
+  | 'examine'
+  | 'shortlist'
+  | 'reject'
+  | 'withdraw'
+>;
+
 export function createApplicationRepository(
   dependencies: ApplicationRepositoryDependencies,
-): Pick<ServerApplicationRepository, 'applyToOffer' | 'listApplicationsForOffer'> {
+): OpenApplicationRepository {
   const { stores, runInTransaction } = dependencies;
   const now = dependencies.now ?? (() => new Date());
 
@@ -168,6 +193,148 @@ export function createApplicationRepository(
     if (!offer) throw new ApiError('NOT_FOUND', 'Offre introuvable.');
     const employer = await currentStores.users.findById(offer.employerId);
     return toApplicationProjection(record, offer, candidate, employer);
+  };
+
+  /**
+   * P0-E4 — moteur de décision unique pour EXAMINE / SHORTLIST / REJECT / WITHDRAW.
+   *
+   * Garanties, dans cet ordre :
+   *  1. l'acteur vient de la session serveur (jamais du corps de requête) ;
+   *  2. le compte doit exister, porter le rôle de la décision et être ACTIVE ;
+   *  3. l'autorisation est résolue depuis les lignes relues (propriétaire de
+   *     l'offre pour l'employeur, candidat de la candidature pour le retrait) ;
+   *  4. la transition est évaluée contre le statut courant verrouillé ;
+   *  5. l'écriture est un compare-and-set SQL : une décision concurrente qui a
+   *     gagné n'est jamais écrasée.
+   */
+  const decide = async (input: {
+    decision: ApplicationDecision;
+    actor: AuthenticatedActor;
+    applicationId: string;
+    command: ProductionCommandContext;
+    note?: string;
+  }): Promise<Application> => {
+    const rule = APPLICATION_DECISION_RULES[input.decision];
+    const actor = requireTrustedActor(input.actor);
+    if (actor.role !== rule.actorRole) {
+      throw new ApiError(
+        'FORBIDDEN',
+        rule.actorRole === 'EMPLOYER'
+          ? 'Action non autorisée : seul l’employeur propriétaire de l’offre peut décider sur cette candidature.'
+          : 'Action non autorisée : un candidat ne peut retirer que sa propre candidature.',
+      );
+    }
+
+    const applicationId = input.applicationId?.trim();
+    if (!applicationId) throw new ApiError('NOT_FOUND', 'Candidature introuvable.');
+    // Le motif de rejet est nettoyé ici ; le modèle réel applique un défaut,
+    // il n'exige pas de motif (contrairement aux déclarations de paiement).
+    const note = input.decision === 'REJECT' ? normalizeRejectionNote(input.note) : undefined;
+    const idempotencyKey = input.command?.idempotencyKey?.trim();
+    const fingerprint = JSON.stringify({ applicationId, decision: input.decision, note: note ?? null });
+
+    const execute = async (): Promise<Application> => {
+      const mutate = async (currentStores: ApplicationRepositoryStores): Promise<Application> => {
+        const account = await currentStores.users.findByIdForShare(actor.id);
+        if (!account) throw new ApiError('UNAUTHENTICATED', 'Acteur introuvable.');
+        if (account.role !== rule.actorRole) {
+          throw new ApiError('FORBIDDEN', 'Le rôle du compte ne permet pas cette décision sur candidature.');
+        }
+        if (account.status !== 'ACTIVE') {
+          throw new ApiError('FORBIDDEN', 'COMPTE NON ACTIF : la décision sur candidature est indisponible.');
+        }
+
+        // Verrou de ligne : sérialise deux décisions concurrentes.
+        const application = await currentStores.applications.findByIdForUpdate(applicationId);
+        if (!application) throw new ApiError('NOT_FOUND', 'Candidature introuvable.');
+
+        const offer = await currentStores.offers.findByIdForShare(application.offerId);
+        if (!offer) throw new ApiError('NOT_FOUND', 'Offre introuvable.');
+
+        if (rule.actorRole === 'EMPLOYER') {
+          // Propriété de l'offre : comparée à la donnée relue côté serveur.
+          if (offer.employerId !== actor.id) {
+            throw new ApiError('FORBIDDEN', 'Action non autorisée : vous n’êtes pas le propriétaire de cette offre.');
+          }
+          if (rule.requiresActiveOffer && offer.status !== 'ACTIVE') {
+            throw new ApiError(
+              'BUSINESS_RULE_VIOLATION',
+              `Cette offre n’accepte plus de sélection (statut : ${offer.status}).`,
+              undefined,
+              409,
+            );
+          }
+        } else if (application.candidateId !== actor.id) {
+          throw new ApiError('FORBIDDEN', 'Action non autorisée : un candidat ne peut retirer que sa propre candidature.');
+        }
+
+        // Une candidature déjà liée à un contrat sort du périmètre P0-E4.
+        if (application.contractId) {
+          throw new ApiError('BUSINESS_RULE_VIOLATION', 'Cette candidature est déjà associée à un contrat.', undefined, 409);
+        }
+
+        const outcome = evaluateApplicationDecision(input.decision, application.status);
+        if (outcome.kind === 'ALREADY_APPLIED') {
+          // Rejeu ou action répétée : aucune écriture, aucun doublon d'historique.
+          return toProjectionFromStores(application, currentStores);
+        }
+        if (outcome.kind === 'TERMINAL') {
+          throw new ApiError(
+            'BUSINESS_RULE_VIOLATION',
+            `${rule.terminalMessage} (statut : ${outcome.current}).`,
+            undefined,
+            409,
+          );
+        }
+        if (outcome.kind === 'FORBIDDEN') {
+          throw new ApiError(
+            'BUSINESS_RULE_VIOLATION',
+            `Transition de candidature invalide : « ${input.decision} » depuis « ${outcome.current} ».`,
+            undefined,
+            409,
+          );
+        }
+
+        const timestamp = now().toISOString();
+        const reason = input.decision === 'REJECT' ? note ?? DEFAULT_REJECTION_NOTE : undefined;
+        const updated = await currentStores.applications.compareAndSetStatus(applicationId, application.status, {
+          status: outcome.to,
+          updatedAt: timestamp,
+          historyEntry: { action: rule.historyAction(reason), timestamp, actor: account.displayName },
+          ...(reason !== undefined ? { note: reason } : {}),
+        });
+
+        if (!updated) {
+          // Le compare-and-set a perdu : une décision concurrente a gagné.
+          const fresh = await currentStores.applications.findByIdForUpdate(applicationId);
+          if (!fresh) throw new ApiError('NOT_FOUND', 'Candidature introuvable.');
+          if (fresh.status === rule.to) return toProjectionFromStores(fresh, currentStores);
+          throw new ApiError(
+            'BUSINESS_RULE_VIOLATION',
+            'Une décision concurrente a modifié cette candidature : l’action n’a pas été appliquée.',
+            undefined,
+            409,
+          );
+        }
+
+        // Événement métier futur à produire : `rule.event` (APPLICATION_EXAMINED,
+        // APPLICATION_SHORTLISTED, APPLICATION_REJECTED, APPLICATION_WITHDRAWN).
+        // P0-E4 ne crée ni moteur Outbox, ni file, ni consumer : seule la
+        // transition est persistée, dans la même transaction PostgreSQL.
+        return toProjectionFromStores(updated, currentStores);
+      };
+
+      return runInTransaction ? await runInTransaction(mutate) : await mutate(stores);
+    };
+
+    if (!idempotencyKey) return execute();
+    return applicationIdempotencyCache.execute(
+      actor.id,
+      input.command?.command || `applications.${input.decision}`,
+      idempotencyKey,
+      fingerprint,
+      execute,
+    );
   };
 
   return {
@@ -313,6 +480,26 @@ export function createApplicationRepository(
         hasMore,
       };
     },
+
+    // --- P0-E4 : cycle de décision (EMPLOYER propriétaire) ---
+
+    async examine(actor, applicationId, command) {
+      return decide({ decision: 'EXAMINE', actor, applicationId, command });
+    },
+
+    async shortlist(actor, applicationId, command) {
+      return decide({ decision: 'SHORTLIST', actor, applicationId, command });
+    },
+
+    async reject(actor, applicationId, note, command) {
+      return decide({ decision: 'REJECT', actor, applicationId, command, note });
+    },
+
+    // --- P0-E4 : retrait par le candidat ---
+
+    async withdraw(actor, applicationId, command) {
+      return decide({ decision: 'WITHDRAW', actor, applicationId, command });
+    },
   };
 }
 
@@ -340,7 +527,7 @@ async function readJsonBody(context: ApiRouteContext): Promise<Record<string, un
 }
 
 export function createApplicationApiHandlers(
-  repository: Pick<ServerApplicationRepository, 'applyToOffer' | 'listApplicationsForOffer'>,
+  repository: OpenApplicationRepository,
 ): Partial<Record<ApiRouteKey, ApiRouteHandler>> {
   return {
     'applications.create': async context => {
@@ -358,6 +545,44 @@ export function createApplicationApiHandlers(
       context.actor!,
       context.params.offerId,
       context.page ?? { cursor: null, limit: 25 },
+    ),
+
+    // --- P0-E4 : handlers de décision, et uniquement ceux-là ---
+    // Propositions, contrats, paiements, commissions, plaintes, remplacements
+    // et notifications générales demeurent sans handler (501).
+
+    'applications.examine': async context => apiJsonResponse(
+      await repository.examine(context.actor!, context.params.applicationId, context.command!),
+      200,
+      context.requestId,
+    ),
+
+    'applications.shortlist': async context => apiJsonResponse(
+      await repository.shortlist(context.actor!, context.params.applicationId, context.command!),
+      200,
+      context.requestId,
+    ),
+
+    'applications.reject': async context => {
+      const body = await readJsonBody(context);
+      // Seul le motif est lu : l'acteur, l'offre et la candidature viennent du
+      // contexte de session et du chemin, jamais du corps.
+      const rawNote = typeof body.note === 'string'
+        ? body.note
+        : (typeof body.reason === 'string' ? body.reason : undefined);
+      const application = await repository.reject(
+        context.actor!,
+        context.params.applicationId,
+        rawNote,
+        context.command!,
+      );
+      return apiJsonResponse(application, 200, context.requestId);
+    },
+
+    'applications.withdraw': async context => apiJsonResponse(
+      await repository.withdraw(context.actor!, context.params.applicationId, context.command!),
+      200,
+      context.requestId,
     ),
   };
 }

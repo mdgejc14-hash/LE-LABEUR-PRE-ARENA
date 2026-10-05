@@ -22,6 +22,21 @@ export const OUTBOX_EFFECT_CONTRACTS: readonly OutboxEffectContract[] = [
   { eventType: 'ACCOUNT_BLOCKED', sideEffects: ['notify the account owner and authorized Admins'], idempotencyKey: 'event.id' },
   { eventType: 'ACCOUNT_UNBLOCKED', sideEffects: ['notify the account owner'], idempotencyKey: 'event.id' },
   { eventType: 'PAYMENT_OVERDUE_J3', sideEffects: ['notify employer and authorized Admins', 'record scheduler audit event'], idempotencyKey: 'schedule-entry + payment-kind + due-date + J3' },
+  /**
+   * P0-E3/P0-E4 — cycle CANDIDATURE.
+   *
+   * Contrats DÉCLARÉS pour le futur moteur Outbox/Queue : aucun producteur,
+   * aucune table, aucun consumer n'existe à ce stade. Les transitions
+   * (soumission, examen, shortlist, rejet, retrait) sont persistées dans la
+   * transaction métier sans effet secondaire asynchrone. Les charges utiles et
+   * clés de déduplication de référence sont décrites dans
+   * `src/domain/applicationTransitions.ts` (`DOCUMENTED_APPLICATION_EVENTS`).
+   */
+  { eventType: 'APPLICATION_SUBMITTED', sideEffects: ['notify the offer owner'], idempotencyKey: 'applicationId + SUBMITTED' },
+  { eventType: 'APPLICATION_EXAMINED', sideEffects: ['refresh the employer application view'], idempotencyKey: 'applicationId + EXAMINED' },
+  { eventType: 'APPLICATION_SHORTLISTED', sideEffects: ['notify the shortlisted candidate'], idempotencyKey: 'applicationId + SHORTLISTED' },
+  { eventType: 'APPLICATION_REJECTED', sideEffects: ['notify the candidate with the recorded reason'], idempotencyKey: 'applicationId + REJECTED' },
+  { eventType: 'APPLICATION_WITHDRAWN', sideEffects: ['notify the offer owner of the withdrawal'], idempotencyKey: 'applicationId + WITHDRAWN' },
 ] as const;
 
 export interface OutboxConsumer {
