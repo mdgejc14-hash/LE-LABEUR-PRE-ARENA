@@ -1056,7 +1056,7 @@ export async function runPostgresFoundationTests(): Promise<PostgresFoundationTe
     assert(composition.core === undefined, 'aucun store ne doit exister sans persistance');
   });
 
-  await check('Séparation: composition postgres → stores SQL, routes métier toujours 501', async () => {
+  await check('Séparation: composition postgres → stores SQL, seuls OFFRES/P0-E3 sont ouverts', async () => {
     const driver = new ScriptedDriver(coreRowResponder);
     const composition = composeWorker(
       {
@@ -1069,6 +1069,7 @@ export async function runPostgresFoundationTests(): Promise<PostgresFoundationTe
     assert(composition.mode === 'postgres', `mode attendu postgres, reçu ${composition.mode}`);
     assert(composition.persistence.reason === 'hyperdrive-binding', `motif inattendu: ${composition.persistence.reason}`);
     assert(composition.core !== undefined, 'les stores du noyau doivent être résolus');
+    assert(composition.applications !== undefined, 'repository P0-E3 nécessaire pour ouvrir son sous-ensemble');
     for (const store of ['offers', 'applications', 'contracts', 'permissions'] as const) {
       assert(composition.core?.[store] !== undefined, `store manquant: ${store}`);
     }
@@ -1079,6 +1080,14 @@ export async function runPostgresFoundationTests(): Promise<PostgresFoundationTe
     assert(resources.status === 501, `aucun handler métier hors périmètre ne doit être branché: ${resources.status}`);
     const offers = await composition.worker.fetch(new Request('https://api.test/api/v1/offers'));
     assert(offers.status === 200, `le domaine OFFRES doit être ouvert: ${offers.status}`);
+    const appSubmit = await composition.worker.fetch(new Request('https://api.test/api/v1/offers/ofr_test/applications', {
+      method: 'POST',
+      headers: { 'Idempotency-Key': 'p0e3-no-session-application' },
+      body: '{}',
+    }));
+    assert(appSubmit.status === 401, `soumission APPLICATION exige une session candidate: ${appSubmit.status}`);
+    const appList = await composition.worker.fetch(new Request('https://api.test/api/v1/offers/ofr_test/applications'));
+    assert(appList.status === 401, `consultation APPLICATION exige une session employeur: ${appList.status}`);
     const admin = await composition.worker.fetch(new Request('https://api.test/api/v1/admin/users'));
     assert(admin.status === 401, `session requise: ${admin.status}`);
 

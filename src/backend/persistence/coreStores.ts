@@ -77,6 +77,11 @@ export function createInMemoryCoreStores(seed: InMemoryCoreStoreSeed = {}): Core
       const record = offers.get(offerId);
       return record ? { ...record } : null;
     },
+    async findByIdForShare(offerId) {
+      // The memory adapter is single-process and has no database row locks.
+      const record = offers.get(offerId);
+      return record ? { ...record } : null;
+    },
     async listByEmployer(employerId, limit) {
       const bounded = clampStoreLimit(limit);
       return [...offers.values()]
@@ -135,11 +140,24 @@ export function createInMemoryCoreStores(seed: InMemoryCoreStoreSeed = {}): Core
       const record = applications.get(applicationId);
       return record ? { ...record } : null;
     },
-    async listByOffer(offerId) {
-      return [...applications.values()]
+    async findByOfferAndCandidate(offerId, candidateId) {
+      const record = [...applications.values()].find(
+        application => application.offerId === offerId && application.candidateId === candidateId,
+      );
+      return record ? { ...record } : null;
+    },
+    async listByOffer(offerId, limit, afterId) {
+      const bounded = clampStoreLimit(limit);
+      const ordered = [...applications.values()]
         .filter(application => application.offerId === offerId)
-        .sort((left, right) => left.appliedDate.localeCompare(right.appliedDate) || left.id.localeCompare(right.id))
-        .map(application => ({ ...application }));
+        .sort((left, right) => left.appliedDate.localeCompare(right.appliedDate) || left.id.localeCompare(right.id));
+      let start = 0;
+      if (afterId) {
+        const cursorIndex = ordered.findIndex(application => application.id === afterId);
+        if (cursorIndex < 0) return [];
+        start = cursorIndex + 1;
+      }
+      return ordered.slice(start, start + bounded).map(application => ({ ...application }));
     },
     async listByCandidate(candidateId, limit) {
       const bounded = clampStoreLimit(limit);

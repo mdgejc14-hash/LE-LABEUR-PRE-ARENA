@@ -110,12 +110,18 @@ export interface ServerOfferRepository {
   setOfferStatus(actor: AuthenticatedActor, offerId: string, status: Offer['status'], command: ProductionCommandContext): Promise<Offer>;
 }
 
+export interface ServerApplicationSubmissionInput {
+  /** Optional short candidate note; all identity and offer fields are server-derived. */
+  note?: string;
+}
+
 export interface ServerApplicationRepository {
   getMyApplications(actor: AuthenticatedActor, page: { cursor: string | null; limit: number }): Promise<CursorPage<Application>>;
   getEmployerApplications(actor: AuthenticatedActor, page: { cursor: string | null; limit: number }): Promise<CursorPage<Application>>;
   getAdminApplications(actor: AuthenticatedActor, page: { cursor: string | null; limit: number }): Promise<CursorPage<Application>>;
   getApplication(actor: AuthenticatedActor, applicationId: string): Promise<Application | null>;
-  applyToOffer(actor: AuthenticatedActor, offerId: string, command: ProductionCommandContext): Promise<Application>;
+  listApplicationsForOffer(actor: AuthenticatedActor, offerId: string, page: { cursor: string | null; limit: number }): Promise<CursorPage<Application>>;
+  applyToOffer(actor: AuthenticatedActor, offerId: string, command: ProductionCommandContext, payload?: ServerApplicationSubmissionInput): Promise<Application>;
   withdraw(actor: AuthenticatedActor, applicationId: string, command: ProductionCommandContext): Promise<Application>;
   examine(actor: AuthenticatedActor, applicationId: string, command: ProductionCommandContext): Promise<Application>;
   shortlist(actor: AuthenticatedActor, applicationId: string, command: ProductionCommandContext): Promise<Application>;

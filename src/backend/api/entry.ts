@@ -9,15 +9,17 @@
  *                    connexion injectée (database ou client + binding).
  *
  * P0-B : l'identité, la session et le RBAC utilisent les stores SQL quand une
- * base/client est injecté. Les handlers métier offres/candidatures/contrats
- * restent 501. Le mode DEMO (MockRepository) reste inchangé et par défaut.
+ * base/client est injecté. OFFRES est ouvert pour son périmètre P0-E1/E2 et
+ * CANDIDATURES uniquement pour soumission + consultation de l'offre propriétaire
+ * (P0-E3); les autres opérations métier restent fermées. Le mode DEMO demeure
+ * séparé, inchangé et par défaut.
  */
 
 import type { DatabaseHealthProbe, PostgreSqlDatabase } from '../services/database';
 import { createGoogleCredentialVerifier } from '../identity/googleVerifier';
 import type { GoogleCredentialVerifier } from '../productionContracts';
 import { createSessionService } from '../identity/sessionService';
-import { createSqlIdentityStores } from '../identity/sqlStores';
+import { createSqlIdentityStores, createSqlUserStore } from '../identity/sqlStores';
 import { createInMemoryIdentityStores, type IdentityStores } from '../identity/stores';
 import { createInMemoryCoreStores } from '../persistence/coreStores';
 import {
@@ -31,13 +33,15 @@ import {
 import type { CoreStores, OfferStore } from '../persistence/coreRecords';
 import { readMigrationState } from '../persistence/migrationState';
 import { createPostgresDatabase } from '../persistence/postgresDatabase';
-import { createSqlCoreStores, createSqlOfferStore } from '../persistence/sqlCoreStores';
+import { createSqlApplicationStore, createSqlCoreStores, createSqlOfferStore } from '../persistence/sqlCoreStores';
 import type { PostgresClientPort } from '../persistence/sqlClient';
 import { buildHealthPayload, detectWorkerRuntime, type BoundaryHealthResponse } from './health';
 import { createApiWorker, type ApiHealthReporter } from './worker';
 import { createIdentityApiWorker } from './identityWorker';
+import { createApplicationApiHandlers, createApplicationRepository } from '../repositories/applicationRepository';
 import { createOfferApiHandlers, createOfferRepository } from '../repositories/offerRepository';
-import type { ServerOfferRepository } from '../repositories/contracts';
+import type { ServerApplicationRepository, ServerOfferRepository } from '../repositories/contracts';
+import type { ApplicationRepositoryStores } from '../repositories/applicationRepository';
 
 export interface WorkerEnvironment extends WorkerPersistenceEnvironment {
   GOOGLE_CLIENT_ID?: string;
@@ -59,7 +63,7 @@ export interface WorkerPersistenceResolution {
   database?: PostgreSqlDatabase;
   /** Sonde réelle (`SELECT 1`) disponible dès qu'une base est construite. */
   probe?: DatabaseHealthProbe;
-  /** Noyau relationnel résolu. Aucun handler ne le consomme encore en P0-A. */
+  /** Noyau relationnel résolu; seuls les domaines ouverts par les handlers l'utilisent. */
   core?: CoreStores;
   /** Descripteur SANS secret, utilisable pour l'observabilité. */
   target?: SafePostgresDescriptor;
@@ -78,6 +82,8 @@ export interface WorkerComposition {
   /** Descripteur sûr de la cible, si une cible a été résolue. */
   target?: SafePostgresDescriptor;
   offers?: ServerOfferRepository;
+  /** P0-E3 partiel : seulement soumission et consultation par offre propriétaire. */
+  applications?: Pick<ServerApplicationRepository, 'applyToOffer' | 'listApplicationsForOffer'>;
 }
 
 /** Serveur/test only: allows deterministic verification without changing env or DEMO behavior. */
@@ -259,11 +265,39 @@ export function composeWorker(
 
   const offerHandlers = offerRepository ? createOfferApiHandlers(offerRepository) : {};
 
+  const runApplicationInTransaction = persistence.database
+    ? async <T>(operation: (txStores: ApplicationRepositoryStores) => Promise<T>): Promise<T> => {
+        return persistence.database!.run(async tx => operation({
+          applications: createSqlApplicationStore(tx),
+          offers: createSqlOfferStore(tx),
+          users: createSqlUserStore(tx),
+        }));
+      }
+    : undefined;
+
+  const applicationRepository = persistence.core
+    ? createApplicationRepository({
+        stores: {
+          applications: persistence.core.applications,
+          offers: persistence.core.offers,
+          users: stores.users,
+        },
+        runInTransaction: runApplicationInTransaction,
+        now: overrides.now,
+      })
+    : undefined;
+
+  const applicationHandlers = applicationRepository
+    ? createApplicationApiHandlers(applicationRepository)
+    : {};
+  const domainHandlers = { ...offerHandlers, ...applicationHandlers };
+
   return {
     mode,
     persistence: persistence.decision,
     core: persistence.core,
     offers: offerRepository,
+    applications: applicationRepository,
     health,
     probe: persistence.probe,
     target: persistence.target,
@@ -273,7 +307,7 @@ export function composeWorker(
       health,
       cookie: { secure: env.COOKIE_SECURE !== 'false' },
       now: overrides.now,
-      handlers: offerHandlers,
+      handlers: domainHandlers,
     }),
   };
 }

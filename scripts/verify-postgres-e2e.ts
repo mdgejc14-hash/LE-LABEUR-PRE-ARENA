@@ -1,5 +1,5 @@
 /**
- * LE LABEUR — P0-C — vérification réelle de bout en bout.
+ * LE LABEUR — P0-C / P0-E3 — vérification réelle de bout en bout.
  *
  *   Worker/API → PostgreSQL réel → réponse
  *
@@ -140,6 +140,18 @@ const verifiedIdentities: Record<string, GoogleExternalIdentity> = {
     emailVerified: true,
     displayName: 'Candidate P0-C',
   },
+  employer: {
+    subject: 'google-sub-p0c-employer',
+    email: 'employer.p0c@example.com',
+    emailVerified: true,
+    displayName: 'Employer P0-C',
+  },
+  otherEmployer: {
+    subject: 'google-sub-p0c-other-employer',
+    email: 'other-employer.p0c@example.com',
+    emailVerified: true,
+    displayName: 'Other Employer P0-C',
+  },
 };
 
 async function createSignedGoogleCredentials(): Promise<SignedGoogleCredentials> {
@@ -223,7 +235,7 @@ async function main(): Promise<void> {
   const secrets = [connectionString, local?.password, resolved.target.connectionString];
 
   console.log('============================================================');
-  console.log(' LE LABEUR — P0-C — vérification Worker/API → PostgreSQL');
+  console.log(' LE LABEUR — P0-C / P0-E3 — vérification Worker/API → PostgreSQL');
   console.log('============================================================');
   console.log(`Source base      : ${sourceLabel}`);
   console.log(`Cible (sans secret): ${descriptor.host}:${descriptor.port}/${descriptor.database} (source=${descriptor.source})`);
@@ -440,6 +452,75 @@ async function main(): Promise<void> {
       assert(body.user.id === candidateId, 'acteur résolu depuis PostgreSQL');
     });
 
+    let employerId = '';
+    let employerCookie = '';
+    let otherEmployerId = '';
+    let otherEmployerCookie = '';
+    await check('P0-E3 Worker/API → PostgreSQL : CANDIDATE soumet, EMPLOYER propriétaire consulte, tiers refusé', async () => {
+      const employerLogin = await composition.worker.fetch(new Request('https://api.test/api/v1/auth/google/credential', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ credential: google.credentials.employer, requestedRole: 'EMPLOYER' }),
+      }));
+      assert(employerLogin.status === 201, `connexion EMPLOYER 201 attendue, reçue ${employerLogin.status}`);
+      employerId = ((await employerLogin.json()) as { user: { id: string } }).user.id;
+      employerCookie = cookieToken(employerLogin);
+
+      const otherEmployerLogin = await composition.worker.fetch(new Request('https://api.test/api/v1/auth/google/credential', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ credential: google.credentials.otherEmployer, requestedRole: 'EMPLOYER' }),
+      }));
+      assert(otherEmployerLogin.status === 201, `connexion autre EMPLOYER 201 attendue, reçue ${otherEmployerLogin.status}`);
+      otherEmployerId = ((await otherEmployerLogin.json()) as { user: { id: string } }).user.id;
+      otherEmployerCookie = cookieToken(otherEmployerLogin);
+
+      const createOffer = await composition.worker.fetch(withSession('/api/v1/offers', employerCookie, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'Idempotency-Key': 'p0c-e3-offer-create-001' },
+        body: JSON.stringify({
+          title: 'Offre P0-E3 vérification PostgreSQL',
+          contractType: 'CDI',
+          remuneration: 175000,
+          currency: 'FCFA',
+          location: 'Cotonou',
+          summary: 'Offre créée par le Worker pour tester les candidatures.',
+        }),
+      }));
+      assert(createOffer.status === 201, `création offre 201 attendue, reçue ${createOffer.status}`);
+      const offer = await createOffer.json() as { id: string; employerId: string };
+      assert(offer.employerId === employerId, 'offre reliée à l’employeur authentifié');
+
+      const submission = await composition.worker.fetch(withSession(`/api/v1/offers/${offer.id}/applications`, sessionCookie, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'Idempotency-Key': 'p0c-e3-application-submit-001' },
+        body: JSON.stringify({ note: 'Disponible pour un entretien.' }),
+      }));
+      assert(submission.status === 201, `soumission 201 attendue, reçue ${submission.status}`);
+      const application = await submission.json() as { id: string; offerId: string; candidateId: string; status: string };
+      assert(application.offerId === offer.id && application.candidateId === candidateId, 'candidature reliée au bon offerId/candidateId');
+      assert(application.status === 'PENDING', 'statut PENDING attendu');
+
+      const persisted = await database.query<{ offer_id: string; candidate_id: string; status: string; note: string | null }>(
+        'SELECT offer_id, candidate_id, status, note FROM applications WHERE id = $1', [application.id],
+      );
+      assert(persisted.rows.length === 1, 'candidature réellement persistée');
+      assert(persisted.rows[0].offer_id === offer.id && persisted.rows[0].candidate_id === candidateId, 'références SQL attendues');
+      assert(persisted.rows[0].status === 'PENDING' && persisted.rows[0].note === 'Disponible pour un entretien.', 'données métier SQL attendues');
+
+      const ownerList = await composition.worker.fetch(withSession(`/api/v1/offers/${offer.id}/applications?limit=10`, employerCookie));
+      assert(ownerList.status === 200, `consultation propriétaire 200 attendue, reçue ${ownerList.status}`);
+      const listBody = await ownerList.json() as { items: Array<{ id: string; candidateId: string }>; hasMore: boolean };
+      assert(listBody.items.length === 1 && listBody.items[0].id === application.id, 'l’employeur propriétaire consulte cette candidature');
+      assert(listBody.items[0].candidateId === candidateId && listBody.hasMore === false, 'liste limitée à l’offre et au candidat persistés');
+
+      const otherEmployer = await composition.worker.fetch(withSession(`/api/v1/offers/${offer.id}/applications`, otherEmployerCookie));
+      assert(otherEmployer.status === 403, `autre employeur refusé: 403 attendu, reçu ${otherEmployer.status}`);
+      const candidateList = await composition.worker.fetch(withSession(`/api/v1/offers/${offer.id}/applications`, sessionCookie));
+      assert(candidateList.status === 403, `candidate refusé sur la liste privée: 403 attendu, reçu ${candidateList.status}`);
+      assert(otherEmployerId !== employerId, 'comptes employeurs distincts');
+    });
+
     await check('Worker/API → PostgreSQL : ADMIN provisionné côté serveur + permissions SQL', async () => {
       const adminId = newEntityId('usr');
       const adminToken = newOpaqueSessionToken();
@@ -484,6 +565,8 @@ async function main(): Promise<void> {
       await database.query('DELETE FROM sessions WHERE user_id = $1', [candidateId]);
       await database.query('DELETE FROM external_identities WHERE user_id = $1', [candidateId]);
       await database.query('DELETE FROM users WHERE id = $1', [candidateId]);
+      if (employerId) await database.query('DELETE FROM users WHERE id = $1', [employerId]);
+      if (otherEmployerId) await database.query('DELETE FROM users WHERE id = $1', [otherEmployerId]);
     });
 
     await check('MODE DEMO inchangé : MockRepository par défaut, API seulement si explicite', () => {

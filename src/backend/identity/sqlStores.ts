@@ -90,6 +90,10 @@ export function createSqlUserStore(db: SqlQueryExecutor): UserStore {
       const result = await db.query<UserRow>('SELECT * FROM users WHERE id = $1', [userId]);
       return result.rows[0] ? toUser(result.rows[0]) : null;
     },
+    async findByIdForShare(userId) {
+      const result = await db.query<UserRow>('SELECT * FROM users WHERE id = $1 FOR SHARE', [userId]);
+      return result.rows[0] ? toUser(result.rows[0]) : null;
+    },
     async findByEmail(email) {
       const result = await db.query<UserRow>('SELECT * FROM users WHERE email = lower($1)', [email.trim()]);
       return result.rows[0] ? toUser(result.rows[0]) : null;
