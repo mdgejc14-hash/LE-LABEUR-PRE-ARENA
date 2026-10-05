@@ -248,3 +248,45 @@ Move to the real backend Cloudflare implementation only after preserving this ch
 
 ### Next action
 Stop after recording and committing the validated Phase 1/1B changes. Do not start PostgreSQL, Hyperdrive, R2, Cron, Queue, real Outbox, full Admin, redesign, data migration or WhatsApp without a separate Phase 2 authorization.
+
+## Phase 2 — identité serveur, session et fondation de persistance — 2026-10-05
+
+### Périmètre et point de départ
+- Branche de travail : `arena/01a10b78-le-labeur-pre-arena` (branche imposée par la session Arena ; la branche demandée `arena/phase2-server-identity` n'a pas pu être créée, voir « Risques/écarts »).
+- Commit de départ : `f773df3f9b1a34a3f9678db3838d2df7ba5a2834` (Phase 1B validée).
+- `main` n'est ni modifié ni mergé. Aucun force push.
+
+### RÉELLEMENT IMPLÉMENTÉ
+- Vérification serveur du credential Google (RS256 + JWKS Google, `iss`/`aud`/`exp`/`iat`/`email_verified`), `sub` comme identité externe stable : `src/backend/identity/googleVerifier.ts`.
+- Session serveur opaque : jeton 256 bits, SHA-256 seul persisté, expiration, révocation, cookie `__Host-lelabeur_session` HttpOnly/Secure/SameSite=Lax/Path=/ (`sessionService.ts`, `cookies.ts`, `ids.ts`).
+- `getAuthenticatedActor()` : actorId, rôle, statut, permissions dérivés de la ligne `users`, jamais du body/headers/localStorage.
+- RBAC : matrice `permissionsForRole` + réutilisation de `requireAuth/requireRole/requireOwnership/requireParticipant/requireAdmin`. ADMIN non attribuable en self-service.
+- Worker identité (`src/backend/api/identityWorker.ts`) : `/api/v1/auth/google`, `/api/v1/auth/google/credential`, `/api/v1/auth/session`, `/api/v1/auth/logout`, `/api/v1/me`, `/api/v1/users/me` + 9 frontières ADMIN de contrôle protégées (session réelle + rôle + permission).
+- DTO de sortie sans `sub`, sans jeton, sans hash, sans champ interne (`dto.ts`).
+- Composition root `src/backend/api/entry.ts` : `closed` par défaut, `memory` (tests), `postgres` (si DB injectée).
+- Sélection MODE DEMO / MODE API explicite : `src/repositories/mode.ts`. MockRepository conservé et par défaut.
+
+### PRÉPARÉ MAIS NON BRANCHÉ
+- Migrations PostgreSQL `migrations/0001_identity_and_core.sql` et `0002_role_permissions_seed.sql` (users, external_identities, sessions, permissions, role_permissions, user_permissions, offers, applications, contracts ; contraintes + indexes). Aucune base n'est provisionnée : la DB de production n'est PAS opérationnelle.
+- Adaptateur SQL `src/backend/identity/sqlStores.ts` (aucune connexion Hyperdrive/Postgres fournie).
+- Handlers ADMIN : contrôle d'accès uniquement, collections vides `persistence: 'not-configured'` (sauf `admin.users.list` servi par le store d'identité actif).
+
+### NON IMPLÉMENTÉ (hors périmètre)
+R2, Outbox, Queue, Cron J+3, WebRTC production, WhatsApp, dashboard ADMIN complet, migration métier PostgreSQL, statistiques avancées, redesign.
+
+### Commandes et résultats exacts
+- `npm install --ignore-scripts --legacy-peer-deps` : PASS (182 paquets ; la résolution npm standard reste incompatible).
+- `npm test` (référence avant modification) : **921/921 PASS** — 82/82, 14/14, 800/800, 19/19, 6/6.
+- `npm test` (après) : **935/935 PASS, 0 FAIL** — domaine 82/82, stabilisation 14/14, QA 800/800, backend boundary 19/19, WebRTC boundary 6/6, identité/session Phase 2 14/14.
+- `npm run lint` (`tsc --noEmit`) : PASS (2 erreurs introduites puis corrigées : typage `Uint8Array<ArrayBuffer>`, collision `create` du store mémoire).
+- `npm run build` : PASS (avertissement de taille de chunk préexistant).
+- Aucun test supprimé.
+
+### Risques / écarts restants
+- Branche : la session Arena est verrouillée sur `arena/01a10b78-le-labeur-pre-arena` ; `arena/phase2-server-identity` n'a pas été créée.
+- Aucune base PostgreSQL, aucun `GOOGLE_CLIENT_ID` réel, aucune rotation de session ni limitation de débit sur `/api/v1/auth/google`.
+- Vérification Google testée contre un vérificateur injecté + rejet d'un credential malformé ; aucun jeton Google réel n'a été vérifié de bout en bout.
+- AppContext/écrans continuent d'utiliser le MockRepository : le flux UI → session serveur n'est pas encore câblé.
+
+### Prochaine phase suggérée
+Brancher PostgreSQL/Hyperdrive réel + migration identité, puis câbler le frontend sur `/api/v1/auth/google` et `/api/v1/me`, avant d'ouvrir le dashboard ADMIN.

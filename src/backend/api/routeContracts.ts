@@ -25,6 +25,8 @@ export const API_ROUTE_CONTRACTS = [
   { key: 'auth.session', method: 'GET', path: '/api/v1/auth/session', authentication: 'required', scope: 'self' },
   { key: 'auth.google.credential', method: 'POST', path: '/api/v1/auth/google/credential', authentication: 'public', scope: 'public' },
   { key: 'auth.logout', method: 'POST', path: '/api/v1/auth/logout', authentication: 'required', scope: 'self', auditOnMutation: true },
+  { key: 'auth.google', method: 'POST', path: '/api/v1/auth/google', authentication: 'public', scope: 'public' },
+  { key: 'me.read', method: 'GET', path: '/api/v1/me', authentication: 'required', scope: 'self' },
 
   { key: 'users.me.read', method: 'GET', path: '/api/v1/users/me', authentication: 'required', scope: 'self' },
   { key: 'users.me.update', method: 'PATCH', path: '/api/v1/users/me', authentication: 'required', scope: 'self', auditOnMutation: true },
