@@ -51,7 +51,7 @@ function createHarness(verifier: GoogleCredentialVerifier = fakeGoogleVerifier()
     now: () => clock.value,
     sessionTtlSeconds: ttlSeconds,
   });
-  const worker = createIdentityApiWorker({ sessions, stores, cookie: { secure: true } });
+  const worker = createIdentityApiWorker({ sessions, stores, cookie: { secure: true }, now: () => clock.value });
   return { worker, sessions, stores, clock };
 }
 

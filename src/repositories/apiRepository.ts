@@ -145,9 +145,12 @@ export class ApiRepository {
 
   constructor(private readonly http: HttpApiClient = new HttpApiClient()) {
     this.auth = {
-      getSession: () => this.http.request<ApiClientSession>('/auth/session'),
+      /** Enveloppe de session serveur; sa forme est normalisée par sessionMapping. */
+      getSession: () => this.http.request<unknown>('/auth/session'),
+      /** Identité de l'acteur authentifié, dérivée du cookie de session. */
+      getMe: () => this.http.request<unknown>('/me'),
       exchangeGoogleCredential: (credential: string, requestedRole: Exclude<UserRole, 'ADMIN'>, intent: 'login' | 'register' = 'login') =>
-        this.http.request<ApiClientSession>('/auth/google/credential', {
+        this.http.request<unknown>('/auth/google/credential', {
           method: 'POST',
           body: { credential, requestedRole, intent },
         }),

@@ -3,6 +3,7 @@ import type { ProductionAuditEvent, PublicProfileProjection } from '../backend/p
 import { ApiClientError } from './apiClient';
 import { ApiRepository, type CreateContractInput, type CreateOfferInput, type CreateProposalInput, type IncidentReportInput, type SelfProfilePatch } from './apiRepository';
 import type { AppRepositoryBundle } from './provider';
+import { mapServerSessionToProfile } from './sessionMapping';
 
 /**
  * Compatibility adapter for the existing AppContext repository signatures.
@@ -57,7 +58,18 @@ export function createLegacyApiRepositoryAdapter(api: ApiRepository): AppReposit
     getCurrentUser: () => sessionUser,
     getCurrentSession: async () => {
       try {
-        sessionUser = (await api.auth.getSession()).user;
+        // Autorité serveur : /auth/session puis /me pour l'acteur courant.
+        const session = await api.auth.getSession();
+        sessionUser = mapServerSessionToProfile(session);
+        if (!sessionUser) return null;
+        try {
+          sessionUser = mapServerSessionToProfile(await api.auth.getMe()) ?? sessionUser;
+        } catch (meError) {
+          if (meError instanceof ApiClientError && meError.status === 401) {
+            sessionUser = null;
+            return null;
+          }
+        }
         return sessionUser;
       } catch (error) {
         if (error instanceof ApiClientError && error.status === 401) {
@@ -70,17 +82,22 @@ export function createLegacyApiRepositoryAdapter(api: ApiRepository): AppReposit
     authenticateGoogleCredential: async (payload: { credential: string }, requestedRole: UserRole) => {
       if (requestedRole === 'ADMIN') throw new ApiClientError('Le rôle ADMIN ne peut pas être choisi au self-service.', 403, 'FORBIDDEN');
       if (!payload?.credential) throw new ApiClientError('Credential Google manquant.', 400, 'VALIDATION_ERROR');
-      sessionUser = (await api.auth.exchangeGoogleCredential(payload.credential, requestedRole, 'login')).user;
+      sessionUser = mapServerSessionToProfile(await api.auth.exchangeGoogleCredential(payload.credential, requestedRole, 'login'));
+      if (!sessionUser) throw new ApiClientError('La session serveur n’a pas pu être établie.', 401, 'UNAUTHENTICATED');
       return sessionUser;
     },
     registerGoogleCredential: async (payload: { credential: string }, requestedRole: UserRole) => {
       if (requestedRole === 'ADMIN') throw new ApiClientError('Le rôle ADMIN ne peut pas être choisi au self-service.', 403, 'FORBIDDEN');
       if (!payload?.credential) throw new ApiClientError('Credential Google manquant.', 400, 'VALIDATION_ERROR');
-      sessionUser = (await api.auth.exchangeGoogleCredential(payload.credential, requestedRole, 'register')).user;
+      sessionUser = mapServerSessionToProfile(await api.auth.exchangeGoogleCredential(payload.credential, requestedRole, 'register'));
+      if (!sessionUser) throw new ApiClientError('La session serveur n’a pas pu être établie.', 401, 'UNAUTHENTICATED');
       return sessionUser;
     },
-    login: unsupported('auth.login/email'),
-    register: unsupported('auth.register/email'),
+    // Login classique : même principe que Google — la session serveur est la
+    // seule autorité. Aucune identité locale n'est fabriquée tant que l'API
+    // n'expose pas la route d'échange de credentials email/mot de passe.
+    login: unsupported('auth.login/email (session serveur requise)'),
+    register: unsupported('auth.register/email (session serveur requise)'),
     findUserByGoogleSub: unsupported('auth.findUserByGoogleSub'),
     loginWithGoogle: unsupported('auth.loginWithGoogle(sub-only)'),
     registerWithGoogle: unsupported('auth.registerWithGoogle(sub-only)'),

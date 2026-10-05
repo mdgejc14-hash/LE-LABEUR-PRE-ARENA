@@ -23,6 +23,15 @@ import {
   calculateLaterMonthCommission,
   calculateLaterMonthEmployeeShare,
 } from '../domain/businessRules';
+import {
+  clearStoredRolePreference,
+  initialRoleForMode,
+  landingTabForRole,
+  readStoredRolePreference,
+  ROLE_PREFERENCE_STORAGE_KEY,
+  shouldRestoreAuthenticatedScreen,
+} from './sessionRouting';
+import { getRepositoryMode } from '../repositories/provider';
 import { IS_DEMO_MODE } from '../utils/config';
 
 export type MainTab = 'DISCOVER' | 'DASHBOARD' | 'OFFERS' | 'APPLICATIONS' | 'FAVORITES' | 'MESSAGES' | 'PROFILE';
@@ -178,15 +187,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [activeTab, setActiveTabState] = useState<MainTab>('DISCOVER');
 
   const [currentRole, setCurrentRoleState] = useState<UserRole>(() => {
-    try {
-      if (typeof localStorage !== 'undefined') {
-        const saved = localStorage.getItem('lelabeur_v5_selected_role');
-        if (saved === 'EMPLOYER' || saved === 'CANDIDATE' || saved === 'ADMIN') {
-          return saved as UserRole;
-        }
-      }
-    } catch {}
-    return 'CANDIDATE';
+    // Préférence d'affichage avant authentification uniquement. En MODE API,
+    // aucun rôle mémorisé n'est traité comme une preuve d'identité.
+    const stored = readStoredRolePreference(typeof localStorage !== 'undefined' ? localStorage : null);
+    return initialRoleForMode(getRepositoryMode(), stored);
   });
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
 
@@ -249,6 +253,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         callService.connectSignaling(persistedUser.id, persistedUser.role).catch(err => {
           console.warn('Signaling connect warning:', err);
         });
+
+        // MODE API : une session serveur valide restaure directement l'espace
+        // correspondant au rôle renvoyé par le serveur (candidat/employeur/admin).
+        if (shouldRestoreAuthenticatedScreen(getRepositoryMode(), true)) {
+          historyStackRef.current = [];
+          setScreenState('MAIN');
+          setActiveTabState(landingTabForRole(persistedUser.role));
+        }
       } else {
         setCurrentUser(null);
         setConversations([]);
@@ -367,7 +379,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setCurrentRoleState(newRole);
       try {
         if (typeof localStorage !== 'undefined') {
-          localStorage.setItem('lelabeur_v5_selected_role', newRole);
+          localStorage.setItem(ROLE_PREFERENCE_STORAGE_KEY, newRole);
         }
       } catch {}
       if (newRole === 'EMPLOYER') {
@@ -390,7 +402,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setCurrentRoleState(user.role);
     try {
       if (typeof localStorage !== 'undefined') {
-        localStorage.setItem('lelabeur_v5_selected_role', user.role);
+        localStorage.setItem(ROLE_PREFERENCE_STORAGE_KEY, user.role);
       }
     } catch {}
 
@@ -422,7 +434,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     historyStackRef.current = [];
     setScreenState('MAIN');
-    setActiveTabState(user.role === 'EMPLOYER' || user.role === 'ADMIN' ? 'DASHBOARD' : 'DISCOVER');
+    setActiveTabState(landingTabForRole(user.role));
   }, []);
 
   const login = useCallback(async (credentialsOrEmail?: string | { email?: string; phone?: string; role?: UserRole }, maybeRole?: UserRole) => {
@@ -492,6 +504,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setIncomingCall(null);
     setConversations([]);
     setFavorites([]);
+    setApplications([]);
+    setContracts([]);
+    setCandidates([]);
+    // La session serveur est révoquée côté Worker; aucune trace de rôle ne
+    // doit subsister dans le navigateur.
+    clearStoredRolePreference(typeof localStorage !== 'undefined' ? localStorage : null);
     setCurrentRoleState('CANDIDATE');
     setActiveTabState('DISCOVER');
     historyStackRef.current = [];

@@ -23,6 +23,8 @@ export interface IdentityWorkerOptions {
   stores: IdentityStores;
   cookie?: SessionCookieOptions;
   sessionTtlSeconds?: number;
+  /** Horloge serveur, alignée sur celle du service de session (tests). */
+  now?: () => Date;
   createRequestId?: () => string;
   /** Handlers métier supplémentaires; aucun n'est fourni par cette phase. */
   handlers?: Partial<Record<ApiRouteKey, ApiRouteHandler>>;
@@ -54,6 +56,7 @@ function adminControlPayload(resource: string, context: ApiRouteContext) {
 
 export function createIdentityApiWorker(options: IdentityWorkerOptions): { fetch(request: Request): Promise<Response> } {
   const { sessions, stores } = options;
+  const now = options.now ?? (() => new Date());
 
   const googleLogin: ApiRouteHandler = async context => {
     const body = await readJsonBody(context.request);
@@ -67,7 +70,7 @@ export function createIdentityApiWorker(options: IdentityWorkerOptions): { fetch
 
     const ttlSeconds = Math.max(
       0,
-      Math.floor((Date.parse(result.expiresAt) - Date.now()) / 1000),
+      Math.floor((Date.parse(result.expiresAt) - now().getTime()) / 1000),
     );
     const response = apiJsonResponse(
       toSessionDto(result.principal.actor, result.principal.user),

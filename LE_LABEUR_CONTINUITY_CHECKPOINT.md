@@ -290,3 +290,40 @@ R2, Outbox, Queue, Cron J+3, WebRTC production, WhatsApp, dashboard ADMIN comple
 
 ### Prochaine phase suggérée
 Brancher PostgreSQL/Hyperdrive réel + migration identité, puis câbler le frontend sur `/api/v1/auth/google` et `/api/v1/me`, avant d'ouvrir le dashboard ADMIN.
+
+## Phase 3 — pont frontend ↔ session serveur — 2026-10-05
+
+### Point de départ
+- Branche : `arena/01a10b78-le-labeur-pre-arena` (session Arena verrouillée sur cette branche).
+- Commit de départ : `fbc2d4e` (Phase 2 validée, 935/935 PASS).
+- `main` non modifié, aucun merge, aucun force push.
+
+### RÉELLEMENT IMPLÉMENTÉ
+- Point de composition unique `src/bootstrap/appBootstrap.ts`, appelé par `src/main.tsx` avant le rendu : MODE DEMO (mock) ou MODE API (session serveur), jamais les deux.
+- `src/repositories/sessionMapping.ts` : normalisation de `/auth/session` et `/me` (formes Phase 2 et historique). Rôle, id et statut viennent du serveur ; rôle inconnu, `authenticated: false` ou compte non actif ⇒ pas de session.
+- `legacyApiAdapter` : `getCurrentSession()` fait `/auth/session` puis `/me` ; l'échange Google exige une session serveur ; `login`/`register` classiques échouent explicitement (501) au lieu de fabriquer une identité locale ; `switchRole` reste refusé (403).
+- `apiRepository.auth` : ajout de `getMe()`, `getSession()` normalisé.
+- `src/context/sessionRouting.ts` : `landingTabForRole`, `initialRoleForMode`, `shouldRestoreAuthenticatedScreen`, `canReachAdminBoundary`, gestion de la préférence de rôle navigateur.
+- `AppContext` : rôle initial non restauré en ADMIN en MODE API ; au démarrage en MODE API, une session serveur valide restaure directement l'espace du rôle serveur (candidat/employeur/admin) ; logout vide applications/contrats/candidats et supprime la préférence de rôle locale.
+- `identityWorker` : horloge injectable (`now`) pour aligner `Max-Age` du cookie sur l'horloge serveur.
+- `vite.config.ts` : `server.allowedHosts` pour la prévisualisation sandbox.
+
+### PRÉPARÉ MAIS NON BRANCHÉ
+- Login classique email/mot de passe en MODE API : principe posé (session serveur = autorité), route serveur d'échange non exposée ⇒ 501 explicite.
+- Dashboard ADMIN : seule la frontière est vérifiée (ADMIN autorisé, CANDIDATE/EMPLOYER 403).
+
+### NON IMPLÉMENTÉ
+PostgreSQL réel, R2, Outbox, Queue, Cron J+3, WhatsApp, WebRTC production, ADMIN complet, redesign.
+
+### Commandes et résultats exacts
+- `npm test` : **949/949 PASS, 0 FAIL** — 82/82, 14/14, 800/800, 19/19, 6/6, identité/session 14/14, **nouveau pont frontend ↔ session 14/14**. Aucune régression par rapport aux 935/935.
+- `npm run lint` (`tsc --noEmit`) : PASS. `npm run build` : PASS.
+- Runtime : `npm run dev` démarre (Vite 8.3.2, port 3000) en MODE DEMO. Parcours navigateur réel Google → session → refresh → logout : **NON EXÉCUTÉ** (aucun `GOOGLE_CLIENT_ID` ni backend déployé). Le flux complet est testé en intégration contre le vrai Worker Phase 2 avec bocal à cookies.
+
+### Limites
+- MODE API jamais exercé contre un déploiement réel (pas de DB, pas de Worker déployé, pas de client Google).
+- Les écrans métier en MODE API restent majoritairement en 501 : seules AUTH/SESSION/ME/frontières ADMIN sont servies.
+- Le masquage d'écrans côté React reste purement UX ; l'autorisation est serveur.
+
+### Prochaine phase suggérée
+Brancher PostgreSQL/Hyperdrive réel + déploiement du Worker, puis ouvrir progressivement les endpoints métier, avant le dashboard ADMIN.
