@@ -14,6 +14,7 @@ import { runHealthReportTests } from '../src/backend/api/health.test';
 import { runMigrationRunnerTests } from '../src/backend/persistence/migrationRunner.test';
 import { runCloudflareConfigTests } from '../src/backend/worker/cloudflareConfig.test';
 import { runCloudflareEntryTests } from '../src/backend/worker/cloudflareEntry.test';
+import { runOfferDomainTests } from '../src/backend/api/offers.test';
 
 interface TestCase {
   name: string;
@@ -38,6 +39,7 @@ async function main(): Promise<void> {
   const migrationRunner = await runMigrationRunnerTests();
   const cloudflareConfig = await runCloudflareConfigTests();
   const cloudflareEntry = await runCloudflareEntryTests();
+  const offerDomain = await runOfferDomainTests();
 
   const suites: Array<{ name: string; cases: TestCase[] }> = [
     { name: 'Domain deterministic', cases: deterministic.results.map(result => ({ name: result.name, success: result.success, detail: result.details })) },
@@ -56,6 +58,7 @@ async function main(): Promise<void> {
     { name: 'P0-C — runner de migrations (manifeste, enveloppe, idempotence, checksum)', cases: migrationRunner },
     { name: 'P0-C — configuration Cloudflare Worker (bindings, secrets, isolation pg)', cases: cloudflareConfig },
     { name: 'P0-C — entrée Worker Cloudflare (composition, fermeture, cycle de pool)', cases: cloudflareEntry },
+    { name: 'P0-E1 — domaine OFFRES (création, persistance, consultation, rôles, ownership, idempotence, rollback)', cases: offerDomain },
   ];
 
   let total = 0;

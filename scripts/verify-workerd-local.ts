@@ -244,9 +244,11 @@ async function main(): Promise<void> {
       assert(!text.includes(password), 'aucun secret ne doit apparaître dans /healthz');
     });
 
-    await check('workerd : frontière fermée pour les routes métier (501) et sans session (401)', async () => {
+    await check('workerd : frontière fermée pour les routes métier non ouvertes (501), OFFRES ouvert (200), et sans session (401)', async () => {
       const offers = await fetch(`${base}/api/v1/offers`);
-      assert(offers.status === 501, `501 attendu pour une route sans handler, reçu ${offers.status}`);
+      assert(offers.status === 200, `200 attendu pour route OFFRES ouverte, reçu ${offers.status}`);
+      const closedDomain = await fetch(`${base}/api/v1/resources`);
+      assert(closedDomain.status === 501, `501 attendu pour une route hors périmètre sans handler, reçu ${closedDomain.status}`);
       const admin = await fetch(`${base}/api/v1/admin/users`);
       assert(admin.status === 401, `401 attendu sans session, reçu ${admin.status}`);
     });

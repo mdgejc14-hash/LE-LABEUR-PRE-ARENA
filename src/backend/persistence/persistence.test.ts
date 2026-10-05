@@ -368,6 +368,21 @@ const contractRow: Record<string, unknown> = {
 };
 
 const coreRowResponder: Responder = sql => {
+  if (/users/.test(sql)) {
+    return {
+      rows: [{
+        id: 'usr_employer',
+        role: 'EMPLOYER',
+        status: 'ACTIVE',
+        email: 'employer@example.com',
+        display_name: 'Employeur Test',
+        avatar_url: null,
+        created_at: '2026-09-01T00:00:00.000Z',
+        updated_at: '2026-09-01T00:00:00.000Z',
+      }],
+      rowCount: 1,
+    };
+  }
   if (/applications/.test(sql)) return { rows: [applicationRow], rowCount: 1 };
   if (/contracts/.test(sql)) return { rows: [contractRow], rowCount: 1 };
   return { rows: [offerRow], rowCount: 1 };
@@ -1060,8 +1075,10 @@ export async function runPostgresFoundationTests(): Promise<PostgresFoundationTe
     await composition.core.offers.create(validOffer);
     assert(/INSERT INTO offers/.test(driver.sqlText), 'le store SQL doit être celui utilisé');
 
+    const resources = await composition.worker.fetch(new Request('https://api.test/api/v1/resources'));
+    assert(resources.status === 501, `aucun handler métier hors périmètre ne doit être branché: ${resources.status}`);
     const offers = await composition.worker.fetch(new Request('https://api.test/api/v1/offers'));
-    assert(offers.status === 501, `aucun handler métier ne doit être branché: ${offers.status}`);
+    assert(offers.status === 200, `le domaine OFFRES doit être ouvert: ${offers.status}`);
     const admin = await composition.worker.fetch(new Request('https://api.test/api/v1/admin/users'));
     assert(admin.status === 401, `session requise: ${admin.status}`);
 

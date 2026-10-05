@@ -17,7 +17,7 @@
  *  - la lecture des permissions est partagée avec le flux d'identité P0-B.
  */
 
-import type { PostgreSqlDatabase, SqlQueryResult } from '../services/database';
+import type { PostgreSqlDatabase, SqlQueryExecutor, SqlQueryResult } from '../services/database';
 import { createSqlPermissionStore } from '../identity/permissionStore';
 import {
   APPLICATION_STATUS_VALUES,
@@ -168,7 +168,7 @@ function toOfferRecord(row: OfferRow): OfferRecord {
   };
 }
 
-export function createSqlOfferStore(db: PostgreSqlDatabase): OfferStore {
+export function createSqlOfferStore(db: SqlQueryExecutor): OfferStore {
   return {
     async create(record) {
       assertStatusDomain(record.status, OFFER_STATUS_VALUES, 'offers');
@@ -251,6 +251,42 @@ export function createSqlOfferStore(db: PostgreSqlDatabase): OfferStore {
         // stable que l'implémentation mémoire.
         return translateSqlError(error, 'offers', `Statut « ${status} » refusé pour l’offre ${offerId}.`);
       }
+    },
+
+    async listPublic(limit, filter) {
+      const conditions: string[] = ["o.status = 'ACTIVE'", "u.status != 'BLOCKED'"];
+      const values: unknown[] = [];
+
+      if (filter?.departmentId?.trim()) {
+        values.push(filter.departmentId.trim());
+        conditions.push(`o.department_id = $${values.length}`);
+      }
+      if (filter?.communeId?.trim()) {
+        values.push(filter.communeId.trim());
+        conditions.push(`o.municipality_id = $${values.length}`);
+      }
+      if (filter?.contractType?.trim()) {
+        values.push(filter.contractType.trim());
+        conditions.push(`o.contract_type = $${values.length}`);
+      }
+      if (filter?.searchQuery?.trim()) {
+        const pattern = `%${filter.searchQuery.trim().toLowerCase()}%`;
+        values.push(pattern);
+        const idx = values.length;
+        conditions.push(`(lower(o.title) LIKE $${idx} OR lower(o.summary) LIKE $${idx} OR lower(o.location) LIKE $${idx})`);
+      }
+
+      values.push(clampStoreLimit(limit));
+      const limitIdx = values.length;
+
+      const sql = `SELECT o.* FROM offers o
+                   JOIN users u ON u.id = o.employer_id
+                   WHERE ${conditions.join(' AND ')}
+                   ORDER BY o.posted_date DESC, o.id ASC
+                   LIMIT $${limitIdx}`;
+
+      const result = await db.query<OfferRow>(sql, values);
+      return result.rows.map(toOfferRecord);
     },
   };
 }
