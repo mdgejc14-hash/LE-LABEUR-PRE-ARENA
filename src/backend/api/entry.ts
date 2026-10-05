@@ -1,11 +1,16 @@
 /**
- * Composition root du Worker LE LABEUR (Phase 2).
+ * Composition root du Worker LE LABEUR (Phase 2, étendue P0-A).
  *
- * Trois états possibles, explicites et sans retombée silencieuse :
- *  - `closed`  : aucun `GOOGLE_CLIENT_ID` → frontière Phase 1 (401/501) ;
- *  - `memory`  : identité serveur en mémoire, réservée aux tests/démo serveur ;
- *  - `postgres`: stores SQL via Hyperdrive — PRÉPARÉ, non branché tant qu'aucune
- *    implémentation `PostgreSqlDatabase` n'est injectée.
+ * États possibles, explicites et sans retombée silencieuse :
+ *  - `closed`      : aucun `GOOGLE_CLIENT_ID`, ou persistance non configurée →
+ *                    frontière Phase 1 (401/501) ;
+ *  - `memory`      : identité + noyau en mémoire, tests/démo serveur uniquement ;
+ *  - `postgres`    : stores SQL via PostgreSQL/Hyperdrive — nécessite une
+ *                    connexion injectée (database ou client + binding).
+ *
+ * P0-A : la composition peut construire les stores SQL du noyau, mais AUCUN
+ * handler métier n'est branché : les routes du noyau restent 501. Le mode DEMO
+ * du navigateur (MockRepository) est inchangé et reste le défaut.
  */
 
 import type { PostgreSqlDatabase } from '../services/database';
@@ -13,41 +18,131 @@ import { createGoogleCredentialVerifier } from '../identity/googleVerifier';
 import { createSessionService } from '../identity/sessionService';
 import { createSqlIdentityStores } from '../identity/sqlStores';
 import { createInMemoryIdentityStores, type IdentityStores } from '../identity/stores';
+import { createInMemoryCoreStores } from '../persistence/coreStores';
+import {
+  describePostgresTarget,
+  resolvePersistenceDecision,
+  resolvePostgresTarget,
+  type PersistenceDecision,
+  type SafePostgresDescriptor,
+  type WorkerPersistenceEnvironment,
+} from '../persistence/config';
+import type { CoreStores } from '../persistence/coreRecords';
+import { createPostgresDatabase } from '../persistence/postgresDatabase';
+import { createSqlCoreStores } from '../persistence/sqlCoreStores';
+import type { PostgresClientPort } from '../persistence/sqlClient';
 import { createApiWorker } from './worker';
 import { createIdentityApiWorker } from './identityWorker';
 
-export interface WorkerEnvironment {
+export interface WorkerEnvironment extends WorkerPersistenceEnvironment {
   GOOGLE_CLIENT_ID?: string;
   SESSION_TTL_SECONDS?: string;
-  /** 'memory' uniquement pour un environnement de test explicite. */
-  IDENTITY_STORE?: 'memory' | 'postgres';
   COOKIE_SECURE?: string;
 }
 
 export type WorkerIdentityMode = 'closed' | 'memory' | 'postgres';
 
-export interface WorkerComposition {
-  mode: WorkerIdentityMode;
-  worker: { fetch(request: Request): Promise<Response> };
+export interface WorkerPersistenceResolution {
+  decision: PersistenceDecision;
+  database?: PostgreSqlDatabase;
+  /** Noyau relationnel résolu. Aucun handler ne le consomme encore en P0-A. */
+  core?: CoreStores;
+  /** Descripteur SANS secret, utilisable pour l'observabilité. */
+  target?: SafePostgresDescriptor;
 }
 
-export function composeWorker(env: WorkerEnvironment, database?: PostgreSqlDatabase): WorkerComposition {
+export interface WorkerComposition {
+  mode: WorkerIdentityMode;
+  /** Motif exact de la persistance retenue ; `misconfigured` n'ouvre jamais l'API. */
+  persistence: PersistenceDecision;
+  worker: { fetch(request: Request): Promise<Response> };
+  core?: CoreStores;
+}
+
+function isInjectedDatabase(value: PostgreSqlDatabase | PostgresClientPort): value is PostgreSqlDatabase {
+  return typeof (value as { run?: unknown }).run === 'function';
+}
+
+/**
+ * Résout la persistance à partir de l'environnement et d'un éventuel accès
+ * déjà construit (base injectée pour les tests, ou client SQL + binding).
+ */
+export function resolveWorkerPersistence(
+  env: WorkerPersistenceEnvironment,
+  injected?: PostgreSqlDatabase | PostgresClientPort,
+): WorkerPersistenceResolution {
+  const database = injected && isInjectedDatabase(injected) ? injected : undefined;
+  const client = injected && !database ? (injected as PostgresClientPort) : undefined;
+
+  const decision = resolvePersistenceDecision(env, {
+    hasDatabase: Boolean(database),
+    hasSqlClient: Boolean(client),
+  });
+
+  if (decision.kind === 'postgres' && database) {
+    return {
+      decision,
+      database,
+      core: createSqlCoreStores(database),
+    };
+  }
+
+  if (decision.kind === 'postgres' && client) {
+    const target = resolvePostgresTarget(env);
+    if (!target.ok) {
+      // Incohérence impossible en pratique (la décision a déjà validé la cible),
+      // conservée pour ne jamais ouvrir l'API par défaut.
+      return { decision: { kind: 'misconfigured', reason: target.reason } };
+    }
+    const created = createPostgresDatabase(client, {
+      statementTimeoutMs: target.target.statementTimeoutMs,
+      applicationName: target.target.applicationName,
+      redactSecrets: [target.target.connectionString],
+    });
+    return {
+      decision,
+      database: created,
+      core: createSqlCoreStores(created),
+      target: describePostgresTarget(target.target),
+    };
+  }
+
+  if (decision.kind === 'memory') {
+    return { decision, core: createInMemoryCoreStores() };
+  }
+
+  return { decision };
+}
+
+export function composeWorker(
+  env: WorkerEnvironment,
+  injected?: PostgreSqlDatabase | PostgresClientPort,
+): WorkerComposition {
+  const persistence = resolveWorkerPersistence(env, injected);
   const audience = env.GOOGLE_CLIENT_ID?.trim();
   if (!audience) {
     // Aucun vérificateur Google : la frontière reste fermée par défaut.
-    return { mode: 'closed', worker: createApiWorker({ authenticate: async () => null }) };
+    return {
+      mode: 'closed',
+      persistence: persistence.decision,
+      worker: createApiWorker({ authenticate: async () => null }),
+    };
   }
 
   let stores: IdentityStores;
   let mode: WorkerIdentityMode;
-  if (database) {
-    stores = createSqlIdentityStores(database);
+  if (persistence.database) {
+    stores = createSqlIdentityStores(persistence.database);
     mode = 'postgres';
-  } else if (env.IDENTITY_STORE === 'memory') {
+  } else if (persistence.decision.kind === 'memory') {
     stores = createInMemoryIdentityStores();
     mode = 'memory';
   } else {
-    return { mode: 'closed', worker: createApiWorker({ authenticate: async () => null }) };
+    return {
+      mode: 'closed',
+      persistence: persistence.decision,
+      worker: createApiWorker({ authenticate: async () => null }),
+    };
   }
 
   const sessions = createSessionService({
@@ -58,6 +153,8 @@ export function composeWorker(env: WorkerEnvironment, database?: PostgreSqlDatab
 
   return {
     mode,
+    persistence: persistence.decision,
+    core: persistence.core,
     worker: createIdentityApiWorker({
       sessions,
       stores,
