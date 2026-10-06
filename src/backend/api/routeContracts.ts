@@ -88,6 +88,10 @@ export const API_ROUTE_CONTRACTS = [
   // PAIEMENTS, distincte de `contracts.monthly-action` (points de contrôle et
   // confirmations bilatérales, hors périmètre).
   { key: 'payments.advance-month', method: 'POST', path: '/api/v1/contracts/:contractId/payments/advance-month', authentication: 'required', scope: 'owner', roles: ['EMPLOYER'], idempotency: true, auditOnMutation: true },
+  // P0-PAYMENT-VERIFY — MISSION TERMINÉE → PAIEMENT ATTENDU : constat des
+  // paiements attendus d'une mission terminée (échéances atteintes seulement).
+  // Aucun fonds n'est détenu ni transféré ; la vérification reste ADMIN.
+  { key: 'payments.close-mission', method: 'POST', path: '/api/v1/contracts/:contractId/payments/close-mission', authentication: 'required', scope: 'owner', roles: ['EMPLOYER'], idempotency: true, auditOnMutation: true },
   { key: 'schedules.mine.list', method: 'GET', path: '/api/v1/my/schedules', authentication: 'required', scope: 'self', collection: true },
 
   // P0-DISPUTE-1 — Claim réel, rattaché au contrat/paiement et à ses parties.

@@ -40,9 +40,11 @@ import type { ApiRouteContext, ApiRouteHandler } from '../api/worker';
 import { newEntityId } from '../identity/ids';
 import { createDomainEvent, type DomainEvent } from '../automation/foundation';
 import {
+  CLOSE_MISSION_PAYMENT_RULES,
   CONTRACT_LEDGER_STATUS_FOR_PAYMENT_STATUS,
   PAYMENT_ADVANCE_MONTH_COMMAND,
   PAYMENT_AUDIT_ACTIONS,
+  PAYMENT_CLOSE_MISSION_COMMAND,
   PAYMENT_CONFIRM_COMMAND,
   PAYMENT_DECLARATION_COMMAND,
   PAYMENT_REJECT_COMMAND,
@@ -51,8 +53,11 @@ import {
   PAYMENT_VERIFICATION_COMMAND,
   buildPaymentDraftsFromSchedule,
   evaluateMonthlyAdvance,
+  evaluatePaymentContractGate,
   evaluatePaymentDeclaration,
+  evaluatePaymentExpectation,
   evaluatePaymentTransition,
+  evaluatePaymentVerificationOutcome,
   isPaymentPeriodDue,
   normalizePaymentDeclarationPayload,
   paymentDeclarationId,
@@ -61,11 +66,13 @@ import {
   paymentEventId,
   type MonthlyAdvanceEvaluation,
   type MonthlyAdvancePlan,
+  type PaymentExpectation,
   type PaymentLifecycleStatus,
   type PaymentProofMetadata,
   type PaymentTransitionOutcome,
   type PaymentTransitionRule,
   type PaymentType,
+  type PaymentVerificationOutcome,
 } from '../../domain/paymentLifecycle';
 import {
   createLocalPaymentReconciliationService,
@@ -193,6 +200,45 @@ export interface MonthlyAdvanceView {
   toMonth: number;
   periodKey: string;
   paymentsMaterialized: number;
+  replayed: boolean;
+}
+
+/**
+ * P0-PAYMENT-VERIFY — vue des paiements ATTENDUS d'une mission terminée.
+ * Projection en lecture des lignes `payments` : aucun état n'est stocké ici.
+ */
+export interface MissionPaymentExpectationView extends PaymentExpectation {
+  paymentId: string;
+  contractId: string;
+  monthNumber: number;
+  periodKey: string;
+  /** Statut du cycle après l'opération (relu, jamais fourni par le client). */
+  status: PaymentLifecycleStatus;
+  amount: number;
+  currency: string;
+  dueAt: string;
+  /** Destinataire du paiement hors plateforme (aucun fonds détenu par LE LABEUR). */
+  recipient: 'CANDIDATE' | 'LE_LABEUR';
+  recipientId: string;
+  /** Issue opérationnelle : CONFIRMÉ / REJETÉ / À RÉVISER / en attente. */
+  verificationOutcome: PaymentVerificationOutcome;
+}
+
+export interface MissionPaymentExpectationsView {
+  contractId: string;
+  contractStatus: string;
+  missionEnded: boolean;
+  /** Échéances atteintes basculées `SCHEDULED → DUE` par cette commande. */
+  markedDue: number;
+  /** Échéances atteintes déjà traitées par un autre passage (rejeu, concurrence). */
+  duplicates: number;
+  /** Paiements créés par la matérialisation de rattrapage (échéancier existant). */
+  paymentsMaterialized: number;
+  /** Paiements encore attendus (action hors plateforme ou vérification). */
+  expectedPayments: MissionPaymentExpectationView[];
+  /** Tous les paiements du contrat, avec leur issue opérationnelle. */
+  payments: MissionPaymentExpectationView[];
+  rules: readonly string[];
   replayed: boolean;
 }
 
@@ -383,6 +429,46 @@ function monthlyAdvanceRefusal(evaluation: MonthlyAdvanceEvaluation): string {
   }
 }
 
+/**
+ * P0-PAYMENT-VERIFY — source d'audit de la clôture des paiements de mission.
+ * Le cycle lui-même reste écrit par ses producteurs existants (`SYSTEM` pour
+ * `MARK_DUE`, l'employeur pour la déclaration, l'ADMIN pour la vérification).
+ */
+export const CLOSE_MISSION_AUDIT_SOURCE = 'api:P0-PAYMENT-VERIFY';
+
+/**
+ * Projette une ligne `payments` en « paiement attendu » lisible :
+ * nature (`evaluatePaymentExpectation`), destinataire réel du paiement HORS
+ * plateforme, et issue opérationnelle (`evaluatePaymentVerificationOutcome`).
+ * Aucun état n'est stocké : tout est dérivé de la ligne existante.
+ */
+function toMissionExpectationView(record: PaymentRecord, evaluatedAt: string): MissionPaymentExpectationView {
+  const expectation: PaymentExpectation = evaluatePaymentExpectation({
+    paymentType: record.paymentType,
+    status: record.status,
+    amount: record.amount,
+    currency: record.currency,
+    dueAt: record.dueAt,
+    evaluatedAt,
+  });
+  const outcome = evaluatePaymentVerificationOutcome({ status: record.status });
+  const platformFee = record.paymentType === 'PLATFORM_FEE';
+  return {
+    ...expectation,
+    paymentId: record.paymentId,
+    contractId: record.contractId,
+    monthNumber: record.monthNumber,
+    periodKey: record.periodKey,
+    status: record.status,
+    amount: record.amount,
+    currency: record.currency,
+    dueAt: record.dueAt,
+    recipient: platformFee ? 'LE_LABEUR' : 'CANDIDATE',
+    recipientId: platformFee ? 'LE_LABEUR' : record.candidateId,
+    verificationOutcome: outcome.outcome,
+  };
+}
+
 /* ------------------------------------------------------------------ */
 /* Repository                                                          */
 /* ------------------------------------------------------------------ */
@@ -407,6 +493,21 @@ export interface OpenPaymentRepository {
     contractId: string,
     command: ProductionCommandContext,
   ): Promise<MonthlyAdvanceView>;
+  /**
+   * P0-PAYMENT-VERIFY — MISSION TERMINÉE → PAIEMENT ATTENDU.
+   *
+   * Sur un contrat dont la mission est TERMINÉE (`COMPLETED` / `TERMINATED`),
+   * constate les paiements attendus : matérialisation de rattrapage depuis
+   * l'échéancier DÉJÀ validé, puis bascule `SCHEDULED → DUE` des seules
+   * échéances atteintes (transition `MARK_DUE` existante, événement
+   * `PAYMENT_DUE`, projection et audit). Aucun fonds n'est déplacé, aucun
+   * échéancier n'est rouvert, aucun prorata n'est inventé.
+   */
+  closeMissionPayments(
+    actor: AuthenticatedActor,
+    contractId: string,
+    command: ProductionCommandContext,
+  ): Promise<MissionPaymentExpectationsView>;
   getMyPayments(actor: AuthenticatedActor, page: PageRequest): Promise<CursorPage<PaymentView>>;
   getPayment(actor: AuthenticatedActor, paymentId: string): Promise<PaymentView | null>;
   getContractPayments(actor: AuthenticatedActor, contractId: string, page: PageRequest): Promise<CursorPage<PaymentView>>;
@@ -557,13 +658,14 @@ export function createPaymentRepository(
       );
     }
 
-    if (contract.status !== 'ACTIVE') {
-      throw new ApiError(
-        'BUSINESS_RULE_VIOLATION',
-        `Le cycle paiement ne progresse que sur un contrat actif (statut : ${contract.status}).`,
-        undefined,
-        409,
-      );
+    // P0-PAYMENT-VERIFY — le cycle progresse sur un contrat ayant ATTEINT
+    // l'exécution (`ACTIVE`), y compris une fois la mission TERMINÉE
+    // (`COMPLETED` / `TERMINATED`) : c'est à ce moment que l'employeur paie hors
+    // plateforme et que LE LABEUR doit vérifier la référence externe. Aucun
+    // statut du contrat n'est rouvert, aucun échéancier n'est réécrit.
+    const contractGate = evaluatePaymentContractGate(contract.status);
+    if (contractGate.kind === 'REFUSED') {
+      throw new ApiError('BUSINESS_RULE_VIOLATION', contractGate.reason, undefined, 409);
     }
 
     return { payment, contract };
@@ -1008,10 +1110,13 @@ export function createPaymentRepository(
                 'Action non autorisée : vous n’êtes pas l’employeur de ce paiement.',
               );
             }
-            if (contract.status !== 'ACTIVE') {
+            // Même garde unique que le reste du cycle : exécution commencée
+            // (`ACTIVE`), mission terminée incluse (`COMPLETED` / `TERMINATED`).
+            const declarationGate = evaluatePaymentContractGate(contract.status);
+            if (declarationGate.kind === 'REFUSED') {
               throw new ApiError(
                 'BUSINESS_RULE_VIOLATION',
-                `Un paiement ne se déclare que sur un contrat actif (statut : ${contract.status}).`,
+                `Un paiement ne se déclare que sur un contrat dont l’exécution a commencé. ${declarationGate.reason}`,
                 undefined,
                 409,
               );
@@ -1816,6 +1921,151 @@ export function createPaymentRepository(
         actor: trusted,
         command,
         commandName: PAYMENT_ADVANCE_MONTH_COMMAND,
+        fingerprint,
+        run,
+        markReplay: value => ({ ...value, replayed: true }),
+      });
+    },
+
+    /* -------------------------------------------------------------- */
+    /* P0-PAYMENT-VERIFY — MISSION TERMINÉE → PAIEMENT ATTENDU           */
+    /* -------------------------------------------------------------- */
+    async closeMissionPayments(actor, contractId, command) {
+      const trusted = requireTrustedActor(actor);
+      const normalizedContractId = contractId?.trim() ?? '';
+      const fingerprint = JSON.stringify({ contractId: normalizedContractId, action: 'CLOSE_MISSION' });
+      const durableKey = `${normalizedContractId}:${PAYMENT_CLOSE_MISSION_COMMAND}:${command?.idempotencyKey ?? 'server'}`;
+
+      const run = async (): Promise<MissionPaymentExpectationsView> => {
+        try {
+          return await inTransaction(async current => {
+            const account = await current.users.findByIdForShare(trusted.id);
+            if (!account) throw new ApiError('UNAUTHENTICATED', 'Acteur introuvable.');
+            if (account.status !== 'ACTIVE') {
+              throw new ApiError('FORBIDDEN', 'COMPTE NON ACTIF : la clôture des paiements de mission est indisponible.');
+            }
+            if (trusted.role !== 'EMPLOYER') {
+              throw new ApiError(
+                'FORBIDDEN',
+                'Action non autorisée : seul l’employeur du contrat clôture les paiements de la mission.',
+              );
+            }
+
+            const contract = await current.contracts.findByIdForUpdate(normalizedContractId);
+            if (!contract) throw new ApiError('NOT_FOUND', 'Contrat introuvable.');
+            if (contract.employerId !== trusted.id) {
+              throw new ApiError('FORBIDDEN', 'Action non autorisée : vous n’êtes pas l’employeur de ce contrat.');
+            }
+
+            // P0-PAYMENT-VERIFY : la clôture n'existe QUE pour une mission
+            // terminée. Un contrat encore ACTIVE suit le cycle normal
+            // (échéancier + balayage d'échéance) : rien n'est anticipé.
+            const contractGate = evaluatePaymentContractGate(contract.status);
+            if (contractGate.kind === 'REFUSED') {
+              throw new ApiError('BUSINESS_RULE_VIOLATION', contractGate.reason, undefined, 409);
+            }
+            if (!contractGate.missionEnded) {
+              throw new ApiError(
+                'BUSINESS_RULE_VIOLATION',
+                `La clôture des paiements exige une mission terminée : le contrat est ${contract.status}. `
+                + 'Un contrat en cours suit son échéancier et le balayage d’échéance existants.',
+                undefined,
+                409,
+              );
+            }
+
+            const timestamp = now().toISOString();
+            const reservation = await reserve(current, {
+              actorId: trusted.id,
+              command: PAYMENT_CLOSE_MISSION_COMMAND,
+              key: durableKey,
+              payload: fingerprint,
+            });
+
+            // Matérialisation de RATTRAPAGE uniquement : les lignes viennent de
+            // l'échéancier DÉJÀ validé du contrat (`createIfAbsent`, idempotent).
+            const paymentsMaterialized = await materialize(current, contract, timestamp);
+
+            // Seules les échéances ATTEINTES basculent, via la transition
+            // `MARK_DUE` EXISTANTE (événement PAYMENT_DUE, projection, audit).
+            const existing = await current.payments.listByContract(contract.id, 200);
+            let markedDue = 0;
+            let duplicates = 0;
+            for (const record of existing) {
+              const expectation = evaluatePaymentExpectation({
+                paymentType: record.paymentType,
+                status: record.status,
+                amount: record.amount,
+                currency: record.currency,
+                dueAt: record.dueAt,
+                evaluatedAt: timestamp,
+              });
+              if (expectation.kind !== 'TO_MARK_DUE') continue;
+              const outcome = await markPaymentDue(record.paymentId, {}, current, false);
+              if (outcome === 'applied') markedDue += 1;
+              else duplicates += 1;
+            }
+
+            const rows = await current.payments.listByContract(contract.id, 200);
+            const payments = rows.map(record => toMissionExpectationView(record, timestamp));
+            const expectedPayments = payments.filter(entry => entry.expected);
+
+            await appendAudit(current, {
+              action: PAYMENT_AUDIT_ACTIONS.missionClosed,
+              actorId: trusted.id,
+              paymentId: contract.id,
+              contractId: contract.id,
+              paymentType: 'SALARY',
+              periodKey: `M${contract.currentMonth}`,
+              timestamp,
+              reference: durableKey,
+              source: CLOSE_MISSION_AUDIT_SOURCE,
+              beforeState: { contractStatus: contract.status, paymentsMaterialized, markedDue: 0 },
+              afterState: {
+                markedDue,
+                duplicates,
+                expected: expectedPayments.map(entry => ({
+                  paymentId: entry.paymentId,
+                  paymentType: entry.paymentType,
+                  kind: entry.kind,
+                  verificationOutcome: entry.verificationOutcome,
+                  amount: entry.amount,
+                  currency: entry.currency,
+                })),
+                rules: [...CLOSE_MISSION_PAYMENT_RULES],
+                note: 'Aucun fonds détenu ni transféré : constat des paiements attendus uniquement.',
+              },
+            });
+
+            if (reservation === 'reserved') {
+              await current.idempotency.complete(trusted.id, PAYMENT_CLOSE_MISSION_COMMAND, durableKey, {
+                markedDue,
+                expected: expectedPayments.length,
+              });
+            }
+
+            return {
+              contractId: contract.id,
+              contractStatus: contract.status,
+              missionEnded: true,
+              markedDue,
+              duplicates,
+              paymentsMaterialized,
+              expectedPayments,
+              payments,
+              rules: [...CLOSE_MISSION_PAYMENT_RULES],
+              replayed: reservation === 'replay',
+            };
+          });
+        } catch (error) {
+          mapPaymentError(error);
+        }
+      };
+
+      return withReplayCache({
+        actor: trusted,
+        command,
+        commandName: PAYMENT_CLOSE_MISSION_COMMAND,
         fingerprint,
         run,
         markReplay: value => ({ ...value, replayed: true }),
@@ -2641,6 +2891,14 @@ export function createPaymentApiHandlers(
       const result = await repository.reconcilePayment(context.actor!, context.params.paymentId, asOf);
       return apiJsonResponse(result, 200, context.requestId);
     },
+
+    // P0-PAYMENT-VERIFY — MISSION TERMINÉE → PAIEMENT ATTENDU. Le corps est
+    // ignoré : tout est dérivé du contrat TERMINÉ relu côté serveur.
+    'payments.close-mission': async context => apiJsonResponse(
+      await repository.closeMissionPayments(context.actor!, context.params.contractId, context.command!),
+      200,
+      context.requestId,
+    ),
 
     // P0-PAY-1 — l'avancement mensuel est une commande du CYCLE PAIEMENTS. La
     // route `contracts.monthly-action` (points de contrôle et confirmations

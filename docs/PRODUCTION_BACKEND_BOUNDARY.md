@@ -181,3 +181,13 @@ Périmètre strictement EMPLOYEUR : déclarer un règlement effectué hors plate
 - UI : route `PAYMENTS` (`src/App.tsx`) + écran `src/screens/EmployerPaymentsScreen.tsx`, accessibles depuis le tableau de bord employeur et le profil. Le parcours de commission existant (`declareCommissionPayment`) est inchangé.
 - **Dette API assumée :** `legacyApiAdapter.ts` n'expose aucune de ces quatre opérations; en MODE API elles échouent en 501 plutôt que de retomber sur le mock. Les routes `/api/v1/payments/declarations` (POST/GET/PATCH) et la table `payment_declarations` restent à créer, avec justificatif R2 signé (`proofDocumentId`) et audit transactionnel.
 - **Étape suivante (non commencée) :** soumission par l'employeur, puis contrôle ADMIN (`UNDER_REVIEW` → `APPROVED`/`REJECTED` → `RESUBMITTED`), notifications, et lecture admin des déclarations.
+
+## 9. Phase P0-PAYMENT-VERIFY — vérification opérationnelle des paiements externes (2026-10-06)
+
+Périmètre : relier `MISSION TERMINÉE → PAIEMENT ATTENDU → PAIEMENT EXTERNE FOURNI → VÉRIFICATION → PAIEMENT CONFIRMÉ / REJETÉ / À RÉVISER`, sans système de paiement interne. Détail complet : `docs/P0-PAYMENT-VERIFY_PAIEMENTS_EXTERNES.md`.
+
+- **Défaut corrigé :** `lockPaymentFor()` et `declarePayment()` exigeaient `contract.status === 'ACTIVE'`, ce qui bloquait en `409` toute déclaration, vérification, confirmation ou rejet dès la fin de mission (`COMPLETED` / `TERMINATED`) — précisément le moment où le règlement externe a lieu. La garde passe par `evaluatePaymentContractGate()` (`src/domain/paymentLifecycle.ts`) : le cycle progresse sur un contrat ayant atteint l'exécution (`ACTIVE`, `COMPLETED`, `TERMINATED`) et reste refusé sur `DRAFT` / `SIGNATURE` / `REPLACED`.
+- **Ajout minimal :** route `POST /api/v1/contracts/:contractId/payments/close-mission` (EMPLOYER propriétaire, `Idempotency-Key`) → matérialisation de rattrapage depuis l'échéancier déjà validé, bascule `SCHEDULED → DUE` des **seules** échéances atteintes via la transition `MARK_DUE` existante (événement `PAYMENT_DUE`, projection `payment_schedule`, audit), audit `PAYMENT_MISSION_CLOSED`, vue des paiements attendus (salaire → travailleur, commission 25 % → LE LABEUR).
+- **Réutilisation stricte :** transitions, événements, audit, idempotence durable et de rejeu, compare-and-set PostgreSQL et webhook fournisseur P0-PAY-2 restent les seuls mécanismes ; aucun statut de paiement ajouté, aucune migration, aucun Cron/Queue.
+- **Frontière :** aucun fonds détenu ni transféré (`PAID` = état métier), aucun escrow/cantonnement/portefeuille, opérateurs Mobile Money toujours `implemented: false`.
+- **Vérifications :** `npm test` 1439/1439, `verify:postgres` 26/26, `verify:workerd` 13/13, `tsc --noEmit` sans erreur.
