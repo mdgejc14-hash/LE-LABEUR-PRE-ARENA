@@ -275,6 +275,18 @@ export function createInMemoryCoreStores(seed: InMemoryCoreStoreSeed = {}): Core
       contracts.set(contractId, updated);
       return { ...updated, history: updated.history.map(entry => ({ ...entry })) };
     },
+    async linkReplacementSuccessor(input) {
+      const record = contracts.get(input.originalContractId);
+      if (!record || record.status !== 'REPLACED' || record.replacementId !== input.replacementId || record.replacedContractId) return null;
+      const updated: ContractRecord = {
+        ...record,
+        replacedContractId: input.successorContractId,
+        updatedAt: input.updatedAt,
+        history: [...record.history, { ...input.historyEntry }],
+      };
+      contracts.set(record.id, updated);
+      return { ...updated, history: updated.history.map(entry => ({ ...entry })) };
+    },
     async listByEmployer(employerId, limit) {
       const bounded = clampStoreLimit(limit);
       return [...contracts.values()]

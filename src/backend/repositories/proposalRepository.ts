@@ -23,6 +23,9 @@
  */
 
 import type { MissionProposal } from '../../types';
+import { createDomainEvent } from '../automation/foundation';
+import type { DomainEventOutbox } from '../automation/records';
+import type { ReplacementStore } from '../replacements/records';
 import {
   evaluateProposalTransition,
   isProposalPeriodicity,
@@ -56,6 +59,11 @@ export interface ProposalRepositoryStores {
   applications: ApplicationStore;
   offers: OfferStore;
   users: UserStore;
+  /** P0-REPLACEMENT binds proposal creation/consent to the selected application. */
+  replacements?: Pick<ReplacementStore,
+    'findBySelectedApplicationForUpdate' | 'findBySelectedProposalForUpdate' | 'attachProposal' | 'acceptProposal' | 'declineProposal'>;
+  /** P0-NOTIFICATIONS uses the existing transactional outbox. */
+  outbox?: DomainEventOutbox;
 }
 
 export interface ProposalRepositoryDependencies {
@@ -404,6 +412,13 @@ export function createProposalRepository(
           throw new ApiError('BUSINESS_RULE_VIOLATION', 'Cette proposition est déjà associée à un contrat.', undefined, 409);
         }
 
+        const replacementForProposal = currentStores.replacements
+          ? await currentStores.replacements.findBySelectedProposalForUpdate(proposal.id)
+          : null;
+        if (replacementForProposal && replacementForProposal.status !== 'CANDIDATE_SELECTED') {
+          throw new ApiError('BUSINESS_RULE_VIOLATION', 'Le dossier de remplacement n’accepte plus de réponse à cette proposition.', undefined, 409);
+        }
+
         const outcome = evaluateProposalTransition(rule, proposal.status);
         if (outcome.kind === 'TERMINAL') {
           throw new ApiError(
@@ -441,11 +456,43 @@ export function createProposalRepository(
           );
         }
 
-        // Événement métier futur à produire : `rule.event` (PROPOSAL_ACCEPTED,
-        // PROPOSAL_DECLINED, PROPOSAL_EXPIRED), documenté dans
-        // `DOCUMENTED_PROPOSAL_EVENTS`. P0-E5 ne crée ni moteur Outbox, ni file,
-        // ni consumer, ni notification : seule la transition est persistée, dans
-        // la même transaction PostgreSQL.
+        if (replacementForProposal && (rule.action === 'ACCEPT' || rule.action === 'DECLINE' || rule.action === 'EXPIRE')) {
+          const linked = rule.action === 'ACCEPT'
+            ? await currentStores.replacements!.acceptProposal({
+                replacementId: replacementForProposal.replacementId,
+                proposalId: proposal.id,
+                at: timestamp,
+              })
+            : await currentStores.replacements!.declineProposal({
+                replacementId: replacementForProposal.replacementId,
+                proposalId: proposal.id,
+                at: timestamp,
+              });
+          if (!linked) {
+            throw new ApiError('BUSINESS_RULE_VIOLATION', 'La réponse à la proposition a perdu une course concurrente.', undefined, 409);
+          }
+        }
+
+        if (rule.event === 'PROPOSAL_ACCEPTED' || rule.event === 'PROPOSAL_DECLINED') {
+          await currentStores.outbox?.append(createDomainEvent({
+            eventId: `proposal:${updated.id}:${rule.event}`,
+            eventType: rule.event,
+            aggregateType: 'PROPOSAL',
+            aggregateId: updated.id,
+            actorId: actor.id,
+            timestamp,
+            payload: {
+              proposalId: updated.id,
+              applicationId: updated.applicationId,
+              offerId: updated.offerId,
+              employerId: updated.employerId,
+              employeeId: updated.employeeId,
+              conversationId: updated.conversationId,
+              party: actor.role === 'EMPLOYER' ? 'EMPLOYER' : 'EMPLOYEE',
+            },
+            source: 'api:P0-E5',
+          }));
+        }
         return toProjectionFromStores(updated, currentStores);
       };
 
@@ -538,6 +585,18 @@ export function createProposalRepository(
             throw new ApiError('BUSINESS_RULE_VIOLATION', 'Cette candidature n’est pas admissible à une proposition.', undefined, 409);
           }
 
+          const replacementForApplication = currentStores.replacements
+            ? await currentStores.replacements.findBySelectedApplicationForUpdate(application.id)
+            : null;
+          if (replacementForApplication && (
+            replacementForApplication.status !== 'CANDIDATE_SELECTED'
+            || replacementForApplication.offerId !== offer.id
+            || replacementForApplication.selectedCandidateId !== employee.id
+            || replacementForApplication.selectedProposalId
+          )) {
+            throw new ApiError('BUSINESS_RULE_VIOLATION', 'Cette candidature n’est plus admissible au dossier de remplacement.', undefined, 409);
+          }
+
           const timestamp = now().toISOString();
           const record: ProposalRecord = {
             id: newEntityId('prp'),
@@ -561,8 +620,37 @@ export function createProposalRepository(
             ...(payload.endDate ? { endDate: payload.endDate } : {}),
           };
           const saved = await currentStores.proposals.create(record);
-          // Événement métier futur à produire : PROPOSAL_SENT (documenté, non
-          // émis : aucun moteur Outbox/Queue en P0-E5).
+          if (replacementForApplication) {
+            const linked = await currentStores.replacements!.attachProposal({
+              replacementId: replacementForApplication.replacementId,
+              applicationId: application.id,
+              candidateId: employee.id,
+              proposalId: saved.id,
+              at: timestamp,
+            });
+            if (!linked) {
+              throw new ApiError('BUSINESS_RULE_VIOLATION', 'La proposition n’a pas pu être liée au remplacement.', undefined, 409);
+            }
+          }
+          await currentStores.outbox?.append(createDomainEvent({
+            eventId: `proposal:${saved.id}:PROPOSAL_SENT`,
+            eventType: 'PROPOSAL_SENT',
+            aggregateType: 'PROPOSAL',
+            aggregateId: saved.id,
+            actorId: actor.id,
+            timestamp,
+            payload: {
+              proposalId: saved.id,
+              applicationId: saved.applicationId,
+              offerId: saved.offerId,
+              employerId: saved.employerId,
+              employeeId: saved.employeeId,
+              conversationId: saved.conversationId,
+              missionTitle: saved.missionTitle,
+              ...(replacementForApplication ? { replacementId: replacementForApplication.replacementId } : {}),
+            },
+            source: 'api:P0-E5',
+          }));
           return toProposalProjection(saved, employer, employee);
         };
 

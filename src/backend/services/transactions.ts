@@ -9,9 +9,9 @@ export interface TransactionalMutationPlan {
 }
 
 /**
- * Transaction map only. A future implementation must execute the business
- * writes, audit insert and outbox inserts in one PostgreSQL transaction. A
- * try/catch or in-memory rollback is explicitly not a substitute.
+ * Audit map des mutations transactionnelles ouvertes. Chaque entrée décrit une
+ * commande atomique réellement portée par un repository; les étapes distinctes
+ * Application, Proposal et Contract ne sont jamais fusionnées en un transfert.
  */
 export const TRANSACTIONAL_MUTATION_PLANS: readonly TransactionalMutationPlan[] = [
   {
@@ -24,7 +24,7 @@ export const TRANSACTIONAL_MUTATION_PLANS: readonly TransactionalMutationPlan[] 
       'append contract history',
     ],
     auditRequired: true,
-    outboxEvents: ['CONTRACT_SIGNED'],
+    outboxEvents: ['CONTRACT_ACTIVATED'],
   },
   {
     key: 'payment.verification',
@@ -38,39 +38,63 @@ export const TRANSACTIONAL_MUTATION_PLANS: readonly TransactionalMutationPlan[] 
   },
   {
     key: 'incident.report',
-    resourcesToLock: ['contract', 'incident'],
-    businessWrites: ['create the incident and append its initial history'],
+    resourcesToLock: ['contract', 'claim'],
+    businessWrites: ['create the Claim and append its initial history'],
     auditRequired: true,
-    outboxEvents: ['INCIDENT_OPENED'],
+    outboxEvents: ['CLAIM_CREATED'],
   },
   {
     key: 'incident.arbitration',
-    resourcesToLock: ['incident', 'contract', 'application'],
+    resourcesToLock: ['claim', 'source contract', 'replacement dossier'],
     businessWrites: [
-      'apply the existing arbitration decision to the incident and contract',
-      'create or update replacement state only for the replacement decision',
-      'append incident and contract histories',
+      'apply the ADMIN decision to the Claim',
+      'for REPLACE, create one PENDING_OFFER dossier and mark the old contract REPLACED',
+      'append Claim and old-contract histories without modifying payments',
     ],
     auditRequired: true,
-    outboxEvents: ['INCIDENT_DECIDED', 'REPLACEMENT_CREATED'],
+    outboxEvents: ['CLAIM_RESOLVED', 'CLAIM_REJECTED', 'REPLACEMENT_CREATED'],
   },
   {
-    key: 'replacement.create',
-    resourcesToLock: ['incident', 'source contract'],
-    businessWrites: ['create the replacement dossier from an authorized incident decision'],
-    auditRequired: true,
-    outboxEvents: ['REPLACEMENT_CREATED'],
-  },
-  {
-    key: 'replacement.transfer',
-    resourcesToLock: ['replacement dossier', 'source contract', 'offer'],
+    key: 'replacement.offer.publish',
+    resourcesToLock: ['replacement dossier', 'employer', 'offer'],
     businessWrites: [
-      'record candidate transfer and the replacement contract',
-      'create or link the required conversation using existing behavior',
-      'append replacement and contract histories',
+      'create a standard ACTIVE Offer using the employer-provided terms',
+      'attach that offer once and transition PENDING_OFFER to SOURCING_CANDIDATES',
     ],
     auditRequired: true,
-    outboxEvents: ['CANDIDATE_TRANSFERRED'],
+    outboxEvents: [],
+  },
+  {
+    key: 'replacement.application.shortlist',
+    resourcesToLock: ['application', 'replacement dossier'],
+    businessWrites: [
+      'shortlist the existing candidate Application',
+      'compare-and-set the sole selected application and candidate',
+    ],
+    auditRequired: true,
+    outboxEvents: ['APPLICATION_SHORTLISTED'],
+  },
+  {
+    key: 'replacement.proposal.send-or-respond',
+    resourcesToLock: ['application', 'proposal', 'replacement dossier'],
+    businessWrites: [
+      'create the standard Proposal from the employer-selected application',
+      'require the candidate response before marking the replacement transferred',
+      'release a declined/expired candidate back to sourcing without losing history',
+    ],
+    auditRequired: true,
+    outboxEvents: ['PROPOSAL_SENT', 'PROPOSAL_ACCEPTED', 'PROPOSAL_DECLINED'],
+  },
+  {
+    key: 'replacement.contract.create',
+    resourcesToLock: ['proposal', 'application', 'source contract', 'replacement dossier', 'successor contract'],
+    businessWrites: [
+      'create a distinct DRAFT successor contract from the accepted Proposal',
+      'link successor.replacementId + successor.replacedContractId',
+      'link replacement.newContractId + oldContract.replacedContractId and append history',
+    ],
+    auditRequired: true,
+    outboxEvents: [],
   },
   {
     key: 'account.block-or-unblock',

@@ -1021,11 +1021,10 @@ export async function runProposalDomainTests(): Promise<OfferTestResult[]> {
 
     /* ---------------- 9. PÉRIMÈTRE ET SÉPARATION DEMO/API ---------------- */
 
-    await check('P0-E5 Périmètre: incidents, remplacements, messages et listes de candidatures restent fermés (501); déclaration de commission ouverte mais refusée sans paiement', async () => {
+    await check('P0-E5 Périmètre: lecture des remplacements ouverte; incidents, messages et listes de candidatures restent fermés (501); déclaration sans paiement', async () => {
       // P0-F a ouvert le domaine CONTRAT (`/contracts`) : ce test conserve la
       // frontière fermée des domaines restants, sans affaiblir le contrôle P0-E5.
       const closed = await Promise.all([
-        harness.worker.fetch(authRequest('/api/v1/replacements/rep_p0e5_absent', employerToken)),
         harness.worker.fetch(authRequest('/api/v1/incidents', employerToken, {
           method: 'POST',
           headers: { 'content-type': 'application/json', 'Idempotency-Key': 'p0e5-closed-incidents-001' },
@@ -1039,6 +1038,8 @@ export async function runProposalDomainTests(): Promise<OfferTestResult[]> {
         harness.worker.fetch(authRequest('/api/v1/my/applications', candidateToken)),
         harness.worker.fetch(authRequest('/api/v1/applications/app_p0e5_send', employerToken)),
       ]);
+      const absentReplacement = await harness.worker.fetch(authRequest('/api/v1/replacements/rep_p0e5_absent', employerToken));
+      assert(absentReplacement.status === 404, `lecture remplacement ouverte avec 404 sur ID absent, reçu ${absentReplacement.status}`);
       // P0-PAY-1 a OUVERT la déclaration de commission : ce n'est plus un handler
       // absent. Elle reste refusée ici — charge utile vide — et n'exécute aucun
       // paiement. C'est la nouvelle frontière, pas un affaiblissement du contrôle.

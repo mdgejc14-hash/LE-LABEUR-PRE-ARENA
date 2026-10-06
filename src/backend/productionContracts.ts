@@ -153,7 +153,7 @@ export type OutboxEventType =
   | 'SALARY_CONFIRMED'
   /** P0-PAY-3 — demande de batch normalisé; aucun paiement réel ni notification. */
   | 'PAYMENT_RECONCILIATION_BATCH_REQUESTED'
-  /** P0-DISPUTE-1 — claims and evidence workflow; no external notification consumer. */
+  /** P0-DISPUTE-1 — claims and evidence workflow; P0-NOTIFICATIONS observes covered events In-App only. */
   | 'CLAIM_CREATED'
   | 'CLAIM_EVIDENCE_REQUESTED'
   | 'CLAIM_EVIDENCE_SUBMITTED'
@@ -172,12 +172,9 @@ export type OutboxEventType =
   | 'ACCOUNT_UNBLOCKED'
   | 'PAYMENT_OVERDUE_J3'
   /**
-   * P0-E3/P0-E4 — cycle CANDIDATURE : types DÉCLARÉS pour le futur moteur
-   * transactional Outbox/Queue, non encore produits. P0-E4 persiste uniquement
-   * la transition dans la transaction PostgreSQL; aucun événement n'est écrit,
-   * aucune file n'est créée, aucun consumer n'est installé.
-   * Contrats documentés : `src/domain/applicationTransitions.ts`
-   * (`DOCUMENTED_APPLICATION_EVENTS`).
+   * P0-E3/P0-E4 — cycle CANDIDATURE : événements Outbox transactionnels.
+   * NotificationAutomation observe les types MAPPED sans remplacer les
+   * producteurs; APPLICATION_EXAMINED demeure non consommé.
    */
   | 'APPLICATION_SUBMITTED'
   | 'APPLICATION_EXAMINED'
@@ -185,24 +182,18 @@ export type OutboxEventType =
   | 'APPLICATION_REJECTED'
   | 'APPLICATION_WITHDRAWN'
   /**
-   * P0-E5 — cycle PROPOSITION d'embauche : types DÉCLARÉS pour le futur moteur
-   * transactional Outbox/Queue, non encore produits. P0-E5 persiste uniquement
-   * la transition dans la transaction PostgreSQL; aucun événement n'est écrit,
-   * aucune file n'est créée, aucun consumer n'est installé.
-   * Contrats documentés : `src/domain/proposalTransitions.ts`
-   * (`DOCUMENTED_PROPOSAL_EVENTS`).
+   * P0-E5 — cycle PROPOSITION d'embauche : événements Outbox transactionnels.
+   * NotificationAutomation observe les événements couverts; l'expiration
+   * demeure UNMAPPED et n'émet aucune notification.
    */
   | 'PROPOSAL_SENT'
   | 'PROPOSAL_ACCEPTED'
   | 'PROPOSAL_DECLINED'
   | 'PROPOSAL_EXPIRED'
   /**
-   * P0-F — cycle CONTRAT : types DÉCLARÉS pour le futur moteur transactional
-   * Outbox/Queue, non encore produits. P0-F persiste uniquement la transition
-   * dans la transaction PostgreSQL; aucun événement n'est écrit, aucune file
-   * n'est créée, aucun consumer n'est installé, aucune notification n'est émise.
-   * Contrats documentés : `src/domain/contractTransitions.ts`
-   * (`DOCUMENTED_CONTRACT_EVENTS`).
+   * P0-F/P0-REPLACEMENT — `CONTRACT_ACTIVATED` est produit par le cycle
+   * d'activation P0-AUTO-2. Les autres types restent disponibles dans le
+   * catalogue de notification, mais P0-REPLACEMENT n'ajoute pas de producteur.
    */
   | 'CONTRACT_CREATED'
   | 'CONTRACT_SENT'

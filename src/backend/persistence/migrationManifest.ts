@@ -31,6 +31,9 @@ export const EXPECTED_MIGRATION_IDS: readonly string[] = [
   // canaux Push et Email restent des abstractions de code, sans table ni
   // fournisseur réel.
   '0012_notifications',
+  // P0-REPLACEMENT : dossier traçable relié au Claim, au contrat source, à
+  // l'offre, à la candidature, à la proposition et au contrat successeur.
+  '0013_replacements',
 ];
 
 export const SCHEMA_MIGRATIONS_TABLE = 'schema_migrations';

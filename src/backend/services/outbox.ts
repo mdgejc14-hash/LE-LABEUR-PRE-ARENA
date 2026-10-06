@@ -28,15 +28,10 @@ export const OUTBOX_EFFECT_CONTRACTS: readonly OutboxEffectContract[] = [
   { eventType: 'PAYMENT_VERIFIED', sideEffects: ['alias for PAYMENT_APPROVED', 'refresh schedule state'], idempotencyKey: 'event.id' },
   { eventType: 'PAYMENT_REJECTED', sideEffects: ['notify employer with the recorded reason', 'refresh schedule state'], idempotencyKey: 'event.id' },
   /**
-   * Cycle CONTRAT — porté par P0-F.
-   *
-   * `CONTRACT_SIGNED` était déjà déclaré ; les autres types du cycle sont
-   * ajoutés ici comme contrats DÉCLARÉS pour le futur moteur Outbox/Queue :
-   * aucun producteur, aucune table, aucun consumer n'existe à ce stade. Les
-   * transitions (création, envoi, signature, activation, fin, rupture) sont
-   * persistées dans la transaction métier sans effet secondaire asynchrone.
-   * Charges utiles et clés de déduplication de référence :
-   * `src/domain/contractTransitions.ts` (`DOCUMENTED_CONTRACT_EVENTS`).
+   * Cycle CONTRAT — les effets du cycle sont déclarés pour la notification,
+   * mais seul `CONTRACT_ACTIVATED` possède ici son producteur P0-AUTO-2. Les
+   * autres transitions ne reçoivent pas de producteur supplémentaire dans
+   * P0-REPLACEMENT; aucun effet métier de P0-F n'est modifié.
    */
   { eventType: 'CONTRACT_SIGNED', sideEffects: ['notify both parties', 'refresh offer and application views'], idempotencyKey: 'contractId + SIGNED + party' },
   { eventType: 'CONTRACT_CREATED', sideEffects: ['no asynchronous effect in P0-F'], idempotencyKey: 'contractId + CREATED' },
@@ -46,8 +41,8 @@ export const OUTBOX_EFFECT_CONTRACTS: readonly OutboxEffectContract[] = [
   { eventType: 'CONTRACT_TERMINATED', sideEffects: ['freeze the schedule and notify the OTHER party (rule ready; the producer belongs to a later tranche)'], idempotencyKey: 'contractId + TERMINATED' },
   { eventType: 'INCIDENT_OPENED', sideEffects: ['notify authorized participants and Admin queue'], idempotencyKey: 'event.id' },
   { eventType: 'INCIDENT_DECIDED', sideEffects: ['notify incident participants of the recorded decision'], idempotencyKey: 'event.id' },
-  { eventType: 'REPLACEMENT_CREATED', sideEffects: ['notify the authorized replacement workflow'], idempotencyKey: 'event.id' },
-  { eventType: 'CANDIDATE_TRANSFERRED', sideEffects: ['notify the candidate and employer', 'refresh replacement and contract views'], idempotencyKey: 'event.id' },
+  { eventType: 'REPLACEMENT_CREATED', sideEffects: ['open the authorized dossier from Claim REPLACE', 'notify the old contract parties and authorized Admins (In-App)'], idempotencyKey: 'replacementId + CREATED' },
+  { eventType: 'CANDIDATE_TRANSFERRED', sideEffects: ['intentionally unused: the candidate must apply and accept a Proposal; no direct transfer handler exists'], idempotencyKey: 'event.id' },
   { eventType: 'ACCOUNT_BLOCKED', sideEffects: ['notify the account owner and authorized Admins'], idempotencyKey: 'event.id' },
   { eventType: 'ACCOUNT_UNBLOCKED', sideEffects: ['notify the account owner'], idempotencyKey: 'event.id' },
   { eventType: 'PAYMENT_OVERDUE_J3', sideEffects: ['notify employer and authorized Admins', 'record scheduler audit event'], idempotencyKey: 'schedule-entry + payment-kind + due-date + J3' },
@@ -66,9 +61,9 @@ export const OUTBOX_EFFECT_CONTRACTS: readonly OutboxEffectContract[] = [
   /** P0-PAY-3 : l'Outbox ne fait qu'ordonner un job idempotent de batch; aucun mouvement ni canal. */
   { eventType: 'PAYMENT_RECONCILIATION_BATCH_REQUESTED', sideEffects: ['enqueue the bounded reconciliation job in automation_jobs; no payment transition or fund movement'], idempotencyKey: 'batchId + initial' },
   /**
-   * P0-DISPUTE-1 — le Claim, sa demande de preuve et son escalade restent des
-   * événements d'Outbox transactionnels. Aucun consumer de notification n'est
-   * branché dans cette tranche; le silence n'est jamais une décision de fond.
+   * P0-DISPUTE-1 / P0-REPLACEMENT — les événements Claim restent transactionnels.
+   * NotificationAutomation observe les événements couverts. REPLACE crée son
+   * dossier et marque le contrat source REPLACED dans la même transaction.
    */
   { eventType: 'CLAIM_CREATED', sideEffects: ['start deterministic claim checks', 'notify the recorded parties and the authorised Admin queue (In-App)'], idempotencyKey: 'claimId + CREATED' },
   { eventType: 'CLAIM_EVIDENCE_REQUESTED', sideEffects: ['schedule the configured evidence deadline through automation_jobs', 'notify the recorded parties (In-App)'], idempotencyKey: 'evidenceRequestId + REQUESTED' },
@@ -80,34 +75,23 @@ export const OUTBOX_EFFECT_CONTRACTS: readonly OutboxEffectContract[] = [
   { eventType: 'CLAIM_RESOLVED', sideEffects: ['record a deterministic or ADMIN resolution; no refund or fund movement', 'notify the recorded parties and the Admin queue (In-App)'], idempotencyKey: 'claimId + RESOLVED' },
   { eventType: 'CLAIM_REJECTED', sideEffects: ['record an ADMIN rejection; no account sanction', 'notify the recorded parties and the Admin queue (In-App)'], idempotencyKey: 'claimId + REJECTED' },
   /**
-   * P0-E3/P0-E4 — cycle CANDIDATURE.
-   *
-   * Contrats DÉCLARÉS pour le futur moteur Outbox/Queue : aucun producteur,
-   * aucune table, aucun consumer n'existe à ce stade. Les transitions
-   * (soumission, examen, shortlist, rejet, retrait) sont persistées dans la
-   * transaction métier sans effet secondaire asynchrone. Les charges utiles et
-   * clés de déduplication de référence sont décrites dans
-   * `src/domain/applicationTransitions.ts` (`DOCUMENTED_APPLICATION_EVENTS`).
+   * P0-E3/P0-E4 — les soumissions et décisions persistantes écrivent ces
+   * événements dans leur transaction; APPLICATION_EXAMINED reste sans
+   * notification (UNMAPPED). Le catalogue d'audit est
+   * `src/domain/notificationCatalog.ts`.
    */
-  { eventType: 'APPLICATION_SUBMITTED', sideEffects: ['notify the offer owner (rule ready in the notification layer; the producer belongs to a later tranche)'], idempotencyKey: 'applicationId + SUBMITTED' },
-  { eventType: 'APPLICATION_EXAMINED', sideEffects: ['refresh the employer application view'], idempotencyKey: 'applicationId + EXAMINED' },
-  { eventType: 'APPLICATION_SHORTLISTED', sideEffects: ['notify the shortlisted candidate (rule ready in the notification layer; the producer belongs to a later tranche)'], idempotencyKey: 'applicationId + SHORTLISTED' },
-  { eventType: 'APPLICATION_REJECTED', sideEffects: ['notify the candidate with the recorded reason (rule ready in the notification layer; the producer belongs to a later tranche)'], idempotencyKey: 'applicationId + REJECTED' },
-  { eventType: 'APPLICATION_WITHDRAWN', sideEffects: ['notify the offer owner of the withdrawal (rule ready in the notification layer; the producer belongs to a later tranche)'], idempotencyKey: 'applicationId + WITHDRAWN' },
+  { eventType: 'APPLICATION_SUBMITTED', sideEffects: ['notify the offer owner (NEW_APPLICATION, In-App)'], idempotencyKey: 'applicationId + SUBMITTED' },
+  { eventType: 'APPLICATION_EXAMINED', sideEffects: ['refresh the employer application view; no notification producer'], idempotencyKey: 'applicationId + EXAMINED' },
+  { eventType: 'APPLICATION_SHORTLISTED', sideEffects: ['notify the shortlisted candidate (APPLICATION_SHORTLISTED, In-App)'], idempotencyKey: 'applicationId + SHORTLISTED' },
+  { eventType: 'APPLICATION_REJECTED', sideEffects: ['notify the candidate with the recorded reason (In-App)'], idempotencyKey: 'applicationId + REJECTED' },
+  { eventType: 'APPLICATION_WITHDRAWN', sideEffects: ['notify the offer owner of the withdrawal (In-App)'], idempotencyKey: 'applicationId + WITHDRAWN' },
   /**
-   * P0-E5 — cycle PROPOSITION d'embauche.
-   *
-   * Contrats DÉCLARÉS pour le futur moteur Outbox/Queue : aucun producteur,
-   * aucune table Outbox, aucun consumer n'existe à ce stade. L'émission,
-   * l'acceptation, la déclinaison et l'expiration sont persistées dans la
-   * transaction métier sans effet secondaire asynchrone. Les charges utiles et
-   * clés de déduplication de référence sont décrites dans
-   * `src/domain/proposalTransitions.ts` (`DOCUMENTED_PROPOSAL_EVENTS`).
-   * La nomenclature du code est conservée : `DECLINED`, jamais `REJECTED`.
+   * P0-E5 — Proposal events are emitted transactionally; notification intents
+   * reuse the existing notification catalog. Expiration stays UNMAPPED.
    */
-  { eventType: 'PROPOSAL_SENT', sideEffects: ['notify the target candidate (rule ready in the notification layer; the producer belongs to a later tranche)'], idempotencyKey: 'proposalId + SENT' },
-  { eventType: 'PROPOSAL_ACCEPTED', sideEffects: ['notify the emitting employer (rule ready; the producer belongs to a later tranche)', 'prepare contract creation in the next step'], idempotencyKey: 'proposalId + ACCEPTED' },
-  { eventType: 'PROPOSAL_DECLINED', sideEffects: ['notify the emitting employer (rule ready; the producer belongs to a later tranche)'], idempotencyKey: 'proposalId + DECLINED' },
+  { eventType: 'PROPOSAL_SENT', sideEffects: ['notify the target candidate (PROPOSAL_RECEIVED, In-App)'], idempotencyKey: 'proposalId + SENT' },
+  { eventType: 'PROPOSAL_ACCEPTED', sideEffects: ['notify the emitting employer (In-App)', 'prepare contract creation in the next step'], idempotencyKey: 'proposalId + ACCEPTED' },
+  { eventType: 'PROPOSAL_DECLINED', sideEffects: ['notify the emitting employer (In-App)'], idempotencyKey: 'proposalId + DECLINED' },
   { eventType: 'PROPOSAL_EXPIRED', sideEffects: ['close the proposal for both parties'], idempotencyKey: 'proposalId + EXPIRED' },
 ] as const;
 

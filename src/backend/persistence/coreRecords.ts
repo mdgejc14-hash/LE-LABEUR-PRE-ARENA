@@ -342,6 +342,14 @@ export interface ContractStore {
     party: 'EMPLOYER' | 'EMPLOYEE',
     patch: ContractSignaturePatch,
   ): Promise<ContractRecord | null>;
+  /** P0-REPLACEMENT — ajoute le lien inverse ancien contrat → successeur, une seule fois. */
+  linkReplacementSuccessor(input: {
+    originalContractId: string;
+    replacementId: string;
+    successorContractId: string;
+    updatedAt: string;
+    historyEntry: ContractHistoryEntry;
+  }): Promise<ContractRecord | null>;
   /** Lecture ADMIN (route existante `admin.contracts.list`), keyset par (updatedAt, id). */
   listAll(limit?: number, afterId?: string | null): Promise<ContractRecord[]>;
   /**

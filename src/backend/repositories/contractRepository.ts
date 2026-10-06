@@ -60,6 +60,7 @@ import {
 } from '../../domain/postContractTransitions';
 import type { ServerUserRecord, UserStore } from '../identity/stores';
 import type { ClaimStore } from '../disputes/records';
+import type { ReplacementStore } from '../replacements/records';
 // Import uniquement de TYPES : aucun couplage d'exécution à la persistance
 // (frontière Worker vérifiée par `src/backend/persistence/persistence.test.ts`).
 import type { ApplicationRecord, ApplicationStore, ContractHistoryEntry, ContractRecord, ContractStore, OfferRecord, OfferStore, ProposalRecord, ProposalStore } from '../persistence/coreRecords';
@@ -82,6 +83,9 @@ export interface ContractRepositoryStores {
   users: UserStore;
   /** P0-DISPUTE-1 — contrôle d'une restriction de terminaison provisoire active. */
   claimRestrictions?: Pick<ClaimStore, 'hasActiveRestriction'>;
+  /** P0-REPLACEMENT — consentement et liaison du contrat successeur. */
+  replacements?: Pick<ReplacementStore,
+    'findBySelectedProposalForUpdate' | 'linkSuccessorContract'>;
   /**
    * P0-AUTO-2 — Outbox PostgreSQL lié à la MÊME transaction que la mutation.
    *
@@ -681,6 +685,28 @@ export function createContractRepository(
             throw new ApiError('BUSINESS_RULE_VIOLATION', 'Le candidat de cette proposition n’est pas admissible.', undefined, 409);
           }
 
+          const replacementForProposal = currentStores.replacements
+            ? await currentStores.replacements.findBySelectedProposalForUpdate(proposal.id)
+            : null;
+          let originalContract: ContractRecord | null = null;
+          if (replacementForProposal) {
+            if (replacementForProposal.status !== 'TRANSFERRED_TO_EMPLOYER'
+              || replacementForProposal.selectedApplicationId !== application.id
+              || replacementForProposal.selectedCandidateId !== employee.id
+              || replacementForProposal.selectedProposalId !== proposal.id
+              || replacementForProposal.employerId !== actor.id) {
+              throw new ApiError('BUSINESS_RULE_VIOLATION', 'La proposition acceptée ne correspond plus au candidat sélectionné pour le remplacement.', undefined, 409);
+            }
+            originalContract = await currentStores.contracts.findByIdForUpdate(replacementForProposal.originalContractId);
+            if (!originalContract
+              || originalContract.status !== 'REPLACED'
+              || originalContract.replacementId !== replacementForProposal.replacementId
+              || originalContract.employerId !== actor.id
+              || originalContract.employeeId === employee.id) {
+              throw new ApiError('BUSINESS_RULE_VIOLATION', 'Le contrat initial ne permet pas de finaliser ce remplacement.', undefined, 409);
+            }
+          }
+
           const timestamp = now().toISOString();
           const record: ContractRecord = {
             id: newEntityId('ctr'),
@@ -719,6 +745,10 @@ export function createContractRepository(
                 timestamp,
               ),
             ],
+            ...(replacementForProposal ? {
+              replacementId: replacementForProposal.replacementId,
+              replacedContractId: replacementForProposal.originalContractId,
+            } : {}),
             ...(proposal.endDate ? { endDate: proposal.endDate } : {}),
             ...(payload.additionalNotes !== undefined ? { additionalNotes: payload.additionalNotes } : {}),
             createdAt: timestamp,
@@ -737,6 +767,35 @@ export function createContractRepository(
           const linkedApplication = await currentStores.applications.attachContract(application.id, created.id, timestamp);
           if (!linkedApplication) {
             throw new ApiError('BUSINESS_RULE_VIOLATION', 'Cette candidature est déjà associée à un contrat.', undefined, 409);
+          }
+
+          if (replacementForProposal && originalContract) {
+            const linkedReplacement = await currentStores.replacements!.linkSuccessorContract({
+              replacementId: replacementForProposal.replacementId,
+              proposalId: proposal.id,
+              applicationId: application.id,
+              candidateId: employee.id,
+              contractId: created.id,
+              at: timestamp,
+            });
+            if (!linkedReplacement) {
+              throw new ApiError('BUSINESS_RULE_VIOLATION', 'Le remplacement a déjà un contrat successeur ou a changé de statut.', undefined, 409);
+            }
+            const linkedOriginal = await currentStores.contracts.linkReplacementSuccessor({
+              originalContractId: originalContract.id,
+              replacementId: replacementForProposal.replacementId,
+              successorContractId: created.id,
+              updatedAt: timestamp,
+              historyEntry: historyEntry(
+                'REPLACEMENT_SUCCESSOR_LINKED',
+                `Le contrat successeur ${created.id} a été lié au remplacement ${replacementForProposal.replacementId}.`,
+                employer.displayName,
+                timestamp,
+              ),
+            });
+            if (!linkedOriginal) {
+              throw new ApiError('BUSINESS_RULE_VIOLATION', 'Le lien inverse du contrat initial a changé de façon concurrente.', undefined, 409);
+            }
           }
 
           return toContractProjection(created, offer, employer, employee);

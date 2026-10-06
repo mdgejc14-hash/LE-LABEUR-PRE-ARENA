@@ -1170,7 +1170,7 @@ export async function runContractDomainTests(): Promise<OfferTestResult[]> {
       assert(sentStored?.status === 'SIGNATURE' && sentStored?.history.length === 2, 'SENT → ACTIVE refusé sans écriture');
     });
 
-    await check('P0-F Périmètre: points de contrôle mensuels, incidents, remplacements, notifications et messages restent fermés (501); cycle Paiements ouvert mais sans aucun paiement exécuté', async () => {
+    await check('P0-F Périmètre: incidents/notifications/messages et cycle mensuel restent fermés; lecture remplacement ouverte (404 absent); aucun paiement exécuté', async () => {
       const chain = await seedProposalChain(harness, { employerId, employeeId: candidateId });
       const deliveredContractId = await createDraftContract(harness, employerToken, 'p0f-closed-create-001', chain.proposalId);
 
@@ -1185,13 +1185,14 @@ export async function runContractDomainTests(): Promise<OfferTestResult[]> {
           headers: { 'content-type': 'application/json', 'Idempotency-Key': 'p0f-closed-incidents-001' },
           body: '{}',
         })),
-        harness.worker.fetch(authRequest('/api/v1/replacements/rep_p0f_absent', employerToken)),
         harness.worker.fetch(authRequest('/api/v1/conversations/cnv_p0f/messages', employerToken, {
           method: 'POST',
           headers: { 'content-type': 'application/json', 'Idempotency-Key': 'p0f-closed-messages-001' },
           body: '{}',
         })),
       ]);
+      const absentReplacement = await harness.worker.fetch(authRequest('/api/v1/replacements/rep_p0f_absent', employerToken));
+      assert(absentReplacement.status === 404, `lecture des remplacements ouverte avec 404 sur ID absent, reçu ${absentReplacement.status}`);
       // P0-PAY-1 a OUVERT le domaine PAIEMENT. Ces routes ne sont donc plus des
       // handlers absents, et l'assertion porte désormais sur la FRONTIÈRE réelle :
       //  - la déclaration est refusée pour charge utile vide (400), jamais 501 ;

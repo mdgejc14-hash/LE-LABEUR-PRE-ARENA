@@ -66,6 +66,8 @@ interface ClaimRow {
 }
 
 function toClaim(row: ClaimRow): ClaimRecord {
+  const metadata = readJsonObject(row.metadata);
+  const replacementId = readOptionalText(metadata.replacementId);
   const paymentId = readOptionalText(row.payment_id);
   const salaryConfirmationId = readOptionalText(row.salary_confirmation_id);
   const dueAt = readOptionalText(row.due_at);
@@ -82,8 +84,9 @@ function toClaim(row: ClaimRow): ClaimRecord {
     reason: row.reason,
     status: row.status,
     createdAt: readText(row.created_at),
-    metadata: readJsonObject(row.metadata),
+    metadata,
     idempotencyKey: row.idempotency_key,
+    ...(replacementId !== undefined ? { replacementId } : {}),
     ...(paymentId !== undefined ? { paymentId } : {}),
     ...(salaryConfirmationId !== undefined ? { salaryConfirmationId } : {}),
     ...(dueAt !== undefined ? { dueAt } : {}),
@@ -296,8 +299,11 @@ export function createSqlClaimStore(db: SqlQueryExecutor): ClaimStore {
                 evidence_reference = CASE WHEN $6::boolean THEN $7::text ELSE evidence_reference END,
                 resolved_at = CASE WHEN $8::boolean THEN $9::timestamptz ELSE resolved_at END,
                 resolved_by = CASE WHEN $10::boolean THEN $11::text ELSE resolved_by END,
-                resolution = CASE WHEN $12::boolean THEN $13::text ELSE resolution END
-          WHERE claim_id = $1 AND status IN (${placeholders(14, expected.length)})
+                resolution = CASE WHEN $12::boolean THEN $13::text ELSE resolution END,
+                metadata = CASE WHEN $14::boolean
+                  THEN metadata || jsonb_build_object('replacementId', $15::text)
+                  ELSE metadata END
+          WHERE claim_id = $1 AND status IN (${placeholders(16, expected.length)})
           RETURNING *`,
         [
           input.claimId,
@@ -313,6 +319,8 @@ export function createSqlClaimStore(db: SqlQueryExecutor): ClaimStore {
           input.resolvedBy ?? null,
           input.resolution !== undefined,
           input.resolution ?? null,
+          input.replacementId !== undefined,
+          input.replacementId ?? null,
           ...expected,
         ],
       );

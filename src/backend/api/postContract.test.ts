@@ -670,13 +670,14 @@ export async function runPostContractDomainTests(): Promise<OfferTestResult[]> {
           headers: { 'content-type': 'application/json', 'Idempotency-Key': 'post-scope-incidents-001' },
           body: '{}',
         })),
-        harness.worker.fetch(authRequest('/api/v1/replacements/rep_post_absent', employerToken)),
         harness.worker.fetch(authRequest('/api/v1/conversations/cnv_post/messages', employerToken, {
           method: 'POST',
           headers: { 'content-type': 'application/json', 'Idempotency-Key': 'post-scope-messages-001' },
           body: '{}',
         })),
       ]);
+      const absentReplacement = await harness.worker.fetch(authRequest('/api/v1/replacements/rep_post_absent', employerToken));
+      assert(absentReplacement.status === 404, `lecture remplacement ouverte avec 404 sur ID absent, reçu ${absentReplacement.status}`);
       assert(
         closed.every(response => response.status === 501),
         `501 attendu pour tout handler non ouvert, reçus ${closed.map(response => response.status).join('/')}`,

@@ -47,6 +47,8 @@ export interface ClaimRecord {
   resolvedBy?: string;
   resolution?: string;
   evidenceReference?: string;
+  /** Persistent foreign-link alias stored in metadata for API/audit projections. */
+  replacementId?: string;
   metadata: Record<string, unknown>;
   idempotencyKey: string;
 }
@@ -95,6 +97,7 @@ export interface ClaimStore {
     resolvedAt?: string | null;
     resolvedBy?: string | null;
     resolution?: string | null;
+    replacementId?: string | null;
   }): Promise<ClaimRecord | null>;
   createEvidenceRequest(record: ClaimEvidenceRequestRecord): Promise<ClaimEvidenceRequestRecord>;
   findEvidenceRequest(evidenceRequestId: string): Promise<ClaimEvidenceRequestRecord | null>;
