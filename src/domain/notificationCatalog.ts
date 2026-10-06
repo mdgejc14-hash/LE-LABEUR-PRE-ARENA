@@ -96,9 +96,9 @@ export const NOTIFICATION_EVENT_COVERAGE: readonly NotificationEventCoverage[] =
   { eventType: 'CLAIM_RESOLVED', requestedAs: 'CLAIM_RESOLVED', status: 'MAPPED', producer: 'src/backend/disputes/claimRepository.ts + claimAutomation.ts', consumer: 'NotificationAutomation' },
   { eventType: 'CLAIM_REJECTED', requestedAs: 'CLAIM_RESOLVED', status: 'MAPPED', producer: 'src/backend/disputes/claimRepository.ts', consumer: 'NotificationAutomation' },
 
-  /* ---- REMPLACEMENT (événements déclarés, aucun producteur) ---- */
-  { eventType: 'REPLACEMENT_CREATED', requestedAs: 'REPLACEMENT', status: 'UNMAPPED', producer: null, consumer: 'Aucun', reason: 'Événement DÉCLARÉ sans producteur ni données de destinataire (aucun `replacementId` persisté). Le workflow de remplacement reste exclu de la tranche : aucune notification ne peut être rattachée à une entité inexistante.' },
-  { eventType: 'CANDIDATE_TRANSFERRED', requestedAs: 'REPLACEMENT', status: 'UNMAPPED', producer: null, consumer: 'Aucun', reason: 'Même raison : événement déclaré, aucun producteur, aucune entité persistée, donc aucun rattachement vérifiable au destinataire.' },
+  /* ---- REMPLACEMENT ---- */
+  { eventType: 'REPLACEMENT_CREATED', requestedAs: 'REPLACEMENT', status: 'MAPPED', producer: 'src/backend/disputes/claimRepository.ts', consumer: 'NotificationAutomation' },
+  { eventType: 'CANDIDATE_TRANSFERRED', requestedAs: 'REPLACEMENT', status: 'UNMAPPED', producer: null, consumer: 'Aucun', reason: 'Le transfert direct est volontairement fermé : le candidat ne rejoint jamais un engagement sans candidature, proposition et consentement. Aucun producteur parallèle n’est installé.' },
 
   /* ---- COMPTE / INCIDENT (hors commande, conservés pour l’audit) ---- */
   { eventType: 'INCIDENT_OPENED', requestedAs: 'CLAIM_OPENED (équivalent historique)', status: 'UNMAPPED', producer: null, consumer: 'Aucun', reason: 'Le dépôt produit `CLAIM_*` pour les incidents contractuels (`claimRepository`) : `INCIDENT_*` n’a plus de producteur et serait un doublon.' },
@@ -339,6 +339,22 @@ export function resolveNotificationIntents(event: NotificationEventLike): Notifi
         link: { screen: 'CONTRACTS', id: aggregateId },
         dedupeKey: `contract:${aggregateId}:TERMINATED`,
         payload: { contractId: aggregateId },
+      }];
+
+    /* ---------------- REMPLACEMENT ---------------- */
+    case 'REPLACEMENT_CREATED':
+      return [{
+        notificationType: 'REPLACEMENT_INITIATED',
+        title: 'Remplacement autorisé',
+        message: 'Le contrat initial est marqué REPLACED. L’employeur doit publier l’offre; le candidat postule et accepte ensuite une proposition avant tout nouveau contrat.',
+        audiences: ['EMPLOYER', 'WORKER', 'ADMIN'],
+        link: { screen: 'CONTRACTS', id: text(payload, 'originalContractId') },
+        dedupeKey: `replacement:${text(payload, 'replacementId') ?? aggregateId}:CREATED`,
+        payload: {
+          replacementId: text(payload, 'replacementId') ?? aggregateId,
+          claimId: text(payload, 'claimId'),
+          originalContractId: text(payload, 'originalContractId'),
+        },
       }];
 
     /* ---------------- LITIGE ---------------- */

@@ -15,6 +15,7 @@ import { newEntityId } from '../identity/ids';
 import type { UserStore } from '../identity/stores';
 import type { ContractStore } from '../persistence/coreRecords';
 import type { PaymentStore } from '../persistence/paymentRecords';
+import { REPLACEMENT_API_SOURCE, type ReplacementRecord, type ReplacementStore } from '../replacements/records';
 import type { SqlQueryExecutor } from '../services/database';
 import type {
   AuthenticatedActor,
@@ -76,7 +77,7 @@ export interface AdminClaimEvidenceInput {
 }
 
 export interface AdminClaimDecisionInput {
-  decision: 'RESOLVE' | 'REJECT';
+  decision: 'RESOLVE' | 'REJECT' | 'REPLACE';
   resolution: string;
 }
 
@@ -90,6 +91,8 @@ export interface ClaimRepositoryStores {
   contracts: ContractStore;
   payments: PaymentStore;
   users: UserStore;
+  /** P0-REPLACEMENT: required only for the explicit ADMIN REPLACE decision. */
+  replacements?: Pick<ReplacementStore, 'create' | 'findByOriginalContractForUpdate'>;
   automation: AutomationStores;
   /** Same SQL transaction as the stores above, for existing salary-confirmation and contract linkage rows. */
   sql: SqlQueryExecutor;
@@ -178,8 +181,8 @@ function normalizeEvidenceType(value: unknown): ClaimEvidenceType {
 }
 
 function normalizeDecision(value: AdminClaimDecisionInput): AdminClaimDecisionInput {
-  if (!value || (value.decision !== 'RESOLVE' && value.decision !== 'REJECT')) {
-    throw new ApiError('VALIDATION_ERROR', 'La décision doit être RESOLVE ou REJECT.');
+  if (!value || !['RESOLVE', 'REJECT', 'REPLACE'].includes(value.decision)) {
+    throw new ApiError('VALIDATION_ERROR', 'La décision doit être RESOLVE, REJECT ou REPLACE.');
   }
   return { decision: value.decision, resolution: requireText(value.resolution, 'resolution', 3, MAX_REASON_LENGTH) };
 }
@@ -440,6 +443,37 @@ export function createClaimRepository(dependencies: ClaimRepositoryDependencies)
         WHERE id = $1 AND incident_id = $2`,
       [claim.contractId, claim.claimId, at],
     );
+  };
+
+  const markContractReplaced = async (
+    current: ClaimRepositoryStores,
+    input: { contractId: string; claimId: string; replacementId: string; at: string; actorId: string; actorName: string },
+  ): Promise<void> => {
+    const historyEntry = {
+      id: newEntityId('ctr').replace(/^ctr_/, 'log_'),
+      timestamp: input.at,
+      event: 'CONTRACT_REPLACED',
+      description: `Contrat remplacé à la suite de la décision ADMIN sur le Claim ${input.claimId}. Dossier ${input.replacementId}.`,
+      actor: input.actorName || input.actorId,
+    };
+    const updated = await current.sql.query<{ id: string }>(
+      `UPDATE contracts
+          SET status = 'REPLACED',
+              replacement_id = $2,
+              incident_id = NULL,
+              updated_at = $4,
+              history = history || $5::jsonb
+        WHERE id = $1
+          AND incident_id = $3
+          AND status IN ('ACTIVE', 'SUSPENDED')
+          AND replacement_id IS NULL
+          AND replaced_contract_id IS NULL
+        RETURNING id`,
+      [input.contractId, input.replacementId, input.claimId, input.at, JSON.stringify([historyEntry])],
+    );
+    if (updated.rows.length !== 1) {
+      throw new ApiError('BUSINESS_RULE_VIOLATION', 'Le contrat initial a changé et ne peut plus être remplacé.', undefined, 409);
+    }
   };
 
   const cancelRequestDeadline = async (
@@ -808,7 +842,47 @@ export function createClaimRepository(dependencies: ClaimRepositoryDependencies)
         if (claim.status !== 'ADMIN_REVIEW') {
           throw new ApiError('BUSINESS_RULE_VIOLATION', 'Le Claim doit être en ADMIN_REVIEW avant une décision.', undefined, 409);
         }
-        const terminalStatus: ClaimStatus = input.decision === 'RESOLVE' ? 'RESOLVED' : 'REJECTED';
+        let replacement: ReplacementRecord | null = null;
+        if (input.decision === 'REPLACE') {
+          if (claim.type !== 'CONTRACT_INCIDENT') {
+            throw new ApiError('BUSINESS_RULE_VIOLATION', 'REPLACE est réservé à un Claim d’incident contractuel.', undefined, 409);
+          }
+          if (!current.replacements) {
+            throw new ApiError('NOT_IMPLEMENTED', 'Le dépôt persistant de remplacement n’est pas disponible.', undefined, 501);
+          }
+          const contract = await current.contracts.findByIdForUpdate(claim.contractId);
+          if (!contract
+            || contract.incidentId !== claim.claimId
+            || (contract.status !== 'ACTIVE' && contract.status !== 'SUSPENDED')
+            || contract.replacementId
+            || contract.replacedContractId) {
+            throw new ApiError('BUSINESS_RULE_VIOLATION', 'Le contrat incident ne peut pas être remplacé dans son état courant.', undefined, 409);
+          }
+          const existingReplacement = await current.replacements.findByOriginalContractForUpdate(contract.id);
+          if (existingReplacement) {
+            throw new ApiError('BUSINESS_RULE_VIOLATION', 'Un dossier de remplacement existe déjà pour ce contrat.', undefined, 409);
+          }
+          replacement = await current.replacements.create({
+            replacementId: newEntityId('rep'),
+            claimId: claim.claimId,
+            originalContractId: contract.id,
+            employerId: contract.employerId,
+            status: 'PENDING_OFFER',
+            createdAt: at,
+            updatedAt: at,
+          });
+          const administrator = await current.users.findById(actor.id);
+          await markContractReplaced(current, {
+            contractId: contract.id,
+            claimId: claim.claimId,
+            replacementId: replacement.replacementId,
+            at,
+            actorId: actor.id,
+            actorName: administrator?.displayName ?? actor.id,
+          });
+        }
+
+        const terminalStatus: ClaimStatus = input.decision === 'REJECT' ? 'REJECTED' : 'RESOLVED';
         const updated = await current.claims.transitionClaim({
           claimId,
           expected: ['ADMIN_REVIEW'],
@@ -818,6 +892,7 @@ export function createClaimRepository(dependencies: ClaimRepositoryDependencies)
           resolvedAt: at,
           resolvedBy: actor.id,
           resolution: input.resolution,
+          ...(replacement ? { replacementId: replacement.replacementId } : {}),
         });
         if (!updated) throw new ApiError('BUSINESS_RULE_VIOLATION', 'Le Claim a été modifié par une requête concurrente.', undefined, 409);
         await cancelPendingEvidenceAndJobs(current, claim, at, actor.id, 'Restrictions et demandes fermées à la décision ADMIN.');
@@ -829,10 +904,37 @@ export function createClaimRepository(dependencies: ClaimRepositoryDependencies)
           claimId,
           actorId: actor.id,
           at,
-          payload: { claimId, decision: input.decision, resolution: input.resolution, actorType: 'ADMIN' },
+          payload: {
+            claimId,
+            decision: input.decision,
+            resolution: input.resolution,
+            actorType: 'ADMIN',
+            ...(replacement ? { replacementId: replacement.replacementId } : {}),
+          },
           source: CLAIM_API_SOURCE,
           command,
         });
+        if (replacement) {
+          await current.automation.outbox.append(createDomainEvent({
+            eventId: `replacement-created:${replacement.replacementId}`,
+            eventType: 'REPLACEMENT_CREATED',
+            aggregateType: 'REPLACEMENT',
+            aggregateId: replacement.replacementId,
+            actorId: actor.id,
+            timestamp: at,
+            payload: {
+              replacementId: replacement.replacementId,
+              claimId: claim.claimId,
+              originalContractId: claim.contractId,
+              employerId: replacement.employerId,
+              employeeId: claim.respondentId === replacement.employerId ? claim.claimantId : claim.respondentId,
+              decision: 'REPLACE',
+            },
+            source: REPLACEMENT_API_SOURCE,
+            correlationId: command.requestId,
+            causationId: command.idempotencyKey,
+          }));
+        }
         await audit(current, {
           claimId,
           actorId: actor.id,
@@ -840,8 +942,31 @@ export function createClaimRepository(dependencies: ClaimRepositoryDependencies)
           action: `CLAIM_${input.decision}`,
           command,
           beforeState: { status: claim.status },
-          afterState: { status: updated.status, resolution: input.resolution, releasedRestrictions: true },
+          afterState: {
+            status: updated.status,
+            resolution: input.resolution,
+            releasedRestrictions: true,
+            ...(replacement ? { replacementId: replacement.replacementId, originalContractStatus: 'REPLACED' } : {}),
+          },
         });
+        if (replacement) {
+          await current.automation.audit.append({
+            id: newEntityId('rev'),
+            actorId: actor.id,
+            timestamp: at,
+            entityId: replacement.replacementId,
+            action: 'REPLACEMENT_CREATED',
+            source: REPLACEMENT_API_SOURCE,
+            reference: command.idempotencyKey,
+            beforeState: { status: 'NONE' },
+            afterState: {
+              status: replacement.status,
+              claimId: replacement.claimId,
+              originalContractId: replacement.originalContractId,
+              employerId: replacement.employerId,
+            },
+          });
+        }
         return view(current, updated);
       });
     },

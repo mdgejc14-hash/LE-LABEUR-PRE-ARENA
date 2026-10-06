@@ -729,7 +729,7 @@ export async function runApplicationDecisionTests(): Promise<OfferTestResult[]> 
 
     /* ---------------- 10. PÉRIMÈTRE ET SÉPARATION DEMO/API ---------------- */
 
-    await check('P0-E4 Périmètre: incidents, remplacements et messages restent fermés (501); déclaration de commission ouverte mais refusée sans paiement', async () => {
+    await check('P0-E4 Périmètre: lecture remplacement ouverte (404 ID absent); incidents et messages restent fermés (501); aucun paiement', async () => {
       // Les propositions ont été ouvertes par P0-E5 (`/conversations/:id/proposals`)
       // et les contrats par P0-F (`/contracts` n'est plus un handler absent) ; ce
       // test conserve la frontière fermée des autres domaines, sans affaiblir le
@@ -740,7 +740,6 @@ export async function runApplicationDecisionTests(): Promise<OfferTestResult[]> 
           headers: { 'content-type': 'application/json', 'Idempotency-Key': 'p0e4-closed-messages-001' },
           body: '{}',
         })),
-        harness.worker.fetch(authRequest('/api/v1/replacements/rep_p0e4_absent', employerToken)),
         harness.worker.fetch(authRequest('/api/v1/incidents', employerToken, {
           method: 'POST',
           headers: { 'content-type': 'application/json', 'Idempotency-Key': 'p0e4-closed-incidents-001' },
@@ -750,6 +749,8 @@ export async function runApplicationDecisionTests(): Promise<OfferTestResult[]> 
         harness.worker.fetch(authRequest('/api/v1/employer/applications', employerToken)),
         harness.worker.fetch(authRequest(`/api/v1/applications/${examinedId}`, candidateToken)),
       ]);
+      const absentReplacement = await harness.worker.fetch(authRequest('/api/v1/replacements/rep_p0e4_absent', employerToken));
+      assert(absentReplacement.status === 404, `lecture remplacement ouverte avec 404 sur ID absent, reçu ${absentReplacement.status}`);
       // P0-PAY-1 a OUVERT la déclaration de commission : ce n'est plus un handler
       // absent. Elle reste refusée ici — charge utile vide — et n'exécute aucun
       // paiement. C'est la nouvelle frontière, pas un affaiblissement du contrôle.

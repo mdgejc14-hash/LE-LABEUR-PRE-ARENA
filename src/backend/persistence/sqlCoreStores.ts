@@ -720,6 +720,28 @@ export function createSqlContractStore(db: SqlQueryExecutor): ContractStore {
       return result.rows[0] ? toContractRow(result.rows[0]) : null;
     },
 
+    async linkReplacementSuccessor(input) {
+      const result = await db.query<ContractRow>(
+        `UPDATE contracts
+            SET replaced_contract_id = $3,
+                updated_at = $4,
+                history = history || $5::jsonb
+          WHERE id = $1
+            AND replacement_id = $2
+            AND status = 'REPLACED'
+            AND replaced_contract_id IS NULL
+          RETURNING *`,
+        [
+          input.originalContractId,
+          input.replacementId,
+          input.successorContractId,
+          input.updatedAt,
+          JSON.stringify([input.historyEntry]),
+        ],
+      );
+      return result.rows[0] ? toContractRow(result.rows[0]) : null;
+    },
+
     async listByEmployer(employerId, limit) {
       const result = await db.query<ContractRow>(
         'SELECT * FROM contracts WHERE employer_id = $1 ORDER BY updated_at DESC, id ASC LIMIT $2',

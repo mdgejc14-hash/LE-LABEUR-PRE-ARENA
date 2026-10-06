@@ -204,12 +204,36 @@ export function createNotificationService(
     parties: EventParties,
   ): Promise<boolean> => {
     if (parties.contractId) return true;
-    if (event.aggregateType.toUpperCase() !== 'CLAIM') return false;
-    const result = await stores.sql.query<{ claim_id: string }>(
-      'SELECT claim_id FROM claims WHERE claim_id = $1',
-      [event.aggregateId],
-    );
-    return Boolean(result.rows[0]);
+    const aggregateType = event.aggregateType.toUpperCase();
+    if (aggregateType === 'CLAIM') {
+      const result = await stores.sql.query<{ claim_id: string }>(
+        'SELECT claim_id FROM claims WHERE claim_id = $1',
+        [event.aggregateId],
+      );
+      return Boolean(result.rows[0]);
+    }
+    if (aggregateType === 'REPLACEMENT') {
+      const result = await stores.sql.query<{ replacement_id: string }>(
+        'SELECT replacement_id FROM replacements WHERE replacement_id = $1',
+        [event.aggregateId],
+      );
+      return Boolean(result.rows[0]);
+    }
+    if (aggregateType === 'APPLICATION') {
+      const result = await stores.sql.query<{ id: string }>(
+        'SELECT id FROM applications WHERE id = $1',
+        [event.aggregateId],
+      );
+      return Boolean(result.rows[0]);
+    }
+    if (aggregateType === 'PROPOSAL') {
+      const result = await stores.sql.query<{ id: string }>(
+        'SELECT id FROM proposals WHERE id = $1',
+        [event.aggregateId],
+      );
+      return Boolean(result.rows[0]);
+    }
+    return false;
   };
 
   const resolveRecipients = async (

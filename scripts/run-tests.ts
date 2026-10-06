@@ -30,6 +30,7 @@ import { runPaymentCycleTests } from '../src/backend/api/payments.test';
 import { runExternalPaymentProviderTests } from '../src/backend/api/externalPaymentProvider.test';
 import { runPaymentMissionCloseTests } from '../src/backend/api/paymentMissionClose.test';
 import { runClaimDomainTests } from '../src/backend/api/claims.test';
+import { runReplacementDomainTests } from '../src/backend/api/replacements.test';
 import { runContractAutomationTests } from '../src/backend/automation/contractActivation.test';
 import { runNotificationTests } from '../src/backend/notifications/notifications.test';
 
@@ -73,6 +74,7 @@ async function main(): Promise<void> {
   const externalPaymentProvider = await runExternalPaymentProviderTests();
   const paymentMissionClose = await runPaymentMissionCloseTests();
   const claimDomain = await runClaimDomainTests();
+  const replacementDomain = await runReplacementDomainTests();
   const notificationLayer = await runNotificationTests();
 
   const suites: Array<{ name: string; cases: TestCase[] }> = [
@@ -108,6 +110,7 @@ async function main(): Promise<void> {
     { name: 'P0-PAY-2 / P0-SALARY-VERIFY — paiement externe → PAID → confirmation P0-SALARY-1 (webhook sécurisé, audit, OTP/nonce, idempotence, aucun paiement réel)', cases: externalPaymentProvider },
     { name: 'P0-PAYMENT-VERIFY — mission terminée → paiement attendu → paiement externe → vérification (clôture de mission, échéances atteintes, déclaration, décision ADMIN, webhook, rejet/régularisation; PostgreSQL, idempotence, concurrence, intégrité, aucun fonds)', cases: paymentMissionClose },
     { name: 'P0-DISPUTE-1 — cycle Claim réel (PostgreSQL, autorisation, idempotence, concurrence, rollback, preuve, deadline configurée, résolution déterministe/ADMIN, restrictions réversibles, M1, audit, séparation DEMO/API)', cases: claimDomain },
+    { name: 'P0-REPLACEMENT — workflow persistant (REPLACE, ownership, idempotence/concurrence, Application → Proposal → Contract, liens historiques, notifications, paiements non transférés)', cases: replacementDomain },
     { name: 'P0-NOTIFICATIONS — couche de notification (événement → Outbox/Automation existants → In-App → Push/Email en abstraction; destinataires, lu/non lu, idempotence, rejeu, concurrence, retry, couverture auditée)', cases: notificationLayer },
     { name: 'P0-AUTO-2 — CONTRACT_ACTIVATED réel (Outbox → Queue → Worker → AutomationEngine → échéancier salarial, échéancier de commission, échéances, rappels; PostgreSQL, idempotence, concurrence, retry, dead-letter, rollback, audit, séparation DEMO/API)', cases: contractAutomation },
   ];

@@ -107,7 +107,9 @@ import { createContractAutomation, type ContractAutomation } from '../automation
 import { createAutomationWorker, type AutomationWorker } from '../automation/worker';
 import type { AutomationStores } from '../automation/records';
 import { createSqlClaimStore } from '../persistence/sqlClaimStores';
+import { createSqlReplacementStore } from '../persistence/sqlReplacementStores';
 import { createClaimRepository, createClaimApiHandlers, type ClaimRepositoryStores, type OpenClaimRepository } from '../disputes/claimRepository';
+import { createReplacementRepository, createReplacementApiHandlers, type OpenReplacementRepository, type ReplacementRepositoryStores } from '../replacements/replacementRepository';
 import { createClaimAutomation } from '../disputes/claimAutomation';
 import { resolveClaimEvidenceDeadline } from '../disputes/config';
 // P0-NOTIFICATIONS — couche de notification : le canal In-App est persisté, et
@@ -177,6 +179,8 @@ export interface WorkerComposition {
   contracts?: OpenContractRepository;
   /** P0-DISPUTE-1 : cycle Claim persistent, absent hors PostgreSQL durable. */
   claims?: OpenClaimRepository;
+  /** P0-REPLACEMENT : dossier persistant, candidature/proposition/consentement/contrat réutilisés. */
+  replacements?: OpenReplacementRepository;
   claimDeadlineConfiguration?: ReturnType<typeof resolveClaimEvidenceDeadline>;
   /**
    * P0-AUTO-2 : automatisation contractuelle (handler `CONTRACT_ACTIVATED` et
@@ -413,11 +417,17 @@ export function composeWorker(
 
   const runApplicationInTransaction = persistence.database
     ? async <T>(operation: (txStores: ApplicationRepositoryStores) => Promise<T>): Promise<T> => {
-        return persistence.database!.run(async tx => operation({
-          applications: createSqlApplicationStore(tx),
-          offers: createSqlOfferStore(tx),
-          users: createSqlUserStore(tx),
-        }));
+        return persistence.database!.run(async tx => {
+          const automationStores = createSqlAutomationStores(tx);
+          return operation({
+            applications: createSqlApplicationStore(tx),
+            offers: createSqlOfferStore(tx),
+            users: createSqlUserStore(tx),
+            contracts: createSqlContractStore(tx),
+            replacements: createSqlReplacementStore(tx),
+            outbox: automationStores.outbox,
+          });
+        });
       }
     : undefined;
 
@@ -427,6 +437,11 @@ export function composeWorker(
           applications: persistence.core.applications,
           offers: persistence.core.offers,
           users: stores.users,
+          ...(persistence.database ? {
+            contracts: createSqlContractStore(persistence.database),
+            replacements: createSqlReplacementStore(persistence.database),
+            outbox: createSqlAutomationStores(persistence.database).outbox,
+          } : {}),
         },
         runInTransaction: runApplicationInTransaction,
         now: overrides.now,
@@ -439,12 +454,17 @@ export function composeWorker(
 
   const runProposalInTransaction = persistence.database
     ? async <T>(operation: (stores: ProposalRepositoryStores) => Promise<T>): Promise<T> => {
-        return persistence.database!.run(async tx => operation({
-          proposals: createSqlProposalStore(tx),
-          applications: createSqlApplicationStore(tx),
-          offers: createSqlOfferStore(tx),
-          users: createSqlUserStore(tx),
-        }));
+        return persistence.database!.run(async tx => {
+          const automationStores = createSqlAutomationStores(tx);
+          return operation({
+            proposals: createSqlProposalStore(tx),
+            applications: createSqlApplicationStore(tx),
+            offers: createSqlOfferStore(tx),
+            users: createSqlUserStore(tx),
+            replacements: createSqlReplacementStore(tx),
+            outbox: automationStores.outbox,
+          });
+        });
       }
     : undefined;
 
@@ -455,6 +475,10 @@ export function composeWorker(
           applications: persistence.core.applications,
           offers: persistence.core.offers,
           users: stores.users,
+          ...(persistence.database ? {
+            replacements: createSqlReplacementStore(persistence.database),
+            outbox: createSqlAutomationStores(persistence.database).outbox,
+          } : {}),
         },
         runInTransaction: runProposalInTransaction,
         now: overrides.now,
@@ -478,6 +502,7 @@ export function composeWorker(
             offers: createSqlOfferStore(tx),
             users: createSqlUserStore(tx),
             claimRestrictions: createSqlClaimStore(tx),
+            replacements: createSqlReplacementStore(tx),
             outbox: automationStores.outbox,
           });
         });
@@ -492,6 +517,10 @@ export function composeWorker(
           applications: persistence.core.applications,
           offers: persistence.core.offers,
           users: stores.users,
+          ...(persistence.database ? {
+            replacements: createSqlReplacementStore(persistence.database),
+            outbox: createSqlAutomationStores(persistence.database).outbox,
+          } : {}),
         },
         runInTransaction: runContractInTransaction,
         now: overrides.now,
@@ -540,6 +569,7 @@ export function composeWorker(
     contracts: createSqlContractStore(tx),
     payments: createSqlPaymentStores(tx).payments,
     users: createSqlUserStore(tx),
+    replacements: createSqlReplacementStore(tx),
     automation: createAutomationStores(tx),
     sql: tx,
   });
@@ -557,6 +587,35 @@ export function composeWorker(
       })
     : undefined;
   const claimHandlers = claimRepository ? createClaimApiHandlers(claimRepository) : {};
+
+  const buildReplacementStores = (tx: Parameters<typeof createSqlReplacementStore>[0]): ReplacementRepositoryStores => ({
+    replacements: createSqlReplacementStore(tx),
+    contracts: createSqlContractStore(tx),
+    offers: createSqlOfferStore(tx),
+    users: createSqlUserStore(tx),
+    automation: createAutomationStores(tx),
+  });
+  const replacementCycleAvailable = Boolean(persistence.database && persistence.core);
+  const runReplacementInTransaction = replacementCycleAvailable && persistence.database
+    ? async <T>(operation: (replacementStores: ReplacementRepositoryStores) => Promise<T>): Promise<T> =>
+        persistence.database!.run(async tx => operation(buildReplacementStores(tx)))
+    : undefined;
+  const replacementRepository = replacementCycleAvailable && persistence.database && persistence.core
+    ? createReplacementRepository({
+        stores: {
+          replacements: createSqlReplacementStore(persistence.database),
+          contracts: persistence.core.contracts,
+          offers: persistence.core.offers,
+          users: stores.users,
+          automation: createAutomationStores(persistence.database),
+        },
+        runInTransaction: runReplacementInTransaction,
+        ...(overrides.now ? { now: overrides.now } : {}),
+      })
+    : undefined;
+  const replacementHandlers = replacementRepository
+    ? createReplacementApiHandlers(replacementRepository)
+    : {};
 
   const paymentProviderRegistry = createPaymentProviderRegistry(
     overrides.paymentProviderAdapter ? [overrides.paymentProviderAdapter] : [],
@@ -745,6 +804,9 @@ export function composeWorker(
     ...contractHandlers,
     // P0-DISPUTE-1 — Claim uniquement en PostgreSQL durable, DEMO reste séparé.
     ...claimHandlers,
+    // P0-REPLACEMENT — lectures et publication d'offre; sélection et contrat
+    // passent par les repositories Application/Proposal/Contract existants.
+    ...replacementHandlers,
     // P0-PAY-1 — cycle Payment existant.
     ...paymentHandlers,
     ...(persistence.database && mode === 'postgres' ? createSalaryConfirmationHandlers(persistence.database, overrides.salaryTestOtpSink, createSqlAutomationStores) : {}),
@@ -765,6 +827,7 @@ export function composeWorker(
     proposals: proposalRepository,
     contracts: contractRepository,
     claims: claimRepository,
+    replacements: replacementRepository,
     claimDeadlineConfiguration,
     payments: paymentRepository,
     paymentReconciliation,

@@ -106,9 +106,6 @@ export interface AdminCollectionApi {
   listDocuments(page?: ApiPageOptions, filter?: Record<string, string>): Promise<CursorPage<DocumentMetadata>>;
   listAudit(page?: ApiPageOptions, filter?: Record<string, string>): Promise<CursorPage<ProductionAuditEvent>>;
   listStats(): Promise<RevenueMetrics>;
-  assignReplacement(replacementId: string, candidateId: string, command: IdempotentCommandOptions): Promise<ReplacementDossier>;
-  transferReplacement(replacementId: string, command: IdempotentCommandOptions): Promise<ReplacementDossier>;
-  finalizeReplacement(replacementId: string, command: IdempotentCommandOptions): Promise<{ replacement: ReplacementDossier; contract: Contract }>;
   blockUser(userId: string, reason: string, command: IdempotentCommandOptions): Promise<UserProfile>;
   unblockUser(userId: string, command: IdempotentCommandOptions): Promise<UserProfile>;
   approvePayment(paymentId: string, command: IdempotentCommandOptions): Promise<CommissionPaymentRecord>;
@@ -243,6 +240,10 @@ export class ApiRepository {
     this.replacements = {
       getMine: (page: ApiPageOptions = {}) => this.page<ReplacementDossier>('/my/replacements', page),
       getById: (replacementId: string) => this.http.request<ReplacementDossier | null>(`/replacements/${encodeURIComponent(replacementId)}`),
+      publishOffer: (replacementId: string, input: CreateOfferInput, command: IdempotentCommandOptions) =>
+        this.http.request<ReplacementDossier>(`/replacements/${encodeURIComponent(replacementId)}/offer`, {
+          method: 'POST', body: input, idempotencyKey: command.idempotencyKey,
+        }),
     };
 
     this.messages = {
@@ -282,9 +283,6 @@ export class ApiRepository {
       listDocuments: (page, filter) => adminPage<DocumentMetadata>('documents', page, filter),
       listAudit: (page, filter) => adminPage<ProductionAuditEvent>('audit', page, filter),
       listStats: () => this.http.request<RevenueMetrics>('/admin/stats'),
-      assignReplacement: (replacementId, candidateId, command) => this.http.request<ReplacementDossier>(`/admin/replacements/${encodeURIComponent(replacementId)}/assign`, { method: 'POST', body: { candidateId }, idempotencyKey: command.idempotencyKey }),
-      transferReplacement: (replacementId, command) => this.http.request<ReplacementDossier>(`/admin/replacements/${encodeURIComponent(replacementId)}/transfer`, { method: 'POST', body: {}, idempotencyKey: command.idempotencyKey }),
-      finalizeReplacement: (replacementId, command) => this.http.request<{ replacement: ReplacementDossier; contract: Contract }>(`/admin/replacements/${encodeURIComponent(replacementId)}/finalize`, { method: 'POST', body: {}, idempotencyKey: command.idempotencyKey }),
       blockUser: (userId, reason, command) => this.http.request<UserProfile>(`/admin/users/${encodeURIComponent(userId)}/block`, { method: 'POST', body: { reason }, idempotencyKey: command.idempotencyKey }),
       unblockUser: (userId, command) => this.http.request<UserProfile>(`/admin/users/${encodeURIComponent(userId)}/unblock`, { method: 'POST', body: {}, idempotencyKey: command.idempotencyKey }),
       approvePayment: (paymentId, command) => this.http.request<CommissionPaymentRecord>(`/admin/payments/${encodeURIComponent(paymentId)}/approve`, { method: 'POST', body: {}, idempotencyKey: command.idempotencyKey }),

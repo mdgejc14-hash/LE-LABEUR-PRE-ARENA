@@ -112,6 +112,7 @@ export const API_ROUTE_CONTRACTS = [
   { key: 'incidents.report', method: 'POST', path: '/api/v1/incidents', authentication: 'required', scope: 'owner', idempotency: true, auditOnMutation: true },
   { key: 'replacements.mine.list', method: 'GET', path: '/api/v1/my/replacements', authentication: 'required', scope: 'self', collection: true },
   { key: 'replacements.read', method: 'GET', path: '/api/v1/replacements/:replacementId', authentication: 'required', scope: 'owner' },
+  { key: 'replacements.offer.create', method: 'POST', path: '/api/v1/replacements/:replacementId/offer', authentication: 'required', scope: 'owner', roles: ['EMPLOYER'], idempotency: true, auditOnMutation: true },
 
   { key: 'messages.conversations.mine', method: 'GET', path: '/api/v1/my/conversations', authentication: 'required', scope: 'self', collection: true },
   { key: 'messages.conversation.create', method: 'POST', path: '/api/v1/conversations', authentication: 'required', scope: 'participant', idempotency: true, auditOnMutation: true },
@@ -165,6 +166,8 @@ export const API_ROUTE_CONTRACTS = [
   { key: 'admin.incidents.list', method: 'GET', path: '/api/v1/admin/incidents', authentication: 'required', scope: 'admin', permission: 'incidents:read:any', collection: true },
   { key: 'admin.incidents.arbitrate', method: 'POST', path: '/api/v1/admin/incidents/:incidentId/arbitrate', authentication: 'required', scope: 'admin', permission: 'incidents:arbitrate', idempotency: true, auditOnMutation: true },
   { key: 'admin.replacements.list', method: 'GET', path: '/api/v1/admin/replacements', authentication: 'required', scope: 'admin', permission: 'replacements:read:any', collection: true },
+  { key: 'admin.replacements.read', method: 'GET', path: '/api/v1/admin/replacements/:replacementId', authentication: 'required', scope: 'admin', permission: 'replacements:read:any' },
+  // Legacy direct assignment/transfer/finalize commands deliberately remain unhandled: candidate consent is required through the Proposal pipeline.
   { key: 'admin.replacements.assign', method: 'POST', path: '/api/v1/admin/replacements/:replacementId/assign', authentication: 'required', scope: 'admin', permission: 'replacements:manage', idempotency: true, auditOnMutation: true },
   { key: 'admin.replacements.transfer', method: 'POST', path: '/api/v1/admin/replacements/:replacementId/transfer', authentication: 'required', scope: 'admin', permission: 'replacements:manage', idempotency: true, auditOnMutation: true },
   { key: 'admin.replacements.finalize', method: 'POST', path: '/api/v1/admin/replacements/:replacementId/finalize', authentication: 'required', scope: 'admin', permission: 'replacements:manage', idempotency: true, auditOnMutation: true },

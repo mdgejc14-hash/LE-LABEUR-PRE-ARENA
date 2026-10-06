@@ -95,6 +95,60 @@ export function toOfferProjection(record: OfferRecord, employer: ServerUserRecor
   };
 }
 
+export function buildOfferRecord(
+  offerId: string,
+  employerId: string,
+  data: ServerCreateOfferInput,
+  nowIso: string,
+): OfferRecord {
+  if (!data.title || typeof data.title !== 'string' || !data.title.trim()) {
+    throw new ApiError('VALIDATION_ERROR', 'Le titre de l’offre est obligatoire.');
+  }
+  if (!data.contractType || typeof data.contractType !== 'string' || !data.contractType.trim()) {
+    throw new ApiError('VALIDATION_ERROR', 'Le type de contrat est obligatoire.');
+  }
+  if (typeof data.remuneration !== 'number' || !Number.isFinite(data.remuneration) || data.remuneration < 0) {
+    throw new ApiError('VALIDATION_ERROR', 'La rémunération doit être un nombre supérieur ou égal à zéro.');
+  }
+  if (!data.location || typeof data.location !== 'string' || !data.location.trim()) {
+    throw new ApiError('VALIDATION_ERROR', 'Le lieu de la mission est obligatoire.');
+  }
+  if (data.durationMonths !== undefined && data.durationMonths !== null
+    && (!Number.isInteger(data.durationMonths) || data.durationMonths <= 0)) {
+    throw new ApiError('VALIDATION_ERROR', 'La durée en mois doit être un entier strictement positif.');
+  }
+
+  return {
+    id: offerId,
+    employerId,
+    title: data.title.trim(),
+    contractType: data.contractType.trim(),
+    remuneration: data.remuneration,
+    currency: data.currency?.trim() || 'FCFA',
+    location: data.location.trim(),
+    ...(data.departmentId?.trim() ? { departmentId: data.departmentId.trim() } : {}),
+    ...(data.municipalityId?.trim() ? { municipalityId: data.municipalityId.trim() } : {}),
+    ...(data.arrondissementId?.trim() ? { arrondissementId: data.arrondissementId.trim() } : {}),
+    ...(data.localityId?.trim() ? { localityId: data.localityId.trim() } : {}),
+    ...(data.locationLabel?.trim() ? { locationLabel: data.locationLabel.trim() } : {}),
+    ...(data.domainId?.trim() ? { domainId: data.domainId.trim() } : {}),
+    ...(data.jobId?.trim() ? { jobId: data.jobId.trim() } : {}),
+    postedDate: nowIso,
+    isUrgent: Boolean(data.isUrgent),
+    isLeLabeurJob: false,
+    skills: Array.isArray(data.skills) ? data.skills.filter(skill => typeof skill === 'string') : [],
+    summary: typeof data.summary === 'string' ? data.summary.trim() : '',
+    responsibilities: Array.isArray(data.responsibilities) ? data.responsibilities.filter(item => typeof item === 'string') : [],
+    conditions: Array.isArray(data.conditions) ? data.conditions.filter(item => typeof item === 'string') : [],
+    selectionProcess: Array.isArray(data.selectionProcess) ? data.selectionProcess.filter(item => typeof item === 'string') : [],
+    ...(data.startDate?.trim() ? { startDate: data.startDate.trim() } : {}),
+    ...(data.durationMonths ? { durationMonths: data.durationMonths } : {}),
+    status: 'ACTIVE',
+    createdAt: nowIso,
+    updatedAt: nowIso,
+  };
+}
+
 export function createOfferRepository(dependencies: OfferRepositoryDependencies): ServerOfferRepository {
   const { stores, runInTransaction } = dependencies;
   const now = dependencies.now ?? (() => new Date());
@@ -131,57 +185,9 @@ export function createOfferRepository(dependencies: OfferRepositoryDependencies)
         }
       }
 
-      // Validation des données obligatoires
-      if (!data.title || typeof data.title !== 'string' || !data.title.trim()) {
-        throw new ApiError('VALIDATION_ERROR', 'Le titre de l’offre est obligatoire.');
-      }
-      if (!data.contractType || typeof data.contractType !== 'string' || !data.contractType.trim()) {
-        throw new ApiError('VALIDATION_ERROR', 'Le type de contrat est obligatoire.');
-      }
-      if (typeof data.remuneration !== 'number' || !Number.isFinite(data.remuneration) || data.remuneration < 0) {
-        throw new ApiError('VALIDATION_ERROR', 'La rémunération doit être un nombre supérieur ou égal à zéro.');
-      }
-      if (!data.location || typeof data.location !== 'string' || !data.location.trim()) {
-        throw new ApiError('VALIDATION_ERROR', 'Le lieu de la mission est obligatoire.');
-      }
-      if (data.durationMonths !== undefined && data.durationMonths !== null) {
-        if (!Number.isInteger(data.durationMonths) || data.durationMonths <= 0) {
-          throw new ApiError('VALIDATION_ERROR', 'La durée en mois doit être un entier strictement positif.');
-        }
-      }
-
       const nowIso = now().toISOString();
       const offerId = newEntityId('ofr');
-
-      const record: OfferRecord = {
-        id: offerId,
-        employerId: actor.id,
-        title: data.title.trim(),
-        contractType: data.contractType.trim(),
-        remuneration: data.remuneration,
-        currency: data.currency?.trim() || 'FCFA',
-        location: data.location.trim(),
-        ...(data.departmentId?.trim() ? { departmentId: data.departmentId.trim() } : {}),
-        ...(data.municipalityId?.trim() ? { municipalityId: data.municipalityId.trim() } : {}),
-        ...(data.arrondissementId?.trim() ? { arrondissementId: data.arrondissementId.trim() } : {}),
-        ...(data.localityId?.trim() ? { localityId: data.localityId.trim() } : {}),
-        ...(data.locationLabel?.trim() ? { locationLabel: data.locationLabel.trim() } : {}),
-        ...(data.domainId?.trim() ? { domainId: data.domainId.trim() } : {}),
-        ...(data.jobId?.trim() ? { jobId: data.jobId.trim() } : {}),
-        postedDate: nowIso,
-        isUrgent: Boolean(data.isUrgent),
-        isLeLabeurJob: false,
-        skills: Array.isArray(data.skills) ? data.skills.filter(s => typeof s === 'string') : [],
-        summary: typeof data.summary === 'string' ? data.summary.trim() : '',
-        responsibilities: Array.isArray(data.responsibilities) ? data.responsibilities.filter(s => typeof s === 'string') : [],
-        conditions: Array.isArray(data.conditions) ? data.conditions.filter(s => typeof s === 'string') : [],
-        selectionProcess: Array.isArray(data.selectionProcess) ? data.selectionProcess.filter(s => typeof s === 'string') : [],
-        ...(data.startDate?.trim() ? { startDate: data.startDate.trim() } : {}),
-        ...(data.durationMonths ? { durationMonths: data.durationMonths } : {}),
-        status: 'ACTIVE',
-        createdAt: nowIso,
-        updatedAt: nowIso,
-      };
+      const record = buildOfferRecord(offerId, actor.id, data, nowIso);
 
       let saved: OfferRecord;
       if (dependencies.runInTransaction) {

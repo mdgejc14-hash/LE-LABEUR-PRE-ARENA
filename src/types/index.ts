@@ -606,15 +606,21 @@ export interface Incident {
 
 export interface ReplacementDossier {
   id: string;
+  /** Legacy display alias; persistent replacements point this at the source Claim. */
   incidentId: string;
+  /** Canonical persistent incident reference for the PostgreSQL workflow. */
+  claimId?: string;
   originalContractId: string;
   employerId: string;
   employerName: string;
-  urgentOfferId: string;
-  urgentOfferTitle: string;
+  /** Populated after the employer publishes the replacement offer. */
+  urgentOfferId?: string;
+  urgentOfferTitle?: string;
   selectedCandidateId?: string;
   selectedCandidatePublicId?: string;
   selectedCandidateName?: string;
+  selectedApplicationId?: string;
+  selectedProposalId?: string;
   newContractId?: string;
   status: 'PENDING_OFFER' | 'SOURCING_CANDIDATES' | 'CANDIDATE_SELECTED' | 'TRANSFERRED_TO_EMPLOYER' | 'CONTRACT_FINALIZED';
   openedAt?: string;

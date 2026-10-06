@@ -15,6 +15,9 @@
  */
 
 import type { Application } from '../../types';
+import { createDomainEvent } from '../automation/foundation';
+import type { DomainEventOutbox } from '../automation/records';
+import type { ReplacementStore } from '../replacements/records';
 import {
   APPLICATION_DECISION_RULES,
   DEFAULT_REJECTION_NOTE,
@@ -27,7 +30,7 @@ import type { ApiRouteKey } from '../api/routeContracts';
 import type { ApiRouteHandler, ApiRouteContext } from '../api/worker';
 import { newEntityId } from '../identity/ids';
 import type { ServerUserRecord, UserStore } from '../identity/stores';
-import type { ApplicationRecord, ApplicationStore, CoreStoreError, OfferRecord, OfferStore } from '../persistence/coreRecords';
+import type { ApplicationRecord, ApplicationStore, ContractStore, CoreStoreError, OfferRecord, OfferStore } from '../persistence/coreRecords';
 import type {
   AuthenticatedActor,
   CursorPage,
@@ -43,6 +46,12 @@ export interface ApplicationRepositoryStores {
   applications: ApplicationStore;
   offers: OfferStore;
   users: UserStore;
+  /** P0-REPLACEMENT links selection to the existing Application record. */
+  replacements?: Pick<ReplacementStore,
+    'findByOfferIdForUpdate' | 'findBySelectedApplicationForUpdate' | 'selectApplication' | 'releaseSelection'>;
+  contracts?: Pick<ContractStore, 'findById'>;
+  /** P0-NOTIFICATIONS consumes these events from the existing transactional outbox. */
+  outbox?: DomainEventOutbox;
 }
 
 export interface ApplicationRepositoryDependencies {
@@ -268,6 +277,19 @@ export function createApplicationRepository(
           throw new ApiError('FORBIDDEN', 'Action non autorisée : un candidat ne peut retirer que sa propre candidature.');
         }
 
+        const replacementForApplication = currentStores.replacements
+          ? await currentStores.replacements.findBySelectedApplicationForUpdate(application.id)
+          : null;
+        const replacementForOffer = input.decision === 'SHORTLIST' && currentStores.replacements
+          ? await currentStores.replacements.findByOfferIdForUpdate(offer.id)
+          : null;
+
+        if (replacementForApplication && input.decision !== 'SHORTLIST') {
+          if (replacementForApplication.status !== 'CANDIDATE_SELECTED' || replacementForApplication.selectedProposalId) {
+            throw new ApiError('BUSINESS_RULE_VIOLATION', 'Une candidature déjà proposée ou acceptée ne peut plus être retirée ni rejetée.', undefined, 409);
+          }
+        }
+
         // Une candidature déjà liée à un contrat sort du périmètre P0-E4.
         if (application.contractId) {
           throw new ApiError('BUSINESS_RULE_VIOLATION', 'Cette candidature est déjà associée à un contrat.', undefined, 409);
@@ -317,10 +339,56 @@ export function createApplicationRepository(
           );
         }
 
-        // Événement métier futur à produire : `rule.event` (APPLICATION_EXAMINED,
-        // APPLICATION_SHORTLISTED, APPLICATION_REJECTED, APPLICATION_WITHDRAWN).
-        // P0-E4 ne crée ni moteur Outbox, ni file, ni consumer : seule la
-        // transition est persistée, dans la même transaction PostgreSQL.
+        if (input.decision === 'SHORTLIST' && replacementForOffer) {
+          const selected = await currentStores.replacements!.selectApplication({
+            replacementId: replacementForOffer.replacementId,
+            applicationId: updated.id,
+            candidateId: updated.candidateId,
+            at: timestamp,
+          });
+          if (!selected) {
+            throw new ApiError('BUSINESS_RULE_VIOLATION', 'Un autre candidat a déjà été sélectionné pour ce remplacement.', undefined, 409);
+          }
+        }
+
+        if (replacementForApplication && (input.decision === 'REJECT' || input.decision === 'WITHDRAW')) {
+          const released = await currentStores.replacements!.releaseSelection({
+            replacementId: replacementForApplication.replacementId,
+            applicationId: updated.id,
+            at: timestamp,
+          });
+          if (!released) {
+            throw new ApiError('BUSINESS_RULE_VIOLATION', 'La sélection du remplacement a changé de façon concurrente.', undefined, 409);
+          }
+        }
+
+        const notificationEvent = input.decision === 'SHORTLIST'
+          ? 'APPLICATION_SHORTLISTED'
+          : input.decision === 'REJECT'
+            ? 'APPLICATION_REJECTED'
+            : input.decision === 'WITHDRAW'
+              ? 'APPLICATION_WITHDRAWN'
+              : null;
+        if (notificationEvent) {
+          await currentStores.outbox?.append(createDomainEvent({
+            eventId: `application:${updated.id}:${notificationEvent}`,
+            eventType: notificationEvent,
+            aggregateType: 'APPLICATION',
+            aggregateId: updated.id,
+            actorId: actor.id,
+            timestamp,
+            payload: {
+              applicationId: updated.id,
+              offerId: updated.offerId,
+              employerId: offer.employerId,
+              candidateId: updated.candidateId,
+              ...(input.decision === 'REJECT' ? { reason: reason ?? DEFAULT_REJECTION_NOTE } : {}),
+              ...(replacementForOffer ? { replacementId: replacementForOffer.replacementId } : {}),
+              ...(replacementForApplication ? { replacementId: replacementForApplication.replacementId } : {}),
+            },
+            source: 'api:P0-E4',
+          }));
+        }
         return toProjectionFromStores(updated, currentStores);
       };
 
@@ -389,9 +457,22 @@ export function createApplicationRepository(
             return toApplicationProjection(existing, offer, candidate, employer);
           }
 
-          // Événement métier futur à produire : APPLICATION_SUBMITTED. P0-E3
-          // persiste seulement la candidature; il n'ajoute ni moteur d'événements
-          // ni consumer Outbox.
+          const replacement = currentStores.replacements
+            ? await currentStores.replacements.findByOfferIdForUpdate(offer.id)
+            : null;
+          if (replacement) {
+            if (replacement.status !== 'SOURCING_CANDIDATES') {
+              throw new ApiError('BUSINESS_RULE_VIOLATION', 'Cette offre de remplacement n’accepte plus de candidatures.', undefined, 409);
+            }
+            if (!currentStores.contracts) {
+              throw new ApiError('NOT_IMPLEMENTED', 'Le contrôle du contrat source du remplacement n’est pas disponible.', undefined, 501);
+            }
+            const originalContract = await currentStores.contracts.findById(replacement.originalContractId);
+            if (!originalContract || originalContract.employeeId === actor.id) {
+              throw new ApiError('BUSINESS_RULE_VIOLATION', 'Le titulaire du contrat remplacé ne peut pas candidater à son propre remplacement.', undefined, 409);
+            }
+          }
+
           const appliedAt = now().toISOString();
           const record: ApplicationRecord = {
             id: newEntityId('app'),
@@ -409,6 +490,21 @@ export function createApplicationRepository(
             ...(payload.note ? { note: payload.note } : {}),
           };
           const saved = await currentStores.applications.create(record);
+          await currentStores.outbox?.append(createDomainEvent({
+            eventId: `application:${saved.id}:APPLICATION_SUBMITTED`,
+            eventType: 'APPLICATION_SUBMITTED',
+            aggregateType: 'APPLICATION',
+            aggregateId: saved.id,
+            actorId: actor.id,
+            timestamp: appliedAt,
+            payload: {
+              applicationId: saved.id,
+              offerId: saved.offerId,
+              employerId: offer.employerId,
+              candidateId: saved.candidateId,
+            },
+            source: 'api:P0-E3',
+          }));
           return toApplicationProjection(saved, offer, candidate, employer);
         };
 

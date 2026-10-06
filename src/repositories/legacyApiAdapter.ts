@@ -178,9 +178,11 @@ export function createLegacyApiRepositoryAdapter(api: ApiRepository): AppReposit
     getAllReplacements: async () => firstPage(api.admin.listReplacements({ limit: 100 })),
     getReplacementById: (replacementId: string, _actorId: string) => api.replacements.getById(replacementId),
     createReplacementFromIncident: unsupported('replacements.createReplacementFromIncident'),
-    assignReplacementCandidate: (replacementId: string, candidateId: string, _actorId: string) => api.admin.assignReplacement(replacementId, candidateId, { idempotencyKey: key() }),
-    transferCandidateToEmployer: (replacementId: string, _actorId: string) => api.admin.transferReplacement(replacementId, { idempotencyKey: key() }),
-    finalizeReplacementContract: (replacementId: string, _actorId: string) => api.admin.finalizeReplacement(replacementId, { idempotencyKey: key() }),
+    // Fermés volontairement : ce transfert historique contourne Application,
+    // Proposal et le consentement. La voie persistante suit ces repositories.
+    assignReplacementCandidate: unsupported('replacements.assignCandidate (utiliser Application.shortlist)'),
+    transferCandidateToEmployer: unsupported('replacements.transferCandidate (consentement Proposal requis)'),
+    finalizeReplacementContract: unsupported('replacements.finalizeContract (utiliser Contract.create après ACCEPT)'),
 
     getConversations: async (_userId: string) => firstPage(api.messages.getMyConversations({ limit: 100 })),
     getMessages: async (conversationId: string, _userId: string) => firstPage(api.messages.getMessages(conversationId, { limit: 100 })),

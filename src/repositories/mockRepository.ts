@@ -2139,6 +2139,14 @@ export class MockService implements
     return replacement;
   }
 
+  private requireMockReplacementOffer(
+    replacement: ReplacementDossier,
+  ): asserts replacement is ReplacementDossier & { urgentOfferId: string; urgentOfferTitle: string } {
+    if (!replacement.urgentOfferId || !replacement.urgentOfferTitle) {
+      throw new Error('L’offre de remplacement n’a pas encore été publiée.');
+    }
+  }
+
   async createReplacementFromIncident(incident: Incident, actorId: string): Promise<ReplacementDossier> {
     const timestamp = this.nowDateTimeString();
     const actor = this.requireActor(actorId);
@@ -2188,6 +2196,7 @@ export class MockService implements
   async assignReplacementCandidate(replacementId: string, candidateId: string, actorId: string): Promise<ReplacementDossier> {
     const rep = this.replacements.find(r => r.id === replacementId);
     if (!rep) throw new Error('Dossier de remplacement introuvable');
+    this.requireMockReplacementOffer(rep);
     const actor = this.requireActor(actorId);
     this.assertOperationalActor(actor, 'Le transfert de remplacement');
     if (actor.role !== 'ADMIN' && !(actor.role === 'EMPLOYER' && actor.id === rep.employerId)) {
@@ -2244,6 +2253,7 @@ export class MockService implements
   async transferCandidateToEmployer(replacementId: string, actorId: string): Promise<ReplacementDossier> {
     const rep = this.replacements.find(r => r.id === replacementId);
     if (!rep) throw new Error('Dossier de remplacement introuvable');
+    this.requireMockReplacementOffer(rep);
     const actor = this.requireActor(actorId);
     this.assertOperationalActor(actor, 'La finalisation de remplacement');
     if (actor.role !== 'ADMIN' && !(actor.role === 'EMPLOYER' && actor.id === rep.employerId)) {
@@ -2274,6 +2284,7 @@ export class MockService implements
   async finalizeReplacementContract(replacementId: string, actorId: string): Promise<{ replacement: ReplacementDossier; newContract: Contract }> {
     const rep = this.replacements.find(r => r.id === replacementId);
     if (!rep || !rep.selectedCandidateId) throw new Error('Candidat non sélectionné pour la finalisation');
+    this.requireMockReplacementOffer(rep);
     const actor = this.requireActor(actorId);
     if (actor.role !== 'ADMIN' && !(actor.role === 'EMPLOYER' && actor.id === rep.employerId)) {
       throw new Error('Action non autorisée sur ce dossier de remplacement.');

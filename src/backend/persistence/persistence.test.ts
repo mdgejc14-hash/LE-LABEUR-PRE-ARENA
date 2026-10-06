@@ -45,6 +45,7 @@ import {
 import { createInMemoryCoreStores } from './coreStores';
 import { createPostgresDatabase } from './postgresDatabase';
 import { createSqlCoreStores } from './sqlCoreStores';
+import { REPLACEMENT_STATUS_VALUES } from '../replacements/records';
 import {
   SqlClientContractError,
   postgresErrorCode,
@@ -580,6 +581,8 @@ export async function runPostgresFoundationTests(): Promise<PostgresFoundationTe
       'automation_audit_ledger',
       'automation_deadlines',
     ];
+    // P0-REPLACEMENT : un dossier durable distinct du noyau.
+    const replacementTables = ['replacements'];
     // P0-PAY-1 : agrégat et tentatives de déclaration. P0-PAY-3 : batch,
     // ledger de règlement externe et revue ADMIN, sans table de provider réel.
     const paymentTables = [
@@ -591,19 +594,28 @@ export async function runPostgresFoundationTests(): Promise<PostgresFoundationTe
     const extra = [...schema.keys()].filter(key =>
       !CORE_TABLES.includes(key as (typeof CORE_TABLES)[number])
       && !automationTables.includes(key)
-      && !paymentTables.includes(key));
+      && !paymentTables.includes(key)
+      && !replacementTables.includes(key));
     assert(extra.length === 0, `tables hors noyau détectées: ${extra.join(', ')}`);
 
     const paymentMigrationName = files.find(name => name.startsWith('0008'));
     const reconciliationMigrationName = files.find(name => name.startsWith('0009'));
+    const replacementMigrationName = files.find(name => name.startsWith('0013'));
     assert(paymentMigrationName === '0008_payment_cycle.sql', `migration 0008 attendue, reçue ${String(paymentMigrationName)}`);
     assert(reconciliationMigrationName === '0009_payment_external_reconciliation.sql', `migration 0009 attendue, reçue ${String(reconciliationMigrationName)}`);
+    assert(replacementMigrationName === '0013_replacements.sql', `migration 0013 attendue, reçue ${String(replacementMigrationName)}`);
     const paymentSql = paymentMigrationName
       ? stripSqlComments(read(resolve(MIGRATIONS_DIR, paymentMigrationName)))
       : '';
     const reconciliationSql = reconciliationMigrationName
       ? stripSqlComments(read(resolve(MIGRATIONS_DIR, reconciliationMigrationName)))
       : '';
+    const replacementSql = replacementMigrationName
+      ? stripSqlComments(read(resolve(MIGRATIONS_DIR, replacementMigrationName)))
+      : '';
+    assert(replacementSql.includes('CREATE TABLE IF NOT EXISTS replacements ('), 'la table replacements doit être créée par 0013');
+    assert(replacementSql.includes('replacements_original_contract_unique_idx'), 'un seul remplacement par contrat source');
+    assert(replacementSql.includes('contracts_replacement_id_fkey') && replacementSql.includes('contracts_replaced_contract_id_fkey'), 'les liens contrats ↔ remplacement doivent être contraints');
     for (const table of ['payments', 'payment_declarations']) {
       assert(new RegExp(`CREATE TABLE IF NOT EXISTS ${table}\\b`).test(paymentSql), `${table} doit rester créé par 0008`);
     }
@@ -635,6 +647,7 @@ export async function runPostgresFoundationTests(): Promise<PostgresFoundationTe
       ['contracts.status', CONTRACT_STATUS_VALUES],
       ['contracts.commission_status', COMMISSION_STATUS_VALUES],
       ['proposals.status', PROPOSAL_STATUS_VALUES],
+      ['replacements.status', REPLACEMENT_STATUS_VALUES],
     ];
     for (const [key, values] of expected) {
       const found = domains.get(key);
