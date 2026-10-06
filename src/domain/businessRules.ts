@@ -24,14 +24,14 @@ export interface SalaryBreakdown {
   employeeShareAmount: number;
 }
 
-export function calculateFirstMonthCommission(salary: number): number {
+export function calculateFirstMonthCommission(salary: number, percentage = 25): number {
   if (salary <= 0) return 0;
-  return Math.round(salary * 0.25);
+  return Math.round(salary * percentage / 100);
 }
 
-export function calculateFirstMonthEmployeeShare(salary: number): number {
+export function calculateFirstMonthEmployeeShare(salary: number, percentage = 25): number {
   if (salary <= 0) return 0;
-  return salary - calculateFirstMonthCommission(salary);
+  return salary - calculateFirstMonthCommission(salary, percentage);
 }
 
 export function calculateLaterMonthCommission(): number {
@@ -71,6 +71,8 @@ export type PaymentScheduleBuildContext = {
   durationMonths: number;
   monthlySalary: number;
   currency: string;
+  /** Contract-configured rate; defaults to the existing 25% M1 rule. */
+  commissionPercentage?: number;
   createdAt?: string;
 };
 
@@ -142,6 +144,7 @@ export function buildPaymentSchedule(context: PaymentScheduleBuildContext): Paym
     durationMonths,
     monthlySalary,
     currency,
+    commissionPercentage = 25,
     createdAt = new Date().toISOString()
   } = context;
   const start = parseContractStartDate(startDate);
@@ -151,10 +154,13 @@ export function buildPaymentSchedule(context: PaymentScheduleBuildContext): Paym
     const monthNumber = index + 1;
     const periodStart = addMonthsClamped(start, index);
     const dueDate = addMonthsClamped(start, monthNumber);
-    const commissionAmount = monthNumber === 1 ? calculateFirstMonthCommission(monthlySalary) : 0;
+    const safeSalary = Math.max(0, monthlySalary);
+    const commissionAmount = monthNumber === 1
+      ? calculateFirstMonthCommission(safeSalary, commissionPercentage)
+      : 0;
     const employeeShareAmount = monthNumber === 1
-      ? calculateFirstMonthEmployeeShare(monthlySalary)
-      : calculateLaterMonthEmployeeShare(monthlySalary);
+      ? calculateFirstMonthEmployeeShare(safeSalary, commissionPercentage)
+      : calculateLaterMonthEmployeeShare(safeSalary);
 
     return {
       id: `PSE-${contractId}-M${monthNumber}`,
@@ -164,9 +170,10 @@ export function buildPaymentSchedule(context: PaymentScheduleBuildContext): Paym
       periodStartDate: toIsoDate(periodStart),
       salaryDueDate: toIsoDate(dueDate),
       commissionDueDate: toIsoDate(dueDate),
-      salaryAmount: Math.max(0, monthlySalary),
+      salaryAmount: safeSalary,
       employeeShareAmount,
       commissionAmount,
+      commissionPercentage: monthNumber === 1 ? commissionPercentage : 0,
       currency,
       salaryStatus: 'SCHEDULED',
       commissionStatus: monthNumber === 1 ? 'SCHEDULED' : 'NOT_APPLICABLE',

@@ -1,5 +1,5 @@
 /**
- * LE LABEUR — P0-C / P0-E3 / P0-E4 / P0-E5 — vérification réelle de bout en bout.
+ * LE LABEUR — P0-C / P0-E3 / P0-E4 / P0-E5 / P0-F / P0-AUTO-2 — vérification réelle de bout en bout.
  *
  *   Worker/API → PostgreSQL réel → réponse
  *
@@ -36,6 +36,8 @@ import { createSqlApplicationStore } from '../src/backend/persistence/sqlCoreSto
 import { describePostgresTarget, resolvePostgresTarget } from '../src/backend/persistence/config';
 import { applyMigrations, loadMigrations, migrationStatus } from '../src/backend/persistence/migrationRunner';
 import { createPostgresDatabase } from '../src/backend/persistence/postgresDatabase';
+import { createContractAutomationRuntime } from '../src/backend/automation/contractAutomation';
+import { createSqlOutboxRepository } from '../src/backend/automation/postgres';
 import { createWorkerPostgresClient } from '../src/backend/worker/pgClient';
 import { redactSqlSecrets, toPostgresClientPort } from '../src/backend/persistence/sqlClient';
 import { resolveRepositoryMode } from '../src/repositories/mode';
@@ -236,7 +238,7 @@ async function main(): Promise<void> {
   const secrets = [connectionString, local?.password, resolved.target.connectionString];
 
   console.log('============================================================');
-  console.log(' LE LABEUR — P0-C / P0-E3 / P0-E4 / P0-E5 — vérification Worker/API → PostgreSQL');
+  console.log(' LE LABEUR — P0-C / P0-E3 / P0-E4 / P0-E5 / P0-F / P0-AUTO-2 — vérification Worker/API → PostgreSQL');
   console.log('============================================================');
   console.log(`Source base      : ${sourceLabel}`);
   console.log(`Cible (sans secret): ${descriptor.host}:${descriptor.port}/${descriptor.database} (source=${descriptor.source})`);
@@ -276,7 +278,7 @@ async function main(): Promise<void> {
     });
 
     let migrationResult: Awaited<ReturnType<typeof applyMigrations>> | null = null;
-    await check('Migrations 0001→0005 appliquées sur le moteur réel', async () => {
+    await check('Migrations 0001→0007 appliquées sur le moteur réel', async () => {
       migrationResult = await applyMigrations(client, migrations, {
         statementTimeoutMs: 15000,
         onProgress: message => console.log(`     ${message}`),
@@ -989,6 +991,96 @@ async function main(): Promise<void> {
       }));
       assert(activated.status === 200, `activation 200 attendue, reçue ${activated.status}`);
       assert(((await activated.json()) as { status: string }).status === 'ACTIVE', 'ACTIVE attendu');
+
+      const activationOutbox = await database.query<{ event_type: string; status: string; count: string }>(
+        `SELECT event_type, status, count(*)::text AS count FROM automation_outbox
+          WHERE aggregate_id = $1 GROUP BY event_type, status`, [contract.id],
+      );
+      assert(activationOutbox.rows.length === 1, 'un événement CONTRACT_ACTIVATED durable attendu');
+      assert(activationOutbox.rows[0].event_type === 'CONTRACT_ACTIVATED' && activationOutbox.rows[0].status === 'PROCESSED', 'Outbox consommé après l’activation PostgreSQL');
+      const automationProjection = await database.query<{
+        payment_schedule: Array<Record<string, unknown>>;
+        commission_ledger: Array<Record<string, unknown>>;
+        history: Array<{ event: string }>;
+      }>('SELECT payment_schedule, commission_ledger, history FROM contracts WHERE id = $1', [contract.id]);
+      const schedule = automationProjection.rows[0].payment_schedule;
+      assert(schedule.length === 6, 'schedule salaire construit selon la durée de contrat');
+      assert(schedule[0].salaryAmount === 175000 && schedule[0].salaryDueDate === '2026-12-01', 'montant et échéance salaire dérivés du contrat');
+      assert(schedule[0].commissionAmount === 43750 && schedule[0].commissionPercentage === 25, 'commission M1 existante de 25 %');
+      assert(schedule[0].employerId === employerId && schedule[0].employeeId === candidateId, 'parties du contrat liées au schedule');
+      assert(schedule[1].commissionAmount === 0 && schedule[1].commissionStatus === 'NOT_APPLICABLE', 'commission limitée à M1');
+      assert(automationProjection.rows[0].commission_ledger.length === 1, 'une seule projection de commission M1');
+      assert(automationProjection.rows[0].history.filter(item => item.event === 'CONTRACT_ACTIVATED_BILATERAL').length === 1, 'historique métier conservé sans duplication');
+      const scheduledJobs = await database.query<{ count: string }>(
+        `SELECT count(*)::text AS count FROM automation_jobs
+          WHERE aggregate_id = $1 AND job_type IN ('SALARY_PAYMENT_DUE', 'COMMISSION_PAYMENT_DUE', 'PAYMENT_OVERDUE_REMINDER')`,
+        [contract.id],
+      );
+      assert(Number(scheduledJobs.rows[0]?.count) === 14, '14 jobs salaire/commission/rappel attendus');
+      const deadlines = await database.query<{ count: string }>(
+        'SELECT count(*)::text AS count FROM automation_deadlines WHERE aggregate_id = $1', [contract.id],
+      );
+      assert(Number(deadlines.rows[0]?.count) === 7, 'sept deadlines salaire/commission attendues');
+      const automationAudit = await database.query<{ count: string }>(
+        'SELECT count(*)::text AS count FROM automation_audit_ledger WHERE entity_id = $1', [contract.id],
+      );
+      assert(Number(automationAudit.rows[0]?.count) === 21, 'audit durable de tous les jobs et deadlines');
+      const notifications = await database.query<{ count: string }>(
+        `SELECT count(*)::text AS count FROM automation_jobs
+          WHERE aggregate_id = $1 AND job_type = 'NOTIFICATION_REQUIRED'`, [contract.id],
+      );
+      assert(Number(notifications.rows[0]?.count) === 0, 'aucune notification n’est envoyée à l’activation');
+
+      // Reprise après redémarrage : deux workers PostgreSQL se disputent le
+      // même événement rejouable; SKIP LOCKED et l’idempotence SQL n’en laissent
+      // passer qu’un sans recréer les schedules.
+      await database.query(
+        `UPDATE automation_outbox
+            SET status = 'RETRYABLE', available_at = now() - INTERVAL '1 second', processed_at = NULL, claimed_by = NULL
+          WHERE aggregate_id = $1 AND event_type = 'CONTRACT_ACTIVATED'`,
+        [contract.id],
+      );
+      const replayWorkers = [createContractAutomationRuntime(database), createContractAutomationRuntime(database)];
+      const replayResults = await Promise.all(replayWorkers.map(runtime => runtime.worker.processOutboxBatch()));
+      const replayClaimed = replayResults.reduce((sum, result) => sum + result.claimed, 0);
+      assert(replayClaimed === 1, `un seul worker réclame l’événement concurrent (replayClaimed=${replayClaimed})`);
+      assert(replayResults.reduce((sum, result) => sum + result.duplicates, 0) === 1, 'rejeu résolu par idempotence PostgreSQL');
+      const jobsAfterReplay = await database.query<{ count: string }>(
+        `SELECT count(*)::text AS count FROM automation_jobs
+          WHERE aggregate_id = $1 AND job_type IN ('SALARY_PAYMENT_DUE', 'COMMISSION_PAYMENT_DUE', 'PAYMENT_OVERDUE_REMINDER')`,
+        [contract.id],
+      );
+      assert(Number(jobsAfterReplay.rows[0]?.count) === 14, 'aucun schedule dupliqué après replay concurrent');
+
+      // Défaut temporaire de handler : l’Outbox garde un retry et un audit,
+      // plutôt que d’accuser réception ou de perdre l’événement.
+      const retryEventId = newEntityId('evt');
+      const retryDedupeKey = `verify-retry:${retryEventId}`;
+      const outbox = createSqlOutboxRepository(database);
+      await database.run(transaction => outbox.append(transaction, {
+        id: retryEventId,
+        type: 'CONTRACT_CREATED',
+        aggregateType: 'Contract',
+        aggregateId: contract.id,
+        payload: { contractId: contract.id },
+        occurredAt: new Date().toISOString(),
+        dedupeKey: retryDedupeKey,
+        source: 'verify-postgres-retry',
+        version: 1,
+      }));
+      const retryResult = await createContractAutomationRuntime(database).worker.processOutboxBatch();
+      assert(retryResult.claimed === 1 && retryResult.retried === 1, 'échec du consumer libère l’Outbox pour retry');
+      const retryRow = await database.query<{ status: string; attempts: number; last_error: string | null }>(
+        'SELECT status, attempts, last_error FROM automation_outbox WHERE id = $1', [retryEventId],
+      );
+      assert(retryRow.rows[0]?.status === 'RETRYABLE' && retryRow.rows[0]?.attempts === 1, 'état de retry durable dans PostgreSQL');
+      const retryAudit = await database.query<{ count: string }>(
+        `SELECT count(*)::text AS count FROM automation_audit_ledger
+          WHERE event_id = $1 AND action = 'AUTOMATION_EVENT_RETRYABLE'`, [retryEventId],
+      );
+      assert(Number(retryAudit.rows[0]?.count) === 1, 'échec/retry Outbox audité');
+      await database.query('DELETE FROM automation_audit_ledger WHERE event_id = $1', [retryEventId]);
+      await database.query('DELETE FROM automation_outbox WHERE id = $1', [retryEventId]);
 
       // 5. Année 1 : la rupture directe reste protégée (incident obligatoire, hors P0-F).
       const terminatedInFirstMonth = await composition.worker.fetch(withSession(`/api/v1/contracts/${contract.id}/terminate`, employerCookie, {

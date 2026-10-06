@@ -569,7 +569,7 @@ export async function runPostgresFoundationTests(): Promise<PostgresFoundationTe
       assert(schema.has(table), `table manquante: ${table}`);
       assert(schema.get(table)!.size > 0, `table vide: ${table}`);
     }
-    const automationTables = ['automation_outbox', 'automation_jobs', 'automation_idempotency', 'automation_audit_ledger'];
+    const automationTables = ['automation_outbox', 'automation_jobs', 'automation_idempotency', 'automation_audit_ledger', 'automation_deadlines'];
     const extra = [...schema.keys()].filter(key => !CORE_TABLES.includes(key as (typeof CORE_TABLES)[number]) && !automationTables.includes(key));
     assert(extra.length === 0, `tables hors noyau détectées: ${extra.join(', ')}`);
   });
@@ -1037,6 +1037,8 @@ export async function runPostgresFoundationTests(): Promise<PostgresFoundationTe
       resolveRepositoryMode({ VITE_DEMO_MODE: 'false', VITE_API_BASE_PATH: '/api/v1' }).mode === 'api',
       'configuration explicite → api',
     );
+    const memoryApi = composeWorker({ GOOGLE_CLIENT_ID: 'client-id', PERSISTENCE: 'memory' });
+    assert(memoryApi.mode === 'memory' && memoryApi.automation === undefined, 'API mémoire/DEMO ne reçoit jamais les adapters Automation PostgreSQL');
   });
 
   await check('Séparation: aucun import d’exécution vers la persistance hors du Worker', () => {
@@ -1062,6 +1064,9 @@ export async function runPostgresFoundationTests(): Promise<PostgresFoundationTe
             'src/backend/api/entry.ts',
             'src/backend/worker/cloudflareEntry.ts',
             'src/backend/worker/pgClient.ts',
+            // P0-AUTO-2: server-only activation Automation and its local Worker.
+            'src/backend/automation/contractAutomation.ts',
+            'src/backend/automation/worker.ts',
           ]);
           if (workerBoundaryFiles.has(relative)) continue;
           offenders.push(relative);
@@ -1126,6 +1131,7 @@ export async function runPostgresFoundationTests(): Promise<PostgresFoundationTe
     assert(composition.persistence.reason === 'hyperdrive-binding', `motif inattendu: ${composition.persistence.reason}`);
     assert(composition.core !== undefined, 'les stores du noyau doivent être résolus');
     assert(composition.applications !== undefined, 'repository P0-E3 nécessaire pour ouvrir son sous-ensemble');
+    assert(composition.automation !== undefined, 'Automation doit être câblée uniquement dans la composition PostgreSQL');
     for (const store of ['offers', 'applications', 'contracts', 'permissions'] as const) {
       assert(composition.core?.[store] !== undefined, `store manquant: ${store}`);
     }

@@ -16,8 +16,10 @@
  *
  * Restent FERMÉS : passages de l'offre à FILLED, HIRED / CONTRACTED, fermeture
  * automatique des autres candidatures, notifications générales, incidents,
- * suspensions, remplacements, avancement mensuel, échéancier, commissions,
- * paiements, Outbox/Queue/Cron — cf. `docs/P0-F_CONTRATS.md`.
+ * suspensions, remplacements, avancement mensuel et paiements réels. P0-AUTO-2
+ * branche séparément l'événement transactionnel d'activation vers la fondation
+ * Automation pour schedules/deadlines/jobs sans effet monétaire; aucun Cron ni
+ * canal de notification n'est installé. Cf. `docs/P0-AUTO-2_ACTIVATION.md`.
  *
  * Aucun statut nouveau n'est introduit : la nomenclature du code est conservée
  * (`DRAFT`, `SIGNATURE`, `ACTIVE`, `COMPLETED`, `TERMINATED`) et la matrice est
@@ -47,6 +49,7 @@ import type { ApplicationRecord, ApplicationStore, ContractHistoryEntry, Contrac
 import type {
   AuthenticatedActor,
   CursorPage,
+  OutboxEvent,
   PageRequest,
   ProductionCommandContext,
 } from '../productionContracts';
@@ -61,6 +64,8 @@ export interface ContractRepositoryStores {
   applications: ApplicationStore;
   offers: OfferStore;
   users: UserStore;
+  /** Writes through the same PostgreSQL transaction as CONTRACT_ACTIVATED. */
+  automation?: { appendOutbox(event: OutboxEvent): Promise<void> };
 }
 
 export interface ContractRepositoryDependencies {
@@ -449,10 +454,28 @@ export function createContractRepository(
           );
         }
 
-        // Événement métier futur à produire : `rule.event`, documenté dans
-        // `DOCUMENTED_CONTRACT_EVENTS`. P0-F ne crée ni moteur Outbox, ni file,
-        // ni consumer, ni notification : seule la transition est persistée,
-        // dans la même transaction PostgreSQL.
+        // Seule l’activation ouvre le flux Automation de cette tranche. La
+        // publication durable est appendée dans la même transaction que ACTIVE
+        // et l’historique : un échec Outbox annule donc toute l’activation.
+        if (rule.action === 'ACTIVATE' && currentStores.automation) {
+          await currentStores.automation.appendOutbox({
+            id: newEntityId('evt'),
+            type: 'CONTRACT_ACTIVATED',
+            aggregateType: 'Contract',
+            aggregateId: updated.id,
+            payload: {
+              contractId: updated.id,
+              employerId: updated.employerId,
+              employeeId: updated.employeeId,
+            },
+            occurredAt: timestamp,
+            dedupeKey: `contract:${updated.id}:CONTRACT_ACTIVATED`,
+            actorId: actor.id,
+            source: 'ContractRepository',
+            version: 1,
+            correlationId: input.command.requestId,
+          });
+        }
         return toProjectionFromStores(updated, currentStores);
       };
 
