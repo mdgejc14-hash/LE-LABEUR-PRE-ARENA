@@ -147,6 +147,8 @@ export type OutboxEventType =
   | 'PAYMENT_DUE'
   | 'PAYMENT_PENDING_VERIFICATION'
   | 'PAYMENT_PAID'
+  | 'SALARY_CONFIRMATION_REQUESTED'
+  | 'SALARY_CONFIRMED'
   /** P0-PAY-3 — demande de batch normalisé; aucun paiement réel ni notification. */
   | 'PAYMENT_RECONCILIATION_BATCH_REQUESTED'
   | 'CONTRACT_SIGNED'

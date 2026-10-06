@@ -1,3 +1,4 @@
+import { createSalaryConfirmationHandlers } from '../payments/salaryConfirmation';
 /**
  * Composition root du Worker LE LABEUR (identité Phase 2 / persistance P0-B).
  *
@@ -621,6 +622,7 @@ export function composeWorker(
     ...contractHandlers,
     // P0-PAY-1 — cycle Payment existant.
     ...paymentHandlers,
+    ...(persistence.database && mode === 'postgres' ? createSalaryConfirmationHandlers(persistence.database, undefined, createSqlAutomationStores) : {}),
     // P0-PAY-3 — imports batch, ledger externe et revue ADMIN.
     ...paymentReconciliationHandlers,
   };
