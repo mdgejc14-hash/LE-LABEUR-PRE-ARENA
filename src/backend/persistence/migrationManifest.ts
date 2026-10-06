@@ -24,6 +24,7 @@ export const EXPECTED_MIGRATION_IDS: readonly string[] = [
   '0008_payment_cycle',
   // P0-PAY-3 : ledger externe, batch reprenable et revues ADMIN de paiement.
   '0009_payment_external_reconciliation',
+  '0010_salary_confirmation',
 ];
 
 export const SCHEMA_MIGRATIONS_TABLE = 'schema_migrations';

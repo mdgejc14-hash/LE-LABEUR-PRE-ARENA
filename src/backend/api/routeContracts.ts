@@ -73,6 +73,8 @@ export const API_ROUTE_CONTRACTS = [
   { key: 'payments.commission.declare', method: 'POST', path: '/api/v1/payments/commission-declarations', authentication: 'required', scope: 'owner', roles: ['EMPLOYER'], idempotency: true, auditOnMutation: true },
   // P0-PAY-1 — flux de SALAIRE séparé du flux de COMMISSION : deux routes, deux
   // natures, et aucune ne lit le champ `paymentType` du client.
+  { key: 'payments.salary.confirmation.request', method: 'POST', path: '/api/v1/payments/:paymentId/salary-confirmation-request', authentication: 'required', scope: 'owner', roles: ['EMPLOYER'], idempotency: true, auditOnMutation: true },
+  { key: 'payments.salary.confirmation.confirm', method: 'POST', path: '/api/v1/payments/:paymentId/salary-confirmation', authentication: 'required', scope: 'owner', roles: ['CANDIDATE'], idempotency: true, auditOnMutation: true },
   { key: 'payments.salary.declare', method: 'POST', path: '/api/v1/payments/salary-declarations', authentication: 'required', scope: 'owner', roles: ['EMPLOYER'], idempotency: true, auditOnMutation: true },
   // P0-PAY-2 — Webhook sécurisé du fournisseur de paiement externe.
   // Accessible en /api/webhooks/payment-provider et /api/v1/webhooks/payment-provider
