@@ -1186,7 +1186,6 @@ export async function runContractDomainTests(): Promise<OfferTestResult[]> {
           body: '{}',
         })),
         harness.worker.fetch(authRequest('/api/v1/replacements/rep_p0f_absent', employerToken)),
-        harness.worker.fetch(authRequest('/api/v1/my/notifications', employerToken)),
         harness.worker.fetch(authRequest('/api/v1/conversations/cnv_p0f/messages', employerToken, {
           method: 'POST',
           headers: { 'content-type': 'application/json', 'Idempotency-Key': 'p0f-closed-messages-001' },
@@ -1227,6 +1226,14 @@ export async function runContractDomainTests(): Promise<OfferTestResult[]> {
         closed.every(response => response.status === 501),
         `501 attendu pour tout handler non ouvert, reçus ${closed.map(response => response.status).join('/')}`,
       );
+      // P0-NOTIFICATIONS a OUVERT la lecture In-App : la route n'est plus un
+      // handler absent. L'assertion porte donc sur la FRONTIÈRE réelle — 200
+      // avec une page VIDE, jamais des enregistrements inventés.
+      const notifications = await harness.worker.fetch(authRequest('/api/v1/my/notifications', employerToken));
+      assert(notifications.status === 200, `200 attendu pour la lecture In-App ouverte, reçu ${notifications.status}`);
+      const notificationsPage = await notifications.json() as { items: unknown[]; hasMore: boolean };
+      assert(notificationsPage.items.length === 0 && notificationsPage.hasMore === false,
+        'aucune notification inventée pour ce compte');
       assert((await readContract(harness, deliveredContractId))?.status === 'DRAFT', 'aucun effet hors domaine');
     });
 

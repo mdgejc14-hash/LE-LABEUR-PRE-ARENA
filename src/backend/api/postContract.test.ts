@@ -671,7 +671,6 @@ export async function runPostContractDomainTests(): Promise<OfferTestResult[]> {
           body: '{}',
         })),
         harness.worker.fetch(authRequest('/api/v1/replacements/rep_post_absent', employerToken)),
-        harness.worker.fetch(authRequest('/api/v1/my/notifications', employerToken)),
         harness.worker.fetch(authRequest('/api/v1/conversations/cnv_post/messages', employerToken, {
           method: 'POST',
           headers: { 'content-type': 'application/json', 'Idempotency-Key': 'post-scope-messages-001' },
@@ -681,6 +680,16 @@ export async function runPostContractDomainTests(): Promise<OfferTestResult[]> {
       assert(
         closed.every(response => response.status === 501),
         `501 attendu pour tout handler non ouvert, reçus ${closed.map(response => response.status).join('/')}`,
+      );
+      // P0-NOTIFICATIONS a OUVERT la lecture In-App : la route n'est plus un
+      // handler absent, et la frontière réelle devient la SÉPARATION entre
+      // comptes — jamais des enregistrements inventés ni ceux d'un autre.
+      const notifications = await harness.worker.fetch(authRequest('/api/v1/my/notifications', employerToken));
+      assert(notifications.status === 200, `200 attendu pour la lecture In-App ouverte, reçu ${notifications.status}`);
+      const notificationsPage = await notifications.json() as { items: Array<{ recipientId: string }>; limit: number; hasMore: boolean };
+      assert(
+        notificationsPage.items.every(item => item.recipientId === employerId),
+        'la lecture In-App est strictement propriétaire : aucune notification d’un autre compte',
       );
       const paymentRows = await harness.database.query<{ count: string }>(
         'SELECT count(*)::text AS count FROM payments WHERE contract_id = $1',

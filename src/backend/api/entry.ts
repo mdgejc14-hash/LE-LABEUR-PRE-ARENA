@@ -110,6 +110,17 @@ import { createSqlClaimStore } from '../persistence/sqlClaimStores';
 import { createClaimRepository, createClaimApiHandlers, type ClaimRepositoryStores, type OpenClaimRepository } from '../disputes/claimRepository';
 import { createClaimAutomation } from '../disputes/claimAutomation';
 import { resolveClaimEvidenceDeadline } from '../disputes/config';
+// P0-NOTIFICATIONS — couche de notification : le canal In-App est persisté, et
+// les canaux Push/Email ne sont que des ABSTRACTIONS (aucun provider réel,
+// aucun secret, aucune configuration de production dans cette tranche).
+import { createSqlNotificationStore } from '../persistence/sqlNotificationStores';
+import { createNotificationService, type OpenNotificationService } from '../notifications/notificationService';
+import { createNotificationAutomation } from '../notifications/notificationAutomation';
+import { createNotificationApiHandlers } from '../notifications/notificationApi';
+import {
+  createNotificationChannelRegistry,
+  type NotificationChannelRegistry,
+} from '../notifications/channels';
 
 export interface WorkerEnvironment extends WorkerPersistenceEnvironment {
   GOOGLE_CLIENT_ID?: string;
@@ -179,6 +190,17 @@ export interface WorkerComposition {
    */
   automationWorker?: AutomationWorker;
   /**
+   * P0-NOTIFICATIONS — service de notification In-App + abstractions de canal.
+   * Absent sans PostgreSQL durable : les routes de notification restent `501`.
+   */
+  notifications?: OpenNotificationService;
+  /**
+   * Fournisseurs Push/Email RÉELLEMENT composés. `null` = aucun provider, donc
+   * état `NOT_AVAILABLE` : c'est l'état de cette tranche, et il est observable
+   * sans exposer le moindre secret.
+   */
+  notificationChannels: { push: string | null; email: string | null };
+  /**
    * P0-PAY-1 — cycle paiements (déclarations, vérification, rapprochement,
    * régularisation). Présent UNIQUEMENT quand une base PostgreSQL durable existe :
    * sans elle, les routes du domaine restent `501 NOT_IMPLEMENTED`.
@@ -204,6 +226,12 @@ export interface WorkerCompositionOverrides {
   paymentProviderAdapter?: PaymentProviderAdapter;
   /** Test-only local OTP sink; never configured in production. */
   salaryTestOtpSink?: (paymentId: string, otp: string) => void;
+  /**
+   * P0-NOTIFICATIONS — providers Push/Email INJECTÉS, réservés aux
+   * vérifications locales. La composition de production n'en injecte AUCUN :
+   * l'infrastructure réelle (fournisseur, secrets, workers) est hors tranche.
+   */
+  notificationChannels?: NotificationChannelRegistry;
 }
 
 function isInjectedDatabase(value: PostgreSqlDatabase | PostgresClientPort): value is PostgreSqlDatabase {
@@ -323,6 +351,8 @@ export function composeWorker(
       health,
       probe: persistence.probe,
       target: persistence.target,
+      // Frontière fermée : aucun canal n'est composé, donc aucun provider.
+      notificationChannels: createNotificationChannelRegistry().describe(),
       worker: createApiWorker({ authenticate: async () => null, health }),
     };
   }
@@ -342,6 +372,8 @@ export function composeWorker(
       health,
       probe: persistence.probe,
       target: persistence.target,
+      // Frontière fermée : aucun canal n'est composé, donc aucun provider.
+      notificationChannels: createNotificationChannelRegistry().describe(),
       worker: createApiWorker({ authenticate: async () => null, health }),
     };
   }
@@ -641,12 +673,49 @@ export function composeWorker(
       })
     : undefined;
 
+  /*
+   * P0-NOTIFICATIONS — service de notification.
+   *
+   * Composé UNIQUEMENT quand une base PostgreSQL durable existe : sans elle il
+   * n'y a ni Outbox à observer, ni table `notifications` à écrire, et les
+   * routes restent `501 NOT_IMPLEMENTED` (fail-closed), exactement comme les
+   * autres domaines persistants. Le mode DEMO n'est jamais connecté ici.
+   */
+  const notificationService: OpenNotificationService | undefined = persistence.database
+    ? createNotificationService({
+        database: persistence.database,
+        createStores: tx => {
+          const automationStores = createSqlAutomationStores(tx);
+          return {
+            notifications: createSqlNotificationStore(tx),
+            users: createSqlUserStore(tx),
+            audit: automationStores.audit,
+            idempotency: automationStores.idempotency,
+            sql: tx,
+          };
+        },
+        ...(overrides.notificationChannels ? { channels: overrides.notificationChannels } : {}),
+        ...(overrides.now ? { now: overrides.now } : {}),
+      })
+    : undefined;
+  // Le processeur de notification est branché sur le worker EXISTANT : aucun
+  // ordonnanceur, aucun moteur, aucune file supplémentaire.
+  const notificationAutomation = notificationService
+    ? createNotificationAutomation({ service: notificationService })
+    : undefined;
+  const notificationHandlers = notificationService
+    ? createNotificationApiHandlers(notificationService)
+    : {};
+
   const automationWorker = persistence.database && contractAutomation
     ? createAutomationWorker({
         database: persistence.database,
         createStores: createAutomationStores,
         automation: contractAutomation,
         ...(claimAutomation ? { supplemental: claimAutomation } : {}),
+        // P0-NOTIFICATIONS — le même événement peut être observé par plusieurs
+        // processeurs : `CLAIM_CREATED` reste traité par le Claim ET notifié.
+        ...(notificationAutomation ? { processors: [notificationAutomation] } : {}),
         ...(overrides.now ? { now: overrides.now } : {}),
         ...(paymentRepository
           ? {
@@ -681,6 +750,10 @@ export function composeWorker(
     ...(persistence.database && mode === 'postgres' ? createSalaryConfirmationHandlers(persistence.database, overrides.salaryTestOtpSink, createSqlAutomationStores) : {}),
     // P0-PAY-3 — imports batch, ledger externe et revue ADMIN.
     ...paymentReconciliationHandlers,
+    // P0-NOTIFICATIONS — lecture In-App et marquage lu/non lu (routes
+    // DÉJÀ déclarées par le catalogue de routes). Absent sans base durable,
+    // ces routes restent alors fermées (501).
+    ...notificationHandlers,
   };
 
   return {
@@ -704,6 +777,8 @@ export function composeWorker(
     },
     ...(contractAutomation ? { automation: contractAutomation } : {}),
     ...(automationWorker ? { automationWorker } : {}),
+    ...(notificationService ? { notifications: notificationService } : {}),
+    notificationChannels: (overrides.notificationChannels ?? createNotificationChannelRegistry()).describe(),
     health,
     probe: persistence.probe,
     target: persistence.target,

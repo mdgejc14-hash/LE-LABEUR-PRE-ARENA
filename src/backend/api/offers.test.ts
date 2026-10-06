@@ -34,6 +34,8 @@ import type { OpenPaymentRepository } from '../repositories/paymentRepository';
 import type { OpenClaimRepository } from '../disputes/claimRepository';
 import type { PaymentReconciliationBatchService } from '../payments/paymentReconciliationBatch';
 import type { PaymentProviderRegistry } from '../payments/paymentProviderRegistry';
+import type { OpenNotificationService } from '../notifications/notificationService';
+import type { NotificationChannelRegistry } from '../notifications/channels';
 import type { PostgreSqlDatabase } from '../services/database';
 import { createPostgresDatabase } from '../persistence/postgresDatabase';
 import { createSqlOfferStore } from '../persistence/sqlCoreStores';
@@ -182,6 +184,8 @@ export interface TestHarness {
   automation?: ContractAutomation;
   /** P0-AUTO-2 : worker d'automatisation (déclenché explicitement, aucun timer). */
   automationWorker?: AutomationWorker;
+  /** P0-NOTIFICATIONS : service de notification In-App (absent sans base durable). */
+  notifications?: OpenNotificationService;
   /** P0-PAY-1 : repository du cycle PAIEMENT (déclaration, vérification, décision). */
   payments?: OpenPaymentRepository;
   /** P0-PAY-3 : service durable d'import batch, ledger externe, retries et revue. */
@@ -194,7 +198,14 @@ export interface TestHarness {
 
 export async function createOffersTestHarness(
   salaryTestOtpSink?: (paymentId: string, otp: string) => void,
-  options: { claimEvidenceDeadlineMs?: string } = {},
+  options: {
+    claimEvidenceDeadlineMs?: string;
+    /**
+     * P0-NOTIFICATIONS — providers Push/Email INJECTÉS pour les vérifications
+     * locales. Aucune composition de production n'en injecte.
+     */
+    notificationChannels?: NotificationChannelRegistry;
+  } = {},
 ): Promise<TestHarness> {
   offerIdempotencyCache.clear();
   const pg = new PGlite();
@@ -216,6 +227,7 @@ export async function createOffersTestHarness(
     googleVerifier: google.verifier,
     now: () => clock.value,
     ...(salaryTestOtpSink ? { salaryTestOtpSink } : {}),
+    ...(options.notificationChannels ? { notificationChannels: options.notificationChannels } : {}),
   });
 
   return {
@@ -228,6 +240,7 @@ export async function createOffersTestHarness(
     claims: composition.claims,
     automation: composition.automation,
     automationWorker: composition.automationWorker,
+    notifications: composition.notifications,
     payments: composition.payments,
     paymentReconciliation: composition.paymentReconciliation,
     paymentProviders: composition.paymentProviders,

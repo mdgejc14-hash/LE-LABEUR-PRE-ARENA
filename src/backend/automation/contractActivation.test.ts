@@ -651,32 +651,56 @@ async function runReminderExecutionPhase(
       assert(m2Deadline.status === 'OPEN', 'l’échéance non due reste ouverte');
     });
 
-    await check('P0-AUTO-2 Notifications: les événements préparés n’ont AUCUN consumer et ne sont jamais envoyés', async () => {
-      const pendingBefore = (await readOutbox(harness, contractId))
+    await check('P0-AUTO-2 Notifications: les événements préparés sont désormais CONSOMMÉS par la couche de notification (In-App), sans aucun canal externe', async () => {
+      const preparedBefore = (await readOutbox(harness, contractId))
         .filter(row => (DEFERRED_NOTIFICATION_EVENT_TYPES as readonly string[]).includes(row.event_type));
-      assert(pendingBefore.length === 4, `4 événements préparés attendus, reçus ${pendingBefore.length}`);
+      assert(preparedBefore.length === 4, `4 événements préparés attendus, reçus ${preparedBefore.length}`);
       assert(
-        pendingBefore.every(row => row.status === 'PENDING' && row.attempts === 0),
-        'aucun consumer ne les réclame',
+        preparedBefore.every(row => row.status === 'PENDING' && row.attempts === 0),
+        'aucun consumer ne les a réclamés avant la passe de notification',
       );
+
       const report = await harness.automationWorker!.drainEvents(20);
+      const claimed = report.entries
+        .filter(entry => (DEFERRED_NOTIFICATION_EVENT_TYPES as readonly string[]).includes(entry.eventType));
+      assert(claimed.length === 4, `les 4 événements préparés sont réclamés par le consumer réel, reçus ${claimed.length}`);
       assert(
-        report.entries.every(entry => !DEFERRED_NOTIFICATION_EVENT_TYPES.includes(entry.eventType as never)),
-        'le worker ne réclame que les types ayant un handler réel',
+        claimed.every(entry => entry.result === 'completed'),
+        `traitement complet des événements préparés, reçu ${JSON.stringify(claimed)}`,
       );
-      const pendingAfter = (await readOutbox(harness, contractId))
+
+      const preparedAfter = (await readOutbox(harness, contractId))
         .filter(row => (DEFERRED_NOTIFICATION_EVENT_TYPES as readonly string[]).includes(row.event_type));
       assert(
-        pendingAfter.every(row => row.status === 'PENDING'),
-        'les événements préparés restent en attente du module Notifications',
+        preparedAfter.every(row => row.status === 'PROCESSED'),
+        'les événements préparés sont traités par P0-NOTIFICATIONS (plus jamais « sans consumer »)',
       );
-      const notificationTables = await harness.database.query<{ table_name: string }>(
+
+      // Ce qui est produit reste In-App, rattaché à un compte RÉEL, et l'état
+      // des canaux externes ne peut jamais prétendre à un envoi.
+      const notifications = await harness.database.query<{ recipient_id: string; type: string; push_status: string; email_status: string }>(
+        `SELECT recipient_id, type, push_status, email_status FROM notifications
+          WHERE source_event_type IN ('NOTIFICATION_REQUIRED', 'PAYMENT_OVERDUE_J3')`,
+      );
+      assert(notifications.rows.length >= 4, `notifications In-App produites, reçues ${notifications.rows.length}`);
+      assert(
+        notifications.rows.every(row => row.push_status === 'NOT_AVAILABLE' && row.email_status === 'NOT_AVAILABLE'),
+        'aucun fournisseur Push/Email installé : jamais un faux « envoyé »',
+      );
+      const unknownRecipients = await harness.database.query<{ count: string }>(
+        `SELECT count(*)::text AS count FROM notifications AS n
+          WHERE n.source_event_type IN ('NOTIFICATION_REQUIRED', 'PAYMENT_OVERDUE_J3')
+            AND n.recipient_id NOT IN (SELECT id FROM users)`,
+      );
+      assert(Number(unknownRecipients.rows[0]?.count ?? 0) === 0, 'tout destinataire est un compte réel');
+
+      const externalChannelTables = await harness.database.query<{ table_name: string }>(
         `SELECT table_name FROM information_schema.tables
           WHERE table_schema = current_schema()
-            AND (table_name ILIKE '%notification%' OR table_name ILIKE '%email%'
-                 OR table_name ILIKE '%sms%' OR table_name ILIKE '%whatsapp%' OR table_name ILIKE '%push%')`,
+            AND (table_name ILIKE '%email%' OR table_name ILIKE '%sms%'
+                 OR table_name ILIKE '%whatsapp%' OR table_name ILIKE '%push%')`,
       );
-      assert(notificationTables.rows.length === 0, 'aucune table de canal de notification');
+      assert(externalChannelTables.rows.length === 0, 'aucune table de canal externe');
     });
 
     /* ---------------- 11. Audit ---------------- */
@@ -1061,12 +1085,26 @@ export async function runContractAutomationTests(): Promise<OfferTestResult[]> {
         'clé J+3 conforme (schedule-entry + payment-kind + due-date + J3)',
       );
 
-      // Aucun canal : ni table de notifications, ni contenu, ni destinataire résolu.
-      const notificationTables = await harness.database.query<{ table_name: string }>(
+      // P0-AUTO-2 n'ouvre AUCUN canal : la seule table de notification qui
+      // existe vient de P0-NOTIFICATIONS (migration 0012), et P0-AUTO-2 ne la
+      // remplit pas. Le contrôle porte donc sur la frontière réelle — aucune
+      // table de canal EXTERNE n'est créée par cette tranche.
+      const externalChannelTables = await harness.database.query<{ table_name: string }>(
         `SELECT table_name FROM information_schema.tables
-          WHERE table_schema = current_schema() AND table_name ILIKE '%notification%'`,
+          WHERE table_schema = current_schema()
+            AND (table_name ILIKE '%email%' OR table_name ILIKE '%sms%'
+                 OR table_name ILIKE '%whatsapp%' OR table_name ILIKE '%push%'
+                 OR table_name ILIKE '%provider%' OR table_name ILIKE '%webhook%')`,
       );
-      assert(notificationTables.rows.length === 0, 'aucune table de notification créée par P0-AUTO-2');
+      assert(externalChannelTables.rows.length === 0, 'aucune table de canal externe créée par P0-AUTO-2');
+      const notificationsFromReminders = await harness.database.query<{ count: string }>(
+        `SELECT count(*)::text AS count FROM notifications
+          WHERE source_event_type IN ('NOTIFICATION_REQUIRED', 'PAYMENT_OVERDUE_J3')`,
+      );
+      assert(
+        Number(notificationsFromReminders.rows[0]?.count ?? 0) === 0,
+        'P0-AUTO-2 ne produit lui-même AUCUNE notification : aucun rappel n’a encore été exécuté',
+      );
     });
 
     /* ---------------- 6. Idempotence et rejeu ---------------- */

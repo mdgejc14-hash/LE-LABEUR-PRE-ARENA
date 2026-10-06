@@ -27,6 +27,10 @@ export const EXPECTED_MIGRATION_IDS: readonly string[] = [
   '0010_salary_confirmation',
   // P0-DISPUTE-1 : claims, demandes de preuve et restrictions provisoires.
   '0011_dispute_claims',
+  // P0-NOTIFICATIONS : boîte de réception In-App (canal prioritaire). Les
+  // canaux Push et Email restent des abstractions de code, sans table ni
+  // fournisseur réel.
+  '0012_notifications',
 ];
 
 export const SCHEMA_MIGRATIONS_TABLE = 'schema_migrations';

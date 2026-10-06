@@ -281,7 +281,7 @@ async function main(): Promise<void> {
     });
 
     let migrationResult: Awaited<ReturnType<typeof applyMigrations>> | null = null;
-    await check('Migrations 0001→0011 appliquées sur le moteur réel', async () => {
+    await check('Migrations 0001→0012 appliquées sur le moteur réel', async () => {
       migrationResult = await applyMigrations(client, migrations, {
         statementTimeoutMs: 15000,
         onProgress: message => console.log(`     ${message}`),
@@ -1518,7 +1518,7 @@ async function main(): Promise<void> {
       );
     });
 
-    await check('P0-AUTO-2 PostgreSQL réel : rappels échus → événements préparés, escalade J+3, AUCUN canal de notification', async () => {
+    await check('P0-AUTO-2 → P0-NOTIFICATIONS PostgreSQL réel : rappels échus → événements préparés → notifications In-App, escalade J+3, AUCUN canal externe', async () => {
       // État produit par le cycle paiements (NON ouvert par cette tranche) :
       // l’échéance M1 est basculée en DUE directement en base, ce qui est
       // exactement l’état que `syncPaymentSchedule` produira plus tard.
@@ -1572,28 +1572,62 @@ async function main(): Promise<void> {
         assert(payload.dedupeKey !== undefined, 'clé de déduplication réelle');
       }
 
-      // Aucun consumer : les événements préparés restent PENDING et ne sont
-      // jamais réclamés par le worker (le module Notifications n’existe pas).
-      const drain = await composition.automationWorker!.drainEvents(50);
-      assert(
-        drain.entries.every(entry => entry.eventType !== 'NOTIFICATION_REQUIRED' && entry.eventType !== 'PAYMENT_OVERDUE_J3'),
-        'le worker ne réclame que les types ayant un handler réel',
+      // P0-NOTIFICATIONS : les événements préparés sont désormais CONSOMMÉS par
+      // le worker EXISTANT, qui les projette en notifications In-App. Le
+      // producteur (P0-AUTO-2) n’a pas changé d’une ligne.
+      const pendingBefore = await database.query<{ count: string }>(
+        `SELECT count(*)::text AS count FROM automation_outbox
+          WHERE aggregate_id = $1 AND event_type IN ('NOTIFICATION_REQUIRED', 'PAYMENT_OVERDUE_J3')
+            AND status = 'PENDING'`,
+        [p0auto2ContractId],
       );
+      assert(Number(pendingBefore.rows[0]?.count ?? 0) === events.rows.length, 'événements préparés avant la passe');
+      const drain = await composition.automationWorker!.drainEvents(50);
+      const claimedPrepared = drain.entries.filter(
+        entry => entry.eventType === 'NOTIFICATION_REQUIRED' || entry.eventType === 'PAYMENT_OVERDUE_J3',
+      );
+      assert(
+        claimedPrepared.length === events.rows.length,
+        `les ${events.rows.length} événements préparés sont réclamés par le consumer réel, reçus ${claimedPrepared.length}`,
+      );
+      assert(claimedPrepared.every(entry => entry.result === 'completed'), `traitement complet, reçu ${JSON.stringify(claimedPrepared)}`);
       const stillPending = await database.query<{ count: string }>(
         `SELECT count(*)::text AS count FROM automation_outbox
           WHERE aggregate_id = $1 AND event_type IN ('NOTIFICATION_REQUIRED', 'PAYMENT_OVERDUE_J3')
             AND status = 'PENDING' AND attempts = 0`,
         [p0auto2ContractId],
       );
-      assert(Number(stillPending.rows[0]?.count ?? 0) === events.rows.length, 'événements préparés intacts');
+      assert(Number(stillPending.rows[0]?.count ?? 0) === 0, 'plus aucun événement préparé en attente');
+
+      // Ce qui est produit reste In-App, rattaché à des comptes RÉELS, et
+      // l’état des canaux externes ne prétend jamais à un envoi.
+      const inbox = await database.query<{ recipient_id: string; push_status: string; email_status: string }>(
+        `SELECT recipient_id, push_status, email_status FROM notifications
+          WHERE source_event_type IN ('NOTIFICATION_REQUIRED', 'PAYMENT_OVERDUE_J3')`,
+      );
+      assert(inbox.rows.length >= 4, `notifications In-App produites, reçues ${inbox.rows.length}`);
+      assert(
+        inbox.rows.every(row => row.push_status === 'NOT_AVAILABLE' && row.email_status === 'NOT_AVAILABLE'),
+        'aucun fournisseur Push/Email installé : jamais un faux « envoyé »',
+      );
+      const orphanRecipients = await database.query<{ count: string }>(
+        `SELECT count(*)::text AS count FROM notifications AS n
+          WHERE n.recipient_id NOT IN (SELECT id FROM users)`,
+      );
+      assert(Number(orphanRecipients.rows[0]?.count ?? 0) === 0, 'tout destinataire est un compte réel');
 
       const channels = await database.query<{ table_name: string }>(
         `SELECT table_name FROM information_schema.tables
           WHERE table_schema = current_schema()
-            AND (table_name ILIKE '%notification%' OR table_name ILIKE '%email%' OR table_name ILIKE '%sms%'
+            AND (table_name ILIKE '%email%' OR table_name ILIKE '%sms%'
                  OR table_name ILIKE '%whatsapp%' OR table_name ILIKE '%push%')`,
       );
-      assert(channels.rows.length === 0, 'aucune table de canal de notification créée');
+      assert(channels.rows.length === 0, 'aucune table de canal EXTERNE créée');
+      const inAppTable = await database.query<{ table_name: string }>(
+        `SELECT table_name FROM information_schema.tables
+          WHERE table_schema = current_schema() AND table_name = 'notifications'`,
+      );
+      assert(inAppTable.rows.length === 1, 'la boîte In-App est la seule table de notification');
 
       // P0-PAY-1/P0-PAY-3 : seules les tables du cycle Payment et de son
       // ledger/review neutre existent. Aucun fournisseur, aucun OTP, aucun KYC.
@@ -1651,6 +1685,84 @@ async function main(): Promise<void> {
         Number(eventsAfter.rows[0]?.count ?? 0) === events.rows.length,
         'aucun événement de rappel dupliqué',
       );
+    });
+
+    await check('P0-NOTIFICATIONS PostgreSQL réel : activation → Outbox → Worker → notification In-App des deux parties, lecture propriétaire et marquage lu idempotent', async () => {
+      // Notification d’activation produite par la chaîne réelle (Outbox →
+      // worker → In-App), pour le contrat de l’automatisation P0-AUTO-2.
+      const activationNotifications = await database.query<{ id: string; recipient_id: string; type: string; is_read: boolean }>(
+        `SELECT id, recipient_id, type, is_read FROM notifications
+          WHERE aggregate_id = $1 AND source_event_type = 'CONTRACT_ACTIVATED'
+          ORDER BY recipient_id ASC`,
+        [p0auto2ContractId],
+      );
+      assert(activationNotifications.rows.length === 2, `2 notifications In-App attendues (employeur + travailleur), reçues ${activationNotifications.rows.length}`);
+      assert(
+        activationNotifications.rows.every(row => row.type === 'CONTRACT_ACTIVE'),
+        'type de notification réel du modèle',
+      );
+      assert(
+        new Set(activationNotifications.rows.map(row => row.recipient_id)).size === 2,
+        'deux destinataires DISTINCTS, jamais une diffusion',
+      );
+
+      // Lecture propriétaire réelle via l’API, sans base intermédiaire.
+      const employerList = await composition.worker.fetch(withSession('/api/v1/my/notifications?limit=50', employerCookie));
+      assert(employerList.status === 200, `200 attendu pour l’employeur, reçu ${employerList.status}`);
+      const employerPage = await employerList.json() as { items: Array<{ id: string; recipientId: string; readState: string }> };
+      assert(employerPage.items.length > 0, 'l’employeur voit ses notifications');
+      assert(employerPage.items.every(item => item.recipientId === employerId), 'aucune notification d’un autre compte');
+
+      const outsiderList = await composition.worker.fetch(withSession('/api/v1/my/notifications?limit=50', otherEmployerCookie));
+      const outsiderPage = await outsiderList.json() as { items: Array<{ recipientId: string }> };
+      assert(outsiderPage.items.length === 0, 'un tiers hors parties ne voit RIEN');
+
+      // Marquage lu : idempotent, audité une seule fois, jamais pour un tiers.
+      const target = employerPage.items[0];
+      const readOnce = await composition.worker.fetch(withSession(`/api/v1/notifications/${target.id}/read`, employerCookie, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'Idempotency-Key': 'p0notif-verify-read-001' },
+        body: '{}',
+      }));
+      assert(readOnce.status === 200, `200 attendu au marquage, reçu ${readOnce.status}`);
+      const readBody = await readOnce.json() as { readState: string; readAt?: string };
+      assert(readBody.readState === 'READ' && readBody.readAt !== undefined, 'état lu persisté avec horodatage');
+      const readReplay = await composition.worker.fetch(withSession(`/api/v1/notifications/${target.id}/read`, employerCookie, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'Idempotency-Key': 'p0notif-verify-read-001' },
+        body: '{}',
+      }));
+      assert(readReplay.status === 200, `rejeu idempotent attendu (200), reçu ${readReplay.status}`);
+      const readAudits = await database.query<{ count: string }>(
+        `SELECT count(*)::text AS count FROM automation_audit_ledger
+          WHERE action = 'NOTIFICATION_READ' AND entity_id = $1`,
+        [target.id],
+      );
+      assert(Number(readAudits.rows[0]?.count ?? 0) === 1, 'une seule entrée d’audit pour la commande rejouée');
+
+      const foreignRead = await composition.worker.fetch(withSession(`/api/v1/notifications/${target.id}/read`, otherEmployerCookie, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'Idempotency-Key': 'p0notif-verify-foreign-001' },
+        body: '{}',
+      }));
+      assert(foreignRead.status === 404, `404 attendu pour un tiers (aucune fuite d’existence), reçu ${foreignRead.status}`);
+
+      // Idempotence de bout en bout : rejouer l’événement d’activation ne crée
+      // AUCUNE seconde notification.
+      const before = await database.query<{ count: string }>(
+        `SELECT count(*)::text AS count FROM notifications WHERE aggregate_id = $1`,
+        [p0auto2ContractId],
+      );
+      const replay = await composition.automationWorker!.drainEvents(50);
+      assert(
+        replay.entries.every(entry => entry.eventId !== contractActivatedEventId(p0auto2ContractId)),
+        'un événement déjà traité n’est jamais rejoué par le worker',
+      );
+      const after = await database.query<{ count: string }>(
+        `SELECT count(*)::text AS count FROM notifications WHERE aggregate_id = $1`,
+        [p0auto2ContractId],
+      );
+      assert(Number(after.rows[0]?.count ?? 0) === Number(before.rows[0]?.count ?? 0), 'aucun doublon après rejeu');
     });
 
     await check('P0-PAY-2 Worker/API → PostgreSQL : webhook fournisseur sécurisé (signature, DUE→VERIFIED sans PAID direct, audit, réconciliation)', async () => {
@@ -1883,6 +1995,10 @@ async function main(): Promise<void> {
       const adminClaimsBody = await adminClaims.json() as { items: Array<{ claimId: string }> };
       assert(adminClaimsBody.items.some(item => item.claimId === p0DisputeClaimId), 'Claim réel lisible par ADMIN');
 
+      // P0-NOTIFICATIONS : la boîte In-App référence son destinataire en
+      // RESTRICT (comme les Claims). Le nettoyage est donc EXPLICITE, jamais
+      // une suppression en cascade silencieuse.
+      await database.query('DELETE FROM notifications WHERE recipient_id = $1', [adminId]);
       await database.query('DELETE FROM sessions WHERE user_id = $1', [adminId]);
       await database.query('DELETE FROM users WHERE id = $1', [adminId]);
     });
@@ -1896,6 +2012,7 @@ async function main(): Promise<void> {
       assert(revoked.rows.length > 0 && revoked.rows[0].revoked_at !== null, 'revoked_at doit être persisté');
       const reuse = await composition.worker.fetch(withSession('/api/v1/auth/session', sessionCookie));
       assert(reuse.status === 401, 'une session révoquée doit être refusée');
+      await database.query('DELETE FROM notifications');
       await database.query('DELETE FROM claim_restrictions');
       await database.query('DELETE FROM claim_evidence_requests');
       await database.query('DELETE FROM claims');

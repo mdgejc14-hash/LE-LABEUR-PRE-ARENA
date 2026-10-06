@@ -954,15 +954,24 @@ export async function runPaymentCycleTests(): Promise<OfferTestResult[]> {
     });
 
     await check('P0-PAY-1 Périmètre: aucune table de fournisseur, aucun canal, aucun job pré-échéance non configuré', async () => {
+      // P0-NOTIFICATIONS (migration 0012) ouvre la SEULE boîte In-App ; le
+      // contrôle de frontière reste donc intégral sur les canaux EXTERNES et
+      // sur tout fournisseur réel, et devient explicite sur la boîte In-App.
       const tables = await harness.database.query<{ table_name: string }>(
         `SELECT table_name FROM information_schema.tables
           WHERE table_schema = current_schema()
             AND (table_name ILIKE '%provider%' OR table_name ILIKE '%webhook%'
                  OR table_name ILIKE '%mobile_money%' OR table_name ILIKE '%otp%'
-                 OR table_name ILIKE '%aggregator%' OR table_name ILIKE '%notification%'
-                 OR table_name ILIKE '%sms%' OR table_name ILIKE '%kyc%')`,
+                 OR table_name ILIKE '%aggregator%' OR table_name ILIKE '%sms%'
+                 OR table_name ILIKE '%kyc%' OR table_name ILIKE '%email%'
+                 OR table_name ILIKE '%whatsapp%' OR table_name ILIKE '%push%')`,
       );
-      assert(tables.rows.length === 0, `aucune table de paiement réel ni de canal, reçues ${tables.rows.map(row => row.table_name).join(', ')}`);
+      assert(tables.rows.length === 0, `aucune table de paiement réel ni de canal externe, reçues ${tables.rows.map(row => row.table_name).join(', ')}`);
+      const inAppInbox = await harness.database.query<{ table_name: string }>(
+        `SELECT table_name FROM information_schema.tables
+          WHERE table_schema = current_schema() AND table_name = 'notifications'`,
+      );
+      assert(inAppInbox.rows.length === 1, 'la boîte In-App de P0-NOTIFICATIONS est la seule table de notification');
 
       const jobs = await harness.database.query<{ count: string }>(
         'SELECT count(*)::text AS count FROM automation_jobs WHERE job_type = $1',
