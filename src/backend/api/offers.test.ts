@@ -189,7 +189,7 @@ export interface TestHarness {
   close: () => Promise<void>;
 }
 
-export async function createOffersTestHarness(): Promise<TestHarness> {
+export async function createOffersTestHarness(salaryTestOtpSink?: (paymentId: string, otp: string) => void): Promise<TestHarness> {
   offerIdempotencyCache.clear();
   const pg = new PGlite();
   const migrationFiles = readdirSync(MIGRATIONS_DIR).filter(file => file.endsWith('.sql')).sort();
@@ -208,6 +208,7 @@ export async function createOffersTestHarness(): Promise<TestHarness> {
   }, database, {
     googleVerifier: google.verifier,
     now: () => clock.value,
+    ...(salaryTestOtpSink ? { salaryTestOtpSink } : {}),
   });
 
   return {

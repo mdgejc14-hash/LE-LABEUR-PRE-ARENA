@@ -1754,6 +1754,33 @@ async function main(): Promise<void> {
       assert(rec.verdict === 'MATCH', `MATCH attendu sur rapprochement, reçu ${rec.verdict}`);
     });
 
+    await check('P0-SALARY-1 PostgreSQL réel : PAID → Outbox → worker, concurrence, OTP/nonce, audit et rollback', async () => {
+      const pay = (await database.query<{ id: string }>("SELECT id FROM payments WHERE contract_id=$1 AND payment_type='SALARY' AND month_number=1", [p0auto2ContractId])).rows[0];
+      assert(pay, 'salaire M1 trouvé');
+      await database.query(`UPDATE payments SET status='PAID', submitted_at=now(), reference='LOCAL-TEST',
+        current_declaration_id='LOCAL-TEST', verified_at=now() WHERE id=$1`, [pay.id]);
+      await database.query(`INSERT INTO automation_outbox(id,event_type,aggregate_type,aggregate_id,actor_id,payload,source)
+        VALUES($1,'PAYMENT_PAID','payment',$2,'SYSTEM',$3::jsonb,'SALARY_TEST')`,
+      [`salary-test-paid:${pay.id}`, pay.id, JSON.stringify({ paymentType: 'SALARY' })]);
+      const otps = new Map<string, string>();
+      const salary = composeWorker(env, compositionClient, { googleVerifier: google.verifier, salaryTestOtpSink: (id, otp) => otps.set(id, otp) });
+      await Promise.all([salary.automationWorker!.drainEvents(100), salary.automationWorker!.drainEvents(100)]);
+      await Promise.all([salary.automationWorker!.drainEvents(100), salary.automationWorker!.drainEvents(100)]);
+      const proof = (await database.query<{ nonce: string; otp_digest: string }>('SELECT nonce,otp_digest FROM salary_confirmations WHERE payment_id=$1', [pay.id])).rows[0];
+      assert(proof?.nonce.length === 64 && otps.has(pay.id) && proof.otp_digest !== otps.get(pay.id), 'une demande automatique, OTP hashé');
+      const confirm = (key: string, otp: string, nonce: string) => salary.worker.fetch(new Request(`https://api.test/api/v1/payments/${pay.id}/salary-confirmation`, {
+        method: 'POST', headers: { cookie: `${SESSION_COOKIE_NAME}=${sessionCookie}`, 'content-type': 'application/json', 'Idempotency-Key': key },
+        body: JSON.stringify({ otp, nonce }),
+      }));
+      const wrong = await confirm('salary-pg-wrong', '999999', proof.nonce);
+      assert(wrong.status !== 200, 'OTP invalide');
+      const audit = await database.query<{ action: string }>("SELECT action FROM automation_audit_ledger WHERE entity_id=$1 AND action='OTP_REJECTED'", [pay.id]);
+      assert(audit.rows.length === 1, 'audit OTP rejeté survit au rollback');
+      const [a, b] = await Promise.all([confirm('salary-pg-a', otps.get(pay.id)!, proof.nonce), confirm('salary-pg-b', otps.get(pay.id)!, proof.nonce)]);
+      assert([a.status, b.status].includes(200) && [a.status, b.status].some(status => status !== 200), 'une seule confirmation concurrente');
+      assert((await database.query('SELECT payment_id FROM salary_confirmations WHERE confirmed_at IS NOT NULL')).rows.length === 1, 'preuve unique');
+    });
+
     await check('Worker/API → PostgreSQL : ADMIN provisionné côté serveur + permissions SQL', async () => {
       const adminId = newEntityId('usr');
       const adminToken = newOpaqueSessionToken();

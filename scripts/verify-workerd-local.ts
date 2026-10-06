@@ -1115,6 +1115,38 @@ async function main(): Promise<void> {
       );
     });
 
+    await check('P0-SALARY-1 workerd → PostgreSQL : éligibilité, OTP non exposé, nonce, audit de refus', async () => {
+      const salary = await pool.query<{ id: string }>("SELECT id FROM payments WHERE payment_type='SALARY' ORDER BY id LIMIT 1");
+      const fee = await pool.query<{ id: string }>("SELECT id FROM payments WHERE payment_type='PLATFORM_FEE' LIMIT 1");
+      assert(salary.rows[0] && fee.rows[0], 'paiements du contrat attendus');
+      const send = (id: string, cookie: string, key: string, body: object = {}) => fetch(`${base}/api/v1/payments/${id}/salary-confirmation-request`, {
+        method: 'POST', headers: { cookie: `${SESSION_COOKIE_NAME}=${cookie}`, 'content-type': 'application/json', 'Idempotency-Key': key }, body: JSON.stringify(body),
+      });
+      const scheduled = await send(salary.rows[0].id, employerCookie, 'salary-workerd-scheduled');
+      assert(scheduled.status !== 200, 'SCHEDULED non éligible sous workerd');
+      const commission = await send(fee.rows[0].id, employerCookie, 'salary-workerd-fee');
+      assert(commission.status !== 200, 'commission non éligible sous workerd');
+      // Fixture locale: PAID est un état métier injecté par SQL; aucun transfert de fonds.
+      await pool.query(`UPDATE payments SET status='PAID', submitted_at=now(), reference='LOCAL-TEST',
+        current_declaration_id='LOCAL-TEST', verified_at=now() WHERE id=$1`, [salary.rows[0].id]);
+      const [first, second] = await Promise.all([
+        send(salary.rows[0].id, employerCookie, 'salary-workerd-one'),
+        send(salary.rows[0].id, employerCookie, 'salary-workerd-one'),
+      ]);
+      assert(first.status === 200 && second.status === 200, 'demande idempotente sous workerd');
+      const response = await first.json() as { nonce: string; otp?: string };
+      assert(response.nonce.length === 64 && response.otp === undefined, 'nonce rendu, OTP jamais exposé');
+      const rows = await pool.query<{ otp_digest: string }>('SELECT otp_digest FROM salary_confirmations WHERE payment_id=$1', [salary.rows[0].id]);
+      assert(rows.rows.length === 1 && rows.rows[0].otp_digest.length === 64, 'une seule preuve, OTP hashé');
+      const refused = await fetch(`${base}/api/v1/payments/${salary.rows[0].id}/salary-confirmation`, {
+        method: 'POST', headers: { cookie: `${SESSION_COOKIE_NAME}=${sessionCookie}`, 'content-type': 'application/json', 'Idempotency-Key': 'salary-workerd-refused' },
+        body: JSON.stringify({ otp: '000000', nonce: 'invalid' }),
+      });
+      assert(refused.status !== 200, 'nonce invalide refusé par workerd');
+      const audit = await pool.query<{ action: string }>("SELECT action FROM automation_audit_ledger WHERE entity_id=$1 AND action='SALARY_CONFIRMATION_CONFLICT'", [salary.rows[0].id]);
+      assert(audit.rows.length === 1, 'audit durable de rejet');
+    });
+
     await check('workerd → PostgreSQL : session relue, /me résolu, logout révoqué en base', async () => {
       const headers = { cookie: `${SESSION_COOKIE_NAME}=${sessionCookie}` };
       const session = await fetch(`${base}/api/v1/auth/session`, { headers });

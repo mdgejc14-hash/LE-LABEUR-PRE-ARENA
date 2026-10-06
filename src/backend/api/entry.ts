@@ -191,6 +191,8 @@ export interface WorkerCompositionOverrides {
   googleVerifier?: GoogleCredentialVerifier;
   now?: () => Date;
   paymentProviderAdapter?: PaymentProviderAdapter;
+  /** Test-only local OTP sink; never configured in production. */
+  salaryTestOtpSink?: (paymentId: string, otp: string) => void;
 }
 
 function isInjectedDatabase(value: PostgreSqlDatabase | PostgresClientPort): value is PostgreSqlDatabase {
@@ -581,6 +583,10 @@ export function composeWorker(
           persistence.database!.run(async tx => operation(createAutomationStores(tx))),
         ...(overrides.now ? { now: overrides.now } : {}),
         paymentPreDueLeadTimeMs: preDueLeadTime.leadTimeMs,
+        salaryConfirmation: async (paymentId: string) => {
+          await createSalaryConfirmationHandlers(persistence.database!, overrides.salaryTestOtpSink, createSqlAutomationStores)
+            .createRequest(paymentId, 'SYSTEM', `auto:${paymentId}`, true);
+        },
       }
     : undefined;
 
@@ -622,7 +628,7 @@ export function composeWorker(
     ...contractHandlers,
     // P0-PAY-1 — cycle Payment existant.
     ...paymentHandlers,
-    ...(persistence.database && mode === 'postgres' ? createSalaryConfirmationHandlers(persistence.database, undefined, createSqlAutomationStores) : {}),
+    ...(persistence.database && mode === 'postgres' ? createSalaryConfirmationHandlers(persistence.database, overrides.salaryTestOtpSink, createSqlAutomationStores) : {}),
     // P0-PAY-3 — imports batch, ledger externe et revue ADMIN.
     ...paymentReconciliationHandlers,
   };

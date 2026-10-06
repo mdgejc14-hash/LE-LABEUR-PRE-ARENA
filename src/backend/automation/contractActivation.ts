@@ -123,6 +123,7 @@ export interface AutomationTransactionRuntime {
    * n'en invente pas.
    */
   paymentPreDueLeadTimeMs?: number | null;
+  salaryConfirmation?: (paymentId: string) => Promise<void>;
 }
 
 export class ContractAutomationError extends Error {
@@ -884,6 +885,24 @@ export function createContractAutomation(
 
   const registry = new AutomationRegistry();
   registry.register('CONTRACT_ACTIVATED', handleContractActivated);
+  if (runtime.salaryConfirmation) {
+    registry.register('PAYMENT_PAID', async context => {
+      if (context.event.payload.paymentType !== 'SALARY') return;
+      await withTransaction(async stores => {
+        await stores.outbox.append({
+          eventId: `salary-trigger:${context.event.aggregateId}`, eventType: 'SALARY_CONFIRMATION_REQUESTED',
+          aggregateType: 'PAYMENT', aggregateId: context.event.aggregateId,
+          actorId: 'SYSTEM', timestamp: clock().toISOString(),
+          payload: { paymentId: context.event.aggregateId }, source: 'SALARY_CONFIRMATION', version: 1,
+        });
+      });
+    });
+    registry.register('SALARY_CONFIRMATION_REQUESTED', async context => {
+      // The request already exists when created through the explicit route.
+      if (context.event.eventId.startsWith('salary-request:')) return;
+      await runtime.salaryConfirmation!(context.event.aggregateId);
+    });
+  }
   registry.register(PAYMENT_RECONCILIATION_BATCH_REQUESTED_EVENT, handlePaymentReconciliationBatchRequested);
 
   const jobs = new ReminderJobRegistry();
@@ -904,7 +923,7 @@ export function createContractAutomation(
     registry,
     engine: new AutomationEngine(registry),
     jobs,
-    handledEventTypes: HANDLED_EVENT_TYPES,
+    handledEventTypes: [...HANDLED_EVENT_TYPES, ...(runtime.salaryConfirmation ? ['PAYMENT_PAID', 'SALARY_CONFIRMATION_REQUESTED'] as const : [])],
     handledJobTypes: [
       ...REMINDER_JOB_TYPES,
       ...(preDueJobType === null ? [] : [preDueJobType]),

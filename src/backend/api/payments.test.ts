@@ -241,7 +241,8 @@ export async function runPaymentCycleTests(): Promise<OfferTestResult[]> {
     }
   };
 
-  const harness = await createOffersTestHarness();
+  const salaryOtps = new Map<string, string>();
+  const harness = await createOffersTestHarness((id, otp) => salaryOtps.set(id, otp));
   const otherHarnessEmployees: { employerToken: string; employerId: string; candidateToken: string; candidateId: string } = {
     employerToken: '', employerId: '', candidateToken: '', candidateId: '',
   };
@@ -620,6 +621,93 @@ export async function runPaymentCycleTests(): Promise<OfferTestResult[]> {
       assert(rejectAfterPaid.status === 409, `PAID → REJECTED refusé, reçu ${rejectAfterPaid.status}`);
       const declarations = await readDeclarations(harness, seed.salaryPaymentId);
       assert(declarations.length === 1, 'aucune tentative ajoutée après PAID');
+    });
+
+    /* ---------------- P0-SALARY-1 : PostgreSQL + Worker/API ---------------- */
+    await check('P0-SALARY-1 PAID → outbox → worker → demande OTP unique, salaire uniquement', async () => {
+      const report = await harness.automationWorker!.drainEvents(100);
+      assert(report.deadLettered === 0, 'aucun événement dead-letter');
+      await harness.automationWorker!.drainEvents(100);
+      const rows = await harness.database.query<{ payment_id: string; nonce: string; otp_digest: string }>('SELECT * FROM salary_confirmations WHERE payment_id = $1', [seed.salaryPaymentId]);
+      assert(rows.rows.length === 1 && rows.rows[0].nonce.length === 64, `demande et nonce automatiques: ${JSON.stringify(report)}, ${JSON.stringify((await harness.database.query('SELECT event_type,status,last_error FROM automation_outbox WHERE aggregate_id=$1', [seed.salaryPaymentId])).rows)}`);
+      assert(rows.rows[0].otp_digest !== salaryOtps.get(seed.salaryPaymentId), 'OTP non stocké en clair');
+      assert(/^\d{6}$/.test(salaryOtps.get(seed.salaryPaymentId) ?? ''), 'OTP transmis au canal local de test');
+      const duplicate = await Promise.all([harness.automationWorker!.drainEvents(100), harness.automationWorker!.drainEvents(100)]);
+      assert(duplicate.every(item => item.deadLettered === 0), 'deux workers sans double effet');
+      assert((await harness.database.query('SELECT payment_id FROM salary_confirmations')).rows.length === 1, 'un seul dossier');
+      const fee = await post(harness, `/api/v1/payments/${seed.feePaymentId}/salary-confirmation-request`, employerToken, 'salary-fee-1', {});
+      assert(fee.status !== 200, 'commission non éligible');
+      const notPaid = await post(harness, `/api/v1/payments/${seed.secondMonthSalaryPaymentId}/salary-confirmation-request`, employerToken, 'salary-due-1', {});
+      assert(notPaid.status !== 200, 'salaire non PAID non éligible');
+    });
+
+    await check('P0-SALARY-1 cohérence échéancier, demandes concurrentes et rollback PostgreSQL', async () => {
+      const path = `/api/v1/payments/${seed.salaryPaymentId}/salary-confirmation-request`;
+      const [a, b] = await Promise.all([
+        post(harness, path, employerToken, 'salary-manual-1', {}),
+        post(harness, path, employerToken, 'salary-manual-2', {}),
+      ]);
+      assert(a.status === 200 && b.status === 200, 'deux demandes sur dossier automatique existant');
+      assert((await harness.database.query('SELECT payment_id FROM salary_confirmations')).rows.length === 1, 'aucun double dossier');
+      const original = (await harness.database.query<{ amount: string; period_key: string }>('SELECT amount, period_key FROM payments WHERE id=$1', [seed.salaryPaymentId])).rows[0];
+      try {
+        await harness.database.query('UPDATE payments SET amount = amount + 1, period_key = $2 WHERE id=$1', [seed.salaryPaymentId, 'wrong-month']);
+        const denied = await post(harness, path, employerToken, 'salary-inconsistent-1', {});
+        assert(denied.status !== 200, 'période et montant discordants refusés');
+      } finally {
+        await harness.database.query('UPDATE payments SET amount=$2, period_key=$3 WHERE id=$1', [seed.salaryPaymentId, original.amount, original.period_key]);
+      }
+      try {
+        await harness.database.run(async tx => {
+          await tx.query('UPDATE salary_confirmations SET nonce=$2 WHERE payment_id=$1', [seed.salaryPaymentId, 'temporary']);
+          throw new Error('rollback volontaire');
+        });
+      } catch (error) {
+        assert((error as Error).message === 'rollback volontaire', 'rollback attendu');
+      }
+      assert((await harness.database.query<{ nonce: string }>('SELECT nonce FROM salary_confirmations WHERE payment_id=$1', [seed.salaryPaymentId])).rows[0].nonce !== 'temporary', 'preuve inchangée après rollback');
+      const current = (await harness.database.query<{ amount: string; period_key: string }>('SELECT amount, period_key FROM payments WHERE id=$1', [seed.salaryPaymentId])).rows[0];
+      assert(Number(current.amount) === Number(original.amount) && current.period_key === original.period_key, 'rollback rétablit le paiement');
+    });
+
+    await check('P0-SALARY-1 audit durable des OTP refusés, nonce, expiration et tiers', async () => {
+      const path = `/api/v1/payments/${seed.salaryPaymentId}/salary-confirmation`;
+      const nonce = (await harness.database.query<{ nonce: string }>('SELECT nonce FROM salary_confirmations WHERE payment_id=$1', [seed.salaryPaymentId])).rows[0].nonce;
+      const otp = salaryOtps.get(seed.salaryPaymentId)!;
+      const third = await post(harness, path, employerToken, 'salary-third-1', { otp, nonce });
+      assert(third.status !== 200, 'employeur non candidat refusé');
+      const bad = await post(harness, path, candidateToken, 'salary-bad-1', { otp: otp === '000000' ? '999999' : '000000', nonce });
+      assert(bad.status !== 200, 'OTP invalide refusé');
+      const badNonce = await post(harness, path, candidateToken, 'salary-nonce-1', { otp, nonce: 'bad' });
+      assert(badNonce.status !== 200, 'nonce invalide refusé');
+      await harness.database.query("UPDATE salary_confirmations SET expires_at = now() - interval '1 minute' WHERE payment_id=$1", [seed.salaryPaymentId]);
+      const expired = await post(harness, path, candidateToken, 'salary-expired-1', { otp, nonce });
+      assert(expired.status !== 200, 'OTP expiré refusé');
+      const actions = (await harness.database.query<{ action: string }>('SELECT action FROM automation_audit_ledger WHERE entity_id=$1', [seed.salaryPaymentId])).rows.map(row => row.action);
+      assert(actions.includes('OTP_REJECTED') && actions.includes('OTP_EXPIRED') && actions.includes('SALARY_CONFIRMATION_CONFLICT'), 'audits conservés après rollback métier');
+      await harness.database.query("UPDATE salary_confirmations SET expires_at = now() + interval '10 minutes' WHERE payment_id=$1", [seed.salaryPaymentId]);
+    });
+
+    await check('P0-SALARY-1 confirmation concurrente, rejeu, OTP/nonce non réutilisable, rollback', async () => {
+      const path = `/api/v1/payments/${seed.salaryPaymentId}/salary-confirmation`;
+      const nonce = (await harness.database.query<{ nonce: string }>('SELECT nonce FROM salary_confirmations WHERE payment_id=$1', [seed.salaryPaymentId])).rows[0].nonce;
+      const otp = salaryOtps.get(seed.salaryPaymentId)!;
+      const [first, second] = await Promise.all([
+        post(harness, path, candidateToken, 'salary-confirm-1', { otp, nonce }),
+        post(harness, path, candidateToken, 'salary-confirm-2', { otp, nonce }),
+      ]);
+      assert([first.status, second.status].includes(200), 'une confirmation réussit');
+      assert([first.status, second.status].some(status => status !== 200), 'l’autre confirmation est refusée');
+      const replay = await post(harness, path, candidateToken, 'salary-confirm-1', { otp, nonce });
+      assert(replay.status === 200, 'même clé, même payload : résultat stable');
+      const conflict = await post(harness, path, candidateToken, 'salary-confirm-1', { otp: '999999', nonce });
+      assert(conflict.status !== 200, 'même clé et payload différent refusés');
+      const reused = await post(harness, path, candidateToken, 'salary-confirm-3', { otp, nonce });
+      assert(reused.status !== 200, 'nonce et OTP consommés');
+      const count = await harness.database.query('SELECT payment_id FROM salary_confirmations WHERE confirmed_at IS NOT NULL');
+      assert(count.rows.length === 1, 'une seule preuve persistante');
+      const events = await readPaymentOutbox(harness, seed.salaryPaymentId);
+      assert(events.filter(row => row.event_type === 'SALARY_CONFIRMED').length === 1, 'un seul événement logique');
     });
 
     /* ---------------- 9. Rejet motivé et régularisation ---------------- */

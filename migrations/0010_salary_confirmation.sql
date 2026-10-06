@@ -1,7 +1,7 @@
 BEGIN;
 CREATE TABLE salary_confirmations (
- payment_id TEXT PRIMARY KEY REFERENCES payments(id),
- contract_id TEXT NOT NULL REFERENCES contracts(id),
+ payment_id TEXT PRIMARY KEY REFERENCES payments(id) ON DELETE CASCADE,
+ contract_id TEXT NOT NULL REFERENCES contracts(id) ON DELETE CASCADE,
  candidate_id TEXT NOT NULL,
  employer_id TEXT NOT NULL,
  period_key TEXT NOT NULL,
