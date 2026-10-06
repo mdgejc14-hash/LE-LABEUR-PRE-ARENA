@@ -50,6 +50,7 @@ import type { DomainEventOutbox } from '../automation/records';
 import { newEntityId } from '../identity/ids';
 import { contractActivatedEventId } from '../../domain/contractScheduleAutomation';
 import type { ServerUserRecord, UserStore } from '../identity/stores';
+import type { ClaimStore } from '../disputes/records';
 // Import uniquement de TYPES : aucun couplage d'exécution à la persistance
 // (frontière Worker vérifiée par `src/backend/persistence/persistence.test.ts`).
 import type { ApplicationRecord, ApplicationStore, ContractHistoryEntry, ContractRecord, ContractStore, OfferRecord, OfferStore, ProposalRecord, ProposalStore } from '../persistence/coreRecords';
@@ -70,6 +71,8 @@ export interface ContractRepositoryStores {
   applications: ApplicationStore;
   offers: OfferStore;
   users: UserStore;
+  /** P0-DISPUTE-1 — contrôle d'une restriction de terminaison provisoire active. */
+  claimRestrictions?: Pick<ClaimStore, 'hasActiveRestriction'>;
   /**
    * P0-AUTO-2 — Outbox PostgreSQL lié à la MÊME transaction que la mutation.
    *
@@ -448,6 +451,15 @@ export function createContractRepository(
           throw new ApiError(
             'BUSINESS_RULE_VIOLATION',
             'Pendant le premier mois (M1), la protection interdit la rupture directe : un incident doit être signalé à LE LABEUR.',
+            undefined,
+            409,
+          );
+        }
+        if (rule.action === 'TERMINATE'
+          && await currentStores.claimRestrictions?.hasActiveRestriction(contract.id, actor.id, 'CONTRACT_TERMINATE')) {
+          throw new ApiError(
+            'BUSINESS_RULE_VIOLATION',
+            'Une restriction provisoire active liée à un Claim empêche temporairement cette terminaison.',
             undefined,
             409,
           );
