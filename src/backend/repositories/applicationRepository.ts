@@ -31,8 +31,10 @@ import type { ApplicationRecord, ApplicationStore, CoreStoreError, OfferRecord, 
 import type {
   AuthenticatedActor,
   CursorPage,
+  OutboxRepository,
   PageRequest,
   ProductionCommandContext,
+  TransactionContext,
 } from '../productionContracts';
 import type {
   ServerApplicationRepository,
@@ -47,8 +49,10 @@ export interface ApplicationRepositoryStores {
 
 export interface ApplicationRepositoryDependencies {
   stores: ApplicationRepositoryStores;
-  /** SQL callers bind every store in the callback to the same PostgreSQL transaction. */
-  runInTransaction?: <T>(operation: (stores: ApplicationRepositoryStores) => Promise<T>) => Promise<T>;
+  /** SQL callers bind every store and the outbox append to one PostgreSQL transaction. */
+  runInTransaction?: <T>(operation: (stores: ApplicationRepositoryStores, transaction?: TransactionContext) => Promise<T>) => Promise<T>;
+  /** Present only in PostgreSQL composition; demo/memory behavior remains unchanged. */
+  outbox?: OutboxRepository;
   now?: () => Date;
 }
 
@@ -179,7 +183,7 @@ export type OpenApplicationRepository = Pick<ServerApplicationRepository,
 export function createApplicationRepository(
   dependencies: ApplicationRepositoryDependencies,
 ): OpenApplicationRepository {
-  const { stores, runInTransaction } = dependencies;
+  const { stores, runInTransaction, outbox } = dependencies;
   const now = dependencies.now ?? (() => new Date());
 
   const toProjectionFromStores = async (
@@ -346,6 +350,9 @@ export function createApplicationRepository(
     ): Promise<Application> {
       const actor = requireTrustedActor(suppliedActor);
       requireCandidate(actor);
+      if (outbox && !runInTransaction) {
+        throw new Error('PostgreSQL outbox integration requires a transaction boundary.');
+      }
       const offerId = suppliedOfferId?.trim();
       if (!offerId) throw new ApiError('NOT_FOUND', 'Offre introuvable.');
       const payload = normalizePayload(suppliedPayload);
@@ -353,7 +360,10 @@ export function createApplicationRepository(
       const fingerprint = JSON.stringify({ offerId, payload });
 
       const submit = async (): Promise<Application> => {
-        const executeMutation = async (currentStores: ApplicationRepositoryStores): Promise<Application> => {
+        const executeMutation = async (
+          currentStores: ApplicationRepositoryStores,
+          transaction?: TransactionContext,
+        ): Promise<Application> => {
           // Re-read and lock current identity and offer state in the write
           // transaction; request data never selects the candidate identity.
           const candidate = await currentStores.users.findByIdForShare(actor.id);
@@ -389,9 +399,8 @@ export function createApplicationRepository(
             return toApplicationProjection(existing, offer, candidate, employer);
           }
 
-          // Événement métier futur à produire : APPLICATION_SUBMITTED. P0-E3
-          // persiste seulement la candidature; il n'ajoute ni moteur d'événements
-          // ni consumer Outbox.
+          // L'horodatage et l'identifiant de candidature déjà calculés par le
+          // comportement métier sont aussi réutilisés pour l'événement Outbox.
           const appliedAt = now().toISOString();
           const record: ApplicationRecord = {
             id: newEntityId('app'),
@@ -409,6 +418,27 @@ export function createApplicationRepository(
             ...(payload.note ? { note: payload.note } : {}),
           };
           const saved = await currentStores.applications.create(record);
+          if (outbox) {
+            if (!transaction) throw new Error('A PostgreSQL outbox append requires the business transaction handle.');
+            await outbox.append(transaction, {
+              id: `${saved.id}:APPLICATION_SUBMITTED`,
+              type: 'APPLICATION_SUBMITTED',
+              aggregateType: 'Application',
+              aggregateId: saved.id,
+              actorId: actor.id,
+              payload: {
+                applicationId: saved.id,
+                offerId,
+                candidateId: actor.id,
+                employerId: offer.employerId,
+              },
+              occurredAt: appliedAt,
+              dedupeKey: `application:${saved.id}:APPLICATION_SUBMITTED`,
+              source: 'application.repository',
+              version: 1,
+              ...(command.requestId ? { correlationId: command.requestId } : {}),
+            });
+          }
           return toApplicationProjection(saved, offer, candidate, employer);
         };
 

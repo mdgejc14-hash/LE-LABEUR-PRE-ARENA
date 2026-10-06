@@ -85,7 +85,7 @@ Les collections suivent `CursorPage<T> = { items, cursor, limit, hasMore }`. `pa
 
 Les commandes marquées dans le catalogue attendent l’en-tête `Idempotency-Key`. `commands.ts` en valide la forme et le Worker passe une `ProductionCommandContext` contenant l’acteur serveur, le nom de commande et la clé. **Cette validation n’est pas une garantie d’idempotence** : il n’existe pas encore de table ni de déduplication persistante.
 
-La future table doit imposer l’unicité de `(actor_id, command, key)`, garder une empreinte du payload, et rejouer le résultat terminé pour la même empreinte; la réutilisation de la clé avec un payload différent est un conflit. La réservation, la mutation et l’enregistrement du résultat doivent être protégés contre les courses concurrentes.
+P0-AUTO a ajouté `automation_idempotency` pour l’exécution des handlers et ScheduledJobs (`SYSTEM` + type de commande + clé d’événement). Cela ne remplace pas l’idempotence durable des commandes métier décrites ici : leur clé HTTP reste à relier à une table qui impose l’unicité de `(actor_id, command, key)`, conserve l’empreinte du payload, rejoue un résultat terminé identique et refuse un payload différent. La réservation, la mutation et l’enregistrement du résultat devront être protégés contre les courses concurrentes.
 
 `src/backend/services/transactions.ts` consigne les mutations à rendre atomiques : activation du contrat, vérification/rejet du paiement, signalement/arbitrage d’incident, création/transfert de remplacement et blocage/déblocage. Le port `TransactionBoundary` n’a volontairement **aucune implémentation mémoire**; un `try/catch` n’est pas présenté comme une transaction DB.
 
@@ -93,9 +93,9 @@ La future table doit imposer l’unicité de `(actor_id, command, key)`, garder 
 
 `ProductionAuditEvent` réserve les champs acteur serveur (`actorId`, `actorRole`), action, entité, raison, états avant/après, `requestId` et horodatage. Cette structure de production reste distincte du `SystemAuditLog` mock.
 
-La mutation métier, l’entrée d’audit et les événements Outbox futurs devront être écrits dans la même transaction PostgreSQL. Les types d’événements prioritaires incluent : `PAYMENT_DECLARED`, `PAYMENT_APPROVED`, `PAYMENT_REJECTED`, `CONTRACT_SIGNED`, `INCIDENT_OPENED`, `REPLACEMENT_CREATED`, `ACCOUNT_BLOCKED` et `ACCOUNT_UNBLOCKED`.
+Pour chaque domaine, la mutation métier et son événement Outbox doivent être écrits dans la même transaction PostgreSQL; l’audit transactionnel métier, lorsqu’il est requis, doit partager cette transaction. P0-AUTO applique cette atomicité à la soumission d’une candidature. Les types futurs incluent notamment `PAYMENT_DECLARED`, `PAYMENT_APPROVED`, `PAYMENT_REJECTED`, `CONTRACT_SIGNED`, `INCIDENT_OPENED`, `REPLACEMENT_CREATED`, `ACCOUNT_BLOCKED` et `ACCOUNT_UNBLOCKED`.
 
-`OutboxRepository` et `OutboxDispatcherBoundary` ne sont que des ports. Il n’y a actuellement ni file persistante, ni consumer, ni notification de production. Les consumers futurs doivent être rejouables sur `event.id` et utiliser une clé de déduplication stable.
+Depuis P0-AUTO, `OutboxRepository` est implémenté sur PostgreSQL; `automation_queue`, l'Automation Worker local, l'AutomationEngine et l'IdempotencyStore ont aussi des adaptateurs persistants. Seul `APPLICATION_SUBMITTED` alimente actuellement la chaîne. Son handler écrit après commit une entrée d'audit d’exécution idempotente (ce n’est pas l’audit transactionnel de la mutation) — aucune notification métier n'est envoyée. Les autres événements restent des contrats déclaratifs; Cloudflare Queue et Cron production ne sont pas branchés. Les handlers doivent rester rejouables sur `event.id` et utiliser une clé stable.
 
 ## 9. Scheduler J+3
 

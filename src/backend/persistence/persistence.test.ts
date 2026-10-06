@@ -564,14 +564,22 @@ export async function runPostgresFoundationTests(): Promise<PostgresFoundationTe
     assert(!/\bDROP CONSTRAINT\b(?! IF EXISTS)/i.test(stripped), 'tout DROP CONSTRAINT doit être gardé par IF EXISTS');
   });
 
-  await check('Migrations: les 10 tables du noyau sont créées', () => {
+  await check('Migrations: les tables noyau et Automation déclarées sont créées', () => {
     for (const table of CORE_TABLES) {
       assert(schema.has(table), `table manquante: ${table}`);
       assert(schema.get(table)!.size > 0, `table vide: ${table}`);
     }
-    const automationTables = ['automation_outbox', 'automation_jobs', 'automation_idempotency', 'automation_audit_ledger'];
-    const extra = [...schema.keys()].filter(key => !CORE_TABLES.includes(key as (typeof CORE_TABLES)[number]) && !automationTables.includes(key));
-    assert(extra.length === 0, `tables hors noyau détectées: ${extra.join(', ')}`);
+    const automationTables = [
+      'automation_outbox', 'automation_jobs', 'automation_idempotency',
+      'automation_audit_ledger', 'automation_queue',
+    ];
+    for (const table of automationTables) {
+      assert(schema.has(table), `table Automation manquante: ${table}`);
+      assert(schema.get(table)!.size > 0, `table Automation vide: ${table}`);
+    }
+    const allowed = new Set<string>([...CORE_TABLES, ...automationTables]);
+    const extra = [...schema.keys()].filter(key => !allowed.has(key));
+    assert(extra.length === 0, `tables hors périmètre détectées: ${extra.join(', ')}`);
   });
 
   await check('Migrations: domaines d’états identiques aux types TypeScript', () => {

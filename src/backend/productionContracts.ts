@@ -93,8 +93,8 @@ export interface IdempotencyRecord<TResult = unknown> {
 
 export interface IdempotencyStore {
   /**
-   * Futur stockage durable et transactionnel. La clé unique est scellée sur
-   * (actorId, command, key); un payload différent doit produire un conflit.
+   * Réservation durable unique sur (actorId, command, key). Un payload différent
+   * produit un conflit; une réservation expirée peut être reprise après crash.
    */
   reserve<TResult>(input: Omit<IdempotencyRecord<TResult>, 'status' | 'result' | 'completedAt'>): Promise<
     | { kind: 'reserved' }
@@ -103,6 +103,8 @@ export interface IdempotencyStore {
     | { kind: 'in-progress' }
   >;
   complete<TResult>(actorId: string, command: string, key: string, result: TResult): Promise<void>;
+  /** Libère un échec pour autoriser le retry; l'adaptateur conserve le bail expiré. */
+  release(actorId: string, command: string, key: string): Promise<void>;
 }
 
 export interface TransactionContext {
@@ -142,12 +144,11 @@ export type OutboxEventType =
   | 'ACCOUNT_UNBLOCKED'
   | 'PAYMENT_OVERDUE_J3'
   /**
-   * P0-E3/P0-E4 — cycle CANDIDATURE : types DÉCLARÉS pour le futur moteur
-   * transactional Outbox/Queue, non encore produits. P0-E4 persiste uniquement
-   * la transition dans la transaction PostgreSQL; aucun événement n'est écrit,
-   * aucune file n'est créée, aucun consumer n'est installé.
-   * Contrats documentés : `src/domain/applicationTransitions.ts`
-   * (`DOCUMENTED_APPLICATION_EVENTS`).
+   * P0-E3/P0-E4 — cycle CANDIDATURE. P0-AUTO-2 émet seulement
+   * `APPLICATION_SUBMITTED` dans l'Outbox transactionnelle PostgreSQL;
+   * les événements de décision restent déclaratifs et les notifications
+   * métier correspondantes ne sont pas installées.
+   * Contrats : `src/domain/applicationTransitions.ts`.
    */
   | 'APPLICATION_SUBMITTED'
   | 'APPLICATION_EXAMINED'
@@ -155,24 +156,20 @@ export type OutboxEventType =
   | 'APPLICATION_REJECTED'
   | 'APPLICATION_WITHDRAWN'
   /**
-   * P0-E5 — cycle PROPOSITION d'embauche : types DÉCLARÉS pour le futur moteur
-   * transactional Outbox/Queue, non encore produits. P0-E5 persiste uniquement
-   * la transition dans la transaction PostgreSQL; aucun événement n'est écrit,
-   * aucune file n'est créée, aucun consumer n'est installé.
-   * Contrats documentés : `src/domain/proposalTransitions.ts`
-   * (`DOCUMENTED_PROPOSAL_EVENTS`).
+   * P0-E5 — cycle PROPOSITION d'embauche : types déclarés uniquement.
+   * La transition est persistée dans la transaction PostgreSQL, mais aucun
+   * producteur PROPOSAL_* ni handler de domaine n'est branché à l'Automation.
+   * Contrats documentés : `src/domain/proposalTransitions.ts`.
    */
   | 'PROPOSAL_SENT'
   | 'PROPOSAL_ACCEPTED'
   | 'PROPOSAL_DECLINED'
   | 'PROPOSAL_EXPIRED'
   /**
-   * P0-F — cycle CONTRAT : types DÉCLARÉS pour le futur moteur transactional
-   * Outbox/Queue, non encore produits. P0-F persiste uniquement la transition
-   * dans la transaction PostgreSQL; aucun événement n'est écrit, aucune file
-   * n'est créée, aucun consumer n'est installé, aucune notification n'est émise.
-   * Contrats documentés : `src/domain/contractTransitions.ts`
-   * (`DOCUMENTED_CONTRACT_EVENTS`).
+   * P0-F — cycle CONTRAT : types déclarés uniquement. Les transitions restent
+   * persistées dans leur transaction métier sans producteur CONTRACT_* branché
+   * à l'Automation, sans consumer de domaine et sans notification.
+   * Contrats documentés : `src/domain/contractTransitions.ts`.
    */
   | 'CONTRACT_CREATED'
   | 'CONTRACT_SENT'
@@ -187,8 +184,13 @@ export interface OutboxEvent {
   aggregateId: string;
   payload: Record<string, unknown>;
   occurredAt: string;
-  /** Stable key for consumer-side deduplication. */
+  /** Stable key for producer- and consumer-side deduplication. */
   dedupeKey: string;
+  actorId?: string;
+  source?: string;
+  version?: number;
+  correlationId?: string;
+  causationId?: string;
 }
 
 export interface OutboxRepository {

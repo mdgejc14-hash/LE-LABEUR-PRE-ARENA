@@ -561,8 +561,8 @@ export function createProposalRepository(
             ...(payload.endDate ? { endDate: payload.endDate } : {}),
           };
           const saved = await currentStores.proposals.create(record);
-          // Événement métier futur à produire : PROPOSAL_SENT (documenté, non
-          // émis : aucun moteur Outbox/Queue en P0-E5).
+          // PROPOSAL_SENT reste documenté mais non émis : P0-AUTO branche
+          // uniquement APPLICATION_SUBMITTED, sans effet sur le cycle PROPOSAL.
           return toProposalProjection(saved, employer, employee);
         };
 
