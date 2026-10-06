@@ -24,7 +24,12 @@
  *    dans l'Outbox PostgreSQL, puis le worker d'automatisation (runtime local,
  *    AUCUN Cron ni Queue Cloudflare de production) le consomme et crée
  *    réellement l'échéancier salarial, l'échéancier de commission, les
- *    échéances et les jobs de rappel — avec audit, idempotence et escalade J+3.
+ *    échéances et les jobs de rappel — avec audit, idempotence et escalade J+3 ;
+ *  - P0-NOTIFICATIONS : les mêmes événements sont projetés en notifications
+ *    In-App (canal prioritaire), lues et marquées comme lues via des requêtes
+ *    HTTP réelles TRAVERSANT workerd. Les canaux Push et Email restent des
+ *    abstractions de code : aucun fournisseur, aucun secret, aucune table de
+ *    canal externe.
  *
  * Ce que ce script NE prouve PAS :
  *  - il n'y a ni compte Cloudflare, ni Hyperdrive déployé, ni `wrangler deploy`,
@@ -828,7 +833,7 @@ async function main(): Promise<void> {
       assert(applicationRow.rows[0]?.contract_id === completed.contractId, 'candidature rattachée à son contrat');
     });
 
-    await check('P0-AUTO-2 workerd → PostgreSQL → Outbox → Queue → Worker → AutomationEngine : échéancier, échéances et rappels réels', async () => {
+    await check('P0-AUTO-2 workerd → PostgreSQL → Outbox → Queue → Worker → AutomationEngine : échéancier, échéances, rappels réels et projection In-App des mêmes événements', async () => {
       const ownerHeaders = (key: string) => ({
         cookie: `${SESSION_COOKIE_NAME}=${employerCookie}`,
         'content-type': 'application/json',
@@ -1010,7 +1015,7 @@ async function main(): Promise<void> {
       );
       assert(Number(afterReplay.rows[0]?.count ?? 0) === 21, 'aucun doublon d’échéance ni de rappel au rejeu');
 
-      // 6. Rappels échus : événements préparés, escalade J+3, AUCUN canal.
+      // 6. Rappels échus : événements préparés, escalade J+3, AUCUN canal externe.
       await pool.query(
         `UPDATE contracts
             SET payment_schedule = (
@@ -1058,16 +1063,54 @@ async function main(): Promise<void> {
       );
       assert(notificationEvents.rows.length >= 4, `événements préparés attendus, reçus ${notificationEvents.rows.length}`);
       for (const row of notificationEvents.rows) {
-        assert((row.payload as Record<string, unknown>).channel === null, 'AUCUN canal de notification');
-        assert(row.status === 'PENDING' && row.attempts === 0, 'aucun consumer : événement préparé, jamais envoyé');
+        assert((row.payload as Record<string, unknown>).channel === null, 'le payload d’origine ne porte AUCUN canal');
+        assert(row.status === 'PENDING' && row.attempts === 0, 'aucun consumer ne les a réclamés avant la passe de notification');
       }
+
+      // P0-NOTIFICATIONS : le worker EXISTANT consomme ces événements et les
+      // projette en notifications In-App. Aucun canal externe n’est installé.
+      const notificationDrain = await automationComposition.automationWorker!.drainEvents(50);
+      const preparedClaimed = notificationDrain.entries.filter(
+        entry => entry.eventType === 'NOTIFICATION_REQUIRED' || entry.eventType === 'PAYMENT_OVERDUE_J3',
+      );
+      assert(
+        preparedClaimed.length === notificationEvents.rows.length,
+        `les événements préparés sont réclamés par le consumer réel, reçus ${preparedClaimed.length}`,
+      );
+      assert(preparedClaimed.every(entry => entry.result === 'completed'), 'traitement complet des événements préparés');
+      const preparedAfter = await pool.query<{ count: string }>(
+        `SELECT count(*)::text AS count FROM automation_outbox
+          WHERE aggregate_id = $1 AND event_type IN ('NOTIFICATION_REQUIRED', 'PAYMENT_OVERDUE_J3')
+            AND status = 'PROCESSED'`,
+        [contract.id],
+      );
+      assert(Number(preparedAfter.rows[0]?.count ?? 0) === notificationEvents.rows.length, 'événements préparés traités');
+      const inbox = await pool.query<{ recipient_id: string; push_status: string; email_status: string }>(
+        `SELECT recipient_id, push_status, email_status FROM notifications
+          WHERE source_event_type IN ('NOTIFICATION_REQUIRED', 'PAYMENT_OVERDUE_J3')`,
+      );
+      assert(inbox.rows.length >= 4, `notifications In-App produites par workerd, reçues ${inbox.rows.length}`);
+      assert(
+        inbox.rows.every(row => row.push_status === 'NOT_AVAILABLE' && row.email_status === 'NOT_AVAILABLE'),
+        'aucun fournisseur Push/Email installé : jamais un faux « envoyé »',
+      );
+      const orphanRecipients = await pool.query<{ count: string }>(
+        `SELECT count(*)::text AS count FROM notifications AS n WHERE n.recipient_id NOT IN (SELECT id FROM users)`,
+      );
+      assert(Number(orphanRecipients.rows[0]?.count ?? 0) === 0, 'tout destinataire est un compte réel');
+
       const channels = await pool.query<{ table_name: string }>(
         `SELECT table_name FROM information_schema.tables
           WHERE table_schema = current_schema()
-            AND (table_name ILIKE '%notification%' OR table_name ILIKE '%email%' OR table_name ILIKE '%sms%'
+            AND (table_name ILIKE '%email%' OR table_name ILIKE '%sms%'
                  OR table_name ILIKE '%whatsapp%' OR table_name ILIKE '%push%')`,
       );
-      assert(channels.rows.length === 0, 'aucune table de canal de notification');
+      assert(channels.rows.length === 0, 'aucune table de canal EXTERNE');
+      const inAppTable = await pool.query<{ table_name: string }>(
+        `SELECT table_name FROM information_schema.tables
+          WHERE table_schema = current_schema() AND table_name = 'notifications'`,
+      );
+      assert(inAppTable.rows.length === 1, 'la boîte In-App est la seule table de notification');
 
       // 7. Post-contractuel NON ouvert : offre et candidature inchangées.
       const offerRow = await pool.query<{ status: string }>('SELECT status FROM offers WHERE id = $1', [offer.id]);
@@ -1117,6 +1160,65 @@ async function main(): Promise<void> {
         audit.rows.some(row => row.event_id === contractActivatedEventId(contract.id)),
         'eventId tracé dans l’audit',
       );
+    });
+
+    await check('P0-NOTIFICATIONS workerd → PostgreSQL : notifications In-App lues et marquées lues à travers des requêtes HTTP réelles', async () => {
+      // La notification d’activation a été produite par le worker LOCAL ci-dessus
+      // sur le MÊME PostgreSQL réel ; elle est maintenant lue via workerd.
+      const headers = { cookie: `${SESSION_COOKIE_NAME}=${employerCookie}` };
+      const listed = await fetch(`${base}/api/v1/my/notifications?limit=50`, { headers });
+      assert(listed.status === 200, `200 attendu, reçu ${listed.status}`);
+      const page = await listed.json() as { items: Array<{ id: string; recipientId: string; type: string; readState: string }> };
+      assert(page.items.length > 0, 'le contractant voit ses notifications In-App');
+      assert(page.items.every(item => item.recipientId === employerId), 'aucune notification d’un autre compte');
+      assert(
+        page.items.some(item => item.type === 'CONTRACT_ACTIVE' && item.readState === 'UNREAD'),
+        'la notification d’activation est présente et non lue',
+      );
+
+      // Un compte hors parties ne voit RIEN.
+      const outsiderList = await fetch(`${base}/api/v1/my/notifications?limit=50`, {
+        headers: { cookie: `${SESSION_COOKIE_NAME}=${otherEmployerCookie}` },
+      });
+      const outsiderPage = await outsiderList.json() as { items: unknown[] };
+      assert(outsiderPage.items.length === 0, 'un tiers hors parties ne voit RIEN');
+
+      // Marquage lu, puis rejeu EXACT : même résultat, aucun second audit.
+      const target = page.items.find(item => item.type === 'CONTRACT_ACTIVE')!;
+      const readHeaders = {
+        cookie: `${SESSION_COOKIE_NAME}=${employerCookie}`,
+        'content-type': 'application/json',
+        'Idempotency-Key': 'p0notif-workerd-read-001',
+      };
+      const first = await fetch(`${base}/api/v1/notifications/${target.id}/read`, {
+        method: 'POST', headers: readHeaders, body: '{}',
+      });
+      assert(first.status === 200, `marquage 200 attendu, reçu ${first.status}`);
+      const body = await first.json() as { readState: string; readAt?: string };
+      assert(body.readState === 'READ' && body.readAt !== undefined, 'état lu persisté depuis workerd');
+      const replay = await fetch(`${base}/api/v1/notifications/${target.id}/read`, {
+        method: 'POST', headers: readHeaders, body: '{}',
+      });
+      assert(replay.status === 200, `rejeu idempotent (200) attendu, reçu ${replay.status}`);
+      const audits = await pool.query<{ count: string }>(
+        `SELECT count(*)::text AS count FROM automation_audit_ledger
+          WHERE action = 'NOTIFICATION_READ' AND entity_id = $1`,
+        [target.id],
+      );
+      assert(Number(audits.rows[0]?.count ?? 0) === 1, 'une seule entrée d’audit pour la commande rejouée');
+
+      // Le destinataire d’une notification est TOUJOURS un compte réel.
+      const orphans = await pool.query<{ count: string }>(
+        `SELECT count(*)::text AS count FROM notifications AS n WHERE n.recipient_id NOT IN (SELECT id FROM users)`,
+      );
+      assert(Number(orphans.rows[0]?.count ?? 0) === 0, 'aucune notification orpheline');
+      const externalChannels = await pool.query<{ count: string }>(
+        `SELECT count(*)::text AS count FROM information_schema.tables
+          WHERE table_schema = current_schema()
+            AND (table_name ILIKE '%email%' OR table_name ILIKE '%sms%'
+                 OR table_name ILIKE '%whatsapp%' OR table_name ILIKE '%push%')`,
+      );
+      assert(Number(externalChannels.rows[0]?.count ?? 0) === 0, 'aucune table de canal externe créée par workerd');
     });
 
     await check('P0-SALARY-1 workerd → PostgreSQL : éligibilité, OTP non exposé, nonce, audit de refus', async () => {

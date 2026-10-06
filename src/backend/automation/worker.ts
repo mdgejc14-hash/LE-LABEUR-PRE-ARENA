@@ -57,6 +57,21 @@ export interface AutomationWorkerDependencies {
   automation: ContractAutomation;
   /** P0-DISPUTE-1 — handlers Claim branchés sur la même Outbox/jobs/deadlines. */
   supplemental?: SupplementalAutomationProcessor;
+  /**
+   * P0-NOTIFICATIONS — processeurs SUPPLÉMENTAIRES, branchés sur la même
+   * Outbox, le même claim verrouillé et les mêmes tentatives.
+   *
+   * Un événement est routé vers TOUS les processeurs qui déclarent son type,
+   * PUIS (si l'automatisation le déclare aussi) vers l'`AutomationEngine`.
+   * C'est ce qui permet à la couche de notification d'observer un événement
+   * métier SANS le « voler » à son producteur de référence : `CLAIM_CREATED`
+   * reste traité par le processeur Claim, et notifié par le processeur
+   * Notification, dans la même passe et sous le même claim.
+   *
+   * Les types de JOB, eux, restent exclusifs : les processeurs sont consultés
+   * dans l'ordre et le PREMIER qui déclare le type le traite.
+   */
+  processors?: readonly SupplementalAutomationProcessor[];
   now?: () => Date;
   maxAttempts?: number;
   retryDelayMs?: number;
@@ -150,7 +165,25 @@ export function createAutomationWorker(
   dependencies: AutomationWorkerDependencies,
 ): AutomationWorker {
   const { database, createStores, automation } = dependencies;
-  const supplemental = dependencies.supplemental;
+  // `supplemental` (P0-DISPUTE-1) reste accepté tel quel et garde sa PRIORITÉ
+  // d'ordre : il est simplement normalisé en tête de liste, donc le
+  // comportement des compositions existantes est strictement inchangé.
+  const supplementalProcessors: readonly SupplementalAutomationProcessor[] = [
+    ...(dependencies.supplemental ? [dependencies.supplemental] : []),
+    ...(dependencies.processors ?? []),
+  ];
+  const handledEventTypes = [
+    ...new Set([
+      ...automation.handledEventTypes,
+      ...supplementalProcessors.flatMap(processor => processor.handledEventTypes),
+    ]),
+  ];
+  const handledJobTypes = [
+    ...new Set([
+      ...automation.handledJobTypes,
+      ...supplementalProcessors.flatMap(processor => processor.handledJobTypes),
+    ]),
+  ];
   const clock = dependencies.now ?? (() => new Date());
   const maxAttempts = dependencies.maxAttempts ?? DEFAULT_MAX_ATTEMPTS;
   const retryDelayMs = dependencies.retryDelayMs ?? DEFAULT_RETRY_DELAY_MS;
@@ -159,8 +192,8 @@ export function createAutomationWorker(
     database.run(async transaction => operation(createStores(transaction)));
 
   return {
-    handledEventTypes: [...new Set([...automation.handledEventTypes, ...(supplemental?.handledEventTypes ?? [])])],
-    handledJobTypes: [...new Set([...automation.handledJobTypes, ...(supplemental?.handledJobTypes ?? [])])],
+    handledEventTypes,
+    handledJobTypes,
 
     async drainEvents(limit = DEFAULT_CLAIM_LIMIT): Promise<EventDrainReport> {
       const report: EventDrainReport = {
@@ -170,7 +203,7 @@ export function createAutomationWorker(
       const claimedAt = clock();
       const claimed = await inTransaction(stores => stores.outbox.claimDue({
         limit,
-        eventTypes: [...new Set([...automation.handledEventTypes, ...(supplemental?.handledEventTypes ?? [])])],
+        eventTypes: handledEventTypes,
         now: claimedAt.toISOString(),
       }));
       report.claimed = claimed.length;
@@ -185,9 +218,19 @@ export function createAutomationWorker(
         };
 
         try {
-          const result = supplemental?.handledEventTypes.includes(event.eventType)
-            ? await supplemental.handleEvent(event)
-            : await automation.engine.execute(event, engineIdempotencyKey(event));
+          // 1. Le moteur d'automatisation EXISTANT traite le type qu'il déclare.
+          const engineResult = automation.handledEventTypes.includes(event.eventType)
+            ? await automation.engine.execute(event, engineIdempotencyKey(event))
+            : null;
+          // 2. Chaque processeur qui déclare le type observe le MÊME événement,
+          //    dans l'ordre de composition. Aucun ne le « vole » à un autre.
+          let processorDuplicate = false;
+          for (const processor of supplementalProcessors) {
+            if (!processor.handledEventTypes.includes(event.eventType)) continue;
+            const outcome = await processor.handleEvent(event);
+            if (outcome === 'duplicate') processorDuplicate = true;
+          }
+          const result = engineResult === 'duplicate' || processorDuplicate ? 'duplicate' : 'completed';
           await inTransaction(stores =>
             stores.outbox.markProcessed(event.eventId, clock().toISOString()));
           entry.result = result === 'duplicate' ? 'duplicate' : 'completed';
@@ -232,7 +275,7 @@ export function createAutomationWorker(
       const claimedAt = clock();
       const claimedRows = await inTransaction(stores => stores.jobs.claimDue({
         limit,
-        jobTypes: [...new Set([...automation.handledJobTypes, ...(supplemental?.handledJobTypes ?? [])])],
+        jobTypes: handledJobTypes,
         now: claimedAt.toISOString(),
       }));
       // `UPDATE … RETURNING` ne garantit pas l'ordre du sous-select : les jobs
@@ -260,7 +303,11 @@ export function createAutomationWorker(
         const reconciliationHandler = dependencies.paymentReconciliationJobs?.jobTypes.includes(job.jobType)
           ? dependencies.paymentReconciliationJobs.handle
           : undefined;
-        const supplementalHandler = supplemental?.handledJobTypes.includes(job.jobType) ? supplemental.handleJob : undefined;
+        // Les types de job restent EXCLUSIFS : le premier processeur qui
+        // déclare le type le traite (aucun doublon d'exécution possible).
+        const supplementalHandler = supplementalProcessors
+          .find(processor => processor.handledJobTypes.includes(job.jobType))
+          ?.handleJob;
 
         if (!isPreDue && (!parsed || !handler) && !reconciliationHandler && !supplementalHandler) {
           const message = `Aucun handler de job pour ${job.jobType}.`;

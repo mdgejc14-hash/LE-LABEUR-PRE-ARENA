@@ -103,9 +103,11 @@ export const HANDLED_EVENT_TYPES: readonly DomainEventType[] = [
 ];
 
 /**
- * Types d'événements PRÉPARÉS pour le futur module Notifications. Ils sont
- * écrits dans l'outbox et n'ont volontairement AUCUN consumer : aucun canal de
- * notification n'existe dans cette tranche.
+ * Types d'événements PRÉPARÉS par P0-AUTO-2 pour le module Notifications. La
+ * couche de notification P0-NOTIFICATIONS les CONSOMME désormais (In-App), sans
+ * qu'aucune ligne de ce module ne change : le producteur reste ici, le consumer
+ * vit dans `src/backend/notifications/notificationAutomation.ts`. Aucun canal
+ * externe (Push, Email, SMS, WhatsApp) n'est ouvert.
  */
 export const DEFERRED_NOTIFICATION_EVENT_TYPES: readonly DomainEventType[] = [
   'NOTIFICATION_REQUIRED',
