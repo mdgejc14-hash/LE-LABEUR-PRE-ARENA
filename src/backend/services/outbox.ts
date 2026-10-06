@@ -12,7 +12,9 @@ export interface OutboxEffectContract {
  */
 export const OUTBOX_EFFECT_CONTRACTS: readonly OutboxEffectContract[] = [
   { eventType: 'PAYMENT_DECLARED', sideEffects: ['notify the relevant reviewer', 'update payment activity feed'], idempotencyKey: 'event.id' },
+  { eventType: 'PAYMENT_SUBMITTED', sideEffects: ['alias for PAYMENT_DECLARED', 'update payment activity feed'], idempotencyKey: 'event.id' },
   { eventType: 'PAYMENT_APPROVED', sideEffects: ['notify employer and employee', 'refresh schedule state'], idempotencyKey: 'event.id' },
+  { eventType: 'PAYMENT_VERIFIED', sideEffects: ['alias for PAYMENT_APPROVED', 'refresh schedule state'], idempotencyKey: 'event.id' },
   { eventType: 'PAYMENT_REJECTED', sideEffects: ['notify employer with the recorded reason', 'refresh schedule state'], idempotencyKey: 'event.id' },
   /**
    * Cycle CONTRAT — porté par P0-F.

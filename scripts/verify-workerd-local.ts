@@ -293,6 +293,22 @@ async function main(): Promise<void> {
       assert(admin.status === 401, `401 attendu sans session, reçu ${admin.status}`);
     });
 
+    await check('P0-PAY-2 workerd : routes webhook fournisseur ouvertes et sécurisées (401 sans signature)', async () => {
+      const rootWebhook = await fetch(`${base}/api/webhooks/payment-provider`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: '{}',
+      });
+      assert(rootWebhook.status === 401, `401 attendu sur webhook racine sans signature, reçu ${rootWebhook.status}`);
+
+      const v1Webhook = await fetch(`${base}/api/v1/webhooks/payment-provider`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: '{}',
+      });
+      assert(v1Webhook.status === 401, `401 attendu sur webhook v1 sans signature, reçu ${v1Webhook.status}`);
+    });
+
     await check('workerd → PostgreSQL : login Google signé, session réellement persistée', async () => {
       const response = await fetch(`${base}/api/v1/auth/google/credential`, {
         method: 'POST',

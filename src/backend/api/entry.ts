@@ -86,6 +86,7 @@ import {
   type OpenPaymentRepository,
   type PaymentRepositoryStores,
 } from '../repositories/paymentRepository';
+import type { PaymentProviderAdapter } from '../payments/paymentVerification';
 import {
   resolvePreDueLeadTimeFromEnv,
   runDuePaymentSweep,
@@ -175,6 +176,7 @@ export interface WorkerComposition {
 export interface WorkerCompositionOverrides {
   googleVerifier?: GoogleCredentialVerifier;
   now?: () => Date;
+  paymentProviderAdapter?: PaymentProviderAdapter;
 }
 
 function isInjectedDatabase(value: PostgreSqlDatabase | PostgresClientPort): value is PostgreSqlDatabase {
@@ -510,6 +512,7 @@ export function composeWorker(
           },
           ...(runPaymentInTransaction ? { runInTransaction: runPaymentInTransaction } : {}),
           ...(overrides.now ? { now: overrides.now } : {}),
+          ...(overrides.paymentProviderAdapter ? { providerAdapter: overrides.paymentProviderAdapter } : {}),
         });
       })()
     : undefined;

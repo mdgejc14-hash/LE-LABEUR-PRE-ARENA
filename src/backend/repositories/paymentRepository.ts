@@ -46,6 +46,7 @@ import {
   PAYMENT_CONFIRM_COMMAND,
   PAYMENT_DECLARATION_COMMAND,
   PAYMENT_REJECT_COMMAND,
+  PAYMENT_TERMINAL_REFUSAL_REASON,
   PAYMENT_TRANSITION_RULES,
   PAYMENT_VERIFICATION_COMMAND,
   buildPaymentDraftsFromSchedule,
@@ -69,9 +70,19 @@ import {
 import {
   createLocalPaymentReconciliationService,
   createLocalPaymentVerificationService,
+  createTestPaymentProviderAdapter,
+  createUnconfiguredPaymentProviderAdapter,
+  type PaymentProviderAdapter,
   type PaymentReconciliationService,
   type PaymentVerificationService,
 } from '../payments/paymentVerification';
+import type {
+  NormalizedPaymentTransaction,
+  NormalizedReconciliationResult,
+  NormalizedVerificationResult,
+  NormalizedWebhookResult,
+  ReconciliationVerdict,
+} from '../../domain/paymentLifecycle';
 import { PaymentLifecycleError, sha256Fingerprint } from '../payments/paymentErrors';
 
 /** Source déclarée des écritures API du cycle (audits et événements). */
@@ -113,6 +124,27 @@ export interface PaymentRepositoryDependencies {
   now?: () => Date;
   verification?: PaymentVerificationService;
   reconciliation?: PaymentReconciliationService;
+  providerAdapter?: PaymentProviderAdapter;
+  providerAdapters?: Map<string, PaymentProviderAdapter>;
+  getProviderAdapter?: (providerId: string) => PaymentProviderAdapter;
+}
+
+export interface PaymentWebhookInput {
+  headers: Record<string, string | undefined> | Headers;
+  rawBody: string;
+  url?: string;
+  requestId?: string;
+}
+
+export interface PaymentWebhookOutcome {
+  accepted: boolean;
+  provider: string;
+  externalTransactionId: string;
+  paymentId?: string;
+  status: PaymentLifecycleStatus | 'REJECTED' | 'UNKNOWN';
+  action: string;
+  replayed?: boolean;
+  reasons?: readonly string[];
 }
 
 /** Vue API d'un paiement : l'agrégat + ses tentatives, jamais un statut inventé. */
@@ -380,6 +412,22 @@ export interface OpenPaymentRepository {
   getContractPayments(actor: AuthenticatedActor, contractId: string, page: PageRequest): Promise<CursorPage<PaymentView>>;
   getAdminPayments(actor: AuthenticatedActor, page: PageRequest): Promise<CursorPage<PaymentView>>;
   /**
+   * P0-PAY-2 — Traitement sécurisé et idempotent d'un webhook fournisseur.
+   * Valide signature, timestamp anti-replay, payload, idempotence, absence
+   * de collision de transaction, applique les transitions et l'audit.
+   */
+  processPaymentWebhook(input: PaymentWebhookInput): Promise<PaymentWebhookOutcome>;
+  /**
+   * P0-PAY-2 — Rapprochement explicite LE LABEUR vs source externe.
+   * Compare provider, externalTransactionId, reference, amount, currency,
+   * payer, recipient, date, et consigne la trace d'audit.
+   */
+  reconcilePayment(
+    actor: AuthenticatedActor,
+    paymentId: string,
+    asOf?: string,
+  ): Promise<NormalizedReconciliationResult>;
+  /**
    * Écriture déclenchée par l'automatisation (aucune route ne l'expose) :
    * `SCHEDULED → DUE`. `writer` permet d'exécuter la transition dans la
    * transaction DÉJÀ ouverte du worker ; absent, le repository ouvre la sienne.
@@ -404,6 +452,23 @@ export function createPaymentRepository(
   const now = dependencies.now ?? (() => new Date());
   const verification = dependencies.verification ?? createLocalPaymentVerificationService();
   const reconciliation = dependencies.reconciliation ?? createLocalPaymentReconciliationService();
+
+  const defaultTestAdapter = createTestPaymentProviderAdapter();
+  const getAdapter = (providerId: string): PaymentProviderAdapter => {
+    if (dependencies.getProviderAdapter) {
+      return dependencies.getProviderAdapter(providerId);
+    }
+    if (dependencies.providerAdapters?.has(providerId)) {
+      return dependencies.providerAdapters.get(providerId)!;
+    }
+    if (dependencies.providerAdapter && dependencies.providerAdapter.providerId === providerId) {
+      return dependencies.providerAdapter;
+    }
+    if (providerId === 'TEST_GATEWAY') {
+      return dependencies.providerAdapter ?? defaultTestAdapter;
+    }
+    return createUnconfiguredPaymentProviderAdapter(providerId);
+  };
 
   const inTransaction = <T>(operation: (current: PaymentRepositoryStores) => Promise<T>): Promise<T> =>
     runInTransaction ? runInTransaction(operation) : operation(stores);
@@ -1828,6 +1893,643 @@ export function createPaymentRepository(
       const records = await stores.payments.listAll(page.limit + 1, page.cursor);
       return pageViews(stores, records, page, record => record.paymentId);
     },
+
+    /* -------------------------------------------------------------- */
+    /* P0-PAY-2 — Webhook sécurisé fournisseur de paiement             */
+    /* -------------------------------------------------------------- */
+    async processPaymentWebhook(input: PaymentWebhookInput): Promise<PaymentWebhookOutcome> {
+      // 1. Normalisation des en-têtes
+      const headerMap: Record<string, string> = {};
+      if (input.headers instanceof Headers) {
+        input.headers.forEach((value, key) => { headerMap[key.toLowerCase()] = value; });
+      } else if (input.headers) {
+        for (const [key, value] of Object.entries(input.headers)) {
+          if (typeof value === 'string') headerMap[key.toLowerCase()] = value;
+        }
+      }
+
+      // 2. Vérification du corps JSON
+      let parsedBody: Record<string, unknown> = {};
+      try {
+        parsedBody = JSON.parse(input.rawBody);
+      } catch {
+        throw new ApiError('VALIDATION_ERROR', 'Corps de webhook JSON illisible.', undefined, 400);
+      }
+
+      const provider = String(
+        headerMap['x-provider']
+        || headerMap['x-webhook-provider']
+        || parsedBody.provider
+        || 'TEST_GATEWAY',
+      ).trim();
+
+      const signature = String(
+        headerMap['x-webhook-signature']
+        || headerMap['x-signature']
+        || headerMap['x-payment-signature']
+        || '',
+      ).trim();
+
+      const timestampHeader = String(
+        headerMap['x-webhook-timestamp']
+        || headerMap['x-timestamp']
+        || '',
+      ).trim();
+
+      if (!provider) {
+        throw new ApiError('VALIDATION_ERROR', 'Fournisseur non spécifié dans le webhook.', undefined, 400);
+      }
+
+      const adapter = getAdapter(provider);
+      const evaluatedAt = now().toISOString();
+      const entityIdForAudit = String(
+        parsedBody.paymentId
+        || parsedBody.reference
+        || parsedBody.externalTransactionId
+        || 'UNKNOWN',
+      );
+
+      // 3. Validation de signature et horodatage via l'adaptateur
+      let webhookResult: NormalizedWebhookResult;
+      try {
+        webhookResult = await adapter.handleWebhook({
+          signature,
+          timestamp: timestampHeader,
+          rawBody: input.rawBody,
+          headers: headerMap,
+          payload: parsedBody,
+        });
+      } catch (error) {
+        const errMsg = (error as Error)?.message ?? 'Signature ou horodatage invalide';
+        // Auditer le rejet de signature / anti-replay (ÉTAPE 10)
+        await stores.audit.append({
+          id: `audit_wh_sig_rej_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`.slice(0, 120),
+          actorId: `provider:${provider}`,
+          timestamp: evaluatedAt,
+          entityId: entityIdForAudit,
+          action: PAYMENT_AUDIT_ACTIONS.signatureRejected,
+          source: `webhook:${provider}`,
+          beforeState: { provider },
+          afterState: {
+            provider,
+            error: errMsg,
+            timestamp: evaluatedAt,
+          },
+        }).catch(() => null);
+
+        if (error instanceof PaymentLifecycleError && error.code === 'NOT_IMPLEMENTED') {
+          throw new ApiError('NOT_IMPLEMENTED', error.message, undefined, 501);
+        }
+        if (error instanceof PaymentLifecycleError && error.code === 'VALIDATION') {
+          throw new ApiError('VALIDATION_ERROR', error.message, undefined, 400);
+        }
+        if (error instanceof ApiError) throw error;
+        throw new ApiError('UNAUTHENTICATED', errMsg, undefined, 401);
+      }
+
+      if (!webhookResult.accepted) {
+        const errorMsg = webhookResult.reasons?.join(' ') || 'Webhook non accepté par l’adaptateur.';
+        await stores.audit.append({
+          id: `audit_wh_rej_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`.slice(0, 120),
+          actorId: `provider:${provider}`,
+          timestamp: evaluatedAt,
+          entityId: entityIdForAudit,
+          action: PAYMENT_AUDIT_ACTIONS.signatureRejected,
+          source: `webhook:${provider}`,
+          beforeState: { provider },
+          afterState: { reasons: webhookResult.reasons, error: errorMsg },
+        }).catch(() => null);
+        throw new ApiError('VALIDATION_ERROR', errorMsg, undefined, 400);
+      }
+
+      // 4. Trace d'audit : webhook reçu & signature validée (ÉTAPE 10)
+      await stores.audit.append({
+        id: `audit_wh_sig_ok_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`.slice(0, 120),
+        actorId: `provider:${webhookResult.provider}`,
+        timestamp: evaluatedAt,
+        entityId: entityIdForAudit,
+        action: PAYMENT_AUDIT_ACTIONS.signatureValidated,
+        source: `webhook:${webhookResult.provider}`,
+        beforeState: { provider: webhookResult.provider },
+        afterState: {
+          provider: webhookResult.provider,
+          externalTransactionId: webhookResult.externalTransactionId,
+          eventType: webhookResult.eventType,
+          reference: webhookResult.reference,
+          amount: webhookResult.amount,
+          currency: webhookResult.currency,
+        },
+      }).catch(() => null);
+
+      // 5. Exécution dans une transaction PostgreSQL unique
+      return await inTransaction(async current => {
+        const durableKey = `${webhookResult.provider}:webhook:${webhookResult.externalTransactionId}:${webhookResult.eventType}`;
+        const fingerprint = await sha256Fingerprint(input.rawBody);
+
+        // Idempotence & protection anti-replay durable (ÉTAPE 4, 7)
+        const reservation = await reserve(current, {
+          actorId: `provider:${webhookResult.provider}`,
+          command: 'payments.WEBHOOK',
+          key: durableKey,
+          payload: fingerprint,
+        });
+
+        if (reservation === 'replay') {
+          await appendAudit(current, {
+            action: PAYMENT_AUDIT_ACTIONS.replayDetected,
+            actorId: `provider:${webhookResult.provider}`,
+            paymentId: entityIdForAudit,
+            contractId: 'UNKNOWN',
+            paymentType: 'SALARY',
+            periodKey: 'UNKNOWN',
+            timestamp: evaluatedAt,
+            reference: durableKey,
+            source: `webhook:${webhookResult.provider}`,
+            beforeState: { provider: webhookResult.provider },
+            afterState: {
+              replayed: true,
+              externalTransactionId: webhookResult.externalTransactionId,
+              action: 'REPLAY',
+            },
+          });
+
+          // Résolution de la ligne de paiement existante pour renvoyer son état
+          let existingPayment: PaymentRecord | null = null;
+          if (parsedBody.paymentId) {
+            existingPayment = await current.payments.findById(parsedBody.paymentId as string);
+          }
+          if (!existingPayment && webhookResult.externalTransactionId) {
+            existingPayment = await current.payments.findByExternalTransaction(webhookResult.provider, webhookResult.externalTransactionId);
+          }
+          if (!existingPayment && webhookResult.reference) {
+            existingPayment = await current.payments.findByReference(webhookResult.reference);
+          }
+
+          return {
+            accepted: true,
+            provider: webhookResult.provider,
+            externalTransactionId: webhookResult.externalTransactionId,
+            paymentId: existingPayment?.paymentId,
+            status: existingPayment?.status ?? 'UNKNOWN',
+            action: 'REPLAY',
+            replayed: true,
+          };
+        }
+
+        // 6. Résolution du paiement cible
+        let payment: PaymentRecord | null = null;
+        if (parsedBody.paymentId) {
+          payment = await current.payments.findById(parsedBody.paymentId as string);
+        }
+        if (!payment && webhookResult.reference) {
+          payment = await current.payments.findByReference(webhookResult.reference);
+          if (!payment) {
+            const decls = await current.declarations.findByReference(webhookResult.reference);
+            if (decls.length > 0) {
+              payment = await current.payments.findById(decls[0].paymentId);
+            }
+          }
+        }
+        if (!payment && parsedBody.contractId && parsedBody.periodKey && parsedBody.paymentType) {
+          const candidates = await current.payments.listByContract(parsedBody.contractId as string);
+          payment = candidates.find(c => c.periodKey === parsedBody.periodKey && c.paymentType === parsedBody.paymentType) ?? null;
+        }
+
+        if (!payment) {
+          await appendAudit(current, {
+            action: PAYMENT_AUDIT_ACTIONS.duplicateDetected,
+            actorId: `provider:${webhookResult.provider}`,
+            paymentId: 'UNKNOWN',
+            contractId: (parsedBody.contractId as string) ?? 'UNKNOWN',
+            paymentType: 'SALARY',
+            periodKey: (parsedBody.periodKey as string) ?? 'UNKNOWN',
+            timestamp: evaluatedAt,
+            reference: durableKey,
+            source: `webhook:${webhookResult.provider}`,
+            error: 'Paiement cible introuvable pour ce webhook.',
+            beforeState: {},
+            afterState: { externalTransactionId: webhookResult.externalTransactionId },
+          });
+          throw new ApiError('NOT_FOUND', 'Paiement cible introuvable pour cette transaction externe.', undefined, 404);
+        }
+
+        const paymentId = payment.paymentId;
+
+        // 7. Détection de transaction dupliquée pour deux paiements différents (ÉTAPE 7)
+        const conflictPayment = await current.payments.findByExternalTransaction(
+          webhookResult.provider,
+          webhookResult.externalTransactionId,
+        );
+        if (conflictPayment && conflictPayment.paymentId !== paymentId) {
+          await appendAudit(current, {
+            action: PAYMENT_AUDIT_ACTIONS.duplicateDetected,
+            actorId: `provider:${webhookResult.provider}`,
+            paymentId,
+            contractId: payment.contractId,
+            paymentType: payment.paymentType,
+            periodKey: payment.periodKey,
+            timestamp: evaluatedAt,
+            reference: durableKey,
+            source: `webhook:${webhookResult.provider}`,
+            error: `Cette transaction externe ${webhookResult.externalTransactionId} est déjà associée au paiement ${conflictPayment.paymentId}.`,
+            beforeState: { paymentId },
+            afterState: { conflictPaymentId: conflictPayment.paymentId },
+          });
+          throw new ApiError('IDEMPOTENCY_CONFLICT', `Cette transaction externe est déjà associée à un autre paiement (${conflictPayment.paymentId}).`, undefined, 409);
+        }
+
+        const conflictDecl = await current.declarations.findByExternalTransaction(
+          webhookResult.provider,
+          webhookResult.externalTransactionId,
+        );
+        if (conflictDecl && conflictDecl.paymentId !== paymentId) {
+          await appendAudit(current, {
+            action: PAYMENT_AUDIT_ACTIONS.duplicateDetected,
+            actorId: `provider:${webhookResult.provider}`,
+            paymentId,
+            contractId: payment.contractId,
+            paymentType: payment.paymentType,
+            periodKey: payment.periodKey,
+            timestamp: evaluatedAt,
+            reference: durableKey,
+            source: `webhook:${webhookResult.provider}`,
+            error: `Cette transaction externe a déjà été déclarée sur le paiement ${conflictDecl.paymentId}.`,
+            beforeState: { paymentId },
+            afterState: { conflictPaymentId: conflictDecl.paymentId },
+          });
+          throw new ApiError('IDEMPOTENCY_CONFLICT', 'Cette transaction externe a déjà été utilisée sur un autre paiement.', undefined, 409);
+        }
+
+        // Verrouillage pessimiste de la ligne du paiement cible
+        const locked = await current.payments.findByIdForUpdate(paymentId);
+        if (!locked) throw new ApiError('NOT_FOUND', 'Paiement introuvable.');
+
+        // 8. Garde des statuts du cycle
+        if (locked.status === 'SCHEDULED') {
+          throw new ApiError('BUSINESS_RULE_VIOLATION', 'Paiement non encore exigible : statut courant « SCHEDULED ».', undefined, 409);
+        }
+        if (locked.status === 'PAID') {
+          throw new ApiError('BUSINESS_RULE_VIOLATION', PAYMENT_TERMINAL_REFUSAL_REASON, undefined, 409);
+        }
+
+        // 9. Validation métier de cohérence (montant, devise, parties)
+        const mismatches: string[] = [];
+        if (webhookResult.amount !== locked.amount) {
+          mismatches.push(`Montant externe ${webhookResult.amount} ${webhookResult.currency} différent du montant dû ${locked.amount} ${locked.currency}.`);
+        }
+        if (webhookResult.currency.toUpperCase() !== locked.currency.toUpperCase()) {
+          mismatches.push(`Devise externe ${webhookResult.currency} différente de la devise contractuelle ${locked.currency}.`);
+        }
+        if (locked.paymentType === 'PLATFORM_FEE' && webhookResult.recipient && webhookResult.recipient !== 'LE_LABEUR') {
+          mismatches.push('La commission est due à LE LABEUR, jamais au salarié.');
+        }
+        if (locked.paymentType === 'SALARY' && webhookResult.recipient && webhookResult.recipient !== locked.candidateId) {
+          mismatches.push(`Destinataire externe (${webhookResult.recipient}) différent du salarié attendu (${locked.candidateId}).`);
+        }
+        if (webhookResult.payer && webhookResult.payer !== locked.employerId) {
+          mismatches.push(`Payeur externe (${webhookResult.payer}) différent de l’employeur (${locked.employerId}).`);
+        }
+
+        if (mismatches.length > 0) {
+          const mismatchReason = `Vérification externe écartée : ${mismatches.join(' ')}`;
+          if (locked.status === 'PENDING_VERIFICATION') {
+            const rejectRule = PAYMENT_TRANSITION_RULES.REJECT_DECLARATION;
+            const rejected = await current.payments.compareAndSetStatus(paymentId, rejectRule.from, {
+              status: rejectRule.to,
+              updatedAt: evaluatedAt,
+              rejectedAt: evaluatedAt,
+              rejectedBy: `provider:${webhookResult.provider}`,
+              rejectionReason: mismatchReason,
+            });
+
+            if (locked.currentDeclarationId) {
+              await current.declarations.compareAndSetOutcome(locked.currentDeclarationId, 'PENDING', {
+                outcome: 'REJECTED',
+                reviewedAt: evaluatedAt,
+                reviewedBy: `provider:${webhookResult.provider}`,
+                rejectionReason: mismatchReason,
+                updatedAt: evaluatedAt,
+              });
+            }
+
+            const eventId = await appendPaymentEvent(current, {
+              payment: locked,
+              eventType: 'PAYMENT_REJECTED',
+              actorId: `provider:${webhookResult.provider}`,
+              timestamp: evaluatedAt,
+              payload: {
+                verdict: 'MISMATCHED',
+                reasons: mismatches,
+                reason: mismatchReason,
+                provider: webhookResult.provider,
+                externalTransactionId: webhookResult.externalTransactionId,
+              },
+            });
+
+            await projectToContract(current, {
+              payment: locked,
+              next: rejected ?? locked,
+              timestamp: evaluatedAt,
+              actorLabel: `provider:${webhookResult.provider}`,
+              description: 'Déclaration rejetée après discordance du webhook externe',
+              historyEvent: 'PAYMENT_REJECTED',
+            });
+
+            await appendAudit(current, {
+              action: PAYMENT_AUDIT_ACTIONS.verificationMismatch,
+              actorId: `provider:${webhookResult.provider}`,
+              paymentId,
+              contractId: locked.contractId,
+              paymentType: locked.paymentType,
+              periodKey: locked.periodKey,
+              timestamp: evaluatedAt,
+              eventId,
+              reference: durableKey,
+              source: `webhook:${webhookResult.provider}`,
+              error: mismatchReason,
+              beforeState: { status: locked.status },
+              afterState: { status: 'REJECTED', verdict: 'MISMATCHED', reasons: mismatches },
+            });
+
+            await current.idempotency.complete(`provider:${webhookResult.provider}`, 'payments.WEBHOOK', durableKey, {
+              status: 'REJECTED',
+              verdict: 'MISMATCHED',
+              reasons: mismatches,
+            });
+
+            return {
+              accepted: true,
+              provider: webhookResult.provider,
+              externalTransactionId: webhookResult.externalTransactionId,
+              paymentId,
+              status: 'REJECTED',
+              action: 'REJECTED',
+              reasons: mismatches,
+            };
+          }
+
+          // Si le paiement est DUE : refus de transition
+          await appendAudit(current, {
+            action: PAYMENT_AUDIT_ACTIONS.verificationMismatch,
+            actorId: `provider:${webhookResult.provider}`,
+            paymentId,
+            contractId: locked.contractId,
+            paymentType: locked.paymentType,
+            periodKey: locked.periodKey,
+            timestamp: evaluatedAt,
+            reference: durableKey,
+            source: `webhook:${webhookResult.provider}`,
+            error: mismatchReason,
+            beforeState: { status: locked.status },
+            afterState: { status: locked.status, verdict: 'MISMATCHED', reasons: mismatches },
+          });
+
+          throw new ApiError('BUSINESS_RULE_VIOLATION', mismatchReason, undefined, 422);
+        }
+
+        // 10. Toutes les vérifications sont favorables : application des transitions
+        let attemptNumber = locked.declarationCount + 1;
+        let declarationId = paymentDeclarationId(paymentId, attemptNumber);
+
+        if (locked.status === 'DUE' || locked.status === 'REJECTED') {
+          // Étape 10.1 : DUE / REJECTED -> PENDING_VERIFICATION
+          const declRule = PAYMENT_TRANSITION_RULES.DECLARE_PAYMENT;
+          const patchDecl: PaymentTransitionPatch = {
+            status: declRule.to,
+            updatedAt: evaluatedAt,
+            reference: webhookResult.reference,
+            submittedAt: evaluatedAt,
+            submittedBy: `provider:${webhookResult.provider}`,
+            currentDeclarationId: declarationId,
+            incrementDeclarationCount: true,
+            externalTransactionId: webhookResult.externalTransactionId,
+            provider: webhookResult.provider,
+          };
+
+          const declaredPayment = await current.payments.compareAndSetStatus(paymentId, declRule.from, patchDecl);
+          if (!declaredPayment) {
+            throw new ApiError('BUSINESS_RULE_VIOLATION', 'Une transition concurrente a modifié ce paiement.', undefined, 409);
+          }
+
+          await current.declarations.create({
+            declarationId,
+            paymentId,
+            contractId: locked.contractId,
+            periodKey: locked.periodKey,
+            paymentType: locked.paymentType,
+            attemptNumber,
+            amount: webhookResult.amount,
+            currency: webhookResult.currency,
+            reference: webhookResult.reference,
+            externalTransactionId: webhookResult.externalTransactionId,
+            provider: webhookResult.provider,
+            submittedAt: evaluatedAt,
+            submittedBy: `provider:${webhookResult.provider}`,
+            outcome: 'PENDING',
+            idempotencyKey: durableKey,
+            createdAt: evaluatedAt,
+            updatedAt: evaluatedAt,
+          });
+
+          const declEventId = await appendPaymentEvent(current, {
+            payment: locked,
+            eventType: 'PAYMENT_DECLARED',
+            actorId: `provider:${webhookResult.provider}`,
+            timestamp: evaluatedAt,
+            occurrence: attemptNumber,
+            payload: {
+              declarationId,
+              reference: webhookResult.reference,
+              provider: webhookResult.provider,
+              externalTransactionId: webhookResult.externalTransactionId,
+            },
+          });
+
+          await appendPaymentEvent(current, {
+            payment: locked,
+            eventType: 'PAYMENT_PENDING_VERIFICATION',
+            actorId: `provider:${webhookResult.provider}`,
+            timestamp: evaluatedAt,
+            occurrence: attemptNumber,
+            payload: {
+              declarationId,
+              provider: webhookResult.provider,
+              externalTransactionId: webhookResult.externalTransactionId,
+            },
+          });
+
+          await appendAudit(current, {
+            action: PAYMENT_AUDIT_ACTIONS.submitted,
+            actorId: `provider:${webhookResult.provider}`,
+            paymentId,
+            contractId: locked.contractId,
+            paymentType: locked.paymentType,
+            periodKey: locked.periodKey,
+            timestamp: evaluatedAt,
+            eventId: declEventId,
+            reference: durableKey,
+            source: `webhook:${webhookResult.provider}`,
+            beforeState: { status: locked.status },
+            afterState: { status: 'PENDING_VERIFICATION', declarationId },
+          });
+        } else {
+          declarationId = locked.currentDeclarationId ?? paymentDeclarationId(paymentId, 1);
+        }
+
+        // Étape 10.2 : PENDING_VERIFICATION -> VERIFIED
+        const verifyRule = PAYMENT_TRANSITION_RULES.VERIFY_DECLARATION;
+        const verifiedPayment = await current.payments.compareAndSetStatus(paymentId, verifyRule.from, {
+          status: verifyRule.to,
+          updatedAt: evaluatedAt,
+          verifiedAt: evaluatedAt,
+          verifiedBy: `provider:${webhookResult.provider}`,
+          externalTransactionId: webhookResult.externalTransactionId,
+          provider: webhookResult.provider,
+          reference: webhookResult.reference,
+        });
+
+        if (!verifiedPayment) {
+          throw new ApiError('BUSINESS_RULE_VIOLATION', 'Transition vers VERIFIED concurrente ou refusée.', undefined, 409);
+        }
+
+        await current.declarations.compareAndSetOutcome(declarationId, 'PENDING', {
+          outcome: 'VERIFIED',
+          reviewedAt: evaluatedAt,
+          reviewedBy: `provider:${webhookResult.provider}`,
+          updatedAt: evaluatedAt,
+        });
+
+        const verifiedEventId = await appendPaymentEvent(current, {
+          payment: locked,
+          eventType: 'PAYMENT_APPROVED',
+          actorId: `provider:${webhookResult.provider}`,
+          timestamp: evaluatedAt,
+          occurrence: attemptNumber,
+          payload: {
+            declarationId,
+            verdict: 'MATCHED',
+            verifiedBy: `provider:${webhookResult.provider}`,
+            verifiedAt: evaluatedAt,
+            verificationSource: `provider:${webhookResult.provider}`,
+            provider: webhookResult.provider,
+            externalTransactionId: webhookResult.externalTransactionId,
+            movedFunds: false,
+          },
+        });
+
+        await projectToContract(current, {
+          payment: locked,
+          next: verifiedPayment,
+          timestamp: evaluatedAt,
+          actorLabel: `provider:${webhookResult.provider}`,
+          description: 'Déclaration vérifiée via webhook externe',
+          historyEvent: 'PAYMENT_VERIFIED',
+        });
+
+        await appendAudit(current, {
+          action: PAYMENT_AUDIT_ACTIONS.verified,
+          actorId: `provider:${webhookResult.provider}`,
+          paymentId,
+          contractId: locked.contractId,
+          paymentType: locked.paymentType,
+          periodKey: locked.periodKey,
+          timestamp: evaluatedAt,
+          eventId: verifiedEventId,
+          reference: durableKey,
+          source: `webhook:${webhookResult.provider}`,
+          beforeState: { status: locked.status, declarationId },
+          afterState: {
+            status: verifiedPayment.status,
+            provider: webhookResult.provider,
+            externalTransactionId: webhookResult.externalTransactionId,
+            verdict: 'MATCHED',
+            movedFunds: false,
+          },
+        });
+
+        await current.idempotency.complete(`provider:${webhookResult.provider}`, 'payments.WEBHOOK', durableKey, {
+          status: 'VERIFIED',
+          provider: webhookResult.provider,
+          externalTransactionId: webhookResult.externalTransactionId,
+        });
+
+        // ARRÊT STRICT À VERIFIED : aucun saut vers PAID sans rapprochement explicite
+        return {
+          accepted: true,
+          provider: webhookResult.provider,
+          externalTransactionId: webhookResult.externalTransactionId,
+          paymentId: locked.paymentId,
+          status: verifiedPayment.status,
+          action: 'VERIFIED',
+        };
+      });
+    },
+
+    /* -------------------------------------------------------------- */
+    /* P0-PAY-2 — Rapprochement explicite (LE LABEUR vs Externe)      */
+    /* -------------------------------------------------------------- */
+    async reconcilePayment(actor, paymentId, asOf): Promise<NormalizedReconciliationResult> {
+      const trusted = requireTrustedActor(actor);
+      if (trusted.role !== 'ADMIN' && !trusted.permissions.includes('payments:read:any')) {
+        throw new ApiError('FORBIDDEN', 'Permission payments:read:any requise.');
+      }
+
+      const timestamp = asOf ?? now().toISOString();
+      return await inTransaction(async current => {
+        const payment = await current.payments.findById(paymentId);
+        if (!payment) throw new ApiError('NOT_FOUND', 'Paiement introuvable.');
+
+        const declaration = payment.currentDeclarationId
+          ? await current.declarations.findById(payment.currentDeclarationId)
+          : (await current.declarations.listByPayment(paymentId))[0];
+
+        const providerId = payment.provider ?? declaration?.provider ?? 'TEST_GATEWAY';
+        const adapter = getAdapter(providerId);
+
+        const extTx = payment.externalTransactionId ?? declaration?.externalTransactionId;
+        let isDuplicate = false;
+        if (extTx) {
+          const otherPay = await current.payments.findByExternalTransaction(providerId, extTx);
+          if (otherPay && otherPay.paymentId !== paymentId) isDuplicate = true;
+        }
+
+        const recResult = await adapter.reconcile({
+          payment,
+          ...(declaration ? { declaration } : {}),
+          ...(extTx ? { externalTransactionId: extTx } : {}),
+          asOf: timestamp,
+          isDuplicate,
+        });
+
+        const auditAction = recResult.verdict === 'MATCH'
+          ? PAYMENT_AUDIT_ACTIONS.reconciled
+          : recResult.verdict === 'DUPLICATE'
+            ? PAYMENT_AUDIT_ACTIONS.duplicateDetected
+            : PAYMENT_AUDIT_ACTIONS.reconciliationMismatch;
+
+        await appendAudit(current, {
+          action: auditAction,
+          actorId: trusted.id,
+          paymentId,
+          contractId: payment.contractId,
+          paymentType: payment.paymentType,
+          periodKey: payment.periodKey,
+          timestamp,
+          reference: `reconcile:${paymentId}`,
+          source: `reconciliation:${providerId}`,
+          beforeState: { status: payment.status },
+          afterState: {
+            verdict: recResult.verdict,
+            comparisons: recResult.comparisons,
+            reasons: recResult.reasons,
+            externalTransactionId: recResult.externalTransactionId,
+          },
+          error: recResult.reasons.length > 0 ? recResult.reasons.join(' ') : undefined,
+        });
+
+        return recResult;
+      });
+    },
   };
 }
 
@@ -1910,6 +2612,39 @@ export function createPaymentApiHandlers(
         200,
         context.requestId,
       );
+    },
+
+    // P0-PAY-2 — Webhook sécurisé fournisseur de paiement externe
+    'webhooks.payment-provider.root': async context => {
+      const rawBody = await context.request.text();
+      const headers = Object.fromEntries(context.request.headers.entries());
+      const outcome = await repository.processPaymentWebhook({
+        headers,
+        rawBody,
+        url: context.url.toString(),
+        requestId: context.requestId,
+      });
+      return apiJsonResponse(outcome, 200, context.requestId);
+    },
+
+    'webhooks.payment-provider': async context => {
+      const rawBody = await context.request.text();
+      const headers = Object.fromEntries(context.request.headers.entries());
+      const outcome = await repository.processPaymentWebhook({
+        headers,
+        rawBody,
+        url: context.url.toString(),
+        requestId: context.requestId,
+      });
+      return apiJsonResponse(outcome, 200, context.requestId);
+    },
+
+    // P0-PAY-2 — Rapprochement explicite déclenché par un administrateur
+    'admin.payments.reconcile': async context => {
+      const body = await readJsonBody(context);
+      const asOf = typeof body.asOf === 'string' ? body.asOf : undefined;
+      const result = await repository.reconcilePayment(context.actor!, context.params.paymentId, asOf);
+      return apiJsonResponse(result, 200, context.requestId);
     },
 
     // P0-PAY-1 — l'avancement mensuel est une commande du CYCLE PAIEMENTS. La

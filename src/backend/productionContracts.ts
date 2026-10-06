@@ -131,7 +131,9 @@ export interface ProductionAuditEvent {
 
 export type OutboxEventType =
   | 'PAYMENT_DECLARED'
+  | 'PAYMENT_SUBMITTED'
   | 'PAYMENT_APPROVED'
+  | 'PAYMENT_VERIFIED'
   | 'PAYMENT_REJECTED'
   /**
    * P0-PAY-1 — cycle PAIEMENT. Ces trois types complètent la chaîne

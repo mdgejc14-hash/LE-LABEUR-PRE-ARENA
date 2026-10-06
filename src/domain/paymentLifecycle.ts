@@ -1013,8 +1013,8 @@ export interface PaymentVerificationResult {
   reasons: readonly string[];
   /** Détermine si une nouvelle déclaration est admise après un rejet. */
   checkedAt: string;
-  /** Preuve que la décision est LOCALE : aucun appel réseau n'a été fait. */
-  source: 'local-deterministic';
+  /** Source de la vérification : locale ou fournisseur externe. */
+  source: 'local-deterministic' | string;
 }
 
 /**
@@ -1276,6 +1276,14 @@ export const PAYMENT_AUDIT_ACTIONS = {
   duplicateSuppressed: 'PAYMENT_DUPLICATE_SUPPRESSED',
   preDueRecorded: 'PAYMENT_PRE_DUE_REMINDER_RECORDED',
   verificationMismatch: 'PAYMENT_VERIFICATION_MISMATCH',
+  // P0-PAY-2 — audit de la frontière fournisseur externe
+  webhookReceived: 'PAYMENT_WEBHOOK_RECEIVED',
+  signatureValidated: 'PAYMENT_WEBHOOK_SIGNATURE_VALIDATED',
+  signatureRejected: 'PAYMENT_WEBHOOK_SIGNATURE_REJECTED',
+  reconciled: 'PAYMENT_RECONCILED',
+  reconciliationMismatch: 'PAYMENT_RECONCILIATION_MISMATCH',
+  duplicateDetected: 'PAYMENT_DUPLICATE_DETECTED',
+  replayDetected: 'PAYMENT_REPLAY_DETECTED',
 } as const;
 
 export type PaymentAuditAction = (typeof PAYMENT_AUDIT_ACTIONS)[keyof typeof PAYMENT_AUDIT_ACTIONS];
@@ -1480,4 +1488,260 @@ export const MODEL_COMMISSION_PERCENTAGE = 25;
 /** Utilitaire interne exposé pour les tests : une échéance est-elle atteinte ? */
 export function isPaymentPeriodDue(dueAt: string, evaluatedAt: string): boolean {
   return new Date(dueAt).getTime() <= new Date(evaluatedAt).getTime();
+}
+
+/* ------------------------------------------------------------------ */
+/* 14. P0-PAY-2 — Modèles normalisés & Réconciliation pure            */
+/* ------------------------------------------------------------------ */
+
+export type NormalizedTransactionStatus =
+  | 'PENDING'
+  | 'SUCCESS'
+  | 'FAILED'
+  | 'REJECTED'
+  | 'CANCELLED'
+  | 'UNKNOWN';
+
+/**
+ * Modèle normalisé interne d'une transaction de paiement externe.
+ * Le cœur métier LE LABEUR ne dépend jamais directement du format MTN/Orange/Moov/Wave.
+ */
+export interface NormalizedPaymentTransaction {
+  provider: string;
+  externalTransactionId: string;
+  reference: string;
+  amount: number;
+  currency: string;
+  payer: string;
+  recipient: string;
+  occurredAt: string;
+  rawPayload?: unknown;
+  status: NormalizedTransactionStatus;
+}
+
+export interface NormalizedVerificationResult {
+  verified: boolean;
+  provider: string;
+  externalTransactionId: string;
+  providerStatus: NormalizedTransactionStatus | string;
+  transaction?: NormalizedPaymentTransaction;
+  reasons?: readonly string[];
+  rawPayload?: unknown;
+}
+
+export interface NormalizedWebhookResult {
+  accepted: boolean;
+  provider: string;
+  eventType: string;
+  externalTransactionId: string;
+  reference: string;
+  amount: number;
+  currency: string;
+  payer: string;
+  recipient: string;
+  occurredAt: string;
+  status: NormalizedTransactionStatus;
+  transaction?: NormalizedPaymentTransaction;
+  rawPayload?: unknown;
+  idempotencyKey?: string;
+  reasons?: readonly string[];
+}
+
+export type ReconciliationVerdict =
+  | 'MATCH'
+  | 'MISMATCH'
+  | 'NOT_FOUND'
+  | 'DUPLICATE'
+  | 'REVIEW_REQUIRED';
+
+export interface ReconciliationComparison {
+  field: 'provider' | 'externalTransactionId' | 'reference' | 'amount' | 'currency' | 'payer' | 'recipient' | 'date';
+  expected: unknown;
+  actual: unknown;
+  matched: boolean;
+  detail?: string;
+}
+
+export interface NormalizedReconciliationResult {
+  verdict: ReconciliationVerdict;
+  paymentId: string;
+  provider: string;
+  externalTransactionId?: string;
+  reference?: string;
+  comparisons: readonly ReconciliationComparison[];
+  reasons: readonly string[];
+  reconciledAt: string;
+  externalTransaction?: NormalizedPaymentTransaction;
+}
+
+export interface ReconciliationInput {
+  expected: {
+    paymentId: string;
+    contractId?: string;
+    paymentType?: PaymentType;
+    provider?: string;
+    externalTransactionId?: string;
+    reference?: string;
+    amount: number;
+    currency: string;
+    payer: string;
+    recipient: string;
+    scheduledAt?: string;
+    dueAt?: string;
+    isDuplicate?: boolean;
+  };
+  actual?: NormalizedPaymentTransaction | null;
+  reconciledAt: string;
+}
+
+/**
+ * Évalue la réconciliation pure entre une écriture LE LABEUR et une source externe.
+ * Compare au minimum : provider, externalTransactionId, reference, amount, currency,
+ * payer, recipient, date/heure pertinente.
+ */
+export function evaluateReconciliation(input: ReconciliationInput): NormalizedReconciliationResult {
+  const { expected, actual, reconciledAt } = input;
+  const reasons: string[] = [];
+  const comparisons: ReconciliationComparison[] = [];
+
+  if (expected.isDuplicate) {
+    reasons.push('Transaction externe déjà associée à un autre paiement.');
+    return {
+      verdict: 'DUPLICATE',
+      paymentId: expected.paymentId,
+      provider: expected.provider ?? actual?.provider ?? 'UNKNOWN',
+      externalTransactionId: expected.externalTransactionId ?? actual?.externalTransactionId,
+      reference: expected.reference ?? actual?.reference,
+      comparisons,
+      reasons,
+      reconciledAt,
+      ...(actual ? { externalTransaction: actual } : {}),
+    };
+  }
+
+  if (!actual) {
+    reasons.push('Aucune transaction externe trouvée pour ce paiement.');
+    return {
+      verdict: 'NOT_FOUND',
+      paymentId: expected.paymentId,
+      provider: expected.provider ?? 'UNKNOWN',
+      externalTransactionId: expected.externalTransactionId,
+      reference: expected.reference,
+      comparisons,
+      reasons,
+      reconciledAt,
+    };
+  }
+
+  // 1. Provider
+  const providerMatched = !expected.provider || expected.provider.toUpperCase() === actual.provider.toUpperCase();
+  comparisons.push({
+    field: 'provider',
+    expected: expected.provider ?? actual.provider,
+    actual: actual.provider,
+    matched: providerMatched,
+    ...(providerMatched ? {} : { detail: `Fournisseur attendu « ${expected.provider} », reçu « ${actual.provider} ».` }),
+  });
+  if (!providerMatched) reasons.push(`Fournisseur discordant : attendu « ${expected.provider} », reçu « ${actual.provider} ».`);
+
+  // 2. externalTransactionId
+  const extTxMatched = !expected.externalTransactionId || expected.externalTransactionId === actual.externalTransactionId;
+  comparisons.push({
+    field: 'externalTransactionId',
+    expected: expected.externalTransactionId ?? actual.externalTransactionId,
+    actual: actual.externalTransactionId,
+    matched: extTxMatched,
+    ...(extTxMatched ? {} : { detail: `Identifiant transaction externe discordant.` }),
+  });
+  if (!extTxMatched) reasons.push(`Identifiant transaction externe discordant : attendu « ${expected.externalTransactionId} », reçu « ${actual.externalTransactionId} ».`);
+
+  // 3. Reference
+  const refMatched = !expected.reference || expected.reference.trim() === actual.reference.trim();
+  comparisons.push({
+    field: 'reference',
+    expected: expected.reference ?? actual.reference,
+    actual: actual.reference,
+    matched: refMatched,
+    ...(refMatched ? {} : { detail: `Référence attendue « ${expected.reference} », reçue « ${actual.reference} ».` }),
+  });
+  if (!refMatched) reasons.push(`Référence discordante : attendue « ${expected.reference} », reçue « ${actual.reference} ».`);
+
+  // 4. Amount (exactitude stricte)
+  const amountMatched = expected.amount === actual.amount;
+  comparisons.push({
+    field: 'amount',
+    expected: expected.amount,
+    actual: actual.amount,
+    matched: amountMatched,
+    ...(amountMatched ? {} : { detail: `Montant attendu ${expected.amount}, reçu ${actual.amount}.` }),
+  });
+  if (!amountMatched) reasons.push(`Montant discordant : attendu ${expected.amount}, reçu ${actual.amount}.`);
+
+  // 5. Currency (insensible à la casse)
+  const currencyMatched = expected.currency.toUpperCase() === actual.currency.toUpperCase();
+  comparisons.push({
+    field: 'currency',
+    expected: expected.currency,
+    actual: actual.currency,
+    matched: currencyMatched,
+    ...(currencyMatched ? {} : { detail: `Devise attendue ${expected.currency}, reçue ${actual.currency}.` }),
+  });
+  if (!currencyMatched) reasons.push(`Devise discordante : attendue ${expected.currency}, reçue ${actual.currency}.`);
+
+  // 6. Payer
+  const payerMatched = !expected.payer || expected.payer === actual.payer;
+  comparisons.push({
+    field: 'payer',
+    expected: expected.payer,
+    actual: actual.payer,
+    matched: payerMatched,
+    ...(payerMatched ? {} : { detail: `Payeur attendu « ${expected.payer} », reçu « ${actual.payer} ».` }),
+  });
+  if (!payerMatched) reasons.push(`Payeur discordant : attendu « ${expected.payer} », reçu « ${actual.payer} ».`);
+
+  // 7. Recipient
+  const recipientMatched = !expected.recipient || expected.recipient === actual.recipient;
+  comparisons.push({
+    field: 'recipient',
+    expected: expected.recipient,
+    actual: actual.recipient,
+    matched: recipientMatched,
+    ...(recipientMatched ? {} : { detail: `Destinataire attendu « ${expected.recipient} », reçu « ${actual.recipient} ».` }),
+  });
+  if (!recipientMatched) reasons.push(`Destinataire discordant : attendu « ${expected.recipient} », reçu « ${actual.recipient} ».`);
+
+  // 8. Date pertinente
+  const dateValid = !Number.isNaN(Date.parse(actual.occurredAt));
+  comparisons.push({
+    field: 'date',
+    expected: expected.dueAt ?? expected.scheduledAt ?? actual.occurredAt,
+    actual: actual.occurredAt,
+    matched: dateValid,
+    ...(dateValid ? {} : { detail: `Date d'occurrence externe illisible : ${actual.occurredAt}.` }),
+  });
+  if (!dateValid) reasons.push(`Date d'occurrence externe illisible : ${actual.occurredAt}.`);
+
+  let verdict: ReconciliationVerdict;
+  if (actual.status === 'UNKNOWN' || !dateValid) {
+    verdict = 'REVIEW_REQUIRED';
+  } else if (actual.status === 'FAILED' || actual.status === 'CANCELLED' || actual.status === 'REJECTED') {
+    verdict = 'MISMATCH';
+    reasons.push(`Statut de la transaction externe défavorable : « ${actual.status} ».`);
+  } else if (reasons.length > 0) {
+    verdict = 'MISMATCH';
+  } else {
+    verdict = 'MATCH';
+  }
+
+  return {
+    verdict,
+    paymentId: expected.paymentId,
+    provider: actual.provider,
+    externalTransactionId: actual.externalTransactionId,
+    reference: actual.reference,
+    comparisons,
+    reasons,
+    reconciledAt,
+    externalTransaction: actual,
+  };
 }

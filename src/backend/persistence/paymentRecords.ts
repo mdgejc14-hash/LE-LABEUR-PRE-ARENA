@@ -174,6 +174,11 @@ export interface PaymentStore {
     paymentType: PaymentType,
     monthNumber: number,
   ): Promise<PaymentRecord | null>;
+  findByExternalTransaction(
+    provider: string,
+    externalTransactionId: string,
+  ): Promise<PaymentRecord | null>;
+  findByReference(reference: string): Promise<PaymentRecord | null>;
   /** Transition conditionnelle : `null` si le statut a changé entre-temps. */
   compareAndSetStatus(
     paymentId: string,
@@ -203,6 +208,11 @@ export interface PaymentDeclarationStore {
   create(record: PaymentDeclarationRecord): Promise<PaymentDeclarationRecord>;
   findById(declarationId: string): Promise<PaymentDeclarationRecord | null>;
   findByIdempotencyKey(idempotencyKey: string): Promise<PaymentDeclarationRecord | null>;
+  findByExternalTransaction(
+    provider: string,
+    externalTransactionId: string,
+  ): Promise<PaymentDeclarationRecord | null>;
+  findByReference(reference: string): Promise<PaymentDeclarationRecord[]>;
   nextAttemptNumber(paymentId: string): Promise<number>;
   listByPayment(paymentId: string, limit?: number): Promise<PaymentDeclarationRecord[]>;
   compareAndSetOutcome(

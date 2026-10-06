@@ -253,6 +253,22 @@ export function createSqlPaymentStore(db: SqlQueryExecutor): PaymentStore {
       return result.rows[0] ? toPaymentRecord(result.rows[0]) : null;
     },
 
+    async findByExternalTransaction(provider, externalTransactionId) {
+      const result = await db.query<PaymentRow>(
+        'SELECT * FROM payments WHERE provider = $1 AND external_transaction_id = $2',
+        [provider, externalTransactionId],
+      );
+      return result.rows[0] ? toPaymentRecord(result.rows[0]) : null;
+    },
+
+    async findByReference(reference) {
+      const result = await db.query<PaymentRow>(
+        'SELECT * FROM payments WHERE reference = $1',
+        [reference],
+      );
+      return result.rows[0] ? toPaymentRecord(result.rows[0]) : null;
+    },
+
     async compareAndSetStatus(paymentId, expected, patch) {
       assertPaymentStatusDomain(patch.status, 'payments');
       const statuses = [...new Set(expected)];
@@ -527,6 +543,22 @@ export function createSqlPaymentDeclarationStore(db: SqlQueryExecutor): PaymentD
         [idempotencyKey],
       );
       return result.rows[0] ? toDeclarationRecord(result.rows[0]) : null;
+    },
+
+    async findByExternalTransaction(provider, externalTransactionId) {
+      const result = await db.query<DeclarationRow>(
+        'SELECT * FROM payment_declarations WHERE provider = $1 AND external_transaction_id = $2',
+        [provider, externalTransactionId],
+      );
+      return result.rows[0] ? toDeclarationRecord(result.rows[0]) : null;
+    },
+
+    async findByReference(reference) {
+      const result = await db.query<DeclarationRow>(
+        'SELECT * FROM payment_declarations WHERE reference = $1 ORDER BY attempt_number DESC',
+        [reference],
+      );
+      return result.rows.map(toDeclarationRecord);
     },
 
     async nextAttemptNumber(paymentId) {

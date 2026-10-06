@@ -30,6 +30,9 @@ import {
   PAYMENT_PROVIDER_ADAPTERS,
   PAYMENT_REFUSED_TRANSITIONS,
   PAYMENT_TRANSITION_RULES,
+  PAYMENT_AUDIT_ACTIONS,
+  evaluateReconciliation,
+  type NormalizedPaymentTransaction,
 } from './paymentLifecycle';
 import {
   PAYMENT_AUTOMATION_SOURCE,
@@ -598,6 +601,113 @@ export function runPaymentLifecycleTests(): PaymentLifecycleTestResult[] {
       assert(/25 %|salaire|commission/i.test(entry.detail), `détail de correspondance insuffisant pour ${entry.code}`);
       assert(entry.plan.includes(entry.code) || entry.plan.toLowerCase().includes('salaire') || entry.plan.toLowerCase().includes('commission'),
         `le libellé du plan est rattaché au nom de code pour ${entry.code}`);
+    }
+  });
+
+  /* ---------------- P0-PAY-2 : Réconciliation pure & Audit ---------------- */
+
+  check('P0-PAY-2 Réconciliation pure: MATCH quand tous les critères concordent', () => {
+    const tx: NormalizedPaymentTransaction = {
+      provider: 'TEST_GATEWAY',
+      externalTransactionId: 'TX-REC-001',
+      reference: 'MOMO-REC-001',
+      amount: 175_000,
+      currency: 'FCFA',
+      payer: EMPLOYER_ID,
+      recipient: CANDIDATE_ID,
+      occurredAt: '2026-10-06T10:00:00.000Z',
+      status: 'SUCCESS',
+    };
+    const result = evaluateReconciliation({
+      expected: {
+        paymentId: 'pay_salary_001',
+        provider: 'TEST_GATEWAY',
+        externalTransactionId: 'TX-REC-001',
+        reference: 'MOMO-REC-001',
+        amount: 175_000,
+        currency: 'FCFA',
+        payer: EMPLOYER_ID,
+        recipient: CANDIDATE_ID,
+      },
+      actual: tx,
+      reconciledAt: '2026-10-06T12:00:00.000Z',
+    });
+
+    assert(result.verdict === 'MATCH', `MATCH attendu, reçu ${result.verdict}`);
+    assert(result.comparisons.every(c => c.matched), 'toutes les comparaisons doivent être positives');
+    assert(result.reasons.length === 0, 'aucun motif de rejet');
+  });
+
+  check('P0-PAY-2 Réconciliation pure: NOT_FOUND, DUPLICATE et REVIEW_REQUIRED', () => {
+    const notFound = evaluateReconciliation({
+      expected: { paymentId: 'pay_001', amount: 100_000, currency: 'FCFA', payer: EMPLOYER_ID, recipient: CANDIDATE_ID },
+      actual: null,
+      reconciledAt: '2026-10-06T12:00:00.000Z',
+    });
+    assert(notFound.verdict === 'NOT_FOUND', `NOT_FOUND attendu, reçu ${notFound.verdict}`);
+
+    const duplicate = evaluateReconciliation({
+      expected: { paymentId: 'pay_001', amount: 100_000, currency: 'FCFA', payer: EMPLOYER_ID, recipient: CANDIDATE_ID, isDuplicate: true },
+      actual: null,
+      reconciledAt: '2026-10-06T12:00:00.000Z',
+    });
+    assert(duplicate.verdict === 'DUPLICATE', `DUPLICATE attendu, reçu ${duplicate.verdict}`);
+
+    const unknownStatus: NormalizedPaymentTransaction = {
+      provider: 'TEST_GATEWAY', externalTransactionId: 'TX-002', reference: 'REF-002',
+      amount: 100_000, currency: 'FCFA', payer: EMPLOYER_ID, recipient: CANDIDATE_ID,
+      occurredAt: '2026-10-06T10:00:00.000Z', status: 'UNKNOWN',
+    };
+    const review = evaluateReconciliation({
+      expected: { paymentId: 'pay_001', amount: 100_000, currency: 'FCFA', payer: EMPLOYER_ID, recipient: CANDIDATE_ID },
+      actual: unknownStatus,
+      reconciledAt: '2026-10-06T12:00:00.000Z',
+    });
+    assert(review.verdict === 'REVIEW_REQUIRED', `REVIEW_REQUIRED attendu, reçu ${review.verdict}`);
+  });
+
+  check('P0-PAY-2 Réconciliation pure: MISMATCH sur montant, devise, destinataire ou échec externe', () => {
+    const baseTx: NormalizedPaymentTransaction = {
+      provider: 'TEST_GATEWAY', externalTransactionId: 'TX-003', reference: 'REF-003',
+      amount: 175_000, currency: 'FCFA', payer: EMPLOYER_ID, recipient: CANDIDATE_ID,
+      occurredAt: '2026-10-06T10:00:00.000Z', status: 'SUCCESS',
+    };
+    const expected = {
+      paymentId: 'pay_001', provider: 'TEST_GATEWAY', externalTransactionId: 'TX-003',
+      reference: 'REF-003', amount: 175_000, currency: 'FCFA',
+      payer: EMPLOYER_ID, recipient: CANDIDATE_ID,
+    };
+
+    // Montant discordant
+    const amountMismatch = evaluateReconciliation({ expected: { ...expected, amount: 200_000 }, actual: baseTx, reconciledAt: '2026-10-06T12:00:00.000Z' });
+    assert(amountMismatch.verdict === 'MISMATCH', 'MISMATCH attendu sur montant');
+
+    // Devise discordante
+    const currencyMismatch = evaluateReconciliation({ expected: { ...expected, currency: 'EUR' }, actual: baseTx, reconciledAt: '2026-10-06T12:00:00.000Z' });
+    assert(currencyMismatch.verdict === 'MISMATCH', 'MISMATCH attendu sur devise');
+
+    // Destinataire discordant
+    const recipientMismatch = evaluateReconciliation({ expected: { ...expected, recipient: 'other_user' }, actual: baseTx, reconciledAt: '2026-10-06T12:00:00.000Z' });
+    assert(recipientMismatch.verdict === 'MISMATCH', 'MISMATCH attendu sur destinataire');
+
+    // Statut externe FAILED
+    const failedTx = evaluateReconciliation({ expected, actual: { ...baseTx, status: 'FAILED' }, reconciledAt: '2026-10-06T12:00:00.000Z' });
+    assert(failedTx.verdict === 'MISMATCH', 'MISMATCH attendu sur statut externe FAILED');
+  });
+
+  check('P0-PAY-2 Audit: actions d’audit du webhook et de la réconciliation cataloguées', () => {
+    const required = [
+      'PAYMENT_WEBHOOK_RECEIVED',
+      'PAYMENT_WEBHOOK_SIGNATURE_VALIDATED',
+      'PAYMENT_WEBHOOK_SIGNATURE_REJECTED',
+      'PAYMENT_RECONCILED',
+      'PAYMENT_RECONCILIATION_MISMATCH',
+      'PAYMENT_DUPLICATE_DETECTED',
+      'PAYMENT_REPLAY_DETECTED',
+    ];
+    const actions = Object.values(PAYMENT_AUDIT_ACTIONS);
+    for (const req of required) {
+      assert(actions.includes(req as never), `action d’audit P0-PAY-2 absente: ${req}`);
     }
   });
 

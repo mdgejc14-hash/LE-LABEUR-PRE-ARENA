@@ -43,6 +43,7 @@ import {
   PAYMENT_OVERDUE_GRACE_PERIOD_MS,
   contractActivatedEventId,
 } from '../src/domain/contractScheduleAutomation';
+import { createTestPaymentProviderAdapter } from '../src/backend/payments/paymentVerification';
 import type { GoogleCredentialVerifier, GoogleExternalIdentity } from '../src/backend/productionContracts';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -1641,6 +1642,110 @@ async function main(): Promise<void> {
         Number(eventsAfter.rows[0]?.count ?? 0) === events.rows.length,
         'aucun événement de rappel dupliqué',
       );
+    });
+
+    await check('P0-PAY-2 Worker/API → PostgreSQL : webhook fournisseur sécurisé (signature, DUE→VERIFIED sans PAID direct, audit, réconciliation)', async () => {
+      // 1. Récupérer un paiement salarial du contrat P0-AUTO-2
+      const salaryPay = await database.query<{ id: string; amount: number; currency: string; candidate_id: string; employer_id: string }>(
+        `SELECT id, amount, currency, candidate_id, employer_id FROM payments
+         WHERE contract_id = $1 AND payment_type = 'SALARY' AND month_number = 1`,
+        [p0auto2ContractId],
+      );
+      assert(salaryPay.rows.length === 1, 'paiement salaire M1 trouvé');
+      const pay = salaryPay.rows[0];
+
+      // Marquer le paiement DUE pour le test
+      await database.query(`UPDATE payments SET status = 'DUE' WHERE id = $1`, [pay.id]);
+
+      // 2. Webhook sans signature : doit échouer 401
+      const unsignedResp = await composition.worker.fetch(new Request('https://api.test/api/webhooks/payment-provider', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ provider: 'TEST_GATEWAY', paymentId: pay.id }),
+      }));
+      assert(unsignedResp.status === 401, `401 attendu sans signature, reçu ${unsignedResp.status}`);
+
+      // 3. Webhook signé valide
+      const testAdapter = createTestPaymentProviderAdapter();
+      const signedWebhook = await testAdapter.createSignedWebhook({
+        provider: 'TEST_GATEWAY',
+        externalTransactionId: 'TX-E2E-PG-001',
+        paymentId: pay.id,
+        reference: 'REF-E2E-PG-001',
+        amount: pay.amount,
+        currency: pay.currency,
+        payer: pay.employer_id,
+        recipient: pay.candidate_id,
+        eventType: 'PAYMENT_COMPLETED',
+        status: 'SUCCESS',
+      });
+
+      const validResp = await composition.worker.fetch(new Request('https://api.test/api/webhooks/payment-provider', {
+        method: 'POST',
+        headers: signedWebhook.headers,
+        body: signedWebhook.rawBody,
+      }));
+      assert(validResp.status === 200, `200 attendu sur webhook valide, reçu ${validResp.status}`);
+      const validBody = await validResp.json() as { accepted: boolean; status: string };
+      assert(validBody.accepted === true, 'webhook accepté');
+      assert(validBody.status === 'VERIFIED', `statut VERIFIED attendu, reçu ${validBody.status}`);
+
+      // 4. Vérifier l'état en base PostgreSQL : VERIFIED, jamais PAID
+      const updated = await database.query<{ status: string; provider: string; external_transaction_id: string; verified_by: string }>(
+        'SELECT status, provider, external_transaction_id, verified_by FROM payments WHERE id = $1',
+        [pay.id],
+      );
+      assert(updated.rows[0].status === 'VERIFIED', `statut en base VERIFIED, reçu ${updated.rows[0].status}`);
+      assert((updated.rows[0].status as string) !== 'PAID', 'Le webhook ne doit JAMAIS basculer directement en PAID');
+      assert(updated.rows[0].provider === 'TEST_GATEWAY', 'provider persisté');
+      assert(updated.rows[0].external_transaction_id === 'TX-E2E-PG-001', 'external_transaction_id persisté');
+
+      // 5. Vérifier l'audit
+      const auditRows = await database.query<{ action: string }>(
+        'SELECT action FROM automation_audit_ledger WHERE entity_id = $1',
+        [pay.id],
+      );
+      assert(auditRows.rows.some(r => r.action === 'PAYMENT_WEBHOOK_SIGNATURE_VALIDATED'), 'audit signature validée');
+      assert(auditRows.rows.some(r => r.action === 'PAYMENT_VERIFIED'), 'audit paiement vérifié');
+
+      // 6. Rapprochement
+      testAdapter.registerTransaction({
+        provider: 'TEST_GATEWAY',
+        externalTransactionId: 'TX-E2E-PG-001',
+        reference: 'REF-E2E-PG-001',
+        amount: pay.amount,
+        currency: pay.currency,
+        payer: pay.employer_id,
+        recipient: pay.candidate_id,
+        status: 'SUCCESS',
+        occurredAt: new Date().toISOString(),
+      });
+
+      const rec = await testAdapter.reconcile({
+        payment: {
+          paymentId: pay.id,
+          contractId: p0auto2ContractId,
+          employerId: pay.employer_id,
+          candidateId: pay.candidate_id,
+          paymentType: 'SALARY',
+          scheduleEntryId: 'pse_1',
+          monthNumber: 1,
+          periodKey: 'Mois 01',
+          amount: pay.amount,
+          currency: pay.currency,
+          scheduledAt: new Date().toISOString(),
+          dueAt: new Date().toISOString(),
+          status: 'VERIFIED',
+          provider: 'TEST_GATEWAY',
+          externalTransactionId: 'TX-E2E-PG-001',
+          declarationCount: 1,
+          idempotencyKey: 'idemp-1',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+        asOf: new Date().toISOString(),
+      });
+      assert(rec.verdict === 'MATCH', `MATCH attendu sur rapprochement, reçu ${rec.verdict}`);
     });
 
     await check('Worker/API → PostgreSQL : ADMIN provisionné côté serveur + permissions SQL', async () => {
