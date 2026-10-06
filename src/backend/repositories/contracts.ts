@@ -165,6 +165,13 @@ export interface ServerContractRepository {
    * transactionnelle ; aucun statut nouveau, aucune notification, aucun paiement.
    */
   finalizeHiring(actor: AuthenticatedActor, contractId: string, command: ProductionCommandContext): Promise<Contract>;
+  /**
+   * P0-CONTRACT-POST / FIN-CONFIRMATION — confirmation de fin d'exécution.
+   * Vérifie le contrat ACTIVE, l'autorisation de la partie, la protection M1,
+   * la non-concurrence, ajoute l'historique/audit et relie au système de
+   * litiges P0-DISPUTE-1 si une contestation est déclarée.
+   */
+  confirmExecution(actor: AuthenticatedActor, contractId: string, contest?: string, command?: ProductionCommandContext): Promise<Contract>;
   /** Cycle paiements/mensuel — HORS P0-F (reste 501). */
   confirmMonthlyAction(actor: AuthenticatedActor, contractId: string, input: unknown, command: ProductionCommandContext): Promise<Contract>;
 }

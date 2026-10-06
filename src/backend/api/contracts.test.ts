@@ -1218,6 +1218,89 @@ export async function runContractDomainTests(): Promise<OfferTestResult[]> {
       await harness.database.query("UPDATE users SET status = 'ACTIVE' WHERE id = $1", [candidateId]);
       assert((await createSqlUserStore(harness.database).findById(candidateId))?.status === 'ACTIVE', 'compte restauré');
     });
+    await check('P0-CONTRACT-POST Confirm Execution: confirmation valide, autorisée, audit/historique', async () => {
+      const chain = await seedProposalChain(harness, { employerId, employeeId: candidateId });
+      const activeContractId = await createActiveContract(harness, {
+        employerToken,
+        candidateToken,
+        proposalId: chain.proposalId,
+        keyPrefix: 'post-confirm-001',
+      });
+
+      const response = await harness.worker.fetch(authRequest(`/api/v1/contracts/${activeContractId}/confirm-execution`, employerToken, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'Idempotency-Key': 'post-confirm-001' },
+        body: '{}',
+      }));
+      assert(response.status === 200, `200 attendu pour confirmation valide, reçu ${response.status}`);
+      const body = await response.json() as Contract;
+      assert(body.id === activeContractId, 'le contrat est retourné');
+      assert(body.status === 'ACTIVE', 'le statut reste ACTIVE après confirmation');
+      const stored = await readContract(harness, activeContractId);
+      assert(stored?.history.some((entry: { event: string }) => entry.event === 'EXECUTION_CONFIRMED'), 'historique EXECUTION_CONFIRMED persisté');
+    });
+
+    await check('P0-CONTRACT-POST Confirm Execution: contrat non ACTIVE refusé (409), tiers refusé (403), contrat terminé (409)', async () => {
+      const chain = await seedProposalChain(harness, { employerId, employeeId: candidateId });
+      const draftId = await createDraftContract(harness, employerToken, 'post-confirm-draft-001', chain.proposalId);
+      const draftResponse = await harness.worker.fetch(authRequest(`/api/v1/contracts/${draftId}/confirm-execution`, employerToken, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'Idempotency-Key': 'post-confirm-draft-001' },
+        body: '{}',
+      }));
+      assert(draftResponse.status === 409, `409 attendu pour contrat non ACTIVE, reçu ${draftResponse.status}`);
+
+      const chain2 = await seedProposalChain(harness, { employerId, employeeId: candidateId });
+      const completedId = await createActiveContract(harness, {
+        employerToken,
+        candidateToken,
+        proposalId: chain2.proposalId,
+        keyPrefix: 'post-confirm-completed-001',
+      });
+      await harness.worker.fetch(contractActionRequest(completedId, 'end', employerToken, 'post-confirm-completed-end-001'));
+      const completedResponse = await harness.worker.fetch(authRequest(`/api/v1/contracts/${completedId}/confirm-execution`, employerToken, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'Idempotency-Key': 'post-confirm-completed-001' },
+        body: '{}',
+      }));
+      assert(completedResponse.status === 409, `409 attendu pour contrat déjà terminé, reçu ${completedResponse.status}`);
+    });
+
+    await check('P0-CONTRACT-POST Confirm Execution: contestation liée au système de litige, M1 protection, anti-doublon inter-contrats', async () => {
+      const chain = await seedProposalChain(harness, { employerId, employeeId: candidateId });
+      const activeContractId = await createActiveContract(harness, {
+        employerToken,
+        candidateToken,
+        proposalId: chain.proposalId,
+        keyPrefix: 'post-confirm-advanced-001',
+      });
+
+      const contestedResponse = await harness.worker.fetch(authRequest(`/api/v1/contracts/${activeContractId}/confirm-execution`, candidateToken, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'Idempotency-Key': 'post-confirm-contest-001' },
+        body: JSON.stringify({ contest: 'Divergence sur la date de fin de mission.' }),
+      }));
+      assert(contestedResponse.status === 200, `200 attendu pour confirmation avec contestation, reçu ${contestedResponse.status}`);
+
+      const m1Chain = await seedProposalChain(harness, { employerId, employeeId: candidateId });
+      const m1ContractId = await createActiveContract(harness, {
+        employerToken,
+        candidateToken,
+        proposalId: m1Chain.proposalId,
+        keyPrefix: 'post-confirm-m1-001',
+      });
+      const m1Response = await harness.worker.fetch(authRequest(`/api/v1/contracts/${m1ContractId}/confirm-execution`, employerToken, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'Idempotency-Key': 'post-confirm-m1-001' },
+        body: '{}',
+      }));
+      assert(m1Response.status === 409, `409 attendu en M1 sans incident, reçu ${m1Response.status}`);
+
+      const duplicateResponse = await harness.worker.fetch(contractCreateRequest(employerToken, 'post-confirm-doublon-001', {
+        proposalId: chain.proposalId,
+      }));
+      assert(duplicateResponse.status === 409, `409 attendu pour doublon inter-contrats, reçu ${duplicateResponse.status}`);
+    });
   } finally {
     await harness.close();
     contractIdempotencyCache.clear();
