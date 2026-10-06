@@ -104,6 +104,10 @@ import {
 import { createContractAutomation, type ContractAutomation } from '../automation/contractActivation';
 import { createAutomationWorker, type AutomationWorker } from '../automation/worker';
 import type { AutomationStores } from '../automation/records';
+import { createSqlClaimStore } from '../persistence/sqlClaimStores';
+import { createClaimRepository, createClaimApiHandlers, type ClaimRepositoryStores, type OpenClaimRepository } from '../disputes/claimRepository';
+import { createClaimAutomation } from '../disputes/claimAutomation';
+import { resolveClaimEvidenceDeadline } from '../disputes/config';
 
 export interface WorkerEnvironment extends WorkerPersistenceEnvironment {
   GOOGLE_CLIENT_ID?: string;
@@ -122,6 +126,8 @@ export interface WorkerEnvironment extends WorkerPersistenceEnvironment {
    * pas cette règle (`PRE_DUE_REMINDER_CONFIGURATION.leadTimeMs === null`).
    */
   PAYMENT_PRE_DUE_LEAD_TIME_MS?: string;
+  /** P0-DISPUTE-1 — aucune durée n'est posée si l'exploitant ne la configure pas. */
+  CLAIM_EVIDENCE_DEADLINE_MS?: string;
 }
 
 export type WorkerIdentityMode = 'closed' | 'memory' | 'postgres';
@@ -156,6 +162,9 @@ export interface WorkerComposition {
   proposals?: OpenProposalRepository;
   /** P0-F : création depuis proposition acceptée, envoi, signature, activation, fin, rupture. */
   contracts?: OpenContractRepository;
+  /** P0-DISPUTE-1 : cycle Claim persistent, absent hors PostgreSQL durable. */
+  claims?: OpenClaimRepository;
+  claimDeadlineConfiguration?: ReturnType<typeof resolveClaimEvidenceDeadline>;
   /**
    * P0-AUTO-2 : automatisation contractuelle (handler `CONTRACT_ACTIVATED` et
    * registre des jobs de rappel). Absente quand aucune base durable n'existe.
@@ -434,6 +443,7 @@ export function composeWorker(
             applications: createSqlApplicationStore(tx),
             offers: createSqlOfferStore(tx),
             users: createSqlUserStore(tx),
+            claimRestrictions: createSqlClaimStore(tx),
             outbox: automationStores.outbox,
           });
         });
@@ -488,6 +498,31 @@ export function composeWorker(
     if (!buildPaymentStores) return base;
     return { ...base, payments: buildPaymentStores(tx) };
   };
+
+  const claimDeadlineConfiguration = resolveClaimEvidenceDeadline(env.CLAIM_EVIDENCE_DEADLINE_MS);
+  const claimCycleAvailable = Boolean(persistence.database && persistence.core);
+  const buildClaimStores = (tx: Parameters<typeof createSqlClaimStore>[0]): ClaimRepositoryStores => ({
+    claims: createSqlClaimStore(tx),
+    contracts: createSqlContractStore(tx),
+    payments: createSqlPaymentStores(tx).payments,
+    users: createSqlUserStore(tx),
+    automation: createAutomationStores(tx),
+    sql: tx,
+  });
+  const runClaimInTransaction = claimCycleAvailable && persistence.database
+    ? async <T>(operation: (claimStores: ClaimRepositoryStores) => Promise<T>): Promise<T> =>
+        persistence.database!.run(async tx => operation(buildClaimStores(tx)))
+    : undefined;
+  const claimRepository = claimCycleAvailable && persistence.database
+    ? createClaimRepository({
+        stores: buildClaimStores(persistence.database),
+        runInTransaction: runClaimInTransaction,
+        ...(overrides.now ? { now: overrides.now } : {}),
+        evidenceDeadlineMs: claimDeadlineConfiguration.deadlineMs,
+        evidenceDeadlineConfiguration: claimDeadlineConfiguration,
+      })
+    : undefined;
+  const claimHandlers = claimRepository ? createClaimApiHandlers(claimRepository) : {};
 
   const paymentProviderRegistry = createPaymentProviderRegistry(
     overrides.paymentProviderAdapter ? [overrides.paymentProviderAdapter] : [],
@@ -593,12 +628,23 @@ export function composeWorker(
   const contractAutomation = automationRuntime
     ? createContractAutomation(automationRuntime)
     : undefined;
+  const claimAutomation = persistence.database && contractAutomation
+    ? createClaimAutomation({
+        database: persistence.database,
+        createStores: createAutomationStores,
+        createClaimStore: createSqlClaimStore,
+        evidenceDeadlineMs: claimDeadlineConfiguration.deadlineMs,
+        deadlineConfigurationValid: claimDeadlineConfiguration.valid,
+        ...(overrides.now ? { now: overrides.now } : {}),
+      })
+    : undefined;
 
   const automationWorker = persistence.database && contractAutomation
     ? createAutomationWorker({
         database: persistence.database,
         createStores: createAutomationStores,
         automation: contractAutomation,
+        ...(claimAutomation ? { supplemental: claimAutomation } : {}),
         ...(overrides.now ? { now: overrides.now } : {}),
         ...(paymentRepository
           ? {
@@ -626,6 +672,8 @@ export function composeWorker(
     ...applicationHandlers,
     ...proposalHandlers,
     ...contractHandlers,
+    // P0-DISPUTE-1 — Claim uniquement en PostgreSQL durable, DEMO reste séparé.
+    ...claimHandlers,
     // P0-PAY-1 — cycle Payment existant.
     ...paymentHandlers,
     ...(persistence.database && mode === 'postgres' ? createSalaryConfirmationHandlers(persistence.database, overrides.salaryTestOtpSink, createSqlAutomationStores) : {}),
@@ -641,6 +689,8 @@ export function composeWorker(
     applications: applicationRepository,
     proposals: proposalRepository,
     contracts: contractRepository,
+    claims: claimRepository,
+    claimDeadlineConfiguration,
     payments: paymentRepository,
     paymentReconciliation,
     paymentProviders: paymentProviderRegistry,

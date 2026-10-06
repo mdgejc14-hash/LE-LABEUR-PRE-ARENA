@@ -151,6 +151,16 @@ export type OutboxEventType =
   | 'SALARY_CONFIRMED'
   /** P0-PAY-3 — demande de batch normalisé; aucun paiement réel ni notification. */
   | 'PAYMENT_RECONCILIATION_BATCH_REQUESTED'
+  /** P0-DISPUTE-1 — claims and evidence workflow; no external notification consumer. */
+  | 'CLAIM_CREATED'
+  | 'CLAIM_EVIDENCE_REQUESTED'
+  | 'CLAIM_EVIDENCE_SUBMITTED'
+  | 'CLAIM_DEADLINE_REACHED'
+  | 'CLAIM_ESCALATED'
+  | 'CLAIM_RESTRICTION_APPLIED'
+  | 'CLAIM_RESTRICTION_RELEASED'
+  | 'CLAIM_RESOLVED'
+  | 'CLAIM_REJECTED'
   | 'CONTRACT_SIGNED'
   | 'INCIDENT_OPENED'
   | 'INCIDENT_DECIDED'

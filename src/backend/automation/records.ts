@@ -120,14 +120,17 @@ export interface ScheduledJobStore {
 /* Deadlines / SLA                                                      */
 /* ------------------------------------------------------------------ */
 
+export type AutomationDeadlineKind = ScheduleDeadlineKind | 'CLAIM_EVIDENCE';
+
 export interface DeadlineDraft {
   id: string;
   aggregateType: string;
   aggregateId: string;
-  kind: ScheduleDeadlineKind;
+  kind: AutomationDeadlineKind;
   dueAt: string;
   sla: string;
-  gracePeriodMs: number;
+  /** No grace period is invented for a claim deadline. */
+  gracePeriodMs?: number;
   escalation: string;
   reference: string;
   idempotencyKey: string;
@@ -136,7 +139,7 @@ export interface DeadlineDraft {
 }
 
 export interface AutomationDeadline extends Deadline {
-  kind: ScheduleDeadlineKind;
+  kind: AutomationDeadlineKind;
   reference?: string;
   idempotencyKey: string;
   sourceEventId?: string;

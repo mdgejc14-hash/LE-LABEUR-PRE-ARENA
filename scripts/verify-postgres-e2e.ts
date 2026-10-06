@@ -1,5 +1,5 @@
 /**
- * LE LABEUR — P0-C / P0-E3 / P0-E4 / P0-E5 — vérification réelle de bout en bout.
+ * LE LABEUR — P0-C / P0-E3 / P0-E4 / P0-E5 / P0-DISPUTE-1 — vérification réelle de bout en bout.
  *
  *   Worker/API → PostgreSQL réel → réponse
  *
@@ -241,7 +241,7 @@ async function main(): Promise<void> {
   const secrets = [connectionString, local?.password, resolved.target.connectionString];
 
   console.log('============================================================');
-  console.log(' LE LABEUR — P0-C / P0-E3→E5 / P0-F / P0-AUTO-2 — vérification Worker/API → PostgreSQL');
+  console.log(' LE LABEUR — P0-C / P0-E3→E5 / P0-F / P0-AUTO-2 / P0-DISPUTE-1 — vérification Worker/API → PostgreSQL');
   console.log('============================================================');
   console.log(`Source base      : ${sourceLabel}`);
   console.log(`Cible (sans secret): ${descriptor.host}:${descriptor.port}/${descriptor.database} (source=${descriptor.source})`);
@@ -281,7 +281,7 @@ async function main(): Promise<void> {
     });
 
     let migrationResult: Awaited<ReturnType<typeof applyMigrations>> | null = null;
-    await check('Migrations 0001→0009 appliquées sur le moteur réel', async () => {
+    await check('Migrations 0001→0011 appliquées sur le moteur réel', async () => {
       migrationResult = await applyMigrations(client, migrations, {
         statementTimeoutMs: 15000,
         onProgress: message => console.log(`     ${message}`),
@@ -403,6 +403,8 @@ async function main(): Promise<void> {
       PERSISTENCE: 'postgres',
       SESSION_TTL_SECONDS: '3600',
       COOKIE_SECURE: 'false',
+      // Valeur de vérification explicite : aucune durée Claim par défaut en production.
+      CLAIM_EVIDENCE_DEADLINE_MS: '60000',
       WORKER_ENV: 'local-verify',
       DB_APPLICATION_NAME: 'lelabeur-worker',
       // Chemin de cible identique à un binding : le Worker résout lui-même la
@@ -436,6 +438,7 @@ async function main(): Promise<void> {
 
     let sessionCookie = '';
     let candidateId = '';
+    let p0DisputeClaimId = '';
     await check('Worker/API → PostgreSQL : credential Google → users + external_identities + sessions', async () => {
       const response = await composition.worker.fetch(new Request('https://api.test/api/v1/auth/google/credential', {
         method: 'POST',
@@ -1781,6 +1784,58 @@ async function main(): Promise<void> {
       assert((await database.query('SELECT payment_id FROM salary_confirmations WHERE confirmed_at IS NOT NULL')).rows.length === 1, 'preuve unique');
     });
 
+    await check('P0-DISPUTE-1 PostgreSQL réel : parties dérivées, idempotence et AUTO_RESOLUTION strictement déterministe', async () => {
+      const payment = (await database.query<{ id: string; contract_id: string; candidate_id: string; employer_id: string; status: string; payment_type: string }>(
+        "SELECT id,contract_id,candidate_id,employer_id,status,payment_type FROM payments WHERE contract_id=$1 AND payment_type='SALARY' AND month_number=1",
+        [p0auto2ContractId],
+      )).rows[0];
+      assert(payment && payment.status === 'PAID' && payment.payment_type === 'SALARY', 'paiement M1 payé par le cycle de test');
+      const createClaim = (key: string) => composition.worker.fetch(withSession('/api/v1/claims', sessionCookie, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'Idempotency-Key': key },
+        body: JSON.stringify({
+          contractId: p0auto2ContractId,
+          paymentId: payment.id,
+          type: 'SALARY_NOT_RECEIVED',
+          reason: 'Vérification déterministe Claim PostgreSQL.',
+        }),
+      }));
+      const created = await createClaim('p0-dispute-pg-create-001');
+      assert(created.status === 201, `201 attendu sur Claim, reçu ${created.status}`);
+      const body = await created.json() as { claimId: string; status: string; claimantId: string; respondentId: string; salaryConfirmationId?: string };
+      p0DisputeClaimId = body.claimId;
+      assert(body.status === 'OPEN' && body.claimantId === candidateId && body.respondentId === employerId, 'identités résolues depuis le contrat et l’acteur de session');
+      assert(body.salaryConfirmationId === payment.id, 'confirmation salariale persistée associée par le serveur');
+      const replay = await createClaim('p0-dispute-pg-create-001');
+      const replayBody = await replay.json() as { claimId: string };
+      assert(replay.status === 201 && replayBody.claimId === p0DisputeClaimId, 'idempotence durable rejoue la même Claim');
+      const outsider = await composition.worker.fetch(withSession(`/api/v1/claims/${p0DisputeClaimId}`, otherEmployerCookie));
+      assert(outsider.status === 403, 'un employeur tiers ne lit pas le Claim');
+
+      const secondWorker = composeWorker(env, compositionClient, { googleVerifier: google.verifier });
+      const [firstDrain, secondDrain] = await Promise.all([
+        composition.automationWorker!.drainEvents(50),
+        secondWorker.automationWorker!.drainEvents(50),
+      ]);
+      const eventEntries = [...firstDrain.entries, ...secondDrain.entries].filter(entry => entry.aggregateId === p0DisputeClaimId);
+      assert(eventEntries.length === 1 && eventEntries[0].result === 'completed', 'Outbox FOR UPDATE SKIP LOCKED remet un seul événement à un worker');
+      const claim = (await database.query<{ status: string; resolved_by: string; salary_confirmation_id: string; resolution: string }>(
+        'SELECT status,resolved_by,salary_confirmation_id,resolution FROM claims WHERE claim_id=$1', [p0DisputeClaimId],
+      )).rows[0];
+      assert(claim.status === 'RESOLVED' && claim.resolved_by === 'SYSTEM' && claim.salary_confirmation_id === payment.id, 'AUTO_RESOLUTION limitée au paiement PAID + confirmation correspondante');
+      assert(claim.resolution.toLowerCase().includes('aucun mouvement de fonds'), 'aucun transfert ou remboursement');
+      const evidence = await database.query('SELECT evidence_request_id FROM claim_evidence_requests WHERE claim_id=$1', [p0DisputeClaimId]);
+      const deadline = await database.query('SELECT id FROM automation_deadlines WHERE aggregate_type=$1 AND aggregate_id=$2', ['CLAIM', p0DisputeClaimId]);
+      const audit = await database.query<{ action: string }>('SELECT action FROM automation_audit_ledger WHERE entity_id=$1', [p0DisputeClaimId]);
+      assert(evidence.rows.length === 0 && deadline.rows.length === 0, 'résolution déterministe avant toute demande/délai');
+      assert(audit.rows.some(row => row.action === 'CLAIM_CREATED') && audit.rows.some(row => row.action === 'CLAIM_AUTO_RESOLVED_SALARY_CONFIRMED'), 'ledger audit existant utilisé');
+      const claimEvents = await database.query<{ event_type: string; status: string }>(
+        "SELECT event_type,status FROM automation_outbox WHERE aggregate_type='CLAIM' AND aggregate_id=$1 ORDER BY id", [p0DisputeClaimId],
+      );
+      assert(claimEvents.rows.some(row => row.event_type === 'CLAIM_CREATED' && row.status === 'PROCESSED'), 'Outbox CLAIM_CREATED traité');
+      assert(claimEvents.rows.some(row => row.event_type === 'CLAIM_RESOLVED'), 'événement de résolution sans consumer de notification');
+    });
+
     await check('Worker/API → PostgreSQL : ADMIN provisionné côté serveur + permissions SQL', async () => {
       const adminId = newEntityId('usr');
       const adminToken = newOpaqueSessionToken();
@@ -1815,6 +1870,19 @@ async function main(): Promise<void> {
       const adminContractsBody = await adminContracts.json() as { items: Array<{ id: string }> };
       assert(adminContractsBody.items.length > 0, 'l’ADMIN doit lire les contrats persistés via contracts:read:any');
 
+      await database.run(async transaction => {
+        await transaction.query('DELETE FROM role_permissions WHERE role = $1 AND permission_code = $2', ['ADMIN', 'incidents:read:any']);
+      });
+      const claimsDenied = await composition.worker.fetch(withSession('/api/v1/admin/claims?limit=10', adminToken));
+      assert(claimsDenied.status === 403, `lecture Claims ADMIN sans incidents:read:any refusée, reçu ${claimsDenied.status}`);
+      await database.run(async transaction => {
+        await transaction.query('INSERT INTO role_permissions (role, permission_code) VALUES ($1, $2) ON CONFLICT DO NOTHING', ['ADMIN', 'incidents:read:any']);
+      });
+      const adminClaims = await composition.worker.fetch(withSession('/api/v1/admin/claims?limit=10', adminToken));
+      assert(adminClaims.status === 200, `lecture Claims ADMIN avec permission existante, reçu ${adminClaims.status}`);
+      const adminClaimsBody = await adminClaims.json() as { items: Array<{ claimId: string }> };
+      assert(adminClaimsBody.items.some(item => item.claimId === p0DisputeClaimId), 'Claim réel lisible par ADMIN');
+
       await database.query('DELETE FROM sessions WHERE user_id = $1', [adminId]);
       await database.query('DELETE FROM users WHERE id = $1', [adminId]);
     });
@@ -1828,6 +1896,9 @@ async function main(): Promise<void> {
       assert(revoked.rows.length > 0 && revoked.rows[0].revoked_at !== null, 'revoked_at doit être persisté');
       const reuse = await composition.worker.fetch(withSession('/api/v1/auth/session', sessionCookie));
       assert(reuse.status === 401, 'une session révoquée doit être refusée');
+      await database.query('DELETE FROM claim_restrictions');
+      await database.query('DELETE FROM claim_evidence_requests');
+      await database.query('DELETE FROM claims');
       await database.query('DELETE FROM sessions WHERE user_id = $1', [candidateId]);
       await database.query('DELETE FROM external_identities WHERE user_id = $1', [candidateId]);
       await database.query('DELETE FROM users WHERE id = $1', [candidateId]);

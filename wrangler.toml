@@ -41,6 +41,8 @@ WORKER_ENV = "development"
 # aucun job pré-échéance n'est armé tant que l'exploitant ne décide pas la valeur,
 # car le modèle ne contient aucune règle par défaut (`leadTimeMs: null`).
 # PAYMENT_PRE_DUE_LEAD_TIME_MS = ""  # entier strictement positif, <= 2592000000
+# P0-DISPUTE-1 — aucun délai de preuve par défaut; durée à valider par l'exploitant.
+# CLAIM_EVIDENCE_DEADLINE_MS = ""  # entier strictement positif en millisecondes
 # Audience OAuth Google PUBLIQUE (aucun secret). Vide = frontière fermée (401/501).
 GOOGLE_CLIENT_ID = ""
 
@@ -71,6 +73,8 @@ COOKIE_SECURE = "true"
 WORKER_ENV = "production"
 # P0-PAY-1 — même règle qu'en développement : aucune valeur par défaut installée.
 # PAYMENT_PRE_DUE_LEAD_TIME_MS = ""  # absent => aucun job armé ; entier > 0, <= 2592000000
+# P0-DISPUTE-1 — aucune durée de preuve implicite; valeur validée par l'exploitant.
+# CLAIM_EVIDENCE_DEADLINE_MS = ""  # entier positif en millisecondes
 GOOGLE_CLIENT_ID = ""
 
 # Binding Hyperdrive de production : VOLONTAIREMENT ABSENT.

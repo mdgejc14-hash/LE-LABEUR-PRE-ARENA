@@ -509,7 +509,7 @@ export function createSqlDeadlineStore(db: SqlQueryExecutor): DeadlineStore {
             draft.kind,
             draft.dueAt,
             draft.sla,
-            draft.gracePeriodMs,
+            draft.gracePeriodMs ?? null,
             draft.escalation,
             draft.reference,
             draft.idempotencyKey,

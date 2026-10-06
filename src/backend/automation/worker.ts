@@ -20,13 +20,13 @@
  * produit jamais deux échéanciers, deux échéances ou deux rappels.
  */
 
-import type { PostgreSqlDatabase } from '../services/database';
+import type { PostgreSqlDatabase, SqlTransaction } from '../services/database';
 import type {
   AutomationJob,
   AutomationSqlFactory,
   AutomationStores,
 } from './records';
-import type { PersistedOutboxEvent } from './foundation';
+import type { DomainEventType, PersistedOutboxEvent } from './foundation';
 import {
   ContractAutomationError,
   parseReminderJobType,
@@ -42,11 +42,21 @@ export const DEFAULT_MAX_ATTEMPTS = 5;
 export const DEFAULT_RETRY_DELAY_MS = 30_000;
 export const DEFAULT_CLAIM_LIMIT = 25;
 
+export interface SupplementalAutomationProcessor {
+  handledEventTypes: readonly DomainEventType[];
+  handledJobTypes: readonly string[];
+  handleEvent(event: PersistedOutboxEvent): Promise<'completed' | 'duplicate'>;
+  /** Called inside the same transaction that marks the shared automation job complete. */
+  handleJob(job: AutomationJob, now: Date, stores: AutomationStores, transaction: SqlTransaction): Promise<void>;
+}
+
 export interface AutomationWorkerDependencies {
   database: PostgreSqlDatabase;
   /** Fabrique des stores liés à la transaction courante (injectée, jamais importée). */
   createStores: AutomationSqlFactory;
   automation: ContractAutomation;
+  /** P0-DISPUTE-1 — handlers Claim branchés sur la même Outbox/jobs/deadlines. */
+  supplemental?: SupplementalAutomationProcessor;
   now?: () => Date;
   maxAttempts?: number;
   retryDelayMs?: number;
@@ -140,6 +150,7 @@ export function createAutomationWorker(
   dependencies: AutomationWorkerDependencies,
 ): AutomationWorker {
   const { database, createStores, automation } = dependencies;
+  const supplemental = dependencies.supplemental;
   const clock = dependencies.now ?? (() => new Date());
   const maxAttempts = dependencies.maxAttempts ?? DEFAULT_MAX_ATTEMPTS;
   const retryDelayMs = dependencies.retryDelayMs ?? DEFAULT_RETRY_DELAY_MS;
@@ -148,8 +159,8 @@ export function createAutomationWorker(
     database.run(async transaction => operation(createStores(transaction)));
 
   return {
-    handledEventTypes: automation.handledEventTypes,
-    handledJobTypes: automation.handledJobTypes,
+    handledEventTypes: [...new Set([...automation.handledEventTypes, ...(supplemental?.handledEventTypes ?? [])])],
+    handledJobTypes: [...new Set([...automation.handledJobTypes, ...(supplemental?.handledJobTypes ?? [])])],
 
     async drainEvents(limit = DEFAULT_CLAIM_LIMIT): Promise<EventDrainReport> {
       const report: EventDrainReport = {
@@ -159,7 +170,7 @@ export function createAutomationWorker(
       const claimedAt = clock();
       const claimed = await inTransaction(stores => stores.outbox.claimDue({
         limit,
-        eventTypes: automation.handledEventTypes,
+        eventTypes: [...new Set([...automation.handledEventTypes, ...(supplemental?.handledEventTypes ?? [])])],
         now: claimedAt.toISOString(),
       }));
       report.claimed = claimed.length;
@@ -174,7 +185,9 @@ export function createAutomationWorker(
         };
 
         try {
-          const result = await automation.engine.execute(event, engineIdempotencyKey(event));
+          const result = supplemental?.handledEventTypes.includes(event.eventType)
+            ? await supplemental.handleEvent(event)
+            : await automation.engine.execute(event, engineIdempotencyKey(event));
           await inTransaction(stores =>
             stores.outbox.markProcessed(event.eventId, clock().toISOString()));
           entry.result = result === 'duplicate' ? 'duplicate' : 'completed';
@@ -219,7 +232,7 @@ export function createAutomationWorker(
       const claimedAt = clock();
       const claimedRows = await inTransaction(stores => stores.jobs.claimDue({
         limit,
-        jobTypes: automation.handledJobTypes,
+        jobTypes: [...new Set([...automation.handledJobTypes, ...(supplemental?.handledJobTypes ?? [])])],
         now: claimedAt.toISOString(),
       }));
       // `UPDATE … RETURNING` ne garantit pas l'ordre du sous-select : les jobs
@@ -247,8 +260,9 @@ export function createAutomationWorker(
         const reconciliationHandler = dependencies.paymentReconciliationJobs?.jobTypes.includes(job.jobType)
           ? dependencies.paymentReconciliationJobs.handle
           : undefined;
+        const supplementalHandler = supplemental?.handledJobTypes.includes(job.jobType) ? supplemental.handleJob : undefined;
 
-        if (!isPreDue && (!parsed || !handler) && !reconciliationHandler) {
+        if (!isPreDue && (!parsed || !handler) && !reconciliationHandler && !supplementalHandler) {
           const message = `Aucun handler de job pour ${job.jobType}.`;
           await automation.recordFailure({
             jobId: job.jobId,
@@ -277,6 +291,17 @@ export function createAutomationWorker(
               status: 'COMPLETED',
               at: clock().toISOString(),
             }));
+          } else if (supplementalHandler) {
+            // Les traitements Claim partagent le job PostgreSQL, le verrou et
+            // la transaction du worker. Aucun scheduler parallèle n'est ajouté.
+            await database.run(async transaction => {
+              const stores = createStores(transaction);
+              await supplementalHandler(job, clock(), stores, transaction);
+              await stores.jobs.compareAndSetStatus(job.jobId, ['RUNNING'], {
+                status: 'COMPLETED',
+                at: clock().toISOString(),
+              });
+            });
           } else {
             // Une SEULE transaction : effets du rappel (événement préparé,
             // échéance, audit, idempotence) et passage du job à COMPLETED sont

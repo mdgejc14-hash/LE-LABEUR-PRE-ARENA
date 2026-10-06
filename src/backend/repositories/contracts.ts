@@ -33,6 +33,7 @@ import type {
 } from '../productionContracts';
 import type { GoogleAuthResult } from '../services/authentication';
 import type { CreateDocumentMetadata, DocumentService, DocumentUploadGrant } from '../services/documents';
+import type { OpenClaimRepository } from '../disputes/claimRepository';
 
 export type ServerSelfProfilePatch = Partial<Pick<UserProfile,
   | 'fullName' | 'firstName' | 'lastName' | 'phone' | 'headline' | 'location'
@@ -178,6 +179,9 @@ export interface ServerScheduleRepository {
   findSchedulesDueForEvaluation(asOf: string, limit: number): Promise<ScheduleEntrySnapshot[]>;
 }
 
+/** P0-DISPUTE-1 — production Claim cycle, distinct from the legacy DEMO incidents. */
+export interface ServerClaimRepository extends OpenClaimRepository {}
+
 export interface ServerIncidentRepository {
   getMyIncidents(actor: AuthenticatedActor, page: { cursor: string | null; limit: number }): Promise<CursorPage<Incident>>;
   getIncident(actor: AuthenticatedActor, incidentId: string): Promise<Incident | null>;
@@ -255,6 +259,7 @@ export interface ProductionRepositoryPorts {
   contracts: ServerContractRepository;
   payments: ServerPaymentRepository;
   schedules: ServerScheduleRepository;
+  claims: ServerClaimRepository;
   incidents: ServerIncidentRepository;
   replacements: ServerReplacementRepository;
   messages: ServerMessageRepository;

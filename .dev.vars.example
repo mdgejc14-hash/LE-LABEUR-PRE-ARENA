@@ -9,6 +9,10 @@
 #   - base distante : ajouter ?sslmode=require
 CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE="postgresql://lelabeur:motdepasse-local@127.0.0.1:55432/lelabeur?sslmode=disable"
 
+# P0-DISPUTE-1 — aucun délai de preuve par défaut; ne renseigner qu'après
+# validation explicite de l'exploitant (entier positif en millisecondes).
+# CLAIM_EVIDENCE_DEADLINE_MS=""
+
 # Variable NON standard, acceptée uniquement si elle pointe vers la boucle locale
 # (127.0.0.1 / localhost). Elle permet de vérifier le parcours d'authentification
 # complet contre un JWKS de test servi localement. Ignorée partout ailleurs.

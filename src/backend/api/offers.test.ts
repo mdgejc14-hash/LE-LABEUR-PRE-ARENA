@@ -31,6 +31,7 @@ import type { OpenContractRepository } from '../repositories/contractRepository'
 import type { ContractAutomation } from '../automation/contractActivation';
 import type { AutomationWorker } from '../automation/worker';
 import type { OpenPaymentRepository } from '../repositories/paymentRepository';
+import type { OpenClaimRepository } from '../disputes/claimRepository';
 import type { PaymentReconciliationBatchService } from '../payments/paymentReconciliationBatch';
 import type { PaymentProviderRegistry } from '../payments/paymentProviderRegistry';
 import type { PostgreSqlDatabase } from '../services/database';
@@ -175,6 +176,8 @@ export interface TestHarness {
   proposals?: OpenProposalRepository;
   /** P0-F : repository CONTRAT (création, envoi, signature, activation, fin, rupture). */
   contracts?: OpenContractRepository;
+  /** P0-DISPUTE-1 : Claim production PostgreSQL; jamais relié au mode DEMO. */
+  claims?: OpenClaimRepository;
   /** P0-AUTO-2 : handler CONTRACT_ACTIVATED + registre des jobs de rappel. */
   automation?: ContractAutomation;
   /** P0-AUTO-2 : worker d'automatisation (déclenché explicitement, aucun timer). */
@@ -189,7 +192,10 @@ export interface TestHarness {
   close: () => Promise<void>;
 }
 
-export async function createOffersTestHarness(salaryTestOtpSink?: (paymentId: string, otp: string) => void): Promise<TestHarness> {
+export async function createOffersTestHarness(
+  salaryTestOtpSink?: (paymentId: string, otp: string) => void,
+  options: { claimEvidenceDeadlineMs?: string } = {},
+): Promise<TestHarness> {
   offerIdempotencyCache.clear();
   const pg = new PGlite();
   const migrationFiles = readdirSync(MIGRATIONS_DIR).filter(file => file.endsWith('.sql')).sort();
@@ -205,6 +211,7 @@ export async function createOffersTestHarness(salaryTestOtpSink?: (paymentId: st
     GOOGLE_CLIENT_ID: TEST_AUDIENCE,
     PERSISTENCE: 'postgres',
     SESSION_TTL_SECONDS: '3600',
+    ...(options.claimEvidenceDeadlineMs ? { CLAIM_EVIDENCE_DEADLINE_MS: options.claimEvidenceDeadlineMs } : {}),
   }, database, {
     googleVerifier: google.verifier,
     now: () => clock.value,
@@ -218,6 +225,7 @@ export async function createOffersTestHarness(salaryTestOtpSink?: (paymentId: st
     applications: composition.applications,
     proposals: composition.proposals,
     contracts: composition.contracts,
+    claims: composition.claims,
     automation: composition.automation,
     automationWorker: composition.automationWorker,
     payments: composition.payments,

@@ -55,6 +55,20 @@ export const OUTBOX_EFFECT_CONTRACTS: readonly OutboxEffectContract[] = [
   /** P0-PAY-3 : l'Outbox ne fait qu'ordonner un job idempotent de batch; aucun mouvement ni canal. */
   { eventType: 'PAYMENT_RECONCILIATION_BATCH_REQUESTED', sideEffects: ['enqueue the bounded reconciliation job in automation_jobs; no payment transition or fund movement'], idempotencyKey: 'batchId + initial' },
   /**
+   * P0-DISPUTE-1 — le Claim, sa demande de preuve et son escalade restent des
+   * événements d'Outbox transactionnels. Aucun consumer de notification n'est
+   * branché dans cette tranche; le silence n'est jamais une décision de fond.
+   */
+  { eventType: 'CLAIM_CREATED', sideEffects: ['start deterministic claim checks; no external notification'], idempotencyKey: 'claimId + CREATED' },
+  { eventType: 'CLAIM_EVIDENCE_REQUESTED', sideEffects: ['schedule the configured evidence deadline through automation_jobs; no external notification'], idempotencyKey: 'evidenceRequestId + REQUESTED' },
+  { eventType: 'CLAIM_EVIDENCE_SUBMITTED', sideEffects: ['evaluate only persisted deterministic facts; otherwise route to ADMIN_REVIEW'], idempotencyKey: 'evidenceRequestId + SUBMITTED' },
+  { eventType: 'CLAIM_DEADLINE_REACHED', sideEffects: ['record expiry and prepare escalation; silence alone does not imply fault'], idempotencyKey: 'evidenceRequestId + DEADLINE_REACHED' },
+  { eventType: 'CLAIM_ESCALATED', sideEffects: ['route an ambiguous case to ADMIN_REVIEW; no automatic sanction'], idempotencyKey: 'claimId + evidenceRequestId + ESCALATED' },
+  { eventType: 'CLAIM_RESTRICTION_APPLIED', sideEffects: ['apply a temporary, reversible CONTRACT_TERMINATE restriction only'], idempotencyKey: 'restrictionId + APPLIED' },
+  { eventType: 'CLAIM_RESTRICTION_RELEASED', sideEffects: ['release a temporary restriction; no other capability is changed'], idempotencyKey: 'restrictionId + RELEASED' },
+  { eventType: 'CLAIM_RESOLVED', sideEffects: ['record a deterministic or ADMIN resolution; no refund or fund movement'], idempotencyKey: 'claimId + RESOLVED' },
+  { eventType: 'CLAIM_REJECTED', sideEffects: ['record an ADMIN rejection; no account sanction'], idempotencyKey: 'claimId + REJECTED' },
+  /**
    * P0-E3/P0-E4 — cycle CANDIDATURE.
    *
    * Contrats DÉCLARÉS pour le futur moteur Outbox/Queue : aucun producteur,

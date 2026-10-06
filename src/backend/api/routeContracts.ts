@@ -86,6 +86,19 @@ export const API_ROUTE_CONTRACTS = [
   { key: 'payments.advance-month', method: 'POST', path: '/api/v1/contracts/:contractId/payments/advance-month', authentication: 'required', scope: 'owner', roles: ['EMPLOYER'], idempotency: true, auditOnMutation: true },
   { key: 'schedules.mine.list', method: 'GET', path: '/api/v1/my/schedules', authentication: 'required', scope: 'self', collection: true },
 
+  // P0-DISPUTE-1 — Claim réel, rattaché au contrat/paiement et à ses parties.
+  { key: 'claims.mine.list', method: 'GET', path: '/api/v1/my/claims', authentication: 'required', scope: 'self', collection: true, roles: ['CANDIDATE', 'EMPLOYER'] },
+  { key: 'claims.read', method: 'GET', path: '/api/v1/claims/:claimId', authentication: 'required', scope: 'participant', roles: ['CANDIDATE', 'EMPLOYER'] },
+  { key: 'claims.create', method: 'POST', path: '/api/v1/claims', authentication: 'required', scope: 'self', roles: ['CANDIDATE', 'EMPLOYER'], idempotency: true, auditOnMutation: true },
+  { key: 'claims.evidence.submit', method: 'POST', path: '/api/v1/claims/:claimId/evidence-requests/:evidenceRequestId/submit', authentication: 'required', scope: 'participant', roles: ['CANDIDATE', 'EMPLOYER'], idempotency: true, auditOnMutation: true },
+  { key: 'admin.claims.list', method: 'GET', path: '/api/v1/admin/claims', authentication: 'required', scope: 'admin', permission: 'incidents:read:any', collection: true },
+  { key: 'admin.claims.read', method: 'GET', path: '/api/v1/admin/claims/:claimId', authentication: 'required', scope: 'admin', permission: 'incidents:read:any' },
+  { key: 'admin.claims.review', method: 'POST', path: '/api/v1/admin/claims/:claimId/review', authentication: 'required', scope: 'admin', permission: 'incidents:arbitrate', idempotency: true, auditOnMutation: true },
+  { key: 'admin.claims.evidence.request', method: 'POST', path: '/api/v1/admin/claims/:claimId/evidence-requests', authentication: 'required', scope: 'admin', permission: 'incidents:arbitrate', idempotency: true, auditOnMutation: true },
+  { key: 'admin.claims.decision', method: 'POST', path: '/api/v1/admin/claims/:claimId/decision', authentication: 'required', scope: 'admin', permission: 'incidents:arbitrate', idempotency: true, auditOnMutation: true },
+  { key: 'admin.claims.restriction.apply', method: 'POST', path: '/api/v1/admin/claims/:claimId/restrictions', authentication: 'required', scope: 'admin', permission: 'incidents:arbitrate', idempotency: true, auditOnMutation: true },
+  { key: 'admin.claims.restriction.release', method: 'POST', path: '/api/v1/admin/claims/:claimId/restrictions/:restrictionId/release', authentication: 'required', scope: 'admin', permission: 'incidents:arbitrate', idempotency: true, auditOnMutation: true },
+
   { key: 'incidents.mine.list', method: 'GET', path: '/api/v1/my/incidents', authentication: 'required', scope: 'self', collection: true },
   { key: 'incidents.read', method: 'GET', path: '/api/v1/incidents/:incidentId', authentication: 'required', scope: 'owner' },
   { key: 'incidents.report', method: 'POST', path: '/api/v1/incidents', authentication: 'required', scope: 'owner', idempotency: true, auditOnMutation: true },

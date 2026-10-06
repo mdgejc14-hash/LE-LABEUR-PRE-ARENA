@@ -1,5 +1,5 @@
 /**
- * LE LABEUR — P0-C / P0-E3 / P0-E4 / P0-E5 — vérification du Worker dans le runtime workerd
+ * LE LABEUR — P0-C / P0-E3 / P0-E4 / P0-E5 / P0-DISPUTE-1 — vérification du Worker dans le runtime workerd
  * avec un binding Hyperdrive local.
  *
  *   Requête HTTP → workerd → binding HYPERDRIVE → PostgreSQL réel → réponse
@@ -160,7 +160,7 @@ async function main(): Promise<void> {
   mkdirSync(WORK_DIR, { recursive: true });
 
   console.log('============================================================');
-  console.log(' LE LABEUR — P0-C / P0-E3→E5 / P0-F / P0-AUTO-2 — runtime workerd + binding Hyperdrive local');
+  console.log(' LE LABEUR — P0-C / P0-E3→E5 / P0-F / P0-AUTO-2 / P0-DISPUTE-1 — runtime workerd + binding Hyperdrive local');
   console.log('============================================================');
   console.log('Runtime          : workerd (wrangler dev --local) — PAS un déploiement Cloudflare');
   console.log('Base             : PostgreSQL 17.10 RÉEL local (binaire embarqué, TEST/LOCAL)');
@@ -196,6 +196,7 @@ async function main(): Promise<void> {
   let employerId = '';
   let otherEmployerCookie = '';
   let otherEmployerId = '';
+  let p0Auto2ContractId = '';
 
   try {
     await postgres.initialise();
@@ -230,6 +231,8 @@ async function main(): Promise<void> {
       '--var', 'PERSISTENCE:postgres',
       '--var', 'COOKIE_SECURE:false',
       '--var', 'SESSION_TTL_SECONDS:600',
+      // Durée locale de vérification explicite; la configuration produit n'a pas de défaut.
+      '--var', 'CLAIM_EVIDENCE_DEADLINE_MS:60000',
       '--var', `TEST_ONLY_GOOGLE_JWKS_URL:http://127.0.0.1:${jwks.port}/jwks`,
     ], {
       cwd: REPO_ROOT,
@@ -896,6 +899,7 @@ async function main(): Promise<void> {
       });
       assert(created.status === 201, `création contrat : 201 attendu, reçu ${created.status}`);
       const contract = await created.json() as { id: string };
+      p0Auto2ContractId = contract.id;
 
       const sent = await fetch(`${base}/api/v1/contracts/${contract.id}/send`, {
         method: 'POST', headers: ownerHeaders('p0auto2-workerd-send-001'), body: '{}',
@@ -1116,7 +1120,10 @@ async function main(): Promise<void> {
     });
 
     await check('P0-SALARY-1 workerd → PostgreSQL : éligibilité, OTP non exposé, nonce, audit de refus', async () => {
-      const salary = await pool.query<{ id: string }>("SELECT id FROM payments WHERE payment_type='SALARY' ORDER BY id LIMIT 1");
+      const salary = await pool.query<{ id: string }>(
+        "SELECT id FROM payments WHERE contract_id=$1 AND payment_type='SALARY' AND month_number=1",
+        [p0Auto2ContractId],
+      );
       const fee = await pool.query<{ id: string }>("SELECT id FROM payments WHERE payment_type='PLATFORM_FEE' LIMIT 1");
       assert(salary.rows[0] && fee.rows[0], 'paiements du contrat attendus');
       const send = (id: string, cookie: string, key: string, body: object = {}) => fetch(`${base}/api/v1/payments/${id}/salary-confirmation-request`, {
@@ -1145,6 +1152,84 @@ async function main(): Promise<void> {
       assert(refused.status !== 200, 'nonce invalide refusé par workerd');
       const audit = await pool.query<{ action: string }>("SELECT action FROM automation_audit_ledger WHERE entity_id=$1 AND action='SALARY_CONFIRMATION_CONFLICT'", [salary.rows[0].id]);
       assert(audit.rows.length === 1, 'audit durable de rejet');
+    });
+
+    await check('P0-DISPUTE-1 workerd → PostgreSQL : Claim, parties authentifiées, preuve en attente et deadline configurée', async () => {
+      const payment = await pool.query<{
+        id: string; contract_id: string; candidate_id: string; employer_id: string; status: string; confirmed_at: Date | null;
+      }>(
+        `SELECT p.id,p.contract_id,p.candidate_id,p.employer_id,p.status,proof.confirmed_at
+           FROM payments p
+           JOIN salary_confirmations proof ON proof.payment_id=p.id
+          WHERE p.contract_id=$1 AND p.payment_type='SALARY' AND p.month_number=1 AND p.status='PAID'
+            AND proof.contract_id=p.contract_id AND proof.candidate_id=p.candidate_id
+            AND proof.employer_id=p.employer_id AND proof.amount=p.amount AND proof.currency=p.currency`,
+        [p0Auto2ContractId],
+      );
+      const target = payment.rows[0];
+      assert(target && target.candidate_id === userId && target.employer_id === employerId, 'paiement lié aux parties de la session');
+      assert(target.confirmed_at === null, 'preuve encore en attente : aucun constat automatique de faute ou de règlement');
+      const create = () => fetch(`${base}/api/v1/claims`, {
+        method: 'POST',
+        headers: {
+          cookie: `${SESSION_COOKIE_NAME}=${sessionCookie}`,
+          'content-type': 'application/json',
+          'Idempotency-Key': 'p0-dispute-workerd-create-001',
+        },
+        body: JSON.stringify({
+          contractId: target.contract_id,
+          paymentId: target.id,
+          type: 'SALARY_NOT_RECEIVED',
+          reason: 'Vérification P0-DISPUTE-1 sur le cycle réel.',
+        }),
+      });
+      const response = await create();
+      assert(response.status === 201, `201 attendu sous workerd, reçu ${response.status}`);
+      const body = await response.json() as { claimId: string; status: string; claimantId: string; respondentId: string; salaryConfirmationId: string };
+      assert(body.status === 'OPEN' && body.claimantId === userId && body.respondentId === employerId, 'parties issues de la session et du contrat persisté');
+      assert(body.salaryConfirmationId === target.id, 'référence de confirmation dérivée de PostgreSQL');
+      const replay = await create();
+      const replayBody = await replay.json() as { claimId: string };
+      assert(replay.status === 201 && replayBody.claimId === body.claimId, 'rejeu idempotent stable via workerd');
+      const outsider = await fetch(`${base}/api/v1/claims/${body.claimId}`, {
+        headers: { cookie: `${SESSION_COOKIE_NAME}=${otherEmployerCookie}` },
+      });
+      assert(outsider.status === 403, 'employeur tiers refusé par l’API workerd');
+
+      // Le consumer est le worker d’automatisation local sur la même vraie base,
+      // sans Cron/Queue Cloudflare de production.
+      const automationDatabase = createPostgresDatabase(toPostgresClientPort(pool));
+      const automationComposition = composeWorker(
+        { GOOGLE_CLIENT_ID: AUDIENCE, PERSISTENCE: 'postgres', CLAIM_EVIDENCE_DEADLINE_MS: '60000' },
+        automationDatabase,
+        { googleVerifier: { verifyCredential: async () => { throw new Error('non utilisé par le worker Claim'); } } },
+      );
+      assert(automationComposition.automationWorker !== undefined, 'consumer branché sur les stores PostgreSQL existants');
+      const createdDrain = await automationComposition.automationWorker!.drainEvents(50);
+      assert(createdDrain.entries.some(entry => entry.aggregateId === body.claimId && entry.eventType === 'CLAIM_CREATED' && entry.result === 'completed'), 'CLAIM_CREATED consommé');
+      const deadlineDrain = await automationComposition.automationWorker!.drainEvents(50);
+      assert(deadlineDrain.entries.some(entry => entry.aggregateId === body.claimId && entry.eventType === 'CLAIM_EVIDENCE_REQUESTED' && entry.result === 'completed'), 'CLAIM_EVIDENCE_REQUESTED consommé');
+      const claim = await pool.query<{ status: string; resolved_by: string | null; due_at: Date | null; salary_confirmation_id: string }>(
+        'SELECT status,resolved_by,due_at,salary_confirmation_id FROM claims WHERE claim_id=$1', [body.claimId],
+      );
+      assert(claim.rows[0].status === 'EVIDENCE_REQUESTED' && claim.rows[0].resolved_by === null, 'preuve manquante : aucune résolution ni attribution automatique');
+      assert(claim.rows[0].salary_confirmation_id === target.id && claim.rows[0].due_at !== null, 'preuve rattachée et deadline opérateur persistée');
+      const evidence = await pool.query<{ status: string; due_at: Date | null; requested_from: string }>(
+        'SELECT status,due_at,requested_from FROM claim_evidence_requests WHERE claim_id=$1', [body.claimId],
+      );
+      const deadline = await pool.query<{ due_at: Date | null; status: string; grace_period_ms: string | null; escalation: string }>(
+        "SELECT due_at,status,grace_period_ms,escalation FROM automation_deadlines WHERE aggregate_type='CLAIM' AND aggregate_id=$1",
+        [body.claimId],
+      );
+      const job = await pool.query<{ job_type: string; status: string }>(
+        "SELECT job_type,status FROM automation_jobs WHERE aggregate_type='CLAIM' AND aggregate_id=$1", [body.claimId],
+      );
+      assert(evidence.rows.length === 1 && evidence.rows[0].status === 'PENDING' && evidence.rows[0].requested_from === employerId, 'demande de preuve adressée à l’employeur lié au contrat');
+      assert(deadline.rows.length === 1 && deadline.rows[0].status === 'OPEN' && deadline.rows[0].grace_period_ms === null && deadline.rows[0].escalation === 'ADMIN_REVIEW', 'deadline configurée sans grâce inventée');
+      assert(Date.parse(String(deadline.rows[0].due_at)) === Date.parse(String(evidence.rows[0].due_at)), 'échéance partagée entre demande, deadline et job');
+      assert(job.rows.length === 1 && job.rows[0].job_type === 'CLAIM_EVIDENCE_DEADLINE' && job.rows[0].status === 'PENDING', 'job de deadline dans le scheduler existant');
+      const audit = await pool.query<{ action: string }>('SELECT action FROM automation_audit_ledger WHERE entity_id=$1', [body.claimId]);
+      assert(audit.rows.some(row => row.action === 'CLAIM_CREATED') && audit.rows.some(row => row.action === 'CLAIM_EVIDENCE_REQUESTED') && audit.rows.some(row => row.action === 'CLAIM_EVIDENCE_DEADLINE_SCHEDULED'), 'ledger audit existant mis à jour');
     });
 
     await check('workerd → PostgreSQL : session relue, /me résolu, logout révoqué en base', async () => {
