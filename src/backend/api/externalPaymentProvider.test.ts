@@ -423,7 +423,8 @@ export async function runExternalPaymentProviderTests(): Promise<OfferTestResult
   /* BLOC 2 — Intégration Worker HTTP / Webhook sur PostgreSQL réel      */
   /* ------------------------------------------------------------------ */
 
-  const harness = await createOffersTestHarness();
+  const salaryOtps = new Map<string, string>();
+  const harness = await createOffersTestHarness((paymentId, otp) => salaryOtps.set(paymentId, otp));
   let adminToken = '';
   let employerToken = '';
   let employerId = '';
@@ -515,6 +516,8 @@ export async function runExternalPaymentProviderTests(): Promise<OfferTestResult
       assert(eventTypes.includes('PAYMENT_PENDING_VERIFICATION'), 'PAYMENT_PENDING_VERIFICATION écrit');
       assert(eventTypes.includes('PAYMENT_APPROVED'), 'PAYMENT_APPROVED écrit');
       assert(!eventTypes.includes('PAYMENT_PAID'), 'PAYMENT_PAID ne doit PAS être émis par le webhook seul');
+      assert((await harness.database.query('SELECT payment_id FROM salary_confirmations WHERE payment_id=$1', [seed.salaryPaymentId])).rows.length === 0,
+        'VERIFIED après webhook ne crée pas encore de confirmation salariale');
 
       // 4. Vérifier l'audit ledger
       const audit = await readPaymentAudit(harness, seed.salaryPaymentId);
@@ -552,6 +555,61 @@ export async function runExternalPaymentProviderTests(): Promise<OfferTestResult
       // 3. Événement PAYMENT_PAID émis
       const outbox = await readPaymentOutbox(harness, seed.salaryPaymentId);
       assert(outbox.some(e => e.event_type === 'PAYMENT_PAID'), 'PAYMENT_PAID écrit après rapprochement');
+    });
+
+    await check('P0-SALARY-VERIFY PAYMENT_PAID externe → confirmation P0-SALARY-1 unique, OTP, audit et confirmation travailleur', async () => {
+      const paid = await harness.database.query<{ status: string }>('SELECT status FROM payments WHERE id=$1', [seed.salaryPaymentId]);
+      assert(paid.rows[0]?.status === 'PAID', 'la chaîne fournisseur / rapprochement a atteint PAID');
+      assert((await harness.database.query('SELECT payment_id FROM salary_confirmations WHERE payment_id=$1', [seed.salaryPaymentId])).rows.length === 0,
+        'aucune confirmation salariale avant le traitement de PAYMENT_PAID par AutomationEngine');
+
+      // Le worker existant consomme PAYMENT_PAID, puis sa demande durable : aucun
+      // deuxième système n'est instancié. Le drain est borné et déclenché par le test.
+      for (let pass = 0; pass < 3; pass += 1) {
+        const report = await harness.automationWorker!.drainEvents(100);
+        assert(report.deadLettered === 0, `aucun événement salaire en dead-letter (pass ${pass + 1})`);
+      }
+
+      const proof = await harness.database.query<{
+        nonce: string; otp_digest: string; confirmed_at: Date | null; confirmed_by: string | null;
+      }>('SELECT nonce,otp_digest,confirmed_at,confirmed_by FROM salary_confirmations WHERE payment_id=$1', [seed.salaryPaymentId]);
+      assert(proof.rows.length === 1, 'une seule confirmation P0-SALARY-1 créée depuis PAYMENT_PAID');
+      assert(proof.rows[0].confirmed_at === null && proof.rows[0].confirmed_by === null,
+        'PAYMENT_PAID ne confirme pas le salaire : attente de l’action explicite du travailleur');
+      assert(proof.rows[0].nonce.length === 64, 'nonce serveur unique de 256 bits');
+      const otp = salaryOtps.get(seed.salaryPaymentId);
+      assert(otp && /^\d{6}$/.test(otp) && proof.rows[0].otp_digest !== otp, 'OTP test livré, uniquement hashé en base');
+
+      const confirm = () => harness.worker.fetch(authRequest(
+        `/api/v1/payments/${seed.salaryPaymentId}/salary-confirmation`,
+        candidateToken,
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'Idempotency-Key': 'salary-external-confirm-001' },
+          body: JSON.stringify({ otp, nonce: proof.rows[0].nonce }),
+        },
+      ));
+      const response = await confirm();
+      assert(response.status === 200, `confirmation OTP valide attendue, reçu ${response.status}`);
+      const body = await jsonOf<{ status: string; paymentId: string }>(response);
+      assert(body.status === 'SALARY_CONFIRMED' && body.paymentId === seed.salaryPaymentId, 'état final distinct SALARY_CONFIRMED');
+
+      const confirmed = await harness.database.query<{ confirmed_by: string; confirmed_at: Date | null }>(
+        'SELECT confirmed_by,confirmed_at FROM salary_confirmations WHERE payment_id=$1', [seed.salaryPaymentId],
+      );
+      assert(confirmed.rows[0]?.confirmed_by === candidateId && confirmed.rows[0]?.confirmed_at,
+        'confirmation attribuée au candidat authentifié et persistée');
+      const audit = await readPaymentAudit(harness, seed.salaryPaymentId);
+      assert(audit.some(row => row.action === 'SALARY_CONFIRMATION_SUCCESS'), 'audit durable de confirmation présent');
+      const events = await readPaymentOutbox(harness, seed.salaryPaymentId);
+      assert(events.filter(row => row.event_type === 'SALARY_CONFIRMED').length === 1, 'un seul événement de confirmation finale');
+
+      const replay = await confirm();
+      assert(replay.status === 200, 'rejeu de la confirmation avec la même clé et le même OTP reste idempotent');
+      assert((await harness.database.query('SELECT payment_id FROM salary_confirmations WHERE confirmed_at IS NOT NULL')).rows.length === 1,
+        'le rejeu ne crée pas de seconde confirmation');
+      assert((await readPaymentOutbox(harness, seed.salaryPaymentId)).filter(row => row.event_type === 'SALARY_CONFIRMED').length === 1,
+        'le rejeu ne crée pas de second événement SALARY_CONFIRMED');
     });
 
     await check('P0-PAY-2 Idempotence & Rejeu du webhook: rejeu idempotent sans second effet ni double déclaration', async () => {
