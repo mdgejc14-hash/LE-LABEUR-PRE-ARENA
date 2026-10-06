@@ -1,5 +1,5 @@
 /**
- * LE LABEUR — P0-C / P0-E3 / P0-E4 / P0-E5 — vérification réelle de bout en bout.
+ * LE LABEUR — P0-C / P0-E3 / P0-E4 / P0-E5 / P0-AUTO — vérification réelle de bout en bout.
  *
  *   Worker/API → PostgreSQL réel → réponse
  *
@@ -40,6 +40,7 @@ import { createWorkerPostgresClient } from '../src/backend/worker/pgClient';
 import { redactSqlSecrets, toPostgresClientPort } from '../src/backend/persistence/sqlClient';
 import { resolveRepositoryMode } from '../src/repositories/mode';
 import type { GoogleCredentialVerifier, GoogleExternalIdentity } from '../src/backend/productionContracts';
+import { runAutomationPostgresIntegration } from '../src/backend/automation/postgres.test';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const MIGRATIONS_DIR = resolve(REPO_ROOT, 'migrations');
@@ -236,7 +237,7 @@ async function main(): Promise<void> {
   const secrets = [connectionString, local?.password, resolved.target.connectionString];
 
   console.log('============================================================');
-  console.log(' LE LABEUR — P0-C / P0-E3 / P0-E4 / P0-E5 — vérification Worker/API → PostgreSQL');
+  console.log(' LE LABEUR — P0-C / P0-E3 / P0-E4 / P0-E5 / P0-AUTO — vérification Worker/API → PostgreSQL');
   console.log('============================================================');
   console.log(`Source base      : ${sourceLabel}`);
   console.log(`Cible (sans secret): ${descriptor.host}:${descriptor.port}/${descriptor.database} (source=${descriptor.source})`);
@@ -276,7 +277,7 @@ async function main(): Promise<void> {
     });
 
     let migrationResult: Awaited<ReturnType<typeof applyMigrations>> | null = null;
-    await check('Migrations 0001→0005 appliquées sur le moteur réel', async () => {
+    await check('Migrations 0001→0007 appliquées sur le moteur réel', async () => {
       migrationResult = await applyMigrations(client, migrations, {
         statementTimeoutMs: 15000,
         onProgress: message => console.log(`     ${message}`),
@@ -297,6 +298,7 @@ async function main(): Promise<void> {
       const expectedTables = [
         'users', 'external_identities', 'sessions', 'permissions', 'role_permissions', 'user_permissions',
         'offers', 'applications', 'contracts', 'proposals',
+        'automation_outbox', 'automation_jobs', 'automation_idempotency', 'automation_audit_ledger', 'automation_queue',
       ];
       const tables = await database.query<{ table_name: string }>(
         `SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'`,
@@ -305,6 +307,15 @@ async function main(): Promise<void> {
       for (const table of expectedTables) assert(names.includes(table), `table absente: ${table}`);
       const seeded = await database.query<{ count: string }>('SELECT count(*)::text AS count FROM role_permissions WHERE role = $1', ['ADMIN']);
       assert(Number(seeded.rows[0]?.count ?? 0) > 0, 'permissions ADMIN non seedées');
+    });
+
+    await check('P0-AUTO : mutation métier, Outbox, Queue, Worker, Engine et ScheduledJob sur PostgreSQL réel', async () => {
+      const automationResults = await runAutomationPostgresIntegration(database, `p0auto-verify-${newEntityId('usr')}`);
+      for (const result of automationResults) {
+        console.log(`     ${result.success ? 'PASS' : 'FAIL'} ${result.name}${result.success ? '' : ` — ${result.detail}`}`);
+      }
+      const failed = automationResults.filter(result => !result.success);
+      assert(failed.length === 0, `${failed.length} vérification(s) Automation PostgreSQL ont échoué.`);
     });
 
     await check('Transaction COMMIT : écriture visible après validation', async () => {

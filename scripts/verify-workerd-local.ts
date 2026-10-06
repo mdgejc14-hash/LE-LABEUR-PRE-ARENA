@@ -1,5 +1,5 @@
 /**
- * LE LABEUR — P0-C / P0-E3 / P0-E4 / P0-E5 — vérification du Worker dans le runtime workerd
+ * LE LABEUR — P0-C / P0-E3 / P0-E4 / P0-E5 / P0-AUTO — vérification du Worker dans le runtime workerd
  * avec un binding Hyperdrive local.
  *
  *   Requête HTTP → workerd → binding HYPERDRIVE → PostgreSQL réel → réponse
@@ -19,7 +19,10 @@
  *  - le cycle CONTRAT P0-F (création depuis une proposition ACCEPTED, envoi,
  *    double signature, activation, fin COMPLETED, rupture TERMINATED en M2,
  *    protection M1, états terminaux) s'exécute sous workerd et persiste dans
- *    PostgreSQL.
+ *    PostgreSQL ;
+ *  - une soumission Application créée sous workerd écrit son Outbox dans la
+ *    même transaction, puis le worker local la transfère en Queue, l'exécute
+ *    via AutomationEngine et persiste l'audit avant acknowledge.
  *
  * Ce que ce script NE prouve PAS :
  *  - il n'y a ni compte Cloudflare, ni Hyperdrive déployé, ni `wrangler deploy`,
@@ -39,6 +42,8 @@ import { Pool } from 'pg';
 import { base64UrlEncode, hashSessionToken } from '../src/backend/identity/ids';
 import { applyMigrations, loadMigrations } from '../src/backend/persistence/migrationRunner';
 import { toPostgresClientPort } from '../src/backend/persistence/sqlClient';
+import { createPostgresDatabase } from '../src/backend/persistence/postgresDatabase';
+import { createLocalAutomationRuntime } from '../src/backend/automation/runtime';
 import { SESSION_COOKIE_NAME } from '../src/backend/identity/cookies';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -148,7 +153,7 @@ async function main(): Promise<void> {
   mkdirSync(WORK_DIR, { recursive: true });
 
   console.log('============================================================');
-  console.log(' LE LABEUR — P0-C / P0-E3 / P0-E4 / P0-E5 — runtime workerd + binding Hyperdrive local');
+  console.log(' LE LABEUR — P0-C / P0-E3 / P0-E4 / P0-E5 / P0-AUTO — runtime workerd + binding Hyperdrive local');
   console.log('============================================================');
   console.log('Runtime          : workerd (wrangler dev --local) — PAS un déploiement Cloudflare');
   console.log('Base             : PostgreSQL 17.10 RÉEL local (binaire embarqué, TEST/LOCAL)');
@@ -193,7 +198,7 @@ async function main(): Promise<void> {
     await check('Migrations réelles appliquées avant démarrage du Worker', async () => {
       const client = toPostgresClientPort(pool);
       const applied = await applyMigrations(client, loadMigrations(MIGRATIONS_DIR));
-      assert(applied.applied.length === 5, `5 migrations attendues, reçues ${applied.applied.length}`);
+      assert(applied.applied.length === loadMigrations(MIGRATIONS_DIR).length, `toutes les migrations attendues, reçues ${applied.applied.length}`);
     });
 
     const logStream = (chunk: Buffer | string) => writeFileSync(wranglerLog, chunk, { flag: 'a' });
@@ -348,6 +353,32 @@ async function main(): Promise<void> {
       assert(stored.rows.length === 1 && stored.rows[0].candidate_id === userId, 'ligne candidature persistée dans PostgreSQL');
       assert(stored.rows[0].offer_id === offer.id && stored.rows[0].status === 'PENDING', 'offre et statut persistés');
       assert(stored.rows[0].note === 'Disponible pour un entretien.', 'note persistée');
+
+      const automationDatabase = createPostgresDatabase(toPostgresClientPort(pool));
+      const eventId = `${application.id}:APPLICATION_SUBMITTED`;
+      const outboxBeforeWorker = await pool.query<{ event_type: string; aggregate_id: string; status: string; actor_id: string }>(
+        'SELECT event_type, aggregate_id, status, actor_id FROM automation_outbox WHERE id = $1', [eventId],
+      );
+      assert(outboxBeforeWorker.rows[0]?.event_type === 'APPLICATION_SUBMITTED', 'événement métier écrit par workerd dans l’Outbox');
+      assert(outboxBeforeWorker.rows[0]?.aggregate_id === application.id && outboxBeforeWorker.rows[0]?.actor_id === userId, 'agrégat et acteur de l’Outbox sont persistés');
+      assert(outboxBeforeWorker.rows[0]?.status === 'PENDING', 'Outbox PENDING avant dispatch');
+
+      const automation = createLocalAutomationRuntime(automationDatabase, {
+        workerId: `workerd-automation-${application.id}`,
+        queueWorkerId: `workerd-queue-${application.id}`,
+        batchSize: 10,
+      });
+      const automationTick = await automation.tick();
+      assert(automationTick.outbox.enqueued === 1, `un event doit entrer dans la Queue, reçu ${automationTick.outbox.enqueued}`);
+      assert(automationTick.events.completed === 1, `un handler doit s’exécuter, reçu ${automationTick.events.completed}`);
+      const queueRow = await pool.query<{ status: string; attempts: number }>(
+        'SELECT status, attempts FROM automation_queue WHERE message_id = $1', [eventId],
+      );
+      assert(queueRow.rows[0]?.status === 'ACKNOWLEDGED' && queueRow.rows[0]?.attempts === 1, 'message acquitté après une exécution');
+      const audit = await automation.auditLedger.findByEventId(eventId);
+      assert(audit.length === 1 && audit[0]?.action === 'APPLICATION_SUBMITTED_AUTOMATION_HANDLED', 'effet handler unique persisté dans l’Audit Ledger');
+      const completedOutbox = await pool.query<{ status: string }>('SELECT status FROM automation_outbox WHERE id = $1', [eventId]);
+      assert(completedOutbox.rows[0]?.status === 'PROCESSED', 'Outbox acquittée après enqueue durable');
 
       const ownerHeaders = { cookie: `${SESSION_COOKIE_NAME}=${employerCookie}` };
       const path = `${base}/api/v1/offers/${offer.id}/applications?limit=10`;

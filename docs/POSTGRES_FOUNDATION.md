@@ -143,7 +143,7 @@ EMPLOYER authentifié et propriétaire
 - La lecture est strictement limitée à l'offre demandée et refuse tout employeur non propriétaire. CANDIDATE et ADMIN ne peuvent pas utiliser cette route; la route de liste ADMIN déjà prévue n'est pas modifiée.
 - `Idempotency-Key` suit la convention OFFRES : replay en mémoire du Worker, 409 si la clé est réutilisée avec une note différente. La contrainte métier est durable en PostgreSQL; une table d'idempotence durable n'est pas ajoutée dans P0-E3.
 - Les seuls handlers APPLICATION ouverts sont la soumission et la consultation par offre. Liste générale, lecture unitaire, examen, shortlist, rejet et retrait restent fermés (501).
-- Événement futur documenté : `APPLICATION_SUBMITTED`. P0-E3 ne produit pas d'événement et n'ajoute aucun type/consumer Outbox, notification ou moteur d'automatisation.
+- Événement documenté à P0-E3 : `APPLICATION_SUBMITTED`. Le producteur Outbox transactionnel et le handler d'audit local ont été ajoutés ensuite dans P0-AUTO; cela n'ajoute aucune notification et ne modifie pas la mutation métier.
 - Aucune migration nouvelle n'est requise : P0-E3 réutilise `applications`, ses statuts, son historique, ses références et son unicité préparés par `0001`/`0003`.
 - Le MODE DEMO reste `MockRepository`/`localStorage`; aucune route Worker ne bascule vers le mock.
 
@@ -160,7 +160,7 @@ EMPLOYER authentifié et propriétaire
 
 - Définir et ouvrir séparément le reste du cycle APPLICATION : liste « mes candidatures » du candidat et liste employeur multi-offres si requises, consultation autorisée d'une candidature unitaire, examen/review, shortlist, rejet et retrait candidat.
 - Spécifier les transitions, motifs requis, re-candidature après retrait, audit et garanties d'idempotence durables avant tout handler supplémentaire.
-- Décider si `APPLICATION_SUBMITTED` doit être émis par un Outbox transactionnel; aucun événement n'est produit à P0-E3.
+- P0-AUTO émet maintenant `APPLICATION_SUBMITTED` dans la transaction d'insertion de candidature; les événements de décision et notifications restent hors de cette intégration.
 - Conserver fermés les propositions, contrats, paiements et les autres domaines jusqu'à leurs étapes dédiées.
 
 ## 11. Piste d'infrastructure (P0-D)

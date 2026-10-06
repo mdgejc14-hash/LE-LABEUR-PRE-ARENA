@@ -7,8 +7,9 @@ export interface OutboxEffectContract {
 }
 
 /**
- * Event contract for later transactional outbox wiring. These are not emitted
- * by the mock and are not yet persisted or consumed in Phase 1.
+ * Catalogue d'intentions d'effets asynchrones, distinct de leur implémentation.
+ * P0-AUTO relie seulement APPLICATION_SUBMITTED au worker local; son handler
+ * persiste une trace d'audit et n'envoie aucune notification métier.
  */
 export const OUTBOX_EFFECT_CONTRACTS: readonly OutboxEffectContract[] = [
   { eventType: 'PAYMENT_DECLARED', sideEffects: ['notify the relevant reviewer', 'update payment activity feed'], idempotencyKey: 'event.id' },
@@ -17,12 +18,10 @@ export const OUTBOX_EFFECT_CONTRACTS: readonly OutboxEffectContract[] = [
   /**
    * Cycle CONTRAT — porté par P0-F.
    *
-   * `CONTRACT_SIGNED` était déjà déclaré ; les autres types du cycle sont
-   * ajoutés ici comme contrats DÉCLARÉS pour le futur moteur Outbox/Queue :
-   * aucun producteur, aucune table, aucun consumer n'existe à ce stade. Les
-   * transitions (création, envoi, signature, activation, fin, rupture) sont
-   * persistées dans la transaction métier sans effet secondaire asynchrone.
-   * Charges utiles et clés de déduplication de référence :
+   * Les types du cycle sont documentés, mais aucun producteur CONTRACT_* ni
+   * handler/notification de domaine n'est branché à l'Automation. Les
+   * transitions restent persistées par le repository CONTRAT sans effet
+   * asynchrone. Charges utiles et clés de déduplication de référence :
    * `src/domain/contractTransitions.ts` (`DOCUMENTED_CONTRACT_EVENTS`).
    */
   { eventType: 'CONTRACT_SIGNED', sideEffects: ['notify both parties', 'refresh offer and application views'], idempotencyKey: 'contractId + SIGNED + party' },
@@ -41,11 +40,10 @@ export const OUTBOX_EFFECT_CONTRACTS: readonly OutboxEffectContract[] = [
   /**
    * P0-E3/P0-E4 — cycle CANDIDATURE.
    *
-   * Contrats DÉCLARÉS pour le futur moteur Outbox/Queue : aucun producteur,
-   * aucune table, aucun consumer n'existe à ce stade. Les transitions
-   * (soumission, examen, shortlist, rejet, retrait) sont persistées dans la
-   * transaction métier sans effet secondaire asynchrone. Les charges utiles et
-   * clés de déduplication de référence sont décrites dans
+   * `APPLICATION_SUBMITTED` est produit transactionnellement (P0-AUTO); les
+   * événements de décision restent déclaratifs et sans producteur. Le worker
+   * local ne fait qu'inscrire une trace d'audit, sans notification métier.
+   * Charges utiles et clés de référence :
    * `src/domain/applicationTransitions.ts` (`DOCUMENTED_APPLICATION_EVENTS`).
    */
   { eventType: 'APPLICATION_SUBMITTED', sideEffects: ['notify the offer owner'], idempotencyKey: 'applicationId + SUBMITTED' },
@@ -56,11 +54,10 @@ export const OUTBOX_EFFECT_CONTRACTS: readonly OutboxEffectContract[] = [
   /**
    * P0-E5 — cycle PROPOSITION d'embauche.
    *
-   * Contrats DÉCLARÉS pour le futur moteur Outbox/Queue : aucun producteur,
-   * aucune table Outbox, aucun consumer n'existe à ce stade. L'émission,
-   * l'acceptation, la déclinaison et l'expiration sont persistées dans la
-   * transaction métier sans effet secondaire asynchrone. Les charges utiles et
-   * clés de déduplication de référence sont décrites dans
+   * Aucun producteur PROPOSAL_* ni handler de domaine n'est branché à
+   * l'Automation. L'émission, l'acceptation, la déclinaison et l'expiration
+   * restent persistées dans la transaction métier sans effet asynchrone.
+   * Charges utiles et clés de référence :
    * `src/domain/proposalTransitions.ts` (`DOCUMENTED_PROPOSAL_EVENTS`).
    * La nomenclature du code est conservée : `DECLINED`, jamais `REJECTED`.
    */

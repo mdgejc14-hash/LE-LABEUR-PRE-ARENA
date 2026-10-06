@@ -22,6 +22,8 @@ import { runProposalDomainTests } from '../src/backend/api/proposals.test';
 import { runProposalTransitionTests } from '../src/domain/proposalTransitions.test';
 import { runContractTransitionTests } from '../src/domain/contractTransitions.test';
 import { runContractDomainTests } from '../src/backend/api/contracts.test';
+import { runAutomationFoundationTests } from '../src/backend/automation/postgres.test';
+import { runAutomationFoundationContractTests } from '../src/backend/automation/foundation.test';
 
 interface TestCase {
   name: string;
@@ -54,6 +56,8 @@ async function main(): Promise<void> {
   const proposalDomain = await runProposalDomainTests();
   const contractMatrix = runContractTransitionTests();
   const contractDomain = await runContractDomainTests();
+  const automationFoundationContracts = await runAutomationFoundationContractTests();
+  const automationFoundationPostgres = await runAutomationFoundationTests();
 
   const suites: Array<{ name: string; cases: TestCase[] }> = [
     { name: 'Domain deterministic', cases: deterministic.results.map(result => ({ name: result.name, success: result.success, detail: result.details })) },
@@ -80,6 +84,8 @@ async function main(): Promise<void> {
     { name: 'P0-E5 — émission et cycle PROPOSITION (PostgreSQL, autorisation, ownership, idempotence, concurrence, rollback, lecture ADMIN)', cases: proposalDomain },
     { name: 'P0-F — matrice CONTRAT (statuts réels, transitions ouvertes et refusées, signature, protection M1, événements documentés)', cases: contractMatrix.map(result => ({ name: result.name, success: result.success, detail: result.details })) },
     { name: 'P0-F — cycle CONTRAT (création depuis ACCEPTED, envoi, signature, activation, fin, terminaison; PostgreSQL, autorisation, idempotence, concurrence, rollback)', cases: contractDomain },
+    { name: 'P0-AUTO — contrats foundation (DomainEvent, Queue mémoire, AutomationEngine)', cases: automationFoundationContracts },
+    { name: 'P0-AUTO — repositories et runtime Automation PostgreSQL (Outbox, Queue, jobs, idempotence, audit, mutation transactionnelle)', cases: automationFoundationPostgres },
   ];
 
   let total = 0;

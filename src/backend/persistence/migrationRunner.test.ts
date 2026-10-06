@@ -127,7 +127,7 @@ export async function runMigrationRunnerTests(): Promise<MigrationRunnerTestResu
   const migrations = loadMigrations(MIGRATIONS_DIR);
 
   try {
-    await check('P0-C migrations: application réelle 0001→0005 puis idempotence', async () => {
+    await check('Migrations PostgreSQL: application 0001→0007 puis idempotence', async () => {
       const first = await applyMigrations(client, migrations);
       assert(first.applied.length === migrations.length, `toutes les migrations doivent être appliquées (reçu ${first.applied.length})`);
       assert(first.skipped.length === 0, 'aucune migration déjà appliquée au premier passage');
@@ -136,7 +136,11 @@ export async function runMigrationRunnerTests(): Promise<MigrationRunnerTestResu
         `SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' ORDER BY table_name`,
       );
       const names = tables.rows.map(row => row.table_name);
-      for (const expected of ['users', 'external_identities', 'sessions', 'permissions', 'role_permissions', 'user_permissions', 'offers', 'applications', 'contracts', 'schema_migrations']) {
+      for (const expected of [
+        'users', 'external_identities', 'sessions', 'permissions', 'role_permissions', 'user_permissions',
+        'offers', 'applications', 'contracts', 'proposals', 'automation_outbox', 'automation_jobs',
+        'automation_idempotency', 'automation_audit_ledger', 'automation_queue', 'schema_migrations',
+      ]) {
         assert(names.includes(expected), `table absente après migration: ${expected}`);
       }
 

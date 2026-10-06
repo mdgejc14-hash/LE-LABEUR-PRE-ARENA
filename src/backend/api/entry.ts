@@ -22,7 +22,8 @@
 
 import type { DatabaseHealthProbe, PostgreSqlDatabase } from '../services/database';
 import { createGoogleCredentialVerifier } from '../identity/googleVerifier';
-import type { GoogleCredentialVerifier } from '../productionContracts';
+import type { GoogleCredentialVerifier, TransactionContext } from '../productionContracts';
+import { createPostgresOutboxRepository } from '../automation/postgresRepositories';
 import { createSessionService } from '../identity/sessionService';
 import { createSqlIdentityStores, createSqlUserStore } from '../identity/sqlStores';
 import { createInMemoryIdentityStores, type IdentityStores } from '../identity/stores';
@@ -296,13 +297,17 @@ export function composeWorker(
 
   const offerHandlers = offerRepository ? createOfferApiHandlers(offerRepository) : {};
 
+  const outboxRepository = persistence.database
+    ? createPostgresOutboxRepository(persistence.database, { now: overrides.now })
+    : undefined;
+
   const runApplicationInTransaction = persistence.database
-    ? async <T>(operation: (txStores: ApplicationRepositoryStores) => Promise<T>): Promise<T> => {
+    ? async <T>(operation: (txStores: ApplicationRepositoryStores, transaction?: TransactionContext) => Promise<T>): Promise<T> => {
         return persistence.database!.run(async tx => operation({
           applications: createSqlApplicationStore(tx),
           offers: createSqlOfferStore(tx),
           users: createSqlUserStore(tx),
-        }));
+        }, tx));
       }
     : undefined;
 
@@ -314,6 +319,7 @@ export function composeWorker(
           users: stores.users,
         },
         runInTransaction: runApplicationInTransaction,
+        outbox: outboxRepository,
         now: overrides.now,
       })
     : undefined;
