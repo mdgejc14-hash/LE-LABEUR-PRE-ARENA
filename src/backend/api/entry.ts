@@ -20,11 +20,13 @@ import { createSalaryConfirmationHandlers } from '../payments/salaryConfirmation
  * déclenchée par l'activation — événement `CONTRACT_ACTIVATED` écrit dans
  * l'Outbox PostgreSQL dans la MÊME transaction, puis worker → AutomationEngine →
  * échéancier salarial, échéancier de commission, échéances de paiement et jobs
- * de rappel ; les autres opérations métier — paiements, plaintes,
- * remplacements, notifications générales, offre `FILLED`, candidatures
- * `HIRED` / `CONTRACTED` / `CLOSED_OFFER_FILLED` — restent fermées. Le mode
- * DEMO demeure séparé, inchangé et par défaut, et n'est JAMAIS connecté à
- * PostgreSQL.
+ * de rappel ; P0-CONTRACT-POST ajoute la cascade d'embauche explicite
+ * `finalize-hiring` sur contrat ACTIF (offre `FILLED`, candidature retenue
+ * `HIRED → CONTRACTED`, autres candidatures `CLOSED_OFFER_FILLED`) — sans
+ * modifier l'activation P0-F ni l'automatisation P0-AUTO-2 ; les autres
+ * opérations métier — plaintes, remplacements, notifications générales —
+ * restent fermées. Le mode DEMO demeure séparé, inchangé et par défaut, et
+ * n'est JAMAIS connecté à PostgreSQL.
  */
 
 import type { DatabaseHealthProbe, PostgreSqlDatabase } from '../services/database';
@@ -160,7 +162,7 @@ export interface WorkerComposition {
   applications?: OpenApplicationRepository;
   /** P0-E5 : émission, acceptation, déclinaison, expiration et lecture ADMIN. */
   proposals?: OpenProposalRepository;
-  /** P0-F : création depuis proposition acceptée, envoi, signature, activation, fin, rupture. */
+  /** P0-F + P0-CONTRACT-POST : création depuis proposition acceptée, envoi, signature, activation, fin, rupture, finalisation d'embauche. */
   contracts?: OpenContractRepository;
   /** P0-DISPUTE-1 : cycle Claim persistent, absent hors PostgreSQL durable. */
   claims?: OpenClaimRepository;

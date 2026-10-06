@@ -49,6 +49,15 @@ import { createDomainEvent } from '../automation/foundation';
 import type { DomainEventOutbox } from '../automation/records';
 import { newEntityId } from '../identity/ids';
 import { contractActivatedEventId } from '../../domain/contractScheduleAutomation';
+// P0-CONTRACT-POST — cascade d'embauche (RÈGLE 21) et correspondance WORK EXECUTION.
+import {
+  POST_CONTRACT_OTHER_CLOSED_HISTORY,
+  POST_CONTRACT_WINNING_CONTRACTED_HISTORY,
+  POST_CONTRACT_WINNING_HIRED_HISTORY,
+  evaluatePostContractOffer,
+  evaluatePostContractOtherApplication,
+  evaluatePostContractWinningApplication,
+} from '../../domain/postContractTransitions';
 import type { ServerUserRecord, UserStore } from '../identity/stores';
 import type { ClaimStore } from '../disputes/records';
 // Import uniquement de TYPES : aucun couplage d'exécution à la persistance
@@ -313,7 +322,7 @@ function toContractProjection(
   };
 }
 
-/** Sous-ensemble CONTRAT réellement ouvert par P0-F. */
+/** Sous-ensemble CONTRAT réellement ouvert par P0-F (+ `finalizeHiring`, P0-CONTRACT-POST). */
 export type OpenContractRepository = Pick<ServerContractRepository,
   | 'getMyContracts'
   | 'getContract'
@@ -324,6 +333,7 @@ export type OpenContractRepository = Pick<ServerContractRepository,
   | 'activateContract'
   | 'endContract'
   | 'terminateContract'
+  | 'finalizeHiring'
 >;
 
 export function createContractRepository(
@@ -927,6 +937,209 @@ export function createContractRepository(
       });
     },
 
+    /**
+     * P0-CONTRACT-POST — finalisation d'embauche sur contrat ACTIF (RÈGLE 21).
+     *
+     * Cascade explicite, idempotente et transactionnelle, dérivée de
+     * `MockRepository.signContract` (contrat ACTIVE → offre `FILLED`,
+     * candidature retenue `HIRED`, autres candidatures ouvertes
+     * `CLOSED_OFFER_FILLED`) + sortie `HIRED → CONTRACTED` (statut existant,
+     * transition documentée comme MANQUE par le dépôt).
+     *
+     * Garanties, dans cet ordre :
+     *  1. l'acteur vient de la session serveur et doit être l'EMPLOYER
+     *     propriétaire du contrat, avec un compte ACTIVE ;
+     *  2. le contrat est verrouillé (`FOR UPDATE`) et doit être `ACTIVE`
+     *     (l'engagement réel) avec une candidature rattachée ;
+     *  3. la candidature retenue est verrouillée et évaluée (ouverte → HIRED →
+     *     CONTRACTED ; déjà CONTRACTED → convergence ; close → 409, zéro écriture) ;
+     *  4. l'offre est verrouillée (`FOR SHARE`, port existant) et doit être
+     *     `ACTIVE` (`FILLED` → convergence ; `PAUSED`/`CANCELLED` → 409) ;
+     *  5. chaque écriture est un compare-and-set SQL : une décision concurrente
+     *     qui a gagné n'est jamais écrasée ;
+     *  6. les autres candidatures sont balayées en keyset COMPLET (curseur) :
+     *     chaque ligne est relue verrouillée puis évaluée — seules les
+     *     candidatures encore ouvertes sont fermées, les autres sont ignorées ;
+     *  7. un rejeu (même clé ou autre clé) après cascade complète converge en
+     *     200 SANS aucune écriture ni entrée d'historique dupliquée.
+     *
+     * Ordre de verrouillage (anti-interblocage, unique chemin) : contrat →
+     * candidature retenue → offre → autres candidatures (ordre keyset stable).
+     *
+     * Aucune conséquence hors périmètre : ni notification, ni paiement, ni
+     * incident, ni remplacement, ni modification du contrat lui-même (il reste
+     * `ACTIVE` ; l'exécution = contrat actif, cf. `WORK_EXECUTION_STATUS_MAPPING`).
+     */
+    async finalizeHiring(
+      suppliedActor: AuthenticatedActor,
+      contractId: string,
+      command: ProductionCommandContext,
+    ): Promise<Contract> {
+      const actor = requireTrustedActor(suppliedActor);
+      requireEmployer(actor);
+      const normalizedContractId = contractId?.trim();
+      if (!normalizedContractId) throw new ApiError('NOT_FOUND', 'Contrat introuvable.');
+      const idempotencyKey = command?.idempotencyKey?.trim();
+      const fingerprint = JSON.stringify({ contractId: normalizedContractId, action: 'FINALIZE_HIRING' });
+
+      const execute = async (): Promise<Contract> => {
+        const mutate = async (currentStores: ContractRepositoryStores): Promise<Contract> => {
+          const employer = await requireActiveAccount(
+            currentStores,
+            actor,
+            'COMPTE NON ACTIF : la finalisation d’embauche est indisponible.',
+          );
+
+          // 1. Contrat verrouillé : la cascade exige l'engagement réel (ACTIVE).
+          const contract = await currentStores.contracts.findByIdForUpdate(normalizedContractId);
+          if (!contract) throw new ApiError('NOT_FOUND', 'Contrat introuvable.');
+          if (contract.employerId !== actor.id) {
+            throw new ApiError('FORBIDDEN', 'Action non autorisée : vous n’êtes pas l’employeur de ce contrat.');
+          }
+          if (contract.status !== 'ACTIVE') {
+            throw new ApiError(
+              'BUSINESS_RULE_VIOLATION',
+              `La finalisation d’embauche exige un contrat actif (statut : ${contract.status}).`,
+              undefined,
+              409,
+            );
+          }
+          if (!contract.applicationId) {
+            throw new ApiError(
+              'BUSINESS_RULE_VIOLATION',
+              'Ce contrat n’est lié à aucune candidature : impossible de finaliser l’embauche.',
+              undefined,
+              409,
+            );
+          }
+
+          // 2. Candidature retenue verrouillée, cohérence relue côté serveur.
+          const winning = await currentStores.applications.findByIdForUpdate(contract.applicationId);
+          if (!winning) throw new ApiError('NOT_FOUND', 'Candidature introuvable.');
+          if (winning.offerId !== contract.offerId || winning.candidateId !== contract.employeeId) {
+            throw new ApiError(
+              'BUSINESS_RULE_VIOLATION',
+              'La candidature ne correspond pas à l’offre et au salarié du contrat.',
+              undefined,
+              409,
+            );
+          }
+          const winningOutcome = evaluatePostContractWinningApplication(winning.status);
+          if (winningOutcome.kind === 'REFUSED') {
+            throw new ApiError(
+              'BUSINESS_RULE_VIOLATION',
+              `La candidature retenue n’est plus finalisable (statut : ${winningOutcome.current}).`,
+              undefined,
+              409,
+            );
+          }
+
+          // 3. Offre verrouillée en partage : ACTIVE → FILLED.
+          const offer = await currentStores.offers.findByIdForShare(contract.offerId);
+          if (!offer) throw new ApiError('NOT_FOUND', 'Offre introuvable.');
+          if (offer.employerId !== actor.id) {
+            throw new ApiError('FORBIDDEN', 'Action non autorisée : vous n’êtes pas le propriétaire de cette offre.');
+          }
+          const offerOutcome = evaluatePostContractOffer(offer.status);
+          if (offerOutcome.kind === 'REFUSED') {
+            throw new ApiError(
+              'BUSINESS_RULE_VIOLATION',
+              `Cette offre n’est plus pourvable (statut : ${offerOutcome.current}).`,
+              undefined,
+              409,
+            );
+          }
+
+          const timestamp = now().toISOString();
+
+          // 4. Candidature retenue → HIRED → CONTRACTED (compare-and-set, historique AJOUTÉ).
+          let winningStatus = winning.status;
+          if (winningOutcome.kind === 'APPLY_HIRED') {
+            const hired = await currentStores.applications.compareAndSetStatus(winning.id, winningStatus, {
+              status: 'HIRED',
+              updatedAt: timestamp,
+              historyEntry: { action: POST_CONTRACT_WINNING_HIRED_HISTORY, timestamp, actor: employer.displayName },
+            });
+            if (!hired) {
+              throw new ApiError(
+                'BUSINESS_RULE_VIOLATION',
+                'Une décision concurrente a modifié cette candidature : la finalisation n’a pas été appliquée.',
+                undefined,
+                409,
+              );
+            }
+            winningStatus = 'HIRED';
+          }
+          if (winningStatus === 'HIRED') {
+            const contracted = await currentStores.applications.compareAndSetStatus(winning.id, 'HIRED', {
+              status: 'CONTRACTED',
+              updatedAt: timestamp,
+              historyEntry: { action: POST_CONTRACT_WINNING_CONTRACTED_HISTORY, timestamp, actor: employer.displayName },
+            });
+            if (!contracted) {
+              throw new ApiError(
+                'BUSINESS_RULE_VIOLATION',
+                'Une décision concurrente a modifié cette candidature : la finalisation n’a pas été appliquée.',
+                undefined,
+                409,
+              );
+            }
+          }
+
+          // 5. Autres candidatures : balayage keyset COMPLET, chacune relue
+          //    verrouillée puis évaluée — seules les ouvertes sont fermées.
+          const SCAN_PAGE_SIZE = 200;
+          let cursor: string | null = null;
+          for (;;) {
+            const page = await currentStores.applications.listByOffer(contract.offerId, SCAN_PAGE_SIZE, cursor);
+            if (page.length === 0) break;
+            for (const candidate of page) {
+              if (candidate.id === winning.id) continue;
+              const locked = await currentStores.applications.findByIdForUpdate(candidate.id);
+              if (!locked) continue;
+              if (evaluatePostContractOtherApplication(locked.status).kind !== 'APPLY') continue;
+              const closed = await currentStores.applications.compareAndSetStatus(locked.id, locked.status, {
+                status: 'CLOSED_OFFER_FILLED',
+                updatedAt: timestamp,
+                historyEntry: { action: POST_CONTRACT_OTHER_CLOSED_HISTORY, timestamp, actor: employer.displayName },
+              });
+              if (!closed) {
+                throw new ApiError(
+                  'BUSINESS_RULE_VIOLATION',
+                  'Une décision concurrente a modifié une candidature : la finalisation n’a pas été appliquée.',
+                  undefined,
+                  409,
+                );
+              }
+            }
+            if (page.length < SCAN_PAGE_SIZE) break;
+            cursor = page[page.length - 1].id;
+          }
+
+          // 6. Offre ACTIVE → FILLED (aucun historique côté offres dans le modèle réel).
+          if (offerOutcome.kind === 'APPLY') {
+            const filled = await currentStores.offers.updateStatus(offer.id, 'FILLED', timestamp);
+            if (!filled) throw new ApiError('NOT_FOUND', 'Offre introuvable.');
+          }
+
+          const fresh = await currentStores.contracts.findById(normalizedContractId);
+          if (!fresh) throw new ApiError('NOT_FOUND', 'Contrat introuvable.');
+          return toProjectionFromStores(fresh, currentStores);
+        };
+
+        return runInTransaction ? await runInTransaction(mutate) : await mutate(stores);
+      };
+
+      if (!idempotencyKey) return execute();
+      return contractIdempotencyCache.execute(
+        actor.id,
+        command?.command || 'contracts.finalize-hiring',
+        idempotencyKey,
+        fingerprint,
+        execute,
+      );
+    },
+
     /** Lecture des contrats de l'acteur (self) : employeur ou salarié. */
     async getMyContracts(
       suppliedActor: AuthenticatedActor,
@@ -1097,6 +1310,13 @@ export function createContractApiHandlers(
       );
       return apiJsonResponse(contract, 200, context.requestId);
     },
+
+    // P0-CONTRACT-POST : le corps est ignoré — tout est dérivé du contrat ACTIF relu côté serveur.
+    'contracts.finalize-hiring': async context => apiJsonResponse(
+      await repository.finalizeHiring(context.actor!, context.params.contractId, context.command!),
+      200,
+      context.requestId,
+    ),
 
     'admin.contracts.list': async context => repository.getAdminContracts(
       context.actor!,
