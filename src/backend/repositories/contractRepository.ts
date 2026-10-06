@@ -16,8 +16,13 @@
  *
  * Restent FERMÉS : passages de l'offre à FILLED, HIRED / CONTRACTED, fermeture
  * automatique des autres candidatures, notifications générales, incidents,
- * suspensions, remplacements, avancement mensuel, échéancier, commissions,
- * paiements, Outbox/Queue/Cron — cf. `docs/P0-F_CONTRATS.md`.
+ * suspensions, remplacements, avancement mensuel — cf. `docs/P0-F_CONTRATS.md`.
+ *
+ * P0-AUTO-2 (cette tranche) ouvre UNIQUEMENT l'émission transactionnelle de
+ * `CONTRACT_ACTIVATED` dans l'Outbox PostgreSQL de la fondation P0-AUTO-1, et
+ * l'échéancier / les échéances / les rappels produits par le worker
+ * d'automatisation. Les règles d'autorisation, de signature et de transition de
+ * P0-F sont inchangées. Voir `docs/P0-AUTO-2_AUTOMATISATION_CONTRACTUELLE.md`.
  *
  * Aucun statut nouveau n'est introduit : la nomenclature du code est conservée
  * (`DRAFT`, `SIGNATURE`, `ACTIVE`, `COMPLETED`, `TERMINATED`) et la matrice est
@@ -39,7 +44,11 @@ import {
 import { ApiError, apiJsonResponse } from '../api/errors';
 import type { ApiRouteKey } from '../api/routeContracts';
 import type { ApiRouteContext, ApiRouteHandler } from '../api/worker';
+// P0-AUTO-2 — fondation d'automatisation déjà présente (P0-AUTO-1), inchangée.
+import { createDomainEvent } from '../automation/foundation';
+import type { DomainEventOutbox } from '../automation/records';
 import { newEntityId } from '../identity/ids';
+import { contractActivatedEventId } from '../../domain/contractScheduleAutomation';
 import type { ServerUserRecord, UserStore } from '../identity/stores';
 // Import uniquement de TYPES : aucun couplage d'exécution à la persistance
 // (frontière Worker vérifiée par `src/backend/persistence/persistence.test.ts`).
@@ -61,6 +70,17 @@ export interface ContractRepositoryStores {
   applications: ApplicationStore;
   offers: OfferStore;
   users: UserStore;
+  /**
+   * P0-AUTO-2 — Outbox PostgreSQL lié à la MÊME transaction que la mutation.
+   *
+   * Obligatoire pour `ACTIVATE` : la garantie de cette tranche est
+   * « commit → mutation + historique + événement ; rollback → aucun des trois ».
+   * Sans outbox durable lié, l'activation est refusée (fail-closed) plutôt que
+   * de produire une mutation sans événement. Les autres transitions P0-F
+   * n'émettent toujours aucun événement : leurs types restent documentés dans
+   * `DOCUMENTED_CONTRACT_EVENTS` et volontairement non produits ici.
+   */
+  outbox?: DomainEventOutbox;
 }
 
 export interface ContractRepositoryDependencies {
@@ -367,6 +387,24 @@ export function createContractRepository(
           'COMPTE NON ACTIF : cette opération sur contrat est indisponible.',
         );
 
+        /*
+         * P0-AUTO-2 — garde fail-closed POSÉE AVANT TOUTE ÉCRITURE.
+         *
+         * L'activation doit produire la mutation, son historique ET l'événement
+         * `CONTRACT_ACTIVATED` de façon atomique. Sans Outbox durable lié à la
+         * transaction, cette garantie est impossible : l'activation est donc
+         * refusée AVANT le compare-and-set, jamais après (aucune mutation sans
+         * événement ne peut être commise).
+         */
+        if (rule.action === 'ACTIVATE' && !currentStores.outbox) {
+          throw new ApiError(
+            'NOT_IMPLEMENTED',
+            'L’activation d’un contrat exige l’Outbox durable de l’automatisation : aucune activation sans événement persisté.',
+            undefined,
+            501,
+          );
+        }
+
         // Verrou de ligne : sérialise deux transitions concurrentes.
         const contract = await currentStores.contracts.findByIdForUpdate(contractId);
         if (!contract) throw new ApiError('NOT_FOUND', 'Contrat introuvable.');
@@ -449,10 +487,58 @@ export function createContractRepository(
           );
         }
 
-        // Événement métier futur à produire : `rule.event`, documenté dans
-        // `DOCUMENTED_CONTRACT_EVENTS`. P0-F ne crée ni moteur Outbox, ni file,
-        // ni consumer, ni notification : seule la transition est persistée,
-        // dans la même transaction PostgreSQL.
+        /*
+         * P0-AUTO-2 — émission RÉELLE de `CONTRACT_ACTIVATED`.
+         *
+         * L'événement est écrit dans la MÊME transaction PostgreSQL que la
+         * mutation d'activation et son entrée d'historique : un COMMIT produit
+         * les trois, un ROLLBACK n'en produit aucun. L'identifiant d'événement
+         * est DÉTERMINISTE (`contractActivatedEventId`, clé primaire de
+         * `automation_outbox`) : un rejeu de l'activation ne peut pas écrire un
+         * second événement, conformément au `dedupeKey` documenté
+         * « contractId + ACTIVATED ».
+         *
+         * Les autres transitions du cycle (CREATED, SENT, SIGNED, ENDED,
+         * TERMINATED) n'émettent toujours rien : leurs effets restent décrits
+         * dans `DOCUMENTED_CONTRACT_EVENTS` et appartiennent à leurs tranches.
+         */
+        if (rule.action === 'ACTIVATE') {
+          // Présence déjà garantie par la garde fail-closed posée avant écriture.
+          const outbox = currentStores.outbox!;
+          const event = createDomainEvent({
+            eventId: contractActivatedEventId(contractId),
+            eventType: rule.event,
+            aggregateType: 'contract',
+            aggregateId: contractId,
+            actorId: actor.id,
+            timestamp,
+            // Charge utile exacte du contrat d'événement documenté.
+            payload: {
+              contractId,
+              ...(updated.proposalId ? { proposalId: updated.proposalId } : {}),
+              offerId: updated.offerId,
+              ...(updated.applicationId ? { applicationId: updated.applicationId } : {}),
+              employerId: updated.employerId,
+              employeeId: updated.employeeId,
+              monthlySalary: updated.monthlySalary,
+              currency: updated.currency,
+              startDate: updated.startDate,
+              durationMonths: updated.durationMonths,
+              periodicity: updated.periodicity,
+              commissionPercentage: updated.commissionPercentage,
+              occurredAt: timestamp,
+            },
+            source: 'api:contracts.activate',
+            version: 1,
+            // Corrélation de la requête API ; causation = la commande
+            // d'activation elle-même (sa clé d'idempotence).
+            correlationId: input.command?.requestId,
+            causationId: input.command?.idempotencyKey,
+          });
+          // `duplicate` est un résultat NORMAL (rejeu) : jamais une seconde ligne.
+          await outbox.append(event);
+        }
+
         return toProjectionFromStores(updated, currentStores);
       };
 
