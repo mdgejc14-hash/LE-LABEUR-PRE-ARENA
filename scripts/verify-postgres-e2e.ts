@@ -281,7 +281,7 @@ async function main(): Promise<void> {
     });
 
     let migrationResult: Awaited<ReturnType<typeof applyMigrations>> | null = null;
-    await check('Migrations 0001→0008 appliquées sur le moteur réel', async () => {
+    await check('Migrations 0001→0009 appliquées sur le moteur réel', async () => {
       migrationResult = await applyMigrations(client, migrations, {
         statementTimeoutMs: 15000,
         onProgress: message => console.log(`     ${message}`),
@@ -305,8 +305,10 @@ async function main(): Promise<void> {
         // P0-AUTO-1 : outbox, jobs, idempotence, ledger. P0-AUTO-2 : échéances.
         'automation_outbox', 'automation_jobs', 'automation_idempotency',
         'automation_audit_ledger', 'automation_deadlines',
-        // P0-PAY-1 : cycle métier des paiements (aucune table de fournisseur).
-        'payments', 'payment_declarations',
+        // P0-PAY-1 : cycle Payment; P0-PAY-3 : ledger, batch et reviews externes.
+        'payments', 'payment_declarations', 'payment_reconciliation_batches',
+        'payment_reconciliation_batch_items', 'payment_external_settlements',
+        'payment_reconciliation_reviews', 'payment_reconciliation_correction_attempts',
       ];
       const tables = await database.query<{ table_name: string }>(
         `SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'`,
@@ -1590,16 +1592,20 @@ async function main(): Promise<void> {
       );
       assert(channels.rows.length === 0, 'aucune table de canal de notification créée');
 
-      // P0-PAY-1 : SEULES les deux tables du cycle métier existent. Aucun
-      // fournisseur, aucun webhook, aucun OTP, aucun KYC, aucun agrégateur.
+      // P0-PAY-1/P0-PAY-3 : seules les tables du cycle Payment et de son
+      // ledger/review neutre existent. Aucun fournisseur, aucun OTP, aucun KYC.
       const paymentTables = await database.query<{ table_name: string }>(
         `SELECT table_name FROM information_schema.tables
           WHERE table_schema = current_schema() AND table_name ILIKE '%payment%'
           ORDER BY table_name`,
       );
       assert(
-        JSON.stringify(paymentTables.rows.map(row => row.table_name)) === JSON.stringify(['payment_declarations', 'payments']),
-        `aucune autre table de paiement que le cycle métier, reçues ${paymentTables.rows.map(row => row.table_name).join(', ')}`,
+        JSON.stringify(paymentTables.rows.map(row => row.table_name)) === JSON.stringify([
+          'payment_declarations', 'payment_external_settlements', 'payment_reconciliation_batch_items',
+          'payment_reconciliation_batches', 'payment_reconciliation_correction_attempts',
+          'payment_reconciliation_reviews', 'payments',
+        ]),
+        `seules les tables du cycle P0-PAY-1/P0-PAY-3 sont admises, reçues ${paymentTables.rows.map(row => row.table_name).join(', ')}`,
       );
       const providerTables = await database.query<{ table_name: string }>(
         `SELECT table_name FROM information_schema.tables

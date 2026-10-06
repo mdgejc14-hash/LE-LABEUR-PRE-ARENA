@@ -132,6 +132,12 @@ export const API_ROUTE_CONTRACTS = [
   { key: 'admin.payments.confirm', method: 'POST', path: '/api/v1/admin/payments/:paymentId/confirm', authentication: 'required', scope: 'admin', permission: 'payments:approve', idempotency: true, auditOnMutation: true },
   // P0-PAY-2 — Rapprochement explicite LE LABEUR vs fournisseur externe
   { key: 'admin.payments.reconcile', method: 'POST', path: '/api/v1/admin/payments/:paymentId/reconcile', authentication: 'required', scope: 'admin', permission: 'payments:read:any', idempotency: true, auditOnMutation: true },
+  // P0-PAY-3 — import normalisé, consultation paginée, retry et décision ADMIN.
+  { key: 'admin.payment-reconciliation.batches.create', method: 'POST', path: '/api/v1/admin/payment-reconciliation/batches', authentication: 'required', scope: 'admin', permission: 'payments:read:any', idempotency: true, auditOnMutation: true },
+  { key: 'admin.payment-reconciliation.batches.read', method: 'GET', path: '/api/v1/admin/payment-reconciliation/batches/:batchId', authentication: 'required', scope: 'admin', permission: 'payments:read:any', collection: true },
+  { key: 'admin.payment-reconciliation.batches.retry', method: 'POST', path: '/api/v1/admin/payment-reconciliation/batches/:batchId/retry', authentication: 'required', scope: 'admin', permission: 'payments:read:any', idempotency: true, auditOnMutation: true },
+  { key: 'admin.payment-reconciliation.reviews.decide', method: 'POST', path: '/api/v1/admin/payment-reconciliation/reviews/:reviewId/decision', authentication: 'required', scope: 'admin', permission: 'payments:approve', idempotency: true, auditOnMutation: true },
+  { key: 'admin.payment-reconciliation.reviews.correction-attempt', method: 'POST', path: '/api/v1/admin/payment-reconciliation/reviews/:reviewId/correction-attempts', authentication: 'required', scope: 'admin', permission: 'payments:approve', idempotency: true, auditOnMutation: true },
   { key: 'admin.schedules.list', method: 'GET', path: '/api/v1/admin/schedules', authentication: 'required', scope: 'admin', permission: 'schedules:read:any', collection: true },
   { key: 'admin.incidents.list', method: 'GET', path: '/api/v1/admin/incidents', authentication: 'required', scope: 'admin', permission: 'incidents:read:any', collection: true },
   { key: 'admin.incidents.arbitrate', method: 'POST', path: '/api/v1/admin/incidents/:incidentId/arbitrate', authentication: 'required', scope: 'admin', permission: 'incidents:arbitrate', idempotency: true, auditOnMutation: true },

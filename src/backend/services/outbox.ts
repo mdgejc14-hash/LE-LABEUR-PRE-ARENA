@@ -52,6 +52,8 @@ export const OUTBOX_EFFECT_CONTRACTS: readonly OutboxEffectContract[] = [
   { eventType: 'PAYMENT_DUE', sideEffects: ['no asynchronous effect in P0-PAY-1 (notification module is a later step)'], idempotencyKey: 'paymentId + DUE' },
   { eventType: 'PAYMENT_PENDING_VERIFICATION', sideEffects: ['queue the declaration for Admin review (no channel in P0-PAY-1)'], idempotencyKey: 'paymentId + PENDING_VERIFICATION + attemptNumber' },
   { eventType: 'PAYMENT_PAID', sideEffects: ['refresh schedule state', 'no fund movement is ever triggered by this event'], idempotencyKey: 'paymentId + PAID' },
+  /** P0-PAY-3 : l'Outbox ne fait qu'ordonner un job idempotent de batch; aucun mouvement ni canal. */
+  { eventType: 'PAYMENT_RECONCILIATION_BATCH_REQUESTED', sideEffects: ['enqueue the bounded reconciliation job in automation_jobs; no payment transition or fund movement'], idempotencyKey: 'batchId + initial' },
   /**
    * P0-E3/P0-E4 — cycle CANDIDATURE.
    *

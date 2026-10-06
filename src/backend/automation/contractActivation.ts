@@ -88,11 +88,19 @@ import {
   materializeContractPayments,
   type PreDueReminderOutcome,
 } from './paymentCycle';
+import {
+  PAYMENT_RECONCILIATION_BATCH_JOB,
+  PAYMENT_RECONCILIATION_BATCH_REQUESTED_EVENT,
+  PAYMENT_RECONCILIATION_JOB_TYPES,
+} from './paymentReconciliationJobs';
 
 export const AUTOMATION_SOURCE = 'automation:P0-AUTO-2';
 
-/** Types d'événements réellement traités par cette tranche. */
-export const HANDLED_EVENT_TYPES: readonly DomainEventType[] = ['CONTRACT_ACTIVATED'];
+/** Types d'événements réellement traités (activation + demande de batch paiement). */
+export const HANDLED_EVENT_TYPES: readonly DomainEventType[] = [
+  'CONTRACT_ACTIVATED',
+  PAYMENT_RECONCILIATION_BATCH_REQUESTED_EVENT,
+];
 
 /**
  * Types d'événements PRÉPARÉS pour le futur module Notifications. Ils sont
@@ -119,7 +127,7 @@ export interface AutomationTransactionRuntime {
 
 export class ContractAutomationError extends Error {
   constructor(
-    readonly code: 'CONFLICT' | 'IN_PROGRESS' | 'NOT_FOUND' | 'NOT_ACTIVE' | 'INVALID_JOB',
+    readonly code: 'CONFLICT' | 'IN_PROGRESS' | 'NOT_FOUND' | 'NOT_ACTIVE' | 'INVALID_JOB' | 'INVALID_EVENT',
     message: string,
   ) {
     super(message);
@@ -602,6 +610,42 @@ export function createContractAutomation(
     });
   };
 
+  /**
+   * P0-PAY-3 — le batch est demandé dans l'Outbox transactionnelle; ce handler
+   * le transforme en ScheduledJob dans la file déjà existante. Il ne traite
+   * aucune donnée fournisseur et n'émet aucune notification.
+   */
+  const handlePaymentReconciliationBatchRequested: AutomationHandler = async context => {
+    const batchId = context.event.aggregateId;
+    if (!batchId || context.event.eventType !== PAYMENT_RECONCILIATION_BATCH_REQUESTED_EVENT) {
+      throw new ContractAutomationError('INVALID_EVENT', 'Événement de batch de réconciliation invalide.');
+    }
+    const timestamp = context.event.timestamp || clock().toISOString();
+    await withTransaction(async stores => {
+      await stores.jobs.createIfAbsent({
+        jobId: `job_${PAYMENT_RECONCILIATION_BATCH_JOB.toLowerCase()}_${batchId}`.slice(0, 120),
+        jobType: PAYMENT_RECONCILIATION_BATCH_JOB,
+        aggregateType: 'payment-reconciliation-batch',
+        aggregateId: batchId,
+        dueAt: timestamp,
+        idempotencyKey: `payment-reconciliation:${batchId}:initial`,
+        reference: batchId,
+        createdAt: timestamp,
+      });
+      await stores.audit.append({
+        id: `audit_payment_reconciliation_job_${batchId}`.slice(0, 120),
+        eventId: context.event.eventId,
+        actorId: AUTOMATION_SYSTEM_ACTOR,
+        timestamp,
+        entityId: batchId,
+        action: 'PAYMENT_RECONCILIATION_JOB_SCHEDULED',
+        source: AUTOMATION_SOURCE,
+        reference: context.idempotencyKey,
+        afterState: { batchId, jobType: PAYMENT_RECONCILIATION_BATCH_JOB, dueAt: timestamp, movedFunds: false },
+      });
+    });
+  };
+
   /* ---------------- Jobs de rappel ---------------- */
 
   const handleReminderJob: ReminderJobHandler = async ({ job, paymentKind, stage, stores, now }) => {
@@ -840,6 +884,7 @@ export function createContractAutomation(
 
   const registry = new AutomationRegistry();
   registry.register('CONTRACT_ACTIVATED', handleContractActivated);
+  registry.register(PAYMENT_RECONCILIATION_BATCH_REQUESTED_EVENT, handlePaymentReconciliationBatchRequested);
 
   const jobs = new ReminderJobRegistry();
   for (const jobType of REMINDER_JOB_TYPES) {
@@ -860,9 +905,11 @@ export function createContractAutomation(
     engine: new AutomationEngine(registry),
     jobs,
     handledEventTypes: HANDLED_EVENT_TYPES,
-    handledJobTypes: preDueJobType === null
-      ? [...REMINDER_JOB_TYPES]
-      : [...REMINDER_JOB_TYPES, preDueJobType],
+    handledJobTypes: [
+      ...REMINDER_JOB_TYPES,
+      ...(preDueJobType === null ? [] : [preDueJobType]),
+      ...PAYMENT_RECONCILIATION_JOB_TYPES,
+    ],
     preDueJobType,
     async handlePreDueJob(input) {
       return handlePreDueReminderJob(input);

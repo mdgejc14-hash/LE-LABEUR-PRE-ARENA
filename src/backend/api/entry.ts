@@ -80,6 +80,8 @@ import {
 // persistance ; la composition est le seul point de câblage autorisé.
 import { createSqlAutomationStores } from '../persistence/sqlAutomationStores';
 import { createSqlPaymentStores } from '../persistence/sqlPaymentStores';
+import { createSqlPaymentReconciliationStores } from '../persistence/sqlPaymentReconciliationStores';
+import type { PaymentReconciliationStores } from '../persistence/paymentReconciliationRecords';
 import {
   createPaymentApiHandlers,
   createPaymentRepository,
@@ -87,6 +89,13 @@ import {
   type PaymentRepositoryStores,
 } from '../repositories/paymentRepository';
 import type { PaymentProviderAdapter } from '../payments/paymentVerification';
+import { createPaymentProviderRegistry, type PaymentProviderRegistry } from '../payments/paymentProviderRegistry';
+import {
+  createPaymentReconciliationBatchService,
+  type PaymentReconciliationBatchService,
+} from '../payments/paymentReconciliationBatch';
+import { createPaymentReconciliationApiHandlers } from '../payments/paymentReconciliationApi';
+import { PAYMENT_RECONCILIATION_JOB_TYPES } from '../automation/paymentReconciliationJobs';
 import {
   resolvePreDueLeadTimeFromEnv,
   runDuePaymentSweep,
@@ -163,6 +172,10 @@ export interface WorkerComposition {
    * sans elle, les routes du domaine restent `501 NOT_IMPLEMENTED`.
    */
   payments?: OpenPaymentRepository;
+  /** P0-PAY-3 — service batch/revue, uniquement lorsque PostgreSQL durable existe. */
+  paymentReconciliation?: PaymentReconciliationBatchService;
+  /** Registre multi-provider sans secrets; les slots non injectés restent inactifs. */
+  paymentProviders?: PaymentProviderRegistry;
   /** État de la configuration du cycle, sans secret : observable par `/healthz`. */
   paymentCycle?: {
     available: boolean;
@@ -473,6 +486,22 @@ export function composeWorker(
     return { ...base, payments: buildPaymentStores(tx) };
   };
 
+  const paymentProviderRegistry = createPaymentProviderRegistry(
+    overrides.paymentProviderAdapter ? [overrides.paymentProviderAdapter] : [],
+  );
+
+  const buildPaymentReconciliationStores = buildPaymentStores
+    ? (tx: Parameters<typeof createSqlPaymentReconciliationStores>[0]) => {
+        const automationStores = createSqlAutomationStores(tx);
+        return createSqlPaymentReconciliationStores(tx, {
+          audit: automationStores.audit,
+          idempotency: automationStores.idempotency,
+          outbox: automationStores.outbox,
+          jobs: automationStores.jobs,
+        });
+      }
+    : undefined;
+
   /** Avance de rappel pre-echeance : aucune valeur par defaut, aucune valeur devinee. */
   const preDueLeadTime = resolvePreDueLeadTimeFromEnv(env.PAYMENT_PRE_DUE_LEAD_TIME_MS);
 
@@ -512,12 +541,26 @@ export function composeWorker(
           },
           ...(runPaymentInTransaction ? { runInTransaction: runPaymentInTransaction } : {}),
           ...(overrides.now ? { now: overrides.now } : {}),
+          providerRegistry: paymentProviderRegistry,
           ...(overrides.paymentProviderAdapter ? { providerAdapter: overrides.paymentProviderAdapter } : {}),
         });
       })()
     : undefined;
 
+  const paymentReconciliation = buildPaymentReconciliationStores && persistence.database
+    ? createPaymentReconciliationBatchService({
+        stores: buildPaymentReconciliationStores(persistence.database),
+        runInTransaction: <T>(operation: (stores: PaymentReconciliationStores) => Promise<T>): Promise<T> =>
+          persistence.database!.run(tx => operation(buildPaymentReconciliationStores(tx))),
+        ...(overrides.now ? { now: overrides.now } : {}),
+        isProviderConfigured: providerId => paymentProviderRegistry.isConfigured(providerId),
+      })
+    : undefined;
+
   const paymentHandlers = paymentRepository ? createPaymentApiHandlers(paymentRepository) : {};
+  const paymentReconciliationHandlers = paymentReconciliation
+    ? createPaymentReconciliationApiHandlers(paymentReconciliation)
+    : {};
 
   /*
    * P0-AUTO-2 — automatisation contractuelle.
@@ -559,6 +602,15 @@ export function composeWorker(
               }),
             }
           : {}),
+        ...(paymentReconciliation
+          ? {
+              paymentReconciliationJobs: {
+                jobTypes: PAYMENT_RECONCILIATION_JOB_TYPES,
+                handle: (job: import('../automation/records').AutomationJob, at: Date) =>
+                  paymentReconciliation.processAutomationJob(job, at),
+              },
+            }
+          : {}),
       })
     : undefined;
 
@@ -567,9 +619,10 @@ export function composeWorker(
     ...applicationHandlers,
     ...proposalHandlers,
     ...contractHandlers,
-    // P0-PAY-1 — le domaine PAIEMENT remplace les placeholders `501` des seules
-    // routes réellement ouvertes dans cette tranche.
+    // P0-PAY-1 — cycle Payment existant.
     ...paymentHandlers,
+    // P0-PAY-3 — imports batch, ledger externe et revue ADMIN.
+    ...paymentReconciliationHandlers,
   };
 
   return {
@@ -581,6 +634,8 @@ export function composeWorker(
     proposals: proposalRepository,
     contracts: contractRepository,
     payments: paymentRepository,
+    paymentReconciliation,
+    paymentProviders: paymentProviderRegistry,
     paymentCycle: {
       available: paymentCycleAvailable,
       preDueLeadTimeMs: preDueLeadTime.leadTimeMs,

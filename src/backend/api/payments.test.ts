@@ -33,6 +33,11 @@ import { paymentIdFor } from '../../domain/paymentLifecycle';
 import { paymentIdempotencyCache } from '../repositories/paymentRepository';
 import { createUnconfiguredPaymentProviderAdapter } from '../payments/paymentVerification';
 import { PAYMENT_PRE_DUE_JOB_TYPE } from '../../domain/paymentLifecycle';
+import { createPaymentReconciliationBatchService } from '../payments/paymentReconciliationBatch';
+import { createSqlPaymentReconciliationStores } from '../persistence/sqlPaymentReconciliationStores';
+import { createSqlAutomationStores } from '../persistence/sqlAutomationStores';
+import type { PaymentReconciliationStores } from '../persistence/paymentReconciliationRecords';
+import { PAYMENT_RECONCILIATION_RETRY_JOB } from '../automation/paymentReconciliationJobs';
 import { composeWorker } from './entry';
 import type { PaymentView } from '../repositories/paymentRepository';
 
@@ -919,6 +924,251 @@ export async function runPaymentCycleTests(): Promise<OfferTestResult[]> {
         }
         assert(code === 'NOT_IMPLEMENTED', `la frontière doit refuser (NOT_IMPLEMENTED attendu), reçu « ${code} »`);
       }
+    });
+
+    /* ---------------- P0-PAY-3 batch/review/correction/retry ---------------- */
+
+    await check('P0-PAY-3 Batch: résultats normalisés, idempotence, duplicate guard, revue et correction traçable', async () => {
+      const reconciliationSeed = await seedActiveContract(harness, employerId, candidateId);
+      await harness.payments!.materializePaymentsForContract(reconciliationSeed.contractId);
+      const references = {
+        matched: `RECON-MATCH-${reconciliationSeed.contractId}`,
+        mismatch: `RECON-MISMATCH-${reconciliationSeed.contractId}`,
+        review: `RECON-REVIEW-${reconciliationSeed.contractId}`,
+      };
+      await harness.database.query('UPDATE payments SET reference = $2 WHERE id = $1', [reconciliationSeed.salaryPaymentId, references.matched]);
+      await harness.database.query('UPDATE payments SET reference = $2 WHERE id = $1', [reconciliationSeed.feePaymentId, references.mismatch]);
+      await harness.database.query('UPDATE payments SET reference = $2 WHERE id = $1', [reconciliationSeed.secondMonthSalaryPaymentId, references.review]);
+
+      const at = harness.clock.value.toISOString();
+      const matched = {
+        provider: 'test_gateway', externalTransactionId: `EXT-MATCH-${reconciliationSeed.contractId}`,
+        reference: references.matched, amount: 131_250, currency: 'FCFA', payer: employerId,
+        recipient: candidateId, occurredAt: at, status: 'SUCCESS', rawPayload: { secret: 'do-not-persist' },
+      };
+      const mismatch = {
+        provider: 'TEST_GATEWAY', externalTransactionId: `EXT-MISMATCH-${reconciliationSeed.contractId}`,
+        reference: references.mismatch, amount: 43_749, currency: 'FCFA', payer: employerId,
+        recipient: 'LE_LABEUR', occurredAt: at, status: 'SUCCESS',
+      };
+      const reviewRequired = {
+        provider: 'TEST_GATEWAY', externalTransactionId: `EXT-REVIEW-${reconciliationSeed.contractId}`,
+        reference: references.review, amount: 175_000, currency: 'FCFA', payer: employerId,
+        recipient: candidateId, occurredAt: at, status: 'PENDING',
+      };
+      const notFound = {
+        provider: 'TEST_GATEWAY', externalTransactionId: `EXT-NOT-FOUND-${reconciliationSeed.contractId}`,
+        reference: `NO-PAYMENT-${reconciliationSeed.contractId}`, amount: 500, currency: 'FCFA',
+        payer: employerId, recipient: candidateId, occurredAt: at, status: 'SUCCESS',
+      };
+
+      const response = await post(harness, '/api/v1/admin/payment-reconciliation/batches', adminToken, 'p0pay3-batch-create-0001', {
+        provider: 'TEST_GATEWAY', transactions: [matched, mismatch, reviewRequired, notFound, matched],
+      });
+      assert(response.status === 201, `201 pour le premier batch, reçu ${response.status}: ${JSON.stringify(await jsonOf(response.clone()))}`);
+      const report = await jsonOf<{
+        batch: { batchId: string; status: string; matchedItems: number; mismatchedItems: number; notFoundItems: number; duplicateItems: number; reviewItems: number };
+        items: Array<{ itemIndex: number; status: string; reviewId?: string; normalizedMetadata: Record<string, unknown> }>;
+      }>(response);
+      const summaryProbe = await harness.database.query<{ status: string; count: string }>(
+        'SELECT status, count(*)::text AS count FROM payment_reconciliation_batch_items WHERE batch_id = $1 GROUP BY status ORDER BY status',
+        [report.batch.batchId],
+      );
+      assert(report.batch.status === 'COMPLETED', `batch terminé, reçu ${JSON.stringify({ batch: report.batch, items: report.items.map(item => item.status), db: summaryProbe.rows })}`);
+      assert(report.batch.matchedItems === 1 && report.batch.mismatchedItems === 1
+        && report.batch.notFoundItems === 1 && report.batch.duplicateItems === 1 && report.batch.reviewItems === 1,
+      `compteurs par verdict exacts: ${JSON.stringify(report.batch)}`);
+      assert(report.items.map(item => item.status).join(',') === 'MATCH,MISMATCH,REVIEW_REQUIRED,NOT_FOUND,DUPLICATE',
+        `ordre/verdicts conservés: ${report.items.map(item => item.status).join(',')}`);
+      assert(!JSON.stringify(report.items[0].normalizedMetadata).includes('do-not-persist'), 'rawPayload sensible omis des métadonnées persistées');
+      assert(report.items[1].reviewId && report.items[2].reviewId, 'MISMATCH et REVIEW_REQUIRED ouvrent une revue ADMIN');
+      const paymentAfter = await harness.database.query<{ id: string; status: string }>(
+        'SELECT id, status FROM payments WHERE id = ANY($1::text[]) ORDER BY id',
+        [[reconciliationSeed.salaryPaymentId, reconciliationSeed.feePaymentId, reconciliationSeed.secondMonthSalaryPaymentId]],
+      );
+      assert(paymentAfter.rows.every(row => row.status === 'SCHEDULED'), 'MATCH externe ne transitionne aucun paiement vers VERIFIED/PAID');
+      const settlements = await harness.database.query<{ count: string }>(
+        'SELECT count(*)::text AS count FROM payment_external_settlements WHERE provider = $1', ['TEST_GATEWAY'],
+      );
+      assert(Number(settlements.rows[0].count) === 4, 'duplicate externe conservé comme résultat sans second settlement');
+
+      const replay = await post(harness, '/api/v1/admin/payment-reconciliation/batches', adminToken, 'p0pay3-batch-create-0001', {
+        provider: 'TEST_GATEWAY', transactions: [matched, mismatch, reviewRequired, notFound, matched],
+      });
+      assert(replay.status === 200, `rejeu de batch retourne 200, reçu ${replay.status}`);
+      const replayBody = await jsonOf<{ batch: { batchId: string }; replayed: boolean }>(replay);
+      assert(replayBody.replayed && replayBody.batch.batchId === report.batch.batchId, 'même lot retourné sur rejeu idempotent');
+      const conflict = await post(harness, '/api/v1/admin/payment-reconciliation/batches', adminToken, 'p0pay3-batch-create-0001', {
+        provider: 'TEST_GATEWAY', transactions: [notFound],
+      });
+      assert(conflict.status === 409, `charge différente sous la même clé refusée (409), reçu ${conflict.status}`);
+      const unconfigured = await post(harness, '/api/v1/admin/payment-reconciliation/batches', adminToken, 'p0pay3-provider-none-0001', {
+        provider: 'UNCONFIGURED_PROVIDER', transactions: [],
+      });
+      assert(unconfigured.status === 501, `provider sans adaptateur refusé (501), reçu ${unconfigured.status}`);
+      const forbidden = await post(harness, '/api/v1/admin/payment-reconciliation/batches', employerToken, 'p0pay3-employer-denied-01', {
+        provider: 'TEST_GATEWAY', transactions: [],
+      });
+      assert(forbidden.status === 403, `seul ADMIN peut importer un batch (403), reçu ${forbidden.status}`);
+
+      const correctionResponse = await post(
+        harness,
+        `/api/v1/admin/payment-reconciliation/reviews/${report.items[1].reviewId}/correction-attempts`,
+        adminToken,
+        'p0pay3-correction-attempt-01',
+        { proposedChanges: { amount: 43_750 }, evidenceReference: 'evidence:receipt-42', note: 'Valeur proposée à examiner.' },
+      );
+      assert(correctionResponse.status === 201, `tentative de correction enregistrée (201), reçu ${correctionResponse.status}`);
+      const correction = await jsonOf<{ correctionAttempt: { correctionAttemptId: string; status: string; proposedChanges: Record<string, unknown> } }>(correctionResponse);
+      assert(correction.correctionAttempt.status === 'RECORDED' && correction.correctionAttempt.proposedChanges.amount === 43_750,
+        'la correction proposée est conservée append-only');
+      const correctionReplay = await post(
+        harness,
+        `/api/v1/admin/payment-reconciliation/reviews/${report.items[1].reviewId}/correction-attempts`,
+        adminToken,
+        'p0pay3-correction-attempt-01',
+        { proposedChanges: { amount: 43_750 }, evidenceReference: 'evidence:receipt-42', note: 'Valeur proposée à examiner.' },
+      );
+      assert(correctionReplay.status === 200, `rejeu de correction retourne 200, reçu ${correctionReplay.status}`);
+      const correctionReplayBody = await jsonOf<{ correctionAttempt: { correctionAttemptId: string }; replayed: boolean }>(correctionReplay);
+      assert(correctionReplayBody.replayed && correctionReplayBody.correctionAttempt.correctionAttemptId === correction.correctionAttempt.correctionAttemptId,
+        'la même tentative n’est jamais dupliquée');
+      const invalidCorrection = await post(
+        harness,
+        `/api/v1/admin/payment-reconciliation/reviews/${report.items[1].reviewId}/correction-attempts`,
+        adminToken,
+        'p0pay3-correction-invalid-01',
+        { proposedChanges: { provider: 'UNSAFE' } },
+      );
+      assert(invalidCorrection.status === 400, `champ de correction hors liste refusé (400), reçu ${invalidCorrection.status}`);
+      const immutableSource = await harness.database.query<{ amount: string; reconciliation_status: string }>(
+        'SELECT amount::text, reconciliation_status FROM payment_external_settlements WHERE external_transaction_id = $1',
+        [mismatch.externalTransactionId],
+      );
+      assert(Number(immutableSource.rows[0].amount) === mismatch.amount && immutableSource.rows[0].reconciliation_status === 'MISMATCH',
+        'la tentative ne réécrit ni la preuve externe ni le verdict');
+
+      const decisionResponse = await post(
+        harness,
+        `/api/v1/admin/payment-reconciliation/reviews/${report.items[2].reviewId}/decision`,
+        adminToken,
+        'p0pay3-review-decision-01',
+        { decision: 'CONFIRMED', evidence: 'evidence:confirmed-1', note: 'Revue manuelle.' },
+      );
+      assert(decisionResponse.status === 200, `décision ADMIN enregistrée, reçu ${decisionResponse.status}`);
+      const reviewDecision = await jsonOf<{ review: { decision: string; actorId?: string }; replayed?: boolean }>(decisionResponse);
+      assert(reviewDecision.review.decision === 'CONFIRMED' && reviewDecision.review.actorId, 'décision de revue porte acteur ADMIN');
+      const unchanged = await harness.database.query<{ status: string }>(
+        'SELECT status FROM payments WHERE id = $1', [reconciliationSeed.secondMonthSalaryPaymentId],
+      );
+      assert(unchanged.rows[0].status === 'SCHEDULED', 'confirmation de revue ne marque pas le paiement comme reçu/PAID');
+    });
+
+    await check('P0-PAY-3 Concurrence: deux POST identiques partagent un batch, un item et un seul règlement', async () => {
+      const input = {
+        provider: 'TEST_GATEWAY',
+        transactions: [{
+          provider: 'TEST_GATEWAY', externalTransactionId: 'EXT-CONCURRENT-BATCH-1', reference: 'REF-CONCURRENT-BATCH-1',
+          amount: 100, currency: 'FCFA', payer: employerId, recipient: candidateId,
+          occurredAt: harness.clock.value.toISOString(), status: 'SUCCESS',
+        }],
+      };
+      const [left, right] = await Promise.all([
+        post(harness, '/api/v1/admin/payment-reconciliation/batches', adminToken, 'p0pay3-concurrent-batch-1', input),
+        post(harness, '/api/v1/admin/payment-reconciliation/batches', adminToken, 'p0pay3-concurrent-batch-1', input),
+      ]);
+      assert([left.status, right.status].every(status => status === 200 || status === 201),
+        `deux demandes concurrentes terminent idempotemment: ${left.status}/${right.status}`);
+      const leftBody = await jsonOf<{ batch: { batchId: string } }>(left);
+      const rightBody = await jsonOf<{ batch: { batchId: string } }>(right);
+      assert(leftBody.batch.batchId === rightBody.batch.batchId, 'un identifiant de batch gagne la course');
+      const counts = await harness.database.query<{ batches: string; items: string; settlements: string }>(
+        `SELECT
+           (SELECT count(*)::text FROM payment_reconciliation_batches WHERE provider = 'TEST_GATEWAY' AND batch_key = $1) AS batches,
+           (SELECT count(*)::text FROM payment_reconciliation_batch_items WHERE batch_id = $2) AS items,
+           (SELECT count(*)::text FROM payment_external_settlements WHERE provider = 'TEST_GATEWAY' AND external_transaction_id = 'EXT-CONCURRENT-BATCH-1') AS settlements`,
+        ['p0pay3-concurrent-batch-1', leftBody.batch.batchId],
+      );
+      assert(counts.rows[0].batches === '1' && counts.rows[0].items === '1' && counts.rows[0].settlements === '1',
+        `unicité batch/item/settlement: ${JSON.stringify(counts.rows[0])}`);
+    });
+
+    await check('P0-PAY-3 Rollback/reprise: échec atomique devient RETRYABLE puis le worker termine le même item', async () => {
+      const retrySeed = await seedActiveContract(harness, employerId, candidateId);
+      await harness.payments!.materializePaymentsForContract(retrySeed.contractId);
+      const retryReference = `RECON-RETRY-${retrySeed.contractId}`;
+      await harness.database.query('UPDATE payments SET reference = $2 WHERE id = $1', [retrySeed.salaryPaymentId, retryReference]);
+      let failFirstMatchAudit = true;
+      const makeFaultStores = (executor: Parameters<typeof createSqlPaymentReconciliationStores>[0]): PaymentReconciliationStores => {
+        const automation = createSqlAutomationStores(executor);
+        const base = createSqlPaymentReconciliationStores(executor, {
+          audit: automation.audit,
+          idempotency: automation.idempotency,
+          outbox: automation.outbox,
+          jobs: automation.jobs,
+        });
+        return {
+          ...base,
+          audit: {
+            ...base.audit,
+            append: async entry => {
+              if (failFirstMatchAudit && entry.action === 'PAYMENT_RECONCILIATION_MATCHED') {
+                failFirstMatchAudit = false;
+                throw new Error('injected transactional audit failure');
+              }
+              return base.audit.append(entry);
+            },
+          },
+        };
+      };
+      const faultService = createPaymentReconciliationBatchService({
+        stores: makeFaultStores(harness.database),
+        runInTransaction: <T>(operation: (stores: PaymentReconciliationStores) => Promise<T>): Promise<T> =>
+          harness.database.run(executor => operation(makeFaultStores(executor))),
+        now: () => harness.clock.value,
+        retryDelayMs: 1_000,
+      });
+      const transaction = {
+        provider: 'TEST_GATEWAY', externalTransactionId: `EXT-RETRY-${retrySeed.contractId}`,
+        reference: retryReference, amount: 131_250, currency: 'FCFA', payer: employerId,
+        recipient: candidateId, occurredAt: harness.clock.value.toISOString(), status: 'SUCCESS',
+      };
+      const firstRun = await faultService.reconcileBatch(
+        { id: 'test-admin', role: 'ADMIN', sessionId: 'session-test', permissions: ['payments:read:any'] },
+        { provider: 'TEST_GATEWAY', transactions: [transaction], idempotencyKey: 'p0pay3-retry-batch-0001' },
+      );
+      assert(firstRun.batch.status === 'PARTIAL' && firstRun.batch.retryableItems === 1, `échec réessayable visible: ${JSON.stringify(firstRun.batch)}`);
+      assert(firstRun.items[0].status === 'RETRYABLE', 'item conservé pour reprise durable');
+      const rolledBack = await harness.database.query<{ count: string }>(
+        'SELECT count(*)::text AS count FROM payment_external_settlements WHERE provider = $1 AND external_transaction_id = $2',
+        ['TEST_GATEWAY', transaction.externalTransactionId],
+      );
+      assert(rolledBack.rows[0].count === '0', 'transaction item en erreur a annulé ledger/resultat/audit partiel');
+      const scheduled = await harness.database.query<{ job_id: string; due_at: unknown; status: string }>(
+        'SELECT job_id, due_at, status FROM automation_jobs WHERE job_type = $1 AND aggregate_id = $2',
+        [PAYMENT_RECONCILIATION_RETRY_JOB, firstRun.batch.batchId],
+      );
+      assert(scheduled.rows.length === 1 && scheduled.rows[0].status === 'PENDING', 'retry durable dans automation_jobs');
+
+      harness.clock.value = new Date(harness.clock.value.getTime() + 1_001);
+      const workerReport = await harness.automationWorker!.runDueJobs(25);
+      assert(workerReport.completed >= 1, 'worker existant a consommé le job de reprise');
+      const completed = await harness.database.query<{ status: string; attempts: number }>(
+        `SELECT item.status, item.attempts
+           FROM payment_reconciliation_batch_items AS item
+          WHERE item.batch_id = $1`, [firstRun.batch.batchId],
+      );
+      assert(completed.rows[0].status === 'MATCH' && Number(completed.rows[0].attempts) === 2,
+        `le même item a été repris une fois: ${JSON.stringify(completed.rows[0])}`);
+      const jobAfter = await harness.database.query<{ status: string }>(
+        'SELECT status FROM automation_jobs WHERE job_id = $1', [scheduled.rows[0].job_id],
+      );
+      assert(jobAfter.rows[0].status === 'COMPLETED', 'job de reprise clôturé par le worker existant');
+      const batchAfter = await harness.database.query<{ status: string; retryable_items: number }>(
+        'SELECT status, retryable_items FROM payment_reconciliation_batches WHERE id = $1', [firstRun.batch.batchId],
+      );
+      assert(batchAfter.rows[0].status === 'COMPLETED' && Number(batchAfter.rows[0].retryable_items) === 0,
+        'compteurs et statut du batch recalculés après reprise');
     });
 
     await check('P0-PAY-1 Séparation DEMO/API: le mode mémoire ne branch AUCUN cycle paiement', async () => {

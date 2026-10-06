@@ -580,12 +580,14 @@ export async function runPostgresFoundationTests(): Promise<PostgresFoundationTe
       'automation_audit_ledger',
       'automation_deadlines',
     ];
-    // P0-PAY-1 : `payments` (agrégat du cycle) et `payment_declarations`
-    // (tentatives de déclaration, append-only), créées par la migration 0008 et
-    // par elle seule. Le garde-fou reste identique : TOUTE AUTRE table est
-    // refusée — en particulier aucune table de fournisseur, de webhook, d'OTP,
-    // d'agrégateur, de mobile money ou de KYC.
-    const paymentTables = ['payments', 'payment_declarations'];
+    // P0-PAY-1 : agrégat et tentatives de déclaration. P0-PAY-3 : batch,
+    // ledger de règlement externe et revue ADMIN, sans table de provider réel.
+    const paymentTables = [
+      'payments', 'payment_declarations',
+      'payment_reconciliation_batches', 'payment_reconciliation_batch_items',
+      'payment_external_settlements', 'payment_reconciliation_reviews',
+      'payment_reconciliation_correction_attempts',
+    ];
     const extra = [...schema.keys()].filter(key =>
       !CORE_TABLES.includes(key as (typeof CORE_TABLES)[number])
       && !automationTables.includes(key)
@@ -593,15 +595,28 @@ export async function runPostgresFoundationTests(): Promise<PostgresFoundationTe
     assert(extra.length === 0, `tables hors noyau détectées: ${extra.join(', ')}`);
 
     const paymentMigrationName = files.find(name => name.startsWith('0008'));
+    const reconciliationMigrationName = files.find(name => name.startsWith('0009'));
     assert(paymentMigrationName === '0008_payment_cycle.sql', `migration 0008 attendue, reçue ${String(paymentMigrationName)}`);
+    assert(reconciliationMigrationName === '0009_payment_external_reconciliation.sql', `migration 0009 attendue, reçue ${String(reconciliationMigrationName)}`);
     const paymentSql = paymentMigrationName
       ? stripSqlComments(read(resolve(MIGRATIONS_DIR, paymentMigrationName)))
       : '';
-    for (const table of paymentTables) {
-      assert(
-        new RegExp(`CREATE TABLE IF NOT EXISTS ${table}\\b`).test(paymentSql),
-        `la table ${table} doit être créée par 0008_payment_cycle.sql uniquement`,
-      );
+    const reconciliationSql = reconciliationMigrationName
+      ? stripSqlComments(read(resolve(MIGRATIONS_DIR, reconciliationMigrationName)))
+      : '';
+    for (const table of ['payments', 'payment_declarations']) {
+      assert(new RegExp(`CREATE TABLE IF NOT EXISTS ${table}\\b`).test(paymentSql), `${table} doit rester créé par 0008`);
+    }
+    for (const table of paymentTables.slice(2)) {
+      assert(new RegExp(`CREATE TABLE IF NOT EXISTS ${table}\\b`).test(reconciliationSql), `${table} doit être créée par 0009`);
+    }
+    for (const identity of [
+      'payment_external_settlements_provider_transaction_unique',
+      'payment_external_settlements_provider_reference_unique',
+      'payment_external_settlements_one_match_per_payment_idx',
+      'payment_reconciliation_correction_attempts_review_key_unique',
+    ]) {
+      assert(reconciliationSql.includes(identity), `contrainte/identité de ledger manquante: ${identity}`);
     }
     for (const forbidden of [/provider/i, /webhook/i, /\botp\b/i, /kyc/i, /aggregator/i, /mobile[_ ]?money/i, /sms/i]) {
       assert(
@@ -1088,9 +1103,11 @@ export async function runPostgresFoundationTests(): Promise<PostgresFoundationTe
         }
         if (!/\.(ts|tsx)$/.test(entry.name) || /\.test\.ts$/.test(entry.name)) continue;
         const content = read(path);
-        for (const line of content.split('\n')) {
-          if (!/(from\s+'[^']*(persistence|services\/database|identity\/sqlStores))/.test(line)) continue;
-          if (/^\s*import\s+type\b/.test(line)) continue;
+        for (const match of content.matchAll(/(?:^|\n)\s*import\s+(type\s+)?[\s\S]*?\sfrom\s+'([^']+)'/g)) {
+          if (!/(persistence|services\/database|identity\/sqlStores)/.test(match[2])) continue;
+          // `import type` statements may span several lines; they erase at build
+          // time and do not introduce runtime access to PostgreSQL.
+          if (match[1]) continue;
           const relative = path.slice(REPO_ROOT.length + 1);
           // Frontières Worker autorisées : composition serveur (P0-A) et runtime
           // Cloudflare réel (P0-C : entrée Worker + pilote pg). Aucun autre fichier

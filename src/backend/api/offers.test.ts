@@ -31,6 +31,8 @@ import type { OpenContractRepository } from '../repositories/contractRepository'
 import type { ContractAutomation } from '../automation/contractActivation';
 import type { AutomationWorker } from '../automation/worker';
 import type { OpenPaymentRepository } from '../repositories/paymentRepository';
+import type { PaymentReconciliationBatchService } from '../payments/paymentReconciliationBatch';
+import type { PaymentProviderRegistry } from '../payments/paymentProviderRegistry';
 import type { PostgreSqlDatabase } from '../services/database';
 import { createPostgresDatabase } from '../persistence/postgresDatabase';
 import { createSqlOfferStore } from '../persistence/sqlCoreStores';
@@ -179,6 +181,9 @@ export interface TestHarness {
   automationWorker?: AutomationWorker;
   /** P0-PAY-1 : repository du cycle PAIEMENT (déclaration, vérification, décision). */
   payments?: OpenPaymentRepository;
+  /** P0-PAY-3 : service durable d'import batch, ledger externe, retries et revue. */
+  paymentReconciliation?: PaymentReconciliationBatchService;
+  paymentProviders?: PaymentProviderRegistry;
   clock: { value: Date };
   credentials: Record<string, string>;
   close: () => Promise<void>;
@@ -215,6 +220,8 @@ export async function createOffersTestHarness(): Promise<TestHarness> {
     automation: composition.automation,
     automationWorker: composition.automationWorker,
     payments: composition.payments,
+    paymentReconciliation: composition.paymentReconciliation,
+    paymentProviders: composition.paymentProviders,
     clock,
     credentials: google.credentials,
     close: async () => {

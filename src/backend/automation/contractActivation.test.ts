@@ -1477,18 +1477,21 @@ export async function runContractAutomationTests(): Promise<OfferTestResult[]> {
         assert(entry.commissionTransactionId === undefined, 'aucune transaction de commission');
         assert(entry.salaryProofFileName === undefined, 'aucune preuve salariale');
       }
-      // P0-PAY-1 a OUVERT le cycle métier des paiements : les deux tables du cycle
-      // existent désormais, et elles viennent de la migration 0008 — JAMAIS de
-      // l'automatisation contractuelle. Le contrôle porte donc sur la frontière
-      // réelle : deux tables métier, et rien du côté fournisseur.
+      // P0-PAY-1/P0-PAY-3 ouvrent le cycle Payment et son ledger externe neutre :
+      // ces tables viennent des migrations 0008/0009, JAMAIS de l'automatisation.
+      // Le contrôle porte sur la frontière réelle : aucun connecteur ni table de fournisseur.
       const paymentTables = await harness.database.query<{ table_name: string }>(
         `SELECT table_name FROM information_schema.tables
           WHERE table_schema = current_schema() AND table_name ILIKE '%payment%'
           ORDER BY table_name`,
       );
       assert(
-        JSON.stringify(paymentTables.rows.map(row => row.table_name)) === JSON.stringify(['payment_declarations', 'payments']),
-        `seules les tables du cycle P0-PAY-1 sont admises, reçues ${paymentTables.rows.map(row => row.table_name).join(', ')}`,
+        JSON.stringify(paymentTables.rows.map(row => row.table_name)) === JSON.stringify([
+          'payment_declarations', 'payment_external_settlements', 'payment_reconciliation_batch_items',
+          'payment_reconciliation_batches', 'payment_reconciliation_correction_attempts',
+          'payment_reconciliation_reviews', 'payments',
+        ]),
+        `seules les tables du cycle P0-PAY-1/P0-PAY-3 sont admises, reçues ${paymentTables.rows.map(row => row.table_name).join(', ')}`,
       );
       const providerTables = await harness.database.query<{ table_name: string }>(
         `SELECT table_name FROM information_schema.tables
