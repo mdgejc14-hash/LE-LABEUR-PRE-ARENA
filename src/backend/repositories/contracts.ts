@@ -158,6 +158,13 @@ export interface ServerContractRepository {
   endContract(actor: AuthenticatedActor, contractId: string, command: ProductionCommandContext): Promise<Contract>;
   /** P0-F — rupture motivée `ACTIVE → TERMINATED` (protection M1 conservée). */
   terminateContract(actor: AuthenticatedActor, contractId: string, reason: string, command: ProductionCommandContext): Promise<Contract>;
+  /**
+   * P0-CONTRACT-POST — finalisation d'embauche sur contrat ACTIF (RÈGLE 21) :
+   * offre `ACTIVE → FILLED`, candidature retenue `→ HIRED → CONTRACTED`, autres
+   * candidatures ouvertes `→ CLOSED_OFFER_FILLED`. Explicite, idempotente,
+   * transactionnelle ; aucun statut nouveau, aucune notification, aucun paiement.
+   */
+  finalizeHiring(actor: AuthenticatedActor, contractId: string, command: ProductionCommandContext): Promise<Contract>;
   /** Cycle paiements/mensuel — HORS P0-F (reste 501). */
   confirmMonthlyAction(actor: AuthenticatedActor, contractId: string, input: unknown, command: ProductionCommandContext): Promise<Contract>;
 }

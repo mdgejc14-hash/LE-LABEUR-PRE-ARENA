@@ -22,6 +22,8 @@ import { runProposalDomainTests } from '../src/backend/api/proposals.test';
 import { runProposalTransitionTests } from '../src/domain/proposalTransitions.test';
 import { runContractTransitionTests } from '../src/domain/contractTransitions.test';
 import { runContractDomainTests } from '../src/backend/api/contracts.test';
+import { runPostContractTransitionTests } from '../src/domain/postContractTransitions.test';
+import { runPostContractDomainTests } from '../src/backend/api/postContract.test';
 import { runContractScheduleAutomationTests } from '../src/domain/contractScheduleAutomation.test';
 import { runPaymentLifecycleTests } from '../src/domain/paymentLifecycle.test';
 import { runPaymentCycleTests } from '../src/backend/api/payments.test';
@@ -60,6 +62,8 @@ async function main(): Promise<void> {
   const proposalDomain = await runProposalDomainTests();
   const contractMatrix = runContractTransitionTests();
   const contractDomain = await runContractDomainTests();
+  const postContractMatrix = runPostContractTransitionTests();
+  const postContractDomain = await runPostContractDomainTests();
   const contractScheduleRules = runContractScheduleAutomationTests();
   const contractAutomation = await runContractAutomationTests();
   const paymentLifecycle = runPaymentLifecycleTests();
@@ -92,6 +96,8 @@ async function main(): Promise<void> {
     { name: 'P0-E5 — émission et cycle PROPOSITION (PostgreSQL, autorisation, ownership, idempotence, concurrence, rollback, lecture ADMIN)', cases: proposalDomain },
     { name: 'P0-F — matrice CONTRAT (statuts réels, transitions ouvertes et refusées, signature, protection M1, événements documentés)', cases: contractMatrix.map(result => ({ name: result.name, success: result.success, detail: result.details })) },
     { name: 'P0-F — cycle CONTRAT (création depuis ACCEPTED, envoi, signature, activation, fin, terminaison; PostgreSQL, autorisation, idempotence, concurrence, rollback)', cases: contractDomain },
+    { name: 'P0-CONTRACT-POST — matrice post-contrat (cascade RÈGLE 21, HIRED→CONTRACTED, transitions refusées, work execution sans statut inventé, horaires simples, événements documentés)', cases: postContractMatrix.map(result => ({ name: result.name, success: result.success, detail: result.details })) },
+    { name: 'P0-CONTRACT-POST — cascade d’embauche réelle (FILLED, HIRED→CONTRACTED, CLOSED_OFFER_FILLED; PostgreSQL, autorisation, idempotence, convergence, concurrence, rollback, non-régression P0-F/P0-AUTO-2)', cases: postContractDomain },
     { name: 'P0-AUTO-2 — règles d’automatisation contractuelle (périodicités réelles, échéancier, commission 25 %, échéances J+3, rappels, règles manquantes non inventées, post-contrat reporté)', cases: contractScheduleRules.map(result => ({ name: result.name, success: result.success, detail: result.details })) },
     { name: 'P0-PAY-1 — cycle PAIEMENT (règles métier: statuts, matrice de transitions, matérialisation, déclaration, vérification locale, rappels configurés, frontière fournisseur)', cases: paymentLifecycle.map(result => ({ name: result.name, success: result.success, detail: result.details })) },
     { name: 'P0-PAY-1 — cycle PAIEMENT réel (matérialisation, SCHEDULED→DUE, déclaration, vérification, rapprochement, rejet, régularisation; PostgreSQL, rôles, séparation salaire/commission, idempotence, concurrence, rollback, audit, aucun paiement exécuté)', cases: paymentCycle },
