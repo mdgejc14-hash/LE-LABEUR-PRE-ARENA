@@ -23,6 +23,8 @@ import { runProposalTransitionTests } from '../src/domain/proposalTransitions.te
 import { runContractTransitionTests } from '../src/domain/contractTransitions.test';
 import { runContractDomainTests } from '../src/backend/api/contracts.test';
 import { runContractScheduleAutomationTests } from '../src/domain/contractScheduleAutomation.test';
+import { runPaymentLifecycleTests } from '../src/domain/paymentLifecycle.test';
+import { runPaymentCycleTests } from '../src/backend/api/payments.test';
 import { runContractAutomationTests } from '../src/backend/automation/contractActivation.test';
 
 interface TestCase {
@@ -58,6 +60,8 @@ async function main(): Promise<void> {
   const contractDomain = await runContractDomainTests();
   const contractScheduleRules = runContractScheduleAutomationTests();
   const contractAutomation = await runContractAutomationTests();
+  const paymentLifecycle = runPaymentLifecycleTests();
+  const paymentCycle = await runPaymentCycleTests();
 
   const suites: Array<{ name: string; cases: TestCase[] }> = [
     { name: 'Domain deterministic', cases: deterministic.results.map(result => ({ name: result.name, success: result.success, detail: result.details })) },
@@ -85,6 +89,8 @@ async function main(): Promise<void> {
     { name: 'P0-F — matrice CONTRAT (statuts réels, transitions ouvertes et refusées, signature, protection M1, événements documentés)', cases: contractMatrix.map(result => ({ name: result.name, success: result.success, detail: result.details })) },
     { name: 'P0-F — cycle CONTRAT (création depuis ACCEPTED, envoi, signature, activation, fin, terminaison; PostgreSQL, autorisation, idempotence, concurrence, rollback)', cases: contractDomain },
     { name: 'P0-AUTO-2 — règles d’automatisation contractuelle (périodicités réelles, échéancier, commission 25 %, échéances J+3, rappels, règles manquantes non inventées, post-contrat reporté)', cases: contractScheduleRules.map(result => ({ name: result.name, success: result.success, detail: result.details })) },
+    { name: 'P0-PAY-1 — cycle PAIEMENT (règles métier: statuts, matrice de transitions, matérialisation, déclaration, vérification locale, rappels configurés, frontière fournisseur)', cases: paymentLifecycle.map(result => ({ name: result.name, success: result.success, detail: result.details })) },
+    { name: 'P0-PAY-1 — cycle PAIEMENT réel (matérialisation, SCHEDULED→DUE, déclaration, vérification, rapprochement, rejet, régularisation; PostgreSQL, rôles, séparation salaire/commission, idempotence, concurrence, rollback, audit, aucun paiement exécuté)', cases: paymentCycle },
     { name: 'P0-AUTO-2 — CONTRACT_ACTIVATED réel (Outbox → Queue → Worker → AutomationEngine → échéancier salarial, échéancier de commission, échéances, rappels; PostgreSQL, idempotence, concurrence, retry, dead-letter, rollback, audit, séparation DEMO/API)', cases: contractAutomation },
   ];
 

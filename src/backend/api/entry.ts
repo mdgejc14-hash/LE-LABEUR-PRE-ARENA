@@ -79,6 +79,17 @@ import {
 // AutomationEngine → jobs). Les adaptateurs PostgreSQL restent dans la couche
 // persistance ; la composition est le seul point de câblage autorisé.
 import { createSqlAutomationStores } from '../persistence/sqlAutomationStores';
+import { createSqlPaymentStores } from '../persistence/sqlPaymentStores';
+import {
+  createPaymentApiHandlers,
+  createPaymentRepository,
+  type OpenPaymentRepository,
+  type PaymentRepositoryStores,
+} from '../repositories/paymentRepository';
+import {
+  resolvePreDueLeadTimeFromEnv,
+  runDuePaymentSweep,
+} from '../automation/paymentCycle';
 import { createContractAutomation, type ContractAutomation } from '../automation/contractActivation';
 import { createAutomationWorker, type AutomationWorker } from '../automation/worker';
 import type { AutomationStores } from '../automation/records';
@@ -94,6 +105,12 @@ export interface WorkerEnvironment extends WorkerPersistenceEnvironment {
    * Toute valeur non-loopback est ignorée, donc inutilisable en production.
    */
   TEST_ONLY_GOOGLE_JWKS_URL?: string;
+  /**
+   * P0-PAY-1 — avance (millisecondes) du rappel pré-échéance. AUCUNE valeur par
+   * défaut : absente, aucun job pré-échéance n'est armé, car le modèle ne décide
+   * pas cette règle (`PRE_DUE_REMINDER_CONFIGURATION.leadTimeMs === null`).
+   */
+  PAYMENT_PRE_DUE_LEAD_TIME_MS?: string;
 }
 
 export type WorkerIdentityMode = 'closed' | 'memory' | 'postgres';
@@ -139,6 +156,19 @@ export interface WorkerComposition {
    * Cloudflare de production dans cette tranche.
    */
   automationWorker?: AutomationWorker;
+  /**
+   * P0-PAY-1 — cycle paiements (déclarations, vérification, rapprochement,
+   * régularisation). Présent UNIQUEMENT quand une base PostgreSQL durable existe :
+   * sans elle, les routes du domaine restent `501 NOT_IMPLEMENTED`.
+   */
+  payments?: OpenPaymentRepository;
+  /** État de la configuration du cycle, sans secret : observable par `/healthz`. */
+  paymentCycle?: {
+    available: boolean;
+    preDueLeadTimeMs: number | null;
+    preDueConfigured: boolean;
+    preDueDetail: string;
+  };
 }
 
 /** Serveur/test only: allows deterministic verification without changing env or DEMO behavior. */
@@ -411,18 +441,99 @@ export function composeWorker(
     : {};
 
   /*
+   * P0-PAY-1 — cycle PAIEMENT.
+   *
+   * Comme l'automatisation, le cycle n'est branché QUE si une base PostgreSQL
+   * durable existe : sans elle, aucune table `payments`, aucun Outbox, aucune
+   * idempotence durable. En mode `memory` et en mode DEMO, les routes du domaine
+   * restent donc `501 NOT_IMPLEMENTED` — c'est la cohérence, pas une lacune :
+   * un cycle paiement sans transaction n'a aucune valeur de vérité.
+   */
+  const paymentCycleAvailable = Boolean(persistence.database && persistence.core);
+
+  /**
+   * Fabrique unique des stores du cycle : le repository, l'automatisation et le
+   * worker construisent leurs stores paiement SUR LA TRANSACTION qui est la leur
+   * — jamais sur le pool. C'est ce qui rend le COMMIT atomique pour
+   * `mutation + projection + evenement + audit + idempotence`, et le ROLLBACK
+   * total (aucune ligne residuelle apres un echec).
+   */
+  const buildPaymentStores = paymentCycleAvailable && persistence.database
+    ? (tx: Parameters<typeof createSqlPaymentStores>[0]) => createSqlPaymentStores(tx)
+    : undefined;
+
+  /** Stores d'automatisation, enrichis du cycle quand une base durable existe. */
+  const createAutomationStores = (
+    tx: Parameters<typeof createSqlAutomationStores>[0],
+  ): AutomationStores => {
+    const base = createSqlAutomationStores(tx);
+    if (!buildPaymentStores) return base;
+    return { ...base, payments: buildPaymentStores(tx) };
+  };
+
+  /** Avance de rappel pre-echeance : aucune valeur par defaut, aucune valeur devinee. */
+  const preDueLeadTime = resolvePreDueLeadTimeFromEnv(env.PAYMENT_PRE_DUE_LEAD_TIME_MS);
+
+  const runPaymentInTransaction = buildPaymentStores
+    ? async <T>(operation: (stores: PaymentRepositoryStores) => Promise<T>): Promise<T> => {
+        return persistence.database!.run(async tx => {
+          const automationStores = createSqlAutomationStores(tx);
+          const payments = buildPaymentStores(tx);
+          return operation({
+            payments: payments.payments,
+            declarations: payments.declarations,
+            contractPayments: payments.contractPayments,
+            contracts: createSqlContractStore(tx),
+            users: stores.users,
+            outbox: automationStores.outbox,
+            audit: automationStores.audit,
+            idempotency: automationStores.idempotency,
+          });
+        });
+      }
+    : undefined;
+
+  const paymentRepository = buildPaymentStores && persistence.core
+    ? (() => {
+        const automationStores = createSqlAutomationStores(persistence.database!);
+        const payments = buildPaymentStores(persistence.database!);
+        return createPaymentRepository({
+          stores: {
+            payments: payments.payments,
+            declarations: payments.declarations,
+            contractPayments: payments.contractPayments,
+            contracts: persistence.core!.contracts,
+            users: stores.users,
+            outbox: automationStores.outbox,
+            audit: automationStores.audit,
+            idempotency: automationStores.idempotency,
+          },
+          ...(runPaymentInTransaction ? { runInTransaction: runPaymentInTransaction } : {}),
+          ...(overrides.now ? { now: overrides.now } : {}),
+        });
+      })()
+    : undefined;
+
+  const paymentHandlers = paymentRepository ? createPaymentApiHandlers(paymentRepository) : {};
+
+  /*
    * P0-AUTO-2 — automatisation contractuelle.
    *
    * Composée UNIQUEMENT quand une base PostgreSQL durable existe : sans elle il
    * n'y a ni Outbox, ni file, ni idempotence durable, et l'activation d'un
    * contrat est refusée (fail-closed) plutôt que produite sans événement.
    * Le mode `memory` et le mode DEMO ne sont donc pas concernés.
+   *
+   * P0-PAY-1 : les stores recus par l'automatisation portent en plus le cycle
+   * paiement quand la base durable existe — c'est la seule origine des lignes
+   * `payments` creees a l'activation et du balayage `SCHEDULED -> DUE`.
    */
   const automationRuntime = persistence.database
     ? {
         withTransaction: <T>(operation: (stores: AutomationStores) => Promise<T>): Promise<T> =>
-          persistence.database!.run(async tx => operation(createSqlAutomationStores(tx))),
+          persistence.database!.run(async tx => operation(createAutomationStores(tx))),
         ...(overrides.now ? { now: overrides.now } : {}),
+        paymentPreDueLeadTimeMs: preDueLeadTime.leadTimeMs,
       }
     : undefined;
 
@@ -433,9 +544,18 @@ export function composeWorker(
   const automationWorker = persistence.database && contractAutomation
     ? createAutomationWorker({
         database: persistence.database,
-        createStores: createSqlAutomationStores,
+        createStores: createAutomationStores,
         automation: contractAutomation,
         ...(overrides.now ? { now: overrides.now } : {}),
+        ...(paymentRepository
+          ? {
+              duePayments: (stores: AutomationStores, limit: number) => runDuePaymentSweep({
+                stores,
+                limit,
+                sweep: writer => paymentRepository.sweepDuePayments(writer, limit),
+              }),
+            }
+          : {}),
       })
     : undefined;
 
@@ -444,6 +564,9 @@ export function composeWorker(
     ...applicationHandlers,
     ...proposalHandlers,
     ...contractHandlers,
+    // P0-PAY-1 — le domaine PAIEMENT remplace les placeholders `501` des seules
+    // routes réellement ouvertes dans cette tranche.
+    ...paymentHandlers,
   };
 
   return {
@@ -454,6 +577,13 @@ export function composeWorker(
     applications: applicationRepository,
     proposals: proposalRepository,
     contracts: contractRepository,
+    payments: paymentRepository,
+    paymentCycle: {
+      available: paymentCycleAvailable,
+      preDueLeadTimeMs: preDueLeadTime.leadTimeMs,
+      preDueConfigured: preDueLeadTime.configured,
+      preDueDetail: preDueLeadTime.detail,
+    },
     ...(contractAutomation ? { automation: contractAutomation } : {}),
     ...(automationWorker ? { automationWorker } : {}),
     health,

@@ -37,6 +37,10 @@ DB_APPLICATION_NAME = "lelabeur-worker"
 SESSION_TTL_SECONDS = "43200"
 COOKIE_SECURE = "true"
 WORKER_ENV = "development"
+# P0-PAY-1 — avance (ms) du rappel pré-échéance. VOLONTAIREMENT NON FIXÉE :
+# aucun job pré-échéance n'est armé tant que l'exploitant ne décide pas la valeur,
+# car le modèle ne contient aucune règle par défaut (`leadTimeMs: null`).
+# PAYMENT_PRE_DUE_LEAD_TIME_MS = ""  # entier strictement positif, <= 2592000000
 # Audience OAuth Google PUBLIQUE (aucun secret). Vide = frontière fermée (401/501).
 GOOGLE_CLIENT_ID = ""
 
@@ -65,6 +69,8 @@ DB_APPLICATION_NAME = "lelabeur-worker"
 SESSION_TTL_SECONDS = "43200"
 COOKIE_SECURE = "true"
 WORKER_ENV = "production"
+# P0-PAY-1 — même règle qu'en développement : aucune valeur par défaut installée.
+# PAYMENT_PRE_DUE_LEAD_TIME_MS = ""  # absent => aucun job armé ; entier > 0, <= 2592000000
 GOOGLE_CLIENT_ID = ""
 
 # Binding Hyperdrive de production : VOLONTAIREMENT ABSENT.
@@ -86,5 +92,12 @@ GOOGLE_CLIENT_ID = ""
 # -----------------------------------------------------------------------------
 # Hors périmètre P0-C (volontairement absents) :
 # R2, Queues, Cron Triggers, Durable Objects, KV : aucun binding, aucune
-# migration DO, aucun scheduled handler.
+# migration DO.
+#
+# P0-PAY-1 : le Worker EXPOSE un handler `scheduled()` (point d'entrée d'une
+# passée bornée du worker d'automatisation : Outbox → paiements échus → jobs de
+# rappel), mais AUCUN bloc `[triggers] crons` n'est déclaré : aucune
+# planification de production n'est installée dans cette tranche. Déployer sans
+# cron ne déclenche donc rien ; l'activation relève d'une décision
+# d'exploitation ultérieure.
 # -----------------------------------------------------------------------------

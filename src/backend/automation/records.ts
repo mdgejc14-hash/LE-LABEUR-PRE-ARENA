@@ -221,6 +221,8 @@ export interface ContractScheduleWriter {
 /* Jeu complet                                                          */
 /* ------------------------------------------------------------------ */
 
+import type { PaymentStores } from '../persistence/paymentRecords';
+
 export interface AutomationStores {
   outbox: DomainEventOutbox;
   jobs: ScheduledJobStore;
@@ -228,6 +230,14 @@ export interface AutomationStores {
   audit: AuditLedgerStore;
   idempotency: DurableIdempotencyStore;
   contractSchedules: ContractScheduleWriter;
+  /**
+   * P0-PAY-1 — stores du cycle paiement, fournis UNIQUEMENT lorsque le runtime
+   * dispose d'une base durable. Absents, l'automatisation conserve exactement le
+   * comportement P0-AUTO-2 : aucune ligne de paiement materialisée, aucun rappel
+   * pré-échéance armé. Aucun second mécanisme : mêmes tables de transaction,
+   * même Outbox, même ledger d'audit, même idempotence durable.
+   */
+  payments?: PaymentStores;
 }
 
 export interface AutomationStoreDependencies {

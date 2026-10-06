@@ -1021,16 +1021,11 @@ export async function runProposalDomainTests(): Promise<OfferTestResult[]> {
 
     /* ---------------- 9. PÉRIMÈTRE ET SÉPARATION DEMO/API ---------------- */
 
-    await check('P0-E5 Périmètre: paiements, incidents, remplacements, messages et listes de candidatures restent fermés (501)', async () => {
+    await check('P0-E5 Périmètre: incidents, remplacements, messages et listes de candidatures restent fermés (501); déclaration de commission ouverte mais refusée sans paiement', async () => {
       // P0-F a ouvert le domaine CONTRAT (`/contracts`) : ce test conserve la
       // frontière fermée des domaines restants, sans affaiblir le contrôle P0-E5.
       const closed = await Promise.all([
         harness.worker.fetch(authRequest('/api/v1/replacements/rep_p0e5_absent', employerToken)),
-        harness.worker.fetch(authRequest('/api/v1/payments/commission-declarations', employerToken, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json', 'Idempotency-Key': 'p0e5-closed-payments-001' },
-          body: '{}',
-        })),
         harness.worker.fetch(authRequest('/api/v1/incidents', employerToken, {
           method: 'POST',
           headers: { 'content-type': 'application/json', 'Idempotency-Key': 'p0e5-closed-incidents-001' },
@@ -1044,6 +1039,20 @@ export async function runProposalDomainTests(): Promise<OfferTestResult[]> {
         harness.worker.fetch(authRequest('/api/v1/my/applications', candidateToken)),
         harness.worker.fetch(authRequest('/api/v1/applications/app_p0e5_send', employerToken)),
       ]);
+      // P0-PAY-1 a OUVERT la déclaration de commission : ce n'est plus un handler
+      // absent. Elle reste refusée ici — charge utile vide — et n'exécute aucun
+      // paiement. C'est la nouvelle frontière, pas un affaiblissement du contrôle.
+      const declaration = await harness.worker.fetch(authRequest('/api/v1/payments/commission-declarations', employerToken, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'Idempotency-Key': 'p0e5-open-payments-001' },
+        body: '{}',
+      }));
+      assert(
+        declaration.status === 400,
+        `400 attendu (validation du domaine Paiement, plus 501), reçu ${declaration.status}`,
+      );
+      const paymentRows = await harness.database.query<{ count: string }>('SELECT count(*)::text AS count FROM payments');
+      assert(Number(paymentRows.rows[0]?.count ?? 0) === 0, 'aucun paiement écrit par un appel hors domaine');
       assert(
         closed.every(response => response.status === 501),
         `501 attendu pour tout handler non ouvert, reçus ${closed.map(response => response.status).join('/')}`,

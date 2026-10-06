@@ -32,6 +32,7 @@ import {
   type ContractAutomation,
   type ReminderJobOutcome,
 } from './contractActivation';
+import type { PaymentDueSweepReport, PreDueReminderOutcome } from './paymentCycle';
 import { contractActivatedIdempotencyKey } from '../../domain/contractScheduleAutomation';
 
 /** Tentatives avant mise en `DEAD_LETTER` / `FAILED` (bornes d'exploitation). */
@@ -48,6 +49,12 @@ export interface AutomationWorkerDependencies {
   now?: () => Date;
   maxAttempts?: number;
   retryDelayMs?: number;
+  /**
+   * P0-PAY-1 — balayage des paiements échus (`SCHEDULED → DUE`), exécuté dans la
+   * MÊME transaction que les stores du worker. Absent (runtime sans base durable
+   * de paiement), le cycle reste exactement celui de P0-AUTO-2.
+   */
+  duePayments?: (stores: AutomationStores, limit: number) => Promise<PaymentDueSweepReport>;
 }
 
 export interface EventDrainEntry {
@@ -75,6 +82,8 @@ export interface JobRunEntry {
   result: 'completed' | 'retryable' | 'failed';
   attempts: number;
   outcome?: ReminderJobOutcome;
+  /** P0-PAY-1 — évaluation consignée par le rappel pré-échéance (aucun effet d'état). */
+  preDue?: PreDueReminderOutcome;
   error?: string;
 }
 
@@ -91,8 +100,15 @@ export interface AutomationWorker {
   drainEvents(limit?: number): Promise<EventDrainReport>;
   /** Exécute les jobs de rappel échus. */
   runDueJobs(limit?: number): Promise<JobRunReport>;
-  /** Événements puis jobs : le parcours complet d'un cycle d'automatisation. */
-  drain(limit?: number): Promise<{ events: EventDrainReport; jobs: JobRunReport }>;
+  /** P0-PAY-1 — bascule `SCHEDULED → DUE` des paiements d'échéance atteinte. */
+  runDuePayments(limit?: number): Promise<PaymentDueSweepReport>;
+  /**
+   * Événements, paiements, jobs : le parcours complet d'un cycle
+   * d'automatisation. L'ordre importe : un contrat activé produit ses paiements
+   * avant que le balayage ne les trouve, et les rappels sont évalués après la
+   * bascule d'échéance.
+   */
+  drain(limit?: number): Promise<{ events: EventDrainReport; payments: PaymentDueSweepReport; jobs: JobRunReport }>;
   handledEventTypes: readonly string[];
   handledJobTypes: readonly string[];
 }
@@ -216,10 +232,14 @@ export function createAutomationWorker(
           attempts: job.attempts,
         };
 
+        // P0-PAY-1 — le rappel pré-échéance partage le claim, le compteur de
+        // tentatives et le passage `RUNNING → COMPLETED` des jobs de rappel : il
+        // n'a ni file ni ordonnanceur à lui.
+        const isPreDue = automation.preDueJobType !== null && job.jobType === automation.preDueJobType;
         const parsed = parseReminderJobType(job.jobType);
         const handler = parsed ? automation.jobs.get(job.jobType) : undefined;
 
-        if (!parsed || !handler) {
+        if (!isPreDue && (!parsed || !handler)) {
           const message = `Aucun handler de job pour ${job.jobType}.`;
           await automation.recordFailure({
             jobId: job.jobId,
@@ -242,12 +262,24 @@ export function createAutomationWorker(
           // Une SEULE transaction : effets du rappel (événement préparé,
           // échéance, audit, idempotence) et passage du job à COMPLETED sont
           // atomiques. Un rollback annule les deux.
-          const outcome = await database.run(async transaction => {
+          const runResult = await database.run(async transaction => {
             const stores = createStores(transaction);
-            const result = await handler({
+            if (isPreDue && automation.handlePreDueJob) {
+              const preDue = await automation.handlePreDueJob({ job, stores, now: clock() });
+              await stores.jobs.compareAndSetStatus(job.jobId, ['RUNNING'], {
+                status: 'COMPLETED',
+                at: clock().toISOString(),
+              });
+              entry.preDue = preDue;
+              return undefined;
+            }
+            // `handler` et `parsed` sont nécessairement présents ici : la branche
+            // pré-échéance est déjà sortie, et le gardefou ci-dessus a rejeté les
+            // types sans handler.
+            const result = await handler!({
               job,
-              paymentKind: parsed.paymentKind,
-              stage: parsed.stage,
+              paymentKind: parsed!.paymentKind,
+              stage: parsed!.stage,
               stores,
               now: clock(),
             });
@@ -257,7 +289,7 @@ export function createAutomationWorker(
             });
             return result;
           });
-          entry.outcome = outcome;
+          entry.outcome = runResult;
           report.completed += 1;
         } catch (error) {
           const message = errorMessage(error);
@@ -296,10 +328,17 @@ export function createAutomationWorker(
       return report;
     },
 
+    async runDuePayments(limit = DEFAULT_CLAIM_LIMIT): Promise<PaymentDueSweepReport> {
+      const sweep = dependencies.duePayments;
+      if (!sweep) return { scanned: 0, applied: 0, duplicates: 0, paymentIds: [] };
+      return inTransaction(stores => sweep(stores, limit));
+    },
+
     async drain(limit = DEFAULT_CLAIM_LIMIT) {
       const events = await this.drainEvents(limit);
+      const payments = await this.runDuePayments(limit);
       const jobs = await this.runDueJobs(limit);
-      return { events, jobs };
+      return { events, payments, jobs };
     },
   };
 }

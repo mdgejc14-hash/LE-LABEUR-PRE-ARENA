@@ -729,7 +729,7 @@ export async function runApplicationDecisionTests(): Promise<OfferTestResult[]> 
 
     /* ---------------- 10. PÉRIMÈTRE ET SÉPARATION DEMO/API ---------------- */
 
-    await check('P0-E4 Périmètre: paiements, incidents, remplacements et messages restent fermés (501)', async () => {
+    await check('P0-E4 Périmètre: incidents, remplacements et messages restent fermés (501); déclaration de commission ouverte mais refusée sans paiement', async () => {
       // Les propositions ont été ouvertes par P0-E5 (`/conversations/:id/proposals`)
       // et les contrats par P0-F (`/contracts` n'est plus un handler absent) ; ce
       // test conserve la frontière fermée des autres domaines, sans affaiblir le
@@ -741,11 +741,6 @@ export async function runApplicationDecisionTests(): Promise<OfferTestResult[]> 
           body: '{}',
         })),
         harness.worker.fetch(authRequest('/api/v1/replacements/rep_p0e4_absent', employerToken)),
-        harness.worker.fetch(authRequest('/api/v1/payments/commission-declarations', employerToken, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json', 'Idempotency-Key': 'p0e4-closed-payments-001' },
-          body: '{}',
-        })),
         harness.worker.fetch(authRequest('/api/v1/incidents', employerToken, {
           method: 'POST',
           headers: { 'content-type': 'application/json', 'Idempotency-Key': 'p0e4-closed-incidents-001' },
@@ -755,6 +750,20 @@ export async function runApplicationDecisionTests(): Promise<OfferTestResult[]> 
         harness.worker.fetch(authRequest('/api/v1/employer/applications', employerToken)),
         harness.worker.fetch(authRequest(`/api/v1/applications/${examinedId}`, candidateToken)),
       ]);
+      // P0-PAY-1 a OUVERT la déclaration de commission : ce n'est plus un handler
+      // absent. Elle reste refusée ici — charge utile vide — et n'exécute aucun
+      // paiement. C'est la nouvelle frontière, pas un affaiblissement du contrôle.
+      const declaration = await harness.worker.fetch(authRequest('/api/v1/payments/commission-declarations', employerToken, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'Idempotency-Key': 'p0e4-open-payments-001' },
+        body: '{}',
+      }));
+      assert(
+        declaration.status === 400,
+        `400 attendu (validation du domaine Paiement, plus 501), reçu ${declaration.status}`,
+      );
+      const paymentRows = await harness.database.query<{ count: string }>('SELECT count(*)::text AS count FROM payments');
+      assert(Number(paymentRows.rows[0]?.count ?? 0) === 0, 'aucun paiement écrit par un appel hors domaine');
       assert(
         closed.every(response => response.status === 501),
         `501 attendu pour tout handler non ouvert, reçus ${closed.map(response => response.status).join('/')}`,
