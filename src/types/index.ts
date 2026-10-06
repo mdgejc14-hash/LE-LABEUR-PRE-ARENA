@@ -350,9 +350,22 @@ export interface PaymentScheduleEntry {
   salaryAmount: number;
   employeeShareAmount: number;
   commissionAmount: number;
+  /** Percentage copied from the contract for this commission period (0 from M2). */
+  commissionPercentage?: number;
   currency: string;
   salaryStatus: SalaryPaymentStatus;
   commissionStatus: CommissionPaymentStatus;
+  /** Party references are also available through the parent Contract row. */
+  employerId?: string;
+  employeeId?: string;
+  salaryDueJobId?: string;
+  salaryDueIdempotencyKey?: string;
+  salaryReminderJobId?: string;
+  salaryReminderIdempotencyKey?: string;
+  commissionDueJobId?: string;
+  commissionDueIdempotencyKey?: string;
+  commissionReminderJobId?: string;
+  commissionReminderIdempotencyKey?: string;
   salaryDeclaredAt?: string;
   salaryConfirmedAt?: string;
   commissionDeclaredAt?: string;
@@ -362,6 +375,7 @@ export interface PaymentScheduleEntry {
   salaryProofFileName?: string;
   commissionProofFileName?: string;
   createdAt: string;
+  updatedAt?: string;
 }
 
 export interface MonthlyFollowupCheckpoint {

@@ -5,11 +5,15 @@ Branche de travail : `arena/9f3d3630-le-labeur-pre-arena`, empilée sur
 `arena/9f580cb5-le-labeur-pre-arena` (la PR P0-F cible cette branche pour
 n'exposer que la tranche P0-F).
 
-Objectif : ouvrir la **première tranche réelle du cycle Contrat** — création
+Objectif historique P0-F : ouvrir la **première tranche réelle du cycle Contrat** — création
 depuis une proposition `ACCEPTED`, envoi, signature des deux parties, activation,
-fin normale et rupture motivée — **sans** ouvrir les paiements, les commissions,
-les incidents, les remplacements, les notifications générales, le moteur
-d'automatisation, ni `FILLED` / `HIRED` / `CLOSED_OFFER_FILLED`.
+fin normale et rupture motivée — sans paiements réels, incidents, remplacements,
+notifications générales ni `FILLED` / `HIRED` / `CLOSED_OFFER_FILLED`.
+
+**Mise à jour P0-AUTO-2 :** l’activation PostgreSQL publie maintenant
+`CONTRACT_ACTIVATED` transactionnellement et déclenche uniquement les schedules,
+deadlines et jobs décrits dans [`P0-AUTO-2_ACTIVATION.md`](P0-AUTO-2_ACTIVATION.md).
+Cela n’ouvre ni paiement réel, ni preuve salariale, ni canal de notification.
 
 ---
 
@@ -232,9 +236,11 @@ uniquement :
   l'historique `CONTRACT_ACTIVATED_BILATERAL` ; deux activations concurrentes
   produisent une seule transition gagnante.
 
-L'activation **ne déclenche rien d'autre** : l'offre reste `ACTIVE`, la
-candidature garde son statut d'admissibilité, aucune autre candidature n'est
-fermée (voir § 12).
+La transition d’activation ne modifie pas l’offre ni les candidatures : l’offre
+reste `ACTIVE`, la candidature garde son statut d'admissibilité et aucune autre
+candidature n'est fermée (voir § 12). Depuis P0-AUTO-2, seule la fondation
+Automation contractuelle est déclenchée en plus; voir le document dédié pour
+l’échéancier, les deadlines et les rappels sans effet monétaire.
 
 ---
 
@@ -288,9 +294,11 @@ et les messages. Les routes P0-E3 / P0-E4 / P0-E5 sont intactes.
 documente le catalogue (agrégat `contract`, payload minimal, clé de
 déduplication `contractId + <événement>`, effets attendus).
 
-P0-F ne crée **ni** table Outbox, **ni** Queue, **ni** Cron, **ni** consumer,
-**ni** notification : ces constantes décrivent ce que les tranches suivantes
-devront produire.
+P0-F, pris isolément, ne créait pas de table Outbox, de Queue, de Cron ni de
+consumer. P0-AUTO-2 réutilise depuis une tranche séparée la fondation Outbox /
+Queue / Automation déjà présente et ne consomme ici que `CONTRACT_ACTIVATED`.
+Il ne déploie pas de Cron et n’envoie aucune notification; le détail est dans
+[`P0-AUTO-2_ACTIVATION.md`](P0-AUTO-2_ACTIVATION.md).
 
 ---
 

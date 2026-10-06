@@ -15,12 +15,15 @@
  * WITHDRAW (P0-E4) ; PROPOSITIONS pour l'émission, l'acceptation, la
  * déclinaison, l'expiration et la lecture ADMIN (P0-E5) ; CONTRATS pour la
  * création depuis une proposition acceptée, la signature, l'activation, la fin
- * et la rupture motivée (P0-F) ; les autres opérations métier — paiements,
- * commissions, plaintes, remplacements, notifications générales — restent
- * fermées. Le mode DEMO demeure séparé, inchangé et par défaut.
+ * et la rupture motivée (P0-F). P0-AUTO-2 planifie le schedule existant et
+ * la commission contractuelle à l'activation, sans ouvrir paiements/déclarations,
+ * transferts d'argent, plaintes, remplacements ni notifications réelles. Le
+ * mode DEMO demeure séparé, inchangé et par défaut.
  */
 
 import type { DatabaseHealthProbe, PostgreSqlDatabase } from '../services/database';
+import { createContractAutomationRuntime } from '../automation/contractAutomation';
+import type { AutomationWorker } from '../automation/worker';
 import { createGoogleCredentialVerifier } from '../identity/googleVerifier';
 import type { GoogleCredentialVerifier } from '../productionContracts';
 import { createSessionService } from '../identity/sessionService';
@@ -115,6 +118,8 @@ export interface WorkerComposition {
   proposals?: OpenProposalRepository;
   /** P0-F : création depuis proposition acceptée, envoi, signature, activation, fin, rupture. */
   contracts?: OpenContractRepository;
+  /** P0-AUTO-2 : Worker PostgreSQL local (Outbox → Queue → AutomationEngine). */
+  automation?: AutomationWorker;
 }
 
 /** Serveur/test only: allows deterministic verification without changing env or DEMO behavior. */
@@ -350,6 +355,10 @@ export function composeWorker(
     ? createProposalApiHandlers(proposalRepository)
     : {};
 
+  const contractAutomation = persistence.database
+    ? createContractAutomationRuntime(persistence.database, overrides.now)
+    : undefined;
+
   const runContractInTransaction = persistence.database
     ? async <T>(operation: (stores: ContractRepositoryStores) => Promise<T>): Promise<T> => {
         return persistence.database!.run(async tx => operation({
@@ -358,6 +367,11 @@ export function composeWorker(
           applications: createSqlApplicationStore(tx),
           offers: createSqlOfferStore(tx),
           users: createSqlUserStore(tx),
+          ...(contractAutomation ? {
+            automation: {
+              appendOutbox: (event) => contractAutomation.outbox.append(tx, event),
+            },
+          } : {}),
         }));
       }
     : undefined;
@@ -387,6 +401,32 @@ export function composeWorker(
     ...contractHandlers,
   };
 
+  const apiWorker = createIdentityApiWorker({
+    sessions,
+    stores,
+    health,
+    cookie: { secure: env.COOKIE_SECURE !== 'false' },
+    now: overrides.now,
+    handlers: domainHandlers,
+  });
+  const worker: WorkerComposition['worker'] = contractAutomation
+    ? {
+        async fetch(request) {
+          const response = await apiWorker.fetch(request);
+          // Post-response local drain: the mutation/outbox commit is already
+          // complete. Failures never turn a committed API command into a
+          // misleading HTTP error; the durable Outbox lease/retry recovers it.
+          try {
+            await contractAutomation.worker.processOutboxBatch();
+            await contractAutomation.worker.processDueJobs();
+          } catch {
+            // PostgreSQL outbox/jobs remain the source of truth for retry.
+          }
+          return response;
+        },
+      }
+    : apiWorker;
+
   return {
     mode,
     persistence: persistence.decision,
@@ -395,17 +435,11 @@ export function composeWorker(
     applications: applicationRepository,
     proposals: proposalRepository,
     contracts: contractRepository,
+    automation: contractAutomation?.worker,
     health,
     probe: persistence.probe,
     target: persistence.target,
-    worker: createIdentityApiWorker({
-      sessions,
-      stores,
-      health,
-      cookie: { secure: env.COOKIE_SECURE !== 'false' },
-      now: overrides.now,
-      handlers: domainHandlers,
-    }),
+    worker,
   };
 }
 

@@ -68,7 +68,7 @@ npm run migrate -- --status  # état réel des migrations (aucune valeur secrèt
 ```
 
 Couverture de `npm run verify:postgres` (moteur réel, TEST/LOCAL) : connexion,
-migrations 0001→0005 + idempotence, schéma identité/RBAC/noyau, **COMMIT**,
+migrations 0001→0007 + idempotence, schéma identité/RBAC/noyau/Automation, **COMMIT**,
 **ROLLBACK**, lecture/écriture `users`, lecture/écriture `sessions` (seul le
 SHA-256 du jeton est stocké), lecture des permissions, `/healthz` réel sans
 secret, parcours Google signé → session → `/me` → logout, permissions ADMIN

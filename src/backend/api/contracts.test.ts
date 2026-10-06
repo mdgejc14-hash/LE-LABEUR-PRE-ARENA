@@ -29,6 +29,7 @@ import {
 } from '../persistence/sqlCoreStores';
 import { newEntityId, newOpaqueSessionToken } from '../identity/ids';
 import { contractIdempotencyCache } from '../repositories/contractRepository';
+import { createContractAutomationRuntime } from '../automation/contractAutomation';
 import { resolveRepositoryMode } from '../../repositories/mode';
 import type { Contract, ProposalStatus } from '../../types';
 
@@ -765,7 +766,82 @@ export async function runContractDomainTests(): Promise<OfferTestResult[]> {
       assert(stored?.employerSigned === true && stored?.employeeSigned === true, 'activation seulement après double signature');
       assert(stored?.history.some(entry => entry.event === 'CONTRACT_ACTIVATED_BILATERAL'), 'historique d’activation persisté');
 
-      // L'automatisation post-contrat reste fermée.
+      const activationOutbox = await harness.database.query<{
+        id: string; event_type: string; status: string; attempts: number;
+      }>(
+        'SELECT id, event_type, status, attempts FROM automation_outbox WHERE dedupe_key = $1',
+        [`contract:${contractId}:CONTRACT_ACTIVATED`],
+      );
+      assert(activationOutbox.rows.length === 1, 'un seul événement CONTRACT_ACTIVATED durable');
+      assert(activationOutbox.rows[0].event_type === 'CONTRACT_ACTIVATED', 'type d’activation conservé dans l’Outbox');
+      assert(activationOutbox.rows[0].status === 'PROCESSED', 'Outbox → Queue → AutomationEngine consommé après commit');
+
+      const automationProjection = await harness.database.query<{
+        payment_schedule: unknown; commission_ledger: unknown; history: unknown;
+      }>('SELECT payment_schedule, commission_ledger, history FROM contracts WHERE id = $1', [contractId]);
+      const paymentSchedule = (typeof automationProjection.rows[0].payment_schedule === 'string'
+        ? JSON.parse(automationProjection.rows[0].payment_schedule)
+        : automationProjection.rows[0].payment_schedule) as Array<Record<string, unknown>>;
+      const commissionLedger = (typeof automationProjection.rows[0].commission_ledger === 'string'
+        ? JSON.parse(automationProjection.rows[0].commission_ledger)
+        : automationProjection.rows[0].commission_ledger) as Array<Record<string, unknown>>;
+      const activationHistory = (typeof automationProjection.rows[0].history === 'string'
+        ? JSON.parse(automationProjection.rows[0].history)
+        : automationProjection.rows[0].history) as Array<{ event: string }>;
+      assert(paymentSchedule.length === 6, 'six périodes salaire produites depuis la durée réelle du contrat');
+      const monthOne = paymentSchedule[0];
+      const monthTwo = paymentSchedule[1];
+      assert(monthOne.salaryDueDate === '2026-12-01', 'échéance salaire M1 dérivée de startDate');
+      assert(monthOne.salaryAmount === 175_000, 'salaire mensuel repris du contrat');
+      assert(monthOne.commissionAmount === 43_750 && monthOne.commissionPercentage === 25, 'commission M1 à 25 %');
+      assert(monthOne.employerId === employerId && monthOne.employeeId === candidateId, 'parties persistées dans le schedule');
+      assert(typeof monthOne.salaryDueJobId === 'string' && typeof monthOne.salaryReminderJobId === 'string', 'job salaire + rappel J+3 liés au schedule');
+      assert(typeof monthOne.commissionDueJobId === 'string' && typeof monthOne.commissionReminderJobId === 'string', 'job commission + rappel J+3 liés au schedule');
+      assert(monthTwo.commissionAmount === 0 && monthTwo.commissionStatus === 'NOT_APPLICABLE', 'aucune commission répétée après M1');
+      assert(commissionLedger.length === 1 && commissionLedger[0].amountDue === 43_750, 'commission M1 projetée une seule fois');
+      assert(activationHistory.filter(entry => entry.event === 'CONTRACT_ACTIVATED_BILATERAL').length === 1, 'l’automatisation ne réécrit pas l’historique métier');
+
+      const jobCount = await harness.database.query<{ count: string }>(
+        `SELECT count(*)::text AS count FROM automation_jobs
+          WHERE aggregate_type = 'Contract' AND aggregate_id = $1
+            AND job_type IN ('SALARY_PAYMENT_DUE', 'COMMISSION_PAYMENT_DUE', 'PAYMENT_OVERDUE_REMINDER')`,
+        [contractId],
+      );
+      assert(Number(jobCount.rows[0]?.count) === 14, '14 jobs uniques : 6 salaires, 1 commission et 7 rappels J+3');
+      const deadlineCount = await harness.database.query<{ count: string }>(
+        'SELECT count(*)::text AS count FROM automation_deadlines WHERE aggregate_id = $1', [contractId],
+      );
+      assert(Number(deadlineCount.rows[0]?.count) === 7, 'une deadline par paiement salaire et commission planifiés');
+      const auditCount = await harness.database.query<{ count: string }>(
+        'SELECT count(*)::text AS count FROM automation_audit_ledger WHERE entity_id = $1', [contractId],
+      );
+      assert(Number(auditCount.rows[0]?.count) === 21, 'audit durable pour jobs salaire/commission, rappels et deadlines');
+      const notificationCount = await harness.database.query<{ count: string }>(
+        `SELECT count(*)::text AS count FROM automation_jobs
+          WHERE aggregate_id = $1 AND job_type = 'NOTIFICATION_REQUIRED'`, [contractId],
+      );
+      assert(Number(notificationCount.rows[0]?.count) === 0, 'aucun canal ni job de notification envoyé à l’activation');
+
+      // Redelivery after process restart relies on PostgreSQL idempotency, not
+      // the in-memory processed-event cache.
+      await harness.database.query(
+        `UPDATE automation_outbox
+            SET status = 'RETRYABLE', available_at = $2, processed_at = NULL, claimed_by = NULL
+          WHERE id = $1`,
+        [activationOutbox.rows[0].id, harness.clock.value.toISOString()],
+      );
+      const restartedAutomation = createContractAutomationRuntime(harness.database, () => harness.clock.value);
+      const replay = await restartedAutomation.worker.processOutboxBatch();
+      assert(replay.claimed === 1 && replay.duplicates === 1, 'rejeu après redémarrage reconnu par idempotence PostgreSQL');
+      const jobsAfterReplay = await harness.database.query<{ count: string }>(
+        `SELECT count(*)::text AS count FROM automation_jobs
+          WHERE aggregate_type = 'Contract' AND aggregate_id = $1
+            AND job_type IN ('SALARY_PAYMENT_DUE', 'COMMISSION_PAYMENT_DUE', 'PAYMENT_OVERDUE_REMINDER')`,
+        [contractId],
+      );
+      assert(Number(jobsAfterReplay.rows[0]?.count) === 14, 'aucun schedule/job dupliqué après rejeu');
+
+      // L’automatisation des candidatures/offres reste fermée.
       const offerRow = await harness.database.query<{ status: string }>('SELECT status FROM offers WHERE id = $1', [chain.offerId]);
       assert(offerRow.rows[0]?.status === 'ACTIVE', 'l’offre reste ACTIVE (FILLED = étape post-contrat à venir)');
       const applicationRow = await harness.database.query<{ status: string }>(
@@ -775,6 +851,85 @@ export async function runContractDomainTests(): Promise<OfferTestResult[]> {
 
       const alreadyActive = await harness.worker.fetch(contractActionRequest(contractId, 'activate', employerToken, 'p0f-activate-twice-001'));
       assert(alreadyActive.status === 409, `409 attendu sur contrat déjà actif, reçu ${alreadyActive.status}`);
+    });
+
+    await check('P0-AUTO-2 Échéances: due jobs, J+3, Outbox interne et jobs notification-ready sans envoi', async () => {
+      const chain = await seedProposalChain(harness, { employerId, employeeId: candidateId });
+      await harness.database.query("UPDATE proposals SET start_date = '01 Septembre 2026' WHERE id = $1", [chain.proposalId]);
+      const contractId = await createDraftContract(harness, employerToken, 'p0auto2-due-create-001', chain.proposalId);
+      await sendContract(harness, employerToken, 'p0auto2-due-send-001', contractId);
+      const signed = await harness.worker.fetch(contractActionRequest(contractId, 'sign', candidateToken, 'p0auto2-due-sign-001'));
+      assert(signed.status === 200, `signature préalable 200 attendue, reçue ${signed.status}`);
+      const activated = await harness.worker.fetch(contractActionRequest(contractId, 'activate', employerToken, 'p0auto2-due-activate-001'));
+      assert(activated.status === 200, `activation 200 attendue, reçue ${activated.status}`);
+
+      const contractRow = await harness.database.query<{
+        payment_schedule: unknown; commission_status: string;
+      }>('SELECT payment_schedule, commission_status FROM contracts WHERE id = $1', [contractId]);
+      const schedule = (typeof contractRow.rows[0].payment_schedule === 'string'
+        ? JSON.parse(contractRow.rows[0].payment_schedule)
+        : contractRow.rows[0].payment_schedule) as Array<Record<string, unknown>>;
+      assert(schedule[0].salaryStatus === 'DUE', 'due job fait passer le salaire M1 de SCHEDULED à DUE');
+      assert(schedule[0].commissionStatus === 'DUE' && contractRow.rows[0].commission_status === 'DUE', 'due job commission M1 projeté');
+      const deadlineRows = await harness.database.query<{ status: string; idempotency_key: string }>(
+        'SELECT status, idempotency_key FROM automation_deadlines WHERE aggregate_id = $1 ORDER BY idempotency_key',
+        [contractId],
+      );
+      const firstMonthDeadlines = deadlineRows.rows.filter(row => /:(salary|commission):1:deadline$/.test(row.idempotency_key));
+      assert(firstMonthDeadlines.length === 2 && firstMonthDeadlines.every(row => row.status === 'OVERDUE'), 'deadlines salaire et commission passent OVERDUE après J+3');
+
+      const emitted = await harness.database.query<{ event_type: string; status: string; count: string }>(
+        `SELECT event_type, status, count(*)::text AS count FROM automation_outbox
+          WHERE aggregate_id = $1 GROUP BY event_type, status`, [contractId],
+      );
+      const countEvent = (eventType: string) => Number(emitted.rows.find(row => row.event_type === eventType)?.count ?? 0);
+      assert(countEvent('CONTRACT_ACTIVATED') === 1, 'événement d’activation unique');
+      assert(countEvent('PAYMENT_SCHEDULE_DUE') === 2, 'événements internes salaire/commission à l’échéance');
+      assert(countEvent('PAYMENT_OVERDUE_J3') === 2, 'rappels internes après les trois jours complets');
+      assert(emitted.rows.every(row => row.status === 'PROCESSED'), 'événements remis à AutomationEngine');
+
+      const notificationJobs = await harness.database.query<{ count: string; all_channel_null: boolean }>(
+        `SELECT count(*)::text AS count,
+                bool_and(payload->'channel' = 'null'::jsonb) AS all_channel_null
+           FROM automation_jobs WHERE aggregate_id = $1 AND job_type = 'NOTIFICATION_REQUIRED'`,
+        [contractId],
+      );
+      assert(Number(notificationJobs.rows[0]?.count) === 4, 'quatre jobs notification-ready créés pour due et J+3');
+      assert(notificationJobs.rows[0]?.all_channel_null === true, 'aucun canal de notification n’est configuré ou appelé');
+      const dueAudits = await harness.database.query<{ count: string }>(
+        `SELECT count(*)::text AS count FROM automation_audit_ledger
+          WHERE entity_id = $1 AND action = 'PAYMENT_OVERDUE_J3_EVENT_CREATED'`, [contractId],
+      );
+      assert(Number(dueAudits.rows[0]?.count) === 2, 'rappels audités sans transition de paiement');
+    });
+
+    await check('P0-AUTO-2 Rollback: conflit Outbox annule ACTIVE et son historique dans la même transaction', async () => {
+      const chain = await seedProposalChain(harness, { employerId, employeeId: candidateId });
+      const contractId = await createDraftContract(harness, employerToken, 'p0auto2-rollback-create-001', chain.proposalId);
+      await sendContract(harness, employerToken, 'p0auto2-rollback-send-001', contractId);
+      const signed = await harness.worker.fetch(contractActionRequest(contractId, 'sign', candidateToken, 'p0auto2-rollback-sign-001'));
+      assert(signed.status === 200, `signature préalable 200 attendue, reçue ${signed.status}`);
+
+      const dedupeKey = `contract:${contractId}:CONTRACT_ACTIVATED`;
+      await harness.database.query(
+        `INSERT INTO automation_outbox (
+           id, event_type, aggregate_type, aggregate_id, actor_id, payload, source, version,
+           created_at, status, attempts, available_at, dedupe_key
+         ) VALUES ($1, 'CONTRACT_ACTIVATED', 'Contract', $2, $3, $4::jsonb, 'rollback-test', 1,
+                   $5, 'PROCESSED', 0, $5, $6)`,
+        [newEntityId('evt'), contractId, employerId, JSON.stringify({ contractId: 'different-payload' }), harness.clock.value.toISOString(), dedupeKey],
+      );
+
+      const rejected = await harness.worker.fetch(contractActionRequest(contractId, 'activate', employerToken, 'p0auto2-rollback-activate-001'));
+      assert(rejected.status === 500, `échec d’append Outbox doit remonter en 500, reçu ${rejected.status}`);
+      const afterFailure = await readContract(harness, contractId);
+      assert(afterFailure?.status === 'SIGNATURE', 'ACTIVE est annulé par le ROLLBACK');
+      assert(!afterFailure?.history.some(entry => entry.event === 'CONTRACT_ACTIVATED_BILATERAL'), 'aucun historique d’activation fantôme');
+      const schedules = await harness.database.query<{ count: string }>(
+        'SELECT count(*)::text AS count FROM automation_jobs WHERE aggregate_id = $1', [contractId],
+      );
+      assert(Number(schedules.rows[0]?.count) === 0, 'aucun schedule Automation après rollback de l’activation');
+      await harness.database.query('DELETE FROM automation_outbox WHERE dedupe_key = $1', [dedupeKey]);
     });
 
     await check('P0-F Activation: DRAFT → ACTIVE refusée (409) sans passer par l’envoi et la signature', async () => {
@@ -805,6 +960,18 @@ export async function runContractDomainTests(): Promise<OfferTestResult[]> {
         storedActive?.history.filter(entry => entry.event === 'CONTRACT_ACTIVATED_BILATERAL').length === 1,
         'une seule entrée d’activation',
       );
+      const concurrentOutbox = await harness.database.query<{ count: string }>(
+        'SELECT count(*)::text AS count FROM automation_outbox WHERE dedupe_key = $1',
+        [`contract:${concurrentActivateId}:CONTRACT_ACTIVATED`],
+      );
+      assert(Number(concurrentOutbox.rows[0]?.count) === 1, 'un seul événement d’activation sous concurrence');
+      const concurrentJobs = await harness.database.query<{ count: string }>(
+        `SELECT count(*)::text AS count FROM automation_jobs
+          WHERE aggregate_id = $1
+            AND job_type IN ('SALARY_PAYMENT_DUE', 'COMMISSION_PAYMENT_DUE', 'PAYMENT_OVERDUE_REMINDER')`,
+        [concurrentActivateId],
+      );
+      assert(Number(concurrentJobs.rows[0]?.count) === 14, 'un seul ensemble de schedules/jobs malgré les activations concurrentes');
 
       const signChain = await seedProposalChain(harness, { employerId, employeeId: candidateId });
       const concurrentSignId = await createDraftContract(harness, employerToken, 'p0f-race-sign-create-001', signChain.proposalId);

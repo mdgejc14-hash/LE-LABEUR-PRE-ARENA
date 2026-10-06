@@ -303,6 +303,25 @@ export function createInMemoryCoreStores(seed: InMemoryCoreStoreSeed = {}): Core
       }
       return ordered.slice(start, start + bounded).map(contract => ({ ...contract }));
     },
+    async saveAutomationSchedule(contractId, patch) {
+      const record = contracts.get(contractId);
+      if (!record) return null;
+      const updated: ContractRecord = {
+        ...record,
+        paymentSchedule: patch.paymentSchedule.map(entry => ({ ...entry })),
+        commissionLedger: patch.commissionLedger.map(entry => ({ ...entry })),
+        commissionAmountDue: patch.commissionAmountDue,
+        commissionStatus: patch.commissionStatus,
+        updatedAt: patch.updatedAt,
+      };
+      contracts.set(contractId, updated);
+      return {
+        ...updated,
+        paymentSchedule: updated.paymentSchedule.map(entry => ({ ...entry })),
+        commissionLedger: updated.commissionLedger.map(entry => ({ ...entry })),
+        history: updated.history.map(entry => ({ ...entry })),
+      };
+    },
     async updateStatus(contractId, status, updatedAt) {
       assertStatusDomain(status, CONTRACT_STATUS_VALUES, 'contracts');
       const record = contracts.get(contractId);

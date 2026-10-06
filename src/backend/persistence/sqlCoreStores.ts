@@ -742,6 +742,32 @@ export function createSqlContractStore(db: SqlQueryExecutor): ContractStore {
       return result.rows.map(toContractRow);
     },
 
+    async saveAutomationSchedule(contractId, patch) {
+      try {
+        const result = await db.query<ContractRow>(
+          `UPDATE contracts
+              SET payment_schedule = $2::jsonb,
+                  commission_ledger = $3::jsonb,
+                  commission_amount_due = $4,
+                  commission_status = $5,
+                  updated_at = $6
+            WHERE id = $1
+          RETURNING *`,
+          [
+            contractId,
+            JSON.stringify(patch.paymentSchedule),
+            JSON.stringify(patch.commissionLedger),
+            patch.commissionAmountDue,
+            patch.commissionStatus,
+            patch.updatedAt,
+          ],
+        );
+        return result.rows[0] ? toContractRow(result.rows[0]) : null;
+      } catch (error) {
+        return translateSqlError(error, 'contracts', `Échéancier refusé pour le contrat ${contractId}.`);
+      }
+    },
+
     async updateStatus(contractId, status, updatedAt) {
       assertStatusDomain(status, CONTRACT_STATUS_VALUES, 'contracts');
       try {

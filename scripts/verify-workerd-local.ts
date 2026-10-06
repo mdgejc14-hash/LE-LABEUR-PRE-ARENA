@@ -148,7 +148,7 @@ async function main(): Promise<void> {
   mkdirSync(WORK_DIR, { recursive: true });
 
   console.log('============================================================');
-  console.log(' LE LABEUR — P0-C / P0-E3 / P0-E4 / P0-E5 — runtime workerd + binding Hyperdrive local');
+  console.log(' LE LABEUR — P0-C / P0-E3 / P0-E4 / P0-E5 / P0-AUTO-2 — runtime workerd + binding Hyperdrive local');
   console.log('============================================================');
   console.log('Runtime          : workerd (wrangler dev --local) — PAS un déploiement Cloudflare');
   console.log('Base             : PostgreSQL 17.10 RÉEL local (binaire embarqué, TEST/LOCAL)');
@@ -193,7 +193,7 @@ async function main(): Promise<void> {
     await check('Migrations réelles appliquées avant démarrage du Worker', async () => {
       const client = toPostgresClientPort(pool);
       const applied = await applyMigrations(client, loadMigrations(MIGRATIONS_DIR));
-      assert(applied.applied.length === 5, `5 migrations attendues, reçues ${applied.applied.length}`);
+      assert(applied.applied.length === 7, `7 migrations attendues, reçues ${applied.applied.length}`);
     });
 
     const logStream = (chunk: Buffer | string) => writeFileSync(wranglerLog, chunk, { flag: 'a' });
@@ -705,6 +705,45 @@ async function main(): Promise<void> {
         });
         assert(activated.status === 200, `activation ${suffix} : 200 attendue, reçue ${activated.status}`);
         assert(((await activated.json()) as { status: string }).status === 'ACTIVE', `ACTIVE attendu (${suffix})`);
+
+        const activationOutbox = await pool.query<{ event_type: string; status: string }>(
+          'SELECT event_type, status FROM automation_outbox WHERE dedupe_key = $1',
+          [`contract:${contract.id}:CONTRACT_ACTIVATED`],
+        );
+        assert(activationOutbox.rows.length === 1, `un Outbox CONTRACT_ACTIVATED attendu (${suffix})`);
+        assert(activationOutbox.rows[0].event_type === 'CONTRACT_ACTIVATED' && activationOutbox.rows[0].status === 'PROCESSED', `Outbox consommé sous workerd (${suffix})`);
+        const automationProjection = await pool.query<{
+          payment_schedule: Array<Record<string, unknown>>;
+          commission_ledger: Array<Record<string, unknown>>;
+          history: Array<{ event: string }>;
+        }>('SELECT payment_schedule, commission_ledger, history FROM contracts WHERE id = $1', [contract.id]);
+        const schedule = automationProjection.rows[0]?.payment_schedule;
+        assert(schedule?.length === 6, `six périodes salaire attendues (${suffix})`);
+        assert(schedule?.[0].salaryAmount === 175000 && schedule?.[0].salaryDueDate === '2026-12-01', `schedule salaire dérivé du contrat (${suffix})`);
+        assert(schedule?.[0].commissionAmount === 43750 && schedule?.[0].commissionPercentage === 25, `commission M1 25 % (${suffix})`);
+        assert(schedule?.[0].employerId === employerId && schedule?.[0].employeeId === userId, `parties du schedule (${suffix})`);
+        assert(schedule?.[1].commissionAmount === 0 && schedule?.[1].commissionStatus === 'NOT_APPLICABLE', `aucune commission M2+ (${suffix})`);
+        assert(automationProjection.rows[0]?.commission_ledger.length === 1, `commission projetée une fois (${suffix})`);
+        assert(automationProjection.rows[0]?.history.filter(entry => entry.event === 'CONTRACT_ACTIVATED_BILATERAL').length === 1, `historique métier non réécrit (${suffix})`);
+        const jobs = await pool.query<{ count: string }>(
+          `SELECT count(*)::text AS count FROM automation_jobs
+            WHERE aggregate_id = $1 AND job_type IN ('SALARY_PAYMENT_DUE', 'COMMISSION_PAYMENT_DUE', 'PAYMENT_OVERDUE_REMINDER')`,
+          [contract.id],
+        );
+        assert(Number(jobs.rows[0]?.count) === 14, `14 jobs salaire/commission/rappel attendus (${suffix})`);
+        const deadlines = await pool.query<{ count: string }>(
+          'SELECT count(*)::text AS count FROM automation_deadlines WHERE aggregate_id = $1', [contract.id],
+        );
+        assert(Number(deadlines.rows[0]?.count) === 7, `sept deadlines attendues (${suffix})`);
+        const audits = await pool.query<{ count: string }>(
+          'SELECT count(*)::text AS count FROM automation_audit_ledger WHERE entity_id = $1', [contract.id],
+        );
+        assert(Number(audits.rows[0]?.count) === 21, `audit des jobs/deadlines attendu (${suffix})`);
+        const sentNotifications = await pool.query<{ count: string }>(
+          `SELECT count(*)::text AS count FROM automation_jobs
+            WHERE aggregate_id = $1 AND job_type = 'NOTIFICATION_REQUIRED'`, [contract.id],
+        );
+        assert(Number(sentNotifications.rows[0]?.count) === 0, `aucune notification réelle créée (${suffix})`);
 
         return { contractId: contract.id, offerId: offer.id, applicationId: application.id };
       };

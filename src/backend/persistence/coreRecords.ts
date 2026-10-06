@@ -203,6 +203,15 @@ export interface ContractSignaturePatch {
   historyEntry: ContractHistoryEntry;
 }
 
+/** Schedule automation updates only schedule/commission projections, never Contract.history. */
+export interface ContractAutomationSchedulePatch {
+  paymentSchedule: ContractRecord['paymentSchedule'];
+  commissionLedger: ContractRecord['commissionLedger'];
+  commissionAmountDue: number;
+  commissionStatus: CommissionPaymentStatus;
+  updatedAt: string;
+}
+
 export interface ProposalStore {
   create(record: ProposalRecord): Promise<ProposalRecord>;
   findById(proposalId: string): Promise<ProposalRecord | null>;
@@ -344,6 +353,14 @@ export interface ContractStore {
   ): Promise<ContractRecord | null>;
   /** Lecture ADMIN (route existante `admin.contracts.list`), keyset par (updatedAt, id). */
   listAll(limit?: number, afterId?: string | null): Promise<ContractRecord[]>;
+  /**
+   * P0-AUTO-2 — persiste les échéanciers générés après CONTRACT_ACTIVATED sans
+   * réécrire l'historique métier existant du contrat.
+   */
+  saveAutomationSchedule(
+    contractId: string,
+    patch: ContractAutomationSchedulePatch,
+  ): Promise<ContractRecord | null>;
   /**
    * Transition de statut simple (port existant, conservé) — les transitions
    * P0-F passent par `compareAndSetStatus` / `sign`, qui ajoutent l'historique.

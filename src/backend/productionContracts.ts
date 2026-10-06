@@ -141,6 +141,8 @@ export type OutboxEventType =
   | 'ACCOUNT_BLOCKED'
   | 'ACCOUNT_UNBLOCKED'
   | 'PAYMENT_OVERDUE_J3'
+  /** Échéance de salaire/commission atteinte : événement interne, sans paiement. */
+  | 'PAYMENT_SCHEDULE_DUE'
   /**
    * P0-E3/P0-E4 — cycle CANDIDATURE : types DÉCLARÉS pour le futur moteur
    * transactional Outbox/Queue, non encore produits. P0-E4 persiste uniquement
@@ -189,6 +191,11 @@ export interface OutboxEvent {
   occurredAt: string;
   /** Stable key for consumer-side deduplication. */
   dedupeKey: string;
+  actorId?: string | 'SYSTEM';
+  source?: string;
+  version?: number;
+  correlationId?: string;
+  causationId?: string;
 }
 
 export interface OutboxRepository {
