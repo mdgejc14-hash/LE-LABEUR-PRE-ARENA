@@ -463,6 +463,7 @@ export async function runExternalPaymentProviderTests(): Promise<OfferTestResult
         currency: 'FCFA',
         payer: employerId,
         recipient: candidateId,
+        occurredAt: new Date(harness.clock.value.getTime() - 1).toISOString(),
         eventType: 'PAYMENT_COMPLETED',
         status: 'SUCCESS',
       };
@@ -536,7 +537,7 @@ export async function runExternalPaymentProviderTests(): Promise<OfferTestResult
       ));
       assert(recResponse.status === 200, `200 attendu sur reconcile, reçu ${recResponse.status}`);
       const recResult = await jsonOf<NormalizedReconciliationResult>(recResponse);
-      assert(recResult.verdict === 'MATCH', `MATCH attendu, reçu ${recResult.verdict}`);
+      assert(recResult.verdict === 'MATCH', `MATCH attendu, reçu ${JSON.stringify(recResult)}`);
 
       // 2. Décision de confirmation PAID
       const confirmResponse = await harness.worker.fetch(authRequest(
@@ -563,6 +564,7 @@ export async function runExternalPaymentProviderTests(): Promise<OfferTestResult
         currency: 'FCFA',
         payer: employerId,
         recipient: candidateId,
+        occurredAt: new Date(harness.clock.value.getTime() - 1).toISOString(),
         eventType: 'PAYMENT_COMPLETED',
         status: 'SUCCESS',
       };

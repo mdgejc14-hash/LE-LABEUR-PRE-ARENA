@@ -70,8 +70,6 @@ import {
 import {
   createLocalPaymentReconciliationService,
   createLocalPaymentVerificationService,
-  createTestPaymentProviderAdapter,
-  createUnconfiguredPaymentProviderAdapter,
   type PaymentProviderAdapter,
   type PaymentReconciliationService,
   type PaymentVerificationService,
@@ -84,6 +82,7 @@ import type {
   ReconciliationVerdict,
 } from '../../domain/paymentLifecycle';
 import { PaymentLifecycleError, sha256Fingerprint } from '../payments/paymentErrors';
+import { createPaymentProviderRegistry, type PaymentProviderRegistry } from '../payments/paymentProviderRegistry';
 
 /** Source déclarée des écritures API du cycle (audits et événements). */
 export const PAYMENT_API_SOURCE = 'api:P0-PAY-1';
@@ -126,6 +125,7 @@ export interface PaymentRepositoryDependencies {
   reconciliation?: PaymentReconciliationService;
   providerAdapter?: PaymentProviderAdapter;
   providerAdapters?: Map<string, PaymentProviderAdapter>;
+  providerRegistry?: PaymentProviderRegistry;
   getProviderAdapter?: (providerId: string) => PaymentProviderAdapter;
 }
 
@@ -453,22 +453,17 @@ export function createPaymentRepository(
   const verification = dependencies.verification ?? createLocalPaymentVerificationService();
   const reconciliation = dependencies.reconciliation ?? createLocalPaymentReconciliationService();
 
-  const defaultTestAdapter = createTestPaymentProviderAdapter();
-  const getAdapter = (providerId: string): PaymentProviderAdapter => {
-    if (dependencies.getProviderAdapter) {
-      return dependencies.getProviderAdapter(providerId);
-    }
-    if (dependencies.providerAdapters?.has(providerId)) {
-      return dependencies.providerAdapters.get(providerId)!;
-    }
-    if (dependencies.providerAdapter && dependencies.providerAdapter.providerId === providerId) {
-      return dependencies.providerAdapter;
-    }
-    if (providerId === 'TEST_GATEWAY') {
-      return dependencies.providerAdapter ?? defaultTestAdapter;
-    }
-    return createUnconfiguredPaymentProviderAdapter(providerId);
-  };
+  const configuredAdapters = new Map<string, PaymentProviderAdapter>();
+  for (const adapter of dependencies.providerAdapters?.values() ?? []) {
+    configuredAdapters.set(adapter.providerId.trim().toUpperCase(), adapter);
+  }
+  if (dependencies.providerAdapter) {
+    configuredAdapters.set(dependencies.providerAdapter.providerId.trim().toUpperCase(), dependencies.providerAdapter);
+  }
+  const providerRegistry = dependencies.providerRegistry
+    ?? createPaymentProviderRegistry([...configuredAdapters.values()]);
+  const getAdapter = (providerId: string): PaymentProviderAdapter =>
+    dependencies.getProviderAdapter?.(providerId) ?? providerRegistry.resolve(providerId);
 
   const inTransaction = <T>(operation: (current: PaymentRepositoryStores) => Promise<T>): Promise<T> =>
     runInTransaction ? runInTransaction(operation) : operation(stores);

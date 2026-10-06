@@ -22,6 +22,7 @@
 
 import type { PostgreSqlDatabase } from '../services/database';
 import type {
+  AutomationJob,
   AutomationSqlFactory,
   AutomationStores,
 } from './records';
@@ -55,6 +56,11 @@ export interface AutomationWorkerDependencies {
    * de paiement), le cycle reste exactement celui de P0-AUTO-2.
    */
   duePayments?: (stores: AutomationStores, limit: number) => Promise<PaymentDueSweepReport>;
+  /** P0-PAY-3 — jobs batch/retry/revue; ils partagent automation_jobs et ce worker. */
+  paymentReconciliationJobs?: {
+    jobTypes: readonly string[];
+    handle: (job: AutomationJob, now: Date) => Promise<void>;
+  };
 }
 
 export interface EventDrainEntry {
@@ -238,8 +244,11 @@ export function createAutomationWorker(
         const isPreDue = automation.preDueJobType !== null && job.jobType === automation.preDueJobType;
         const parsed = parseReminderJobType(job.jobType);
         const handler = parsed ? automation.jobs.get(job.jobType) : undefined;
+        const reconciliationHandler = dependencies.paymentReconciliationJobs?.jobTypes.includes(job.jobType)
+          ? dependencies.paymentReconciliationJobs.handle
+          : undefined;
 
-        if (!isPreDue && (!parsed || !handler)) {
+        if (!isPreDue && (!parsed || !handler) && !reconciliationHandler) {
           const message = `Aucun handler de job pour ${job.jobType}.`;
           await automation.recordFailure({
             jobId: job.jobId,
@@ -259,37 +268,48 @@ export function createAutomationWorker(
         }
 
         try {
-          // Une SEULE transaction : effets du rappel (événement préparé,
-          // échéance, audit, idempotence) et passage du job à COMPLETED sont
-          // atomiques. Un rollback annule les deux.
-          const runResult = await database.run(async transaction => {
-            const stores = createStores(transaction);
-            if (isPreDue && automation.handlePreDueJob) {
-              const preDue = await automation.handlePreDueJob({ job, stores, now: clock() });
+          if (reconciliationHandler) {
+            // Le batch travaille en chunks et ouvre une transaction par item;
+            // le résultat métier est idempotent si le worker s'arrête avant le
+            // passage du job à COMPLETED (le même automation_jobs le reprend).
+            await reconciliationHandler(job, clock());
+            await inTransaction(stores => stores.jobs.compareAndSetStatus(job.jobId, ['RUNNING'], {
+              status: 'COMPLETED',
+              at: clock().toISOString(),
+            }));
+          } else {
+            // Une SEULE transaction : effets du rappel (événement préparé,
+            // échéance, audit, idempotence) et passage du job à COMPLETED sont
+            // atomiques. Un rollback annule les deux.
+            const runResult = await database.run(async transaction => {
+              const stores = createStores(transaction);
+              if (isPreDue && automation.handlePreDueJob) {
+                const preDue = await automation.handlePreDueJob({ job, stores, now: clock() });
+                await stores.jobs.compareAndSetStatus(job.jobId, ['RUNNING'], {
+                  status: 'COMPLETED',
+                  at: clock().toISOString(),
+                });
+                entry.preDue = preDue;
+                return undefined;
+              }
+              // `handler` et `parsed` sont nécessairement présents ici : la branche
+              // pré-échéance est déjà sortie, et le garde-fou ci-dessus a rejeté les
+              // types sans handler.
+              const result = await handler!({
+                job,
+                paymentKind: parsed!.paymentKind,
+                stage: parsed!.stage,
+                stores,
+                now: clock(),
+              });
               await stores.jobs.compareAndSetStatus(job.jobId, ['RUNNING'], {
                 status: 'COMPLETED',
                 at: clock().toISOString(),
               });
-              entry.preDue = preDue;
-              return undefined;
-            }
-            // `handler` et `parsed` sont nécessairement présents ici : la branche
-            // pré-échéance est déjà sortie, et le gardefou ci-dessus a rejeté les
-            // types sans handler.
-            const result = await handler!({
-              job,
-              paymentKind: parsed!.paymentKind,
-              stage: parsed!.stage,
-              stores,
-              now: clock(),
+              return result;
             });
-            await stores.jobs.compareAndSetStatus(job.jobId, ['RUNNING'], {
-              status: 'COMPLETED',
-              at: clock().toISOString(),
-            });
-            return result;
-          });
-          entry.outcome = runResult;
+            entry.outcome = runResult;
+          }
           report.completed += 1;
         } catch (error) {
           const message = errorMessage(error);

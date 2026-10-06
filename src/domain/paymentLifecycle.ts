@@ -1710,19 +1710,32 @@ export function evaluateReconciliation(input: ReconciliationInput): NormalizedRe
   });
   if (!recipientMatched) reasons.push(`Destinataire discordant : attendu « ${expected.recipient} », reçu « ${actual.recipient} ».`);
 
-  // 8. Date pertinente
-  const dateValid = !Number.isNaN(Date.parse(actual.occurredAt));
+  // 8. Date pertinente. Sans tolérance métier définie, on vérifie seulement
+  // qu'elle est lisible et qu'elle ne se situe pas après l'instant du contrôle.
+  // Une occurrence future/inconnue nécessite une revue, jamais un PAID implicite.
+  const occurredAtMs = Date.parse(actual.occurredAt);
+  const reconciledAtMs = Date.parse(reconciledAt);
+  const dateValid = Number.isFinite(occurredAtMs) && Number.isFinite(reconciledAtMs);
+  const dateNotFuture = dateValid && occurredAtMs <= reconciledAtMs;
+  const dateMatched = dateValid && dateNotFuture;
+  const dateReason = !dateValid
+    ? `Date d'occurrence externe illisible : ${actual.occurredAt}.`
+    : !dateNotFuture
+      ? `Date d'occurrence externe future (${actual.occurredAt}) par rapport au rapprochement (${reconciledAt}).`
+      : undefined;
   comparisons.push({
     field: 'date',
-    expected: expected.dueAt ?? expected.scheduledAt ?? actual.occurredAt,
+    expected: expected.dueAt ?? expected.scheduledAt ?? reconciledAt,
     actual: actual.occurredAt,
-    matched: dateValid,
-    ...(dateValid ? {} : { detail: `Date d'occurrence externe illisible : ${actual.occurredAt}.` }),
+    matched: dateMatched,
+    ...(dateReason ? { detail: dateReason } : {}),
   });
-  if (!dateValid) reasons.push(`Date d'occurrence externe illisible : ${actual.occurredAt}.`);
+  if (dateReason) reasons.push(dateReason);
 
   let verdict: ReconciliationVerdict;
-  if (actual.status === 'UNKNOWN' || !dateValid) {
+  if (actual.status === 'UNKNOWN' || actual.status === 'PENDING' || !dateMatched) {
+    if (actual.status === 'UNKNOWN') reasons.push('Statut externe UNKNOWN : confirmation ADMIN requise.');
+    if (actual.status === 'PENDING') reasons.push('Transaction externe encore PENDING : confirmation ADMIN requise.');
     verdict = 'REVIEW_REQUIRED';
   } else if (actual.status === 'FAILED' || actual.status === 'CANCELLED' || actual.status === 'REJECTED') {
     verdict = 'MISMATCH';
