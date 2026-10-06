@@ -15,6 +15,8 @@ export const EXPECTED_MIGRATION_IDS: readonly string[] = [
   '0004_proposals',
   // P0-F : lien proposition → contrat + unicités du cycle CONTRAT.
   '0005_contract_lifecycle',
+  // P0-AUTO-1 : outbox, jobs, idempotence et ledger transversaux.
+  '0006_automation_foundation',
 ];
 
 export const SCHEMA_MIGRATIONS_TABLE = 'schema_migrations';
