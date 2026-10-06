@@ -33,6 +33,17 @@ import {
   PAYMENT_AUDIT_ACTIONS,
   evaluateReconciliation,
   type NormalizedPaymentTransaction,
+  // P0-PAYMENT-VERIFY
+  CLOSE_MISSION_PAYMENT_RULES,
+  PAYMENT_CLOSE_MISSION_COMMAND,
+  PAYMENT_CONTRACT_CYCLE_STATUSES,
+  PAYMENT_EXPECTATION_KINDS,
+  PAYMENT_MISSION_END_CONTRACT_STATUSES,
+  PAYMENT_VERIFICATION_OUTCOME_LABELS,
+  PAYMENT_VERIFICATION_OUTCOMES,
+  evaluatePaymentContractGate,
+  evaluatePaymentExpectation,
+  evaluatePaymentVerificationOutcome,
 } from './paymentLifecycle';
 import {
   PAYMENT_AUTOMATION_SOURCE,
@@ -709,6 +720,94 @@ export function runPaymentLifecycleTests(): PaymentLifecycleTestResult[] {
     for (const req of required) {
       assert(actions.includes(req as never), `action d’audit P0-PAY-2 absente: ${req}`);
     }
+  });
+
+
+  /* ---------------- P0-PAYMENT-VERIFY : mission terminée → vérification ---------------- */
+
+  check('P0-PAYMENT-VERIFY Contrat: le cycle progresse après la mission terminée (ACTIVE/COMPLETED/TERMINATED) et jamais avant l’exécution', () => {
+    assert(
+      JSON.stringify([...PAYMENT_CONTRACT_CYCLE_STATUSES]) === JSON.stringify(['ACTIVE', 'COMPLETED', 'TERMINATED']),
+      `statuts autorisés inattendus: ${PAYMENT_CONTRACT_CYCLE_STATUSES.join(', ')}`,
+    );
+    assert(
+      JSON.stringify([...PAYMENT_MISSION_END_CONTRACT_STATUSES]) === JSON.stringify(['COMPLETED', 'TERMINATED']),
+      'la fin de mission est portée par COMPLETED et TERMINATED, statuts réels du modèle',
+    );
+    for (const status of PAYMENT_CONTRACT_CYCLE_STATUSES) {
+      const gate = evaluatePaymentContractGate(status);
+      assert(gate.kind === 'ALLOWED', `contrat ${status} doit autoriser le cycle paiement`);
+      assert(gate.kind === 'ALLOWED' && gate.missionEnded === (status !== 'ACTIVE'), `missionEnded incorrect pour ${status}`);
+    }
+    for (const status of ['DRAFT', 'SIGNATURE', 'REPLACED', 'INCONNU']) {
+      const gate = evaluatePaymentContractGate(status);
+      assert(gate.kind === 'REFUSED', `contrat ${status} doit refuser le cycle paiement`);
+      assert(gate.kind === 'REFUSED' && gate.reason.length > 20, `motif de refus non documenté pour ${status}`);
+    }
+  });
+
+  check('P0-PAYMENT-VERIFY Paiement attendu: échéance atteinte → TO_MARK_DUE, future → NOT_DUE_YET (aucun prorata), puis DUE/PENDING/REJECTED/PAID', () => {
+    const evaluatedAt = '2026-10-05T14:00:00.000Z';
+    const base = { paymentType: 'SALARY' as const, amount: 131_250, currency: 'FCFA', evaluatedAt };
+    const due = evaluatePaymentExpectation({ ...base, status: 'SCHEDULED', dueAt: '2026-10-05T00:00:00.000Z' });
+    assert(due.kind === 'TO_MARK_DUE' && due.expected === true, `TO_MARK_DUE attendu, reçu ${due.kind}`);
+    const notDue = evaluatePaymentExpectation({ ...base, status: 'SCHEDULED', dueAt: '2026-11-05T00:00:00.000Z' });
+    assert(notDue.kind === 'NOT_DUE_YET' && notDue.expected === false, `NOT_DUE_YET attendu, reçu ${notDue.kind}`);
+    assert(/prorata/.test(notDue.reason), 'aucune anticipation : la règle de prorata est explicitement absente');
+    const awaiting = evaluatePaymentExpectation({ ...base, status: 'DUE', dueAt: '2026-10-05T00:00:00.000Z' });
+    assert(awaiting.kind === 'AWAITING_EXTERNAL_PAYMENT' && awaiting.expected === true, `AWAITING_EXTERNAL_PAYMENT attendu, reçu ${awaiting.kind}`);
+    assert(/hors plateforme/.test(awaiting.reason), 'le paiement reste externe (aucun transfert LE LABEUR)');
+    const verification = evaluatePaymentExpectation({ ...base, status: 'PENDING_VERIFICATION', dueAt: '2026-10-05T00:00:00.000Z' });
+    assert(verification.kind === 'AWAITING_VERIFICATION', `AWAITING_VERIFICATION attendu, reçu ${verification.kind}`);
+    const revision = evaluatePaymentExpectation({ ...base, status: 'REJECTED', dueAt: '2026-10-05T00:00:00.000Z' });
+    assert(revision.kind === 'TO_REVISE' && revision.expected === true, `TO_REVISE attendu, reçu ${revision.kind}`);
+    for (const status of ['VERIFIED', 'PAID'] as const) {
+      const settled = evaluatePaymentExpectation({ ...base, status, dueAt: '2026-10-05T00:00:00.000Z' });
+      assert(settled.kind === 'SETTLED' && settled.expected === false, `SETTLED attendu pour ${status}, reçu ${settled.kind}`);
+    }
+    // La commission suit le même vocabulaire, avec le destinataire LE LABEUR.
+    const fee = evaluatePaymentExpectation({ ...base, paymentType: 'PLATFORM_FEE', amount: 43_750, status: 'DUE', dueAt: '2026-10-05T00:00:00.000Z' });
+    assert(fee.kind === 'AWAITING_EXTERNAL_PAYMENT' && /LE LABEUR/.test(fee.reason), 'la commission est destinée à LE LABEUR');
+  });
+
+  check('P0-PAYMENT-VERIFY Issue opérationnelle: CONFIRMÉ / REJETÉ / À RÉVISER dérivés des statuts réels, sans nouveau statut', () => {
+    const confirmedVerified = evaluatePaymentVerificationOutcome({ status: 'VERIFIED' });
+    assert(confirmedVerified.outcome === 'CONFIRMED', `CONFIRMED attendu, reçu ${confirmedVerified.outcome}`);
+    const confirmedPaid = evaluatePaymentVerificationOutcome({ status: 'PAID' });
+    assert(confirmedPaid.outcome === 'CONFIRMED', 'PAID est confirmé');
+    const toRevise = evaluatePaymentVerificationOutcome({ status: 'REJECTED' });
+    assert(toRevise.outcome === 'TO_REVISE', `TO_REVISE attendu, reçu ${toRevise.outcome}`);
+    const rejectedDuplicate = evaluatePaymentVerificationOutcome({ status: 'REJECTED', reconciliationVerdict: 'DUPLICATE' });
+    assert(rejectedDuplicate.outcome === 'REJECTED', `REJECTED attendu sur DUPLICATE, reçu ${rejectedDuplicate.outcome}`);
+    for (const status of ['SCHEDULED', 'DUE', 'PENDING_VERIFICATION'] as const) {
+      const pending = evaluatePaymentVerificationOutcome({ status });
+      assert(pending.outcome === 'PENDING', `PENDING attendu pour ${status}, reçu ${pending.outcome}`);
+    }
+    for (const outcome of PAYMENT_VERIFICATION_OUTCOMES) {
+      assert(PAYMENT_VERIFICATION_OUTCOME_LABELS[outcome].length > 5, `libellé manquant pour ${outcome}`);
+    }
+    // Aucun statut supplémentaire : le domaine reste exactement les six états réels.
+    assert(PAYMENT_LIFECYCLE_STATUS_VALUES.length === 6, 'aucun statut de paiement inventé par cette tranche');
+    assert(
+      !(PAYMENT_LIFECYCLE_STATUS_VALUES as readonly string[]).includes('CONFIRMED')
+        && !(PAYMENT_LIFECYCLE_STATUS_VALUES as readonly string[]).includes('TO_REVISE'),
+      'les issues « CONFIRMÉ » et « À RÉVISER » ne sont PAS des statuts stockés',
+    );
+    assert(PAYMENT_EXPECTATION_KINDS.length === 6, 'six natures de paiement attendu, aucune stockée');
+  });
+
+  check('P0-PAYMENT-VERIFY Garde-fous: clôture sans fonds ni prorata, commande et audit catalogués', () => {
+    const rules = CLOSE_MISSION_PAYMENT_RULES.join(' ');
+    assert(rules.length > 100, 'les règles de clôture sont documentées');
+    assert(/SCHEDULED → DUE/.test(rules), 'la transition réutilisée est explicite');
+    assert(/prorata/.test(rules), 'l’absence de prorata est explicite');
+    assert(/fonds/.test(rules), 'l’absence de détention de fonds est explicite');
+    assert(PAYMENT_CLOSE_MISSION_COMMAND === 'payments.CLOSE_MISSION', 'commande de clôture nommée');
+    assert(
+      Object.values(PAYMENT_AUDIT_ACTIONS).includes('PAYMENT_MISSION_CLOSED' as never),
+      'l’action d’audit PAYMENT_MISSION_CLOSED est cataloguée',
+    );
+    assert(!/escrow|cantonnement|portefeuille/i.test(rules), 'aucun mécanisme de détention de fonds n’est introduit');
   });
 
   function documentedEventTypes(): string[] {

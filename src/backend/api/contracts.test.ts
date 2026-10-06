@@ -294,6 +294,60 @@ async function sendContract(
   assert(response.status === 200, `envoi 200 attendu, reçu ${response.status}`);
 }
 
+/**
+ * Cycle nominal complet jusqu'au contrat ACTIF au PREMIER mois (M1), via l'API.
+ *
+ * Helper de test restauré : `createActiveContract` manquait dans cette suite
+ * alors que les cas « P0-CONTRACT-POST Confirm Execution » l'appellent (défaut
+ * du checkpoint c679e5c, qui laissait la suite en échec). Ce helper porte le
+ * cycle réel M1 : création, envoi, signature par le salarié, activation par
+ * l'employeur — aucun mois n'est avancé, aucune protection M1 n'est contournée.
+ */
+async function activateContract(
+  harness: Harness,
+  input: { employerToken: string; candidateToken: string; proposalId: string; keyPrefix: string },
+): Promise<string> {
+  const response = await harness.worker.fetch(contractCreateRequest(input.employerToken, `${input.keyPrefix}-create`, {
+    proposalId: input.proposalId,
+  }));
+  assert(response.status === 201, `création 201 attendue, reçue ${response.status}`);
+  const contract = await response.json() as Contract;
+  await sendContract(harness, input.employerToken, `${input.keyPrefix}-send`, contract.id);
+  const signed = await harness.worker.fetch(contractActionRequest(contract.id, 'sign', input.candidateToken, `${input.keyPrefix}-sign`));
+  assert(signed.status === 200, `signature 200 attendue, reçue ${signed.status}`);
+  const activated = await harness.worker.fetch(contractActionRequest(contract.id, 'activate', input.employerToken, `${input.keyPrefix}-activate`));
+  assert(activated.status === 200, `activation 200 attendue, reçue ${activated.status}`);
+  return contract.id;
+}
+
+/**
+ * Contrat ACTIF au DEUXIÈME mois (M2) : état de référence des confirmations
+ * d'exécution valides, la protection M1 (incident requis le premier mois)
+ * n'étant levée qu'à partir de M2. L'avancement utilise la commande réelle du
+ * cycle paiements (`payments.advance-month`), jamais une écriture directe.
+ */
+async function createActiveContract(
+  harness: Harness,
+  input: { employerToken: string; candidateToken: string; proposalId: string; keyPrefix: string },
+): Promise<string> {
+  const contractId = await activateContract(harness, input);
+  // L'échéancier du contrat est produit par l'automatisation réelle (P0-AUTO-2,
+  // événement `CONTRACT_ACTIVATED`) : le worker est déclenché explicitement,
+  // comme dans les autres suites, avant l'avancement mensuel.
+  await harness.automationWorker!.drainEvents(50);
+  const advanced = await harness.worker.fetch(authRequest(
+    `/api/v1/contracts/${contractId}/payments/advance-month`,
+    input.employerToken,
+    {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'Idempotency-Key': `${input.keyPrefix}-advance` },
+      body: '{}',
+    },
+  ));
+  assert(advanced.status === 200, `avancement M2 200 attendu, reçu ${advanced.status}`);
+  return contractId;
+}
+
 export async function runContractDomainTests(): Promise<OfferTestResult[]> {
   contractIdempotencyCache.clear();
   const results: OfferTestResult[] = [];
@@ -1282,8 +1336,10 @@ export async function runContractDomainTests(): Promise<OfferTestResult[]> {
       }));
       assert(contestedResponse.status === 200, `200 attendu pour confirmation avec contestation, reçu ${contestedResponse.status}`);
 
+      // Protection M1 : le contrat doit rester au PREMIER mois (aucun
+      // avancement) pour que la règle « incident requis en M1 » soit exercée.
       const m1Chain = await seedProposalChain(harness, { employerId, employeeId: candidateId });
-      const m1ContractId = await createActiveContract(harness, {
+      const m1ContractId = await activateContract(harness, {
         employerToken,
         candidateToken,
         proposalId: m1Chain.proposalId,

@@ -28,6 +28,7 @@ import { runContractScheduleAutomationTests } from '../src/domain/contractSchedu
 import { runPaymentLifecycleTests } from '../src/domain/paymentLifecycle.test';
 import { runPaymentCycleTests } from '../src/backend/api/payments.test';
 import { runExternalPaymentProviderTests } from '../src/backend/api/externalPaymentProvider.test';
+import { runPaymentMissionCloseTests } from '../src/backend/api/paymentMissionClose.test';
 import { runClaimDomainTests } from '../src/backend/api/claims.test';
 import { runContractAutomationTests } from '../src/backend/automation/contractActivation.test';
 
@@ -69,6 +70,7 @@ async function main(): Promise<void> {
   const paymentLifecycle = runPaymentLifecycleTests();
   const paymentCycle = await runPaymentCycleTests();
   const externalPaymentProvider = await runExternalPaymentProviderTests();
+  const paymentMissionClose = await runPaymentMissionCloseTests();
   const claimDomain = await runClaimDomainTests();
 
   const suites: Array<{ name: string; cases: TestCase[] }> = [
@@ -102,6 +104,7 @@ async function main(): Promise<void> {
     { name: 'P0-PAY-1 — cycle PAIEMENT (règles métier: statuts, matrice de transitions, matérialisation, déclaration, vérification locale, rappels configurés, frontière fournisseur)', cases: paymentLifecycle.map(result => ({ name: result.name, success: result.success, detail: result.details })) },
     { name: 'P0-PAY-1 — cycle PAIEMENT réel (matérialisation, SCHEDULED→DUE, déclaration, vérification, rapprochement, rejet, régularisation; PostgreSQL, rôles, séparation salaire/commission, idempotence, concurrence, rollback, audit, aucun paiement exécuté)', cases: paymentCycle },
     { name: 'P0-PAY-2 — intégration paiement externe (provider test, webhook sécurisé, anti-replay, réconciliation, idempotence, concurrence, rollback, aucun paiement réel)', cases: externalPaymentProvider },
+    { name: 'P0-PAYMENT-VERIFY — mission terminée → paiement attendu → paiement externe → vérification (clôture de mission, échéances atteintes, déclaration, décision ADMIN, webhook, rejet/régularisation; PostgreSQL, idempotence, concurrence, intégrité, aucun fonds)', cases: paymentMissionClose },
     { name: 'P0-DISPUTE-1 — cycle Claim réel (PostgreSQL, autorisation, idempotence, concurrence, rollback, preuve, deadline configurée, résolution déterministe/ADMIN, restrictions réversibles, M1, audit, séparation DEMO/API)', cases: claimDomain },
     { name: 'P0-AUTO-2 — CONTRACT_ACTIVATED réel (Outbox → Queue → Worker → AutomationEngine → échéancier salarial, échéancier de commission, échéances, rappels; PostgreSQL, idempotence, concurrence, retry, dead-letter, rollback, audit, séparation DEMO/API)', cases: contractAutomation },
   ];

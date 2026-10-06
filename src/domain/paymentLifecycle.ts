@@ -1284,6 +1284,8 @@ export const PAYMENT_AUDIT_ACTIONS = {
   reconciliationMismatch: 'PAYMENT_RECONCILIATION_MISMATCH',
   duplicateDetected: 'PAYMENT_DUPLICATE_DETECTED',
   replayDetected: 'PAYMENT_REPLAY_DETECTED',
+  // P0-PAYMENT-VERIFY — clôture des paiements d'une mission terminée.
+  missionClosed: 'PAYMENT_MISSION_CLOSED',
 } as const;
 
 export type PaymentAuditAction = (typeof PAYMENT_AUDIT_ACTIONS)[keyof typeof PAYMENT_AUDIT_ACTIONS];
@@ -1758,3 +1760,250 @@ export function evaluateReconciliation(input: ReconciliationInput): NormalizedRe
     externalTransaction: actual,
   };
 }
+
+/* ------------------------------------------------------------------ */
+/* 15. P0-PAYMENT-VERIFY — MISSION TERMINÉE → PAIEMENT ATTENDU         */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Constat d'audit de cette tranche (aucune règle inventée) :
+ *
+ *  - `confirmMonthlyAction` (DEMO, référence du modèle) n'exige PAS un contrat
+ *    actif pour `DECLARE_SALARY` : la règle réelle est « l'échéance est DUE (ou
+ *    REJECTED) ET la date d'échéance est atteinte ». L'exigence « contrat
+ *    ACTIVE » ajoutée par P0-PAY-1 côté serveur interdisait donc TOUTE
+ *    progression dès la fin de mission (`COMPLETED` / `TERMINATED`), alors que
+ *    c'est précisément à ce moment que l'employeur paie hors plateforme et que
+ *    LE LABEUR doit vérifier la référence externe.
+ *  - Le cycle ne progresse donc que sur un contrat ayant ATTEINT l'exécution.
+ *    Aucun état du contrat n'est rouvert (`MISSING_PAYMENT_CYCLE_RULES` :
+ *    aucune règle du modèle ne définit la réouverture d'un échéancier).
+ */
+
+/** Statuts du contrat sur lesquels le cycle paiement peut progresser. */
+export const PAYMENT_CONTRACT_CYCLE_STATUSES = ['ACTIVE', 'COMPLETED', 'TERMINATED'] as const;
+
+/** Statuts du contrat sur lesquels le cycle paiement NE progresse PAS. */
+export const PAYMENT_CONTRACT_CYCLE_REFUSED_STATUSES = [
+  { status: 'DRAFT', reason: 'Aucun paiement n’existe sur un contrat non signé.' },
+  { status: 'SIGNATURE', reason: 'Aucun paiement n’existe avant l’activation du contrat.' },
+  { status: 'REPLACED', reason: 'Le chemin remplacement (`REPLACED`) est hors périmètre de cette tranche.' },
+] as const;
+
+/** Statuts du contrat qui signifient « mission terminée » (fin d'exécution). */
+export const PAYMENT_MISSION_END_CONTRACT_STATUSES = ['COMPLETED', 'TERMINATED'] as const;
+
+export type PaymentContractGate =
+  | { readonly kind: 'ALLOWED'; readonly status: string; readonly missionEnded: boolean }
+  | { readonly kind: 'REFUSED'; readonly status: string; readonly reason: string };
+
+/**
+ * Garde du cycle : le paiement d'un contrat qui a ATTEINT l'exécution reste
+ * gérable après la fin de mission (`COMPLETED`, `TERMINATED`). Le contrat n'est
+ * jamais rouvert : seules les échéances DÉJÀ ÉCHUES peuvent être constatées,
+ * déclarées et vérifiées.
+ */
+export function evaluatePaymentContractGate(contractStatus: string): PaymentContractGate {
+  const status = String(contractStatus ?? '').trim().toUpperCase();
+  if ((PAYMENT_CONTRACT_CYCLE_STATUSES as readonly string[]).includes(status)) {
+    return {
+      kind: 'ALLOWED',
+      status,
+      missionEnded: (PAYMENT_MISSION_END_CONTRACT_STATUSES as readonly string[]).includes(status),
+    };
+  }
+  const documented = PAYMENT_CONTRACT_CYCLE_REFUSED_STATUSES.find(entry => entry.status === status);
+  return {
+    kind: 'REFUSED',
+    status,
+    reason: documented
+      ? `Le cycle paiement ne progresse pas sur un contrat ${status} : ${documented.reason}`
+      : `Le cycle paiement ne progresse pas sur un statut de contrat non exécuté (« ${status} »).`,
+  };
+}
+
+/**
+ * Nature opérationnelle d'une échéance, telle qu'elle doit être lue après la
+ * mission. Vocabulaire de la tranche (aucun statut nouveau : chaque nature est
+ * DÉRIVÉE d'un statut réel de `PAYMENT_LIFECYCLE_STATUS_VALUES`).
+ */
+export const PAYMENT_EXPECTATION_KINDS = [
+  'NOT_DUE_YET',
+  'TO_MARK_DUE',
+  'AWAITING_EXTERNAL_PAYMENT',
+  'AWAITING_VERIFICATION',
+  'TO_REVISE',
+  'SETTLED',
+] as const;
+
+export type PaymentExpectationKind = (typeof PAYMENT_EXPECTATION_KINDS)[number];
+
+export interface PaymentExpectationInput {
+  paymentType: PaymentType;
+  status: PaymentLifecycleStatus;
+  amount: number;
+  currency: string;
+  dueAt: string;
+  evaluatedAt: string;
+}
+
+export interface PaymentExpectation {
+  readonly paymentType: PaymentType;
+  /** Nature opérationnelle dérivée (jamais un statut stocké). */
+  readonly kind: PaymentExpectationKind;
+  /** `true` si une action hors plateforme ou une vérification reste attendue. */
+  readonly expected: boolean;
+  readonly reason: string;
+}
+
+/**
+ * Projette une échéance réelle dans le vocabulaire « paiement attendu » :
+ *  - `SCHEDULED` + échéance atteinte → `TO_MARK_DUE` (le balayage/la clôture de
+ *    mission applique la transition `MARK_DUE` EXISTANTE) ;
+ *  - `SCHEDULED` + échéance non atteinte → `NOT_DUE_YET` (aucune anticipation,
+ *    aucun prorata : la règle n'existe pas) ;
+ *  - `DUE` → `AWAITING_EXTERNAL_PAYMENT` (l'employeur paie hors plateforme) ;
+ *  - `PENDING_VERIFICATION` → `AWAITING_VERIFICATION` ;
+ *  - `REJECTED` → `TO_REVISE` (régularisation par NOUVELLE déclaration) ;
+ *  - `VERIFIED` / `PAID` → `SETTLED`.
+ */
+export function evaluatePaymentExpectation(input: PaymentExpectationInput): PaymentExpectation {
+  const recipient = input.paymentType === 'PLATFORM_FEE' ? 'LE LABEUR' : 'le travailleur';
+  switch (input.status) {
+    case 'SCHEDULED':
+      return isPaymentPeriodDue(input.dueAt, input.evaluatedAt)
+        ? {
+            paymentType: input.paymentType,
+            kind: 'TO_MARK_DUE',
+            expected: true,
+            reason: `Échéance ${input.dueAt.slice(0, 10)} atteinte : le paiement ${input.amount} ${input.currency} `
+              + `dû à ${recipient} devient exigible (transition MARK_DUE existante).`,
+          }
+        : {
+            paymentType: input.paymentType,
+            kind: 'NOT_DUE_YET',
+            expected: false,
+            reason: `Échéance ${input.dueAt.slice(0, 10)} non atteinte : aucune anticipation ni prorata `
+              + '(règle absente du modèle).',
+          };
+    case 'DUE':
+      return {
+        paymentType: input.paymentType,
+        kind: 'AWAITING_EXTERNAL_PAYMENT',
+        expected: true,
+        reason: `Paiement ${input.amount} ${input.currency} dû à ${recipient} : l’employeur paie hors plateforme `
+          + 'puis déclare sa référence (aucun transfert par LE LABEUR).',
+      };
+    case 'PENDING_VERIFICATION':
+      return {
+        paymentType: input.paymentType,
+        kind: 'AWAITING_VERIFICATION',
+        expected: true,
+        reason: 'Référence externe fournie : la vérification LE LABEUR est attendue avant tout statut vérifié.',
+      };
+    case 'REJECTED':
+      return {
+        paymentType: input.paymentType,
+        kind: 'TO_REVISE',
+        expected: true,
+        reason: 'Déclaration écartée : la régularisation passe par une NOUVELLE déclaration (preuve précédente conservée).',
+      };
+    default:
+      return {
+        paymentType: input.paymentType,
+        kind: 'SETTLED',
+        expected: false,
+        reason: `Paiement ${input.status} : plus rien n’est attendu côté employeur (aucun mouvement de fonds par LE LABEUR).`,
+      };
+  }
+}
+
+/**
+ * Issue opérationnelle de la vérification, telle que l'attend la tranche :
+ * PAIEMENT CONFIRMÉ / REJETÉ / À RÉVISER. Aucun statut n'est ajouté au cycle :
+ * chaque issue est DÉRIVÉE d'un statut réel et du verdict de rapprochement
+ * éventuel (`ReconciliationVerdict`, P0-PAY-2/P0-PAY-3).
+ */
+export const PAYMENT_VERIFICATION_OUTCOMES = ['PENDING', 'CONFIRMED', 'REJECTED', 'TO_REVISE'] as const;
+
+export type PaymentVerificationOutcome = (typeof PAYMENT_VERIFICATION_OUTCOMES)[number];
+
+export const PAYMENT_VERIFICATION_OUTCOME_LABELS: Record<PaymentVerificationOutcome, string> = {
+  PENDING: 'PAIEMENT EN ATTENTE',
+  CONFIRMED: 'PAIEMENT CONFIRMÉ',
+  REJECTED: 'PAIEMENT REJETÉ',
+  TO_REVISE: 'PAIEMENT À RÉVISER',
+};
+
+export interface PaymentVerificationOutcomeInput {
+  status: PaymentLifecycleStatus;
+  /** Dernier verdict de rapprochement connu (jamais déduit d'un texte libre). */
+  reconciliationVerdict?: ReconciliationVerdict | null;
+}
+
+export interface PaymentVerificationOutcomeResult {
+  readonly outcome: PaymentVerificationOutcome;
+  readonly detail: string;
+}
+
+/**
+ * Règles de dérivation (aucune heuristique sur du texte libre) :
+ *  - `VERIFIED` / `PAID` → CONFIRMÉ (la vérification LE LABEUR a eu lieu) ;
+ *  - `SCHEDULED` / `DUE` / `PENDING_VERIFICATION` → EN ATTENTE ;
+ *  - `REJECTED` + verdict `DUPLICATE` → REJETÉ : la transaction externe est déjà
+ *    rattachée à un autre paiement, aucune nouvelle déclaration ne peut le
+ *    corriger ;
+ *  - `REJECTED` sinon → À RÉVISER : la matrice admet une NOUVELLE déclaration
+ *    (la preuve et le motif précédents restent conservés).
+ */
+export function evaluatePaymentVerificationOutcome(
+  input: PaymentVerificationOutcomeInput,
+): PaymentVerificationOutcomeResult {
+  const verdict = input.reconciliationVerdict ?? null;
+  if (input.status === 'VERIFIED' || input.status === 'PAID') {
+    return {
+      outcome: 'CONFIRMED',
+      detail: input.status === 'PAID'
+        ? 'Paiement vérifié puis rapproché : état métier confirmé (aucun mouvement de fonds par LE LABEUR).'
+        : 'Déclaration vérifiée par LE LABEUR : paiement confirmé, rapprochement (VERIFIED → PAID) encore possible.',
+    };
+  }
+  if (input.status === 'REJECTED') {
+    return verdict === 'DUPLICATE'
+      ? {
+          outcome: 'REJECTED',
+          detail: 'Transaction externe déjà rattachée à un autre paiement (DUPLICATE) : la déclaration est rejetée, '
+            + 'aucune régularisation ne peut réutiliser cette transaction.',
+        }
+      : {
+          outcome: 'TO_REVISE',
+          detail: 'Déclaration écartée : l’employeur doit fournir une déclaration nouvelle '
+            + '(référence différente), la preuve précédente restant conservée.',
+        };
+  }
+  return {
+    outcome: 'PENDING',
+    detail: verdict === 'MATCH'
+      ? 'Rapprochement MATCH enregistré : la décision de vérification ADMIN reste attendue.'
+      : 'Paiement en cours de cycle : ni confirmé, ni rejeté, ni à réviser à cet instant.',
+  };
+}
+
+/** Commande de clôture des paiements d'une mission terminée (aucune route automatique). */
+export const PAYMENT_CLOSE_MISSION_COMMAND = 'payments.CLOSE_MISSION';
+
+/**
+ * Ce que la clôture de mission NE fait pas (garde-fou explicite) :
+ *  - elle ne crée aucun paiement : la matérialisation de rattrapage réutilise
+ *    l'échéancier DÉJÀ validé du contrat ;
+ *  - elle ne bascule en DUE que les échéances DÉJÀ ATTEINTES (`isPaymentPeriodDue`) ;
+ *  - elle n'anticipe ni prorata, ni versement partiel, ni mois futur ;
+ *  - elle ne déplace aucun fonds : LE LABEUR ne détient jamais le salaire.
+ */
+export const CLOSE_MISSION_PAYMENT_RULES = [
+  'Seules les échéances dont la date est atteinte passent SCHEDULED → DUE (transition MARK_DUE existante).',
+  'Les échéances futures restent SCHEDULED : aucune anticipation, aucun prorata.',
+  'Aucun paiement n’est créé hors de l’échéancier du contrat (matérialisation de rattrapage uniquement).',
+  'Aucun fonds n’est détenu ni transféré : la déclaration porte une référence externe, la vérification un état.',
+  'Les paiements déjà DUE, PENDING_VERIFICATION, REJECTED, VERIFIED ou PAID ne sont jamais réécrits.',
+] as const;
