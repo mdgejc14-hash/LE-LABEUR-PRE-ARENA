@@ -569,7 +569,8 @@ export async function runPostgresFoundationTests(): Promise<PostgresFoundationTe
       assert(schema.has(table), `table manquante: ${table}`);
       assert(schema.get(table)!.size > 0, `table vide: ${table}`);
     }
-    const extra = [...schema.keys()].filter(key => !CORE_TABLES.includes(key as (typeof CORE_TABLES)[number]));
+    const automationTables = ['automation_outbox', 'automation_jobs', 'automation_idempotency', 'automation_audit_ledger'];
+    const extra = [...schema.keys()].filter(key => !CORE_TABLES.includes(key as (typeof CORE_TABLES)[number]) && !automationTables.includes(key));
     assert(extra.length === 0, `tables hors noyau détectées: ${extra.join(', ')}`);
   });
 

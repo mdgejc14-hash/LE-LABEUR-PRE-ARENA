@@ -33,7 +33,7 @@ function createScriptedPool(): ScriptedPool {
     async query<Row = Record<string, unknown>>(sql: string): Promise<DriverQueryResult<Row>> {
       pool.sql.push(sql);
       if (/schema_migrations/i.test(sql)) {
-        const rows = ['0001_identity_and_core', '0002_role_permissions_seed', '0003_core_nucleus_alignment', '0004_proposals', '0005_contract_lifecycle']
+        const rows = ['0001_identity_and_core', '0002_role_permissions_seed', '0003_core_nucleus_alignment', '0004_proposals', '0005_contract_lifecycle', '0006_automation_foundation']
           .map(id => ({ id }) as unknown as Row);
         return { rows, rowCount: rows.length };
       }
