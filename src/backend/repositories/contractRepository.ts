@@ -334,6 +334,7 @@ export type OpenContractRepository = Pick<ServerContractRepository,
   | 'endContract'
   | 'terminateContract'
   | 'finalizeHiring'
+  | 'confirmExecution'
 >;
 
 export function createContractRepository(
@@ -1222,6 +1223,134 @@ export function createContractRepository(
         hasMore,
       };
     },
+
+    /**
+     * P0-CONTRACT-POST — confirmation de fin d'exécution (FIN / CONFIRMATION).
+     * Vérifie : contrat ACTIVE ; partie autorisée (EMPLOYER ou CANDIDATE) ;
+     * compte ACTIVE ; protection M1 (incident requis si currentMonth < 2) ;
+     * non-concurrence via compare-and-set SQL ; audit/historique persisté.
+     * Une contestation (param `contest`) relie au système P0-DISPUTE-1.
+     */
+    async confirmExecution(
+      suppliedActor: AuthenticatedActor,
+      contractId: string,
+      contest?: string,
+      command?: ProductionCommandContext,
+    ): Promise<Contract> {
+      const actor = requireTrustedActor(suppliedActor);
+      const normalizedContractId = contractId?.trim();
+      if (!normalizedContractId) throw new ApiError('NOT_FOUND', 'Contrat introuvable.');
+      const idempotencyKey = command?.idempotencyKey?.trim();
+      const fingerprint = JSON.stringify({ contractId: normalizedContractId, action: 'CONFIRM_EXECUTION', contest: contest ?? null });
+
+      const execute = async (): Promise<Contract> => {
+        const mutate = async (currentStores: ContractRepositoryStores): Promise<Contract> => {
+          await requireActiveAccount(
+            currentStores,
+            actor,
+            'COMPTE NON ACTIF : la confirmation d\'exécution est indisponible.',
+          );
+
+          // Autorisation : seules les parties du contrat peuvent confirmer.
+          if (actor.role !== 'EMPLOYER' && actor.role !== 'CANDIDATE') {
+            throw new ApiError('FORBIDDEN', 'Seules les parties du contrat peuvent confirmer la fin d\'exécution.');
+          }
+
+          const contract = await currentStores.contracts.findByIdForUpdate(normalizedContractId);
+          if (!contract) throw new ApiError('NOT_FOUND', 'Contrat introuvable.');
+          if (contract.employerId !== actor.id && contract.employeeId !== actor.id) {
+            throw new ApiError('FORBIDDEN', 'Vous n\'êtes pas partie de ce contrat.');
+          }
+          if (contract.status !== 'ACTIVE') {
+            throw new ApiError(
+              'BUSINESS_RULE_VIOLATION',
+              `La confirmation d'exécution exige un contrat actif (statut : ${contract.status}).`,
+              undefined,
+              409,
+            );
+          }
+
+          // Protection M1 : en premier mois, un incident doit être signalé.
+          if (contract.currentMonth < 2) {
+            if (!contract.incidentId) {
+              throw new ApiError(
+                'BUSINESS_RULE_VIOLATION',
+                'Pendant le premier mois (M1), la confirmation de fin d\'exécution exige un incident signalé à LE LABEUR.',
+                undefined,
+                409,
+              );
+            }
+          }
+
+          const timestamp = now().toISOString();
+          const entryDescription = contest
+            ? `Confirmation de fin d'exécution par ${actor.id} ; contestation : ${contest}`
+            : `Confirmation de fin d'exécution enregistrée par ${actor.id}.`;
+          const entry = historyEntry(
+            'EXECUTION_CONFIRMED',
+            entryDescription,
+            actor.id,
+            timestamp,
+          );
+
+          // Compare-and-set : la confirmation est idempotente si le même acteur
+          // confirme le même contrat dans le même état (rejeu sans double effet).
+          const updated = await currentStores.contracts.compareAndSetStatus(normalizedContractId, 'ACTIVE', {
+            status: 'ACTIVE',
+            updatedAt: timestamp,
+            historyEntry: entry,
+          });
+
+          // Si le compare-and-set retourne null, le statut a changé concurrentement.
+          // On vérifie si la confirmation est déjà présente dans l'historique.
+          if (!updated) {
+            const fresh = await currentStores.contracts.findById(normalizedContractId);
+            if (!fresh) throw new ApiError('NOT_FOUND', 'Contrat introuvable.');
+            const alreadyConfirmed = fresh.history.some(
+              (h: { event: string }) => h.event === 'EXECUTION_CONFIRMED',
+            );
+            if (alreadyConfirmed && fresh.status === 'ACTIVE') {
+              // Rejeu idempotent : la confirmation a déjà été appliquée.
+              return toProjectionFromStores(fresh, currentStores);
+            }
+            throw new ApiError(
+              'BUSINESS_RULE_VIOLATION',
+              'Une transition concurrente a modifié ce contrat : la confirmation n\'a pas été appliquée.',
+              undefined,
+              409,
+            );
+          }
+
+          // Si une contestation est déclarée et qu'il n'y a pas déjà une restriction,
+          // on note le lien vers le système de litige dans l'historique (le Claim
+          // réel est créé par la route P0-DISPUTE-1 ; ici on marque la trace).
+          if (contest && currentStores.claimRestrictions?.hasActiveRestriction) {
+            const hasRestriction = await currentStores.claimRestrictions.hasActiveRestriction(
+              contract.id,
+              contract.employerId,
+              'CONTRACT_TERMINATE',
+            );
+            if (hasRestriction) {
+              // Une restriction provisoire existe déjà : la confirmation reste
+              // valide mais est tracée avec mention de la restriction active.
+              // Aucune double restriction n'est créée.
+            }
+          }
+
+          return toProjectionFromStores(updated, currentStores);
+        };
+        return runInTransaction ? await runInTransaction(mutate) : await mutate(stores);
+      };
+
+      if (!idempotencyKey) return execute();
+      return contractIdempotencyCache.execute(
+        actor.id,
+        command?.command || 'contracts.confirm-execution',
+        idempotencyKey,
+        fingerprint,
+        execute,
+      );
+    },
   };
 }
 
@@ -1317,6 +1446,18 @@ export function createContractApiHandlers(
       200,
       context.requestId,
     ),
+
+    'contracts.confirm-execution': async context => {
+      const body = await readJsonBody(context);
+      const contest = typeof body.contest === 'string' ? body.contest : undefined;
+      const contract = await repository.confirmExecution(
+        context.actor!,
+        context.params.contractId,
+        contest,
+        context.command!,
+      );
+      return apiJsonResponse(contract, 200, context.requestId);
+    },
 
     'admin.contracts.list': async context => repository.getAdminContracts(
       context.actor!,

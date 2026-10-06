@@ -570,6 +570,20 @@ export function createSqlContractStore(db: SqlQueryExecutor): ContractStore {
   return {
     async create(record) {
       assertStatusDomain(record.status, CONTRACT_STATUS_VALUES, 'contracts');
+      // Protection anti-doublon : aucun contrat non terminal (ACTIVE, SIGNATURE,
+      // DRAFT, SUSPENDED, INCIDENT, PENDING_EMPLOYER, PENDING_EMPLOYEE) pour
+      // la même combinaison (offer, employer, candidate). Seuls COMPLETED,
+      // TERMINATED et REPLACED sont autorisés en doublon.
+      const duplicateCheck = await db.query<{ count: string }>(
+        `SELECT count(*)::text AS count FROM contracts
+         WHERE offer_id = $1 AND employer_id = $2 AND candidate_id = $3
+           AND status NOT IN ('COMPLETED', 'TERMINATED', 'REPLACED')`,
+        [record.offerId, record.employerId, record.employeeId],
+      );
+      if (Number(duplicateCheck.rows[0]?.count ?? 0) > 0) {
+        throw new CoreStoreError('DUPLICATE', 'contracts',
+          'Un contrat actif ou en cours existe déjà pour cette offre, cet employeur et ce candidat.');
+      }
       let result: SqlQueryResult<ContractRow>;
       try {
         result = await db.query<ContractRow>(

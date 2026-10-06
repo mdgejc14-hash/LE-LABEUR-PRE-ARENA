@@ -67,6 +67,8 @@ export const API_ROUTE_CONTRACTS = [
   { key: 'contracts.terminate', method: 'POST', path: '/api/v1/contracts/:contractId/terminate', authentication: 'required', scope: 'owner', roles: ['EMPLOYER'], idempotency: true, auditOnMutation: true },
   // P0-CONTRACT-POST : cascade d'embauche explicite sur contrat ACTIF (RÈGLE 21).
   { key: 'contracts.finalize-hiring', method: 'POST', path: '/api/v1/contracts/:contractId/finalize-hiring', authentication: 'required', scope: 'owner', roles: ['EMPLOYER'], idempotency: true, auditOnMutation: true },
+  // P0-CONTRACT-POST — confirmation de fin d'exécution avec gestion des litiges.
+  { key: 'contracts.confirm-execution', method: 'POST', path: '/api/v1/contracts/:contractId/confirm-execution', authentication: 'required', scope: 'owner', roles: ['EMPLOYER', 'CANDIDATE'], idempotency: true, auditOnMutation: true },
   { key: 'contracts.monthly-action', method: 'POST', path: '/api/v1/contracts/:contractId/monthly-actions', authentication: 'required', scope: 'owner', idempotency: true, auditOnMutation: true },
 
   { key: 'payments.mine.list', method: 'GET', path: '/api/v1/my/payments', authentication: 'required', scope: 'self', collection: true },
