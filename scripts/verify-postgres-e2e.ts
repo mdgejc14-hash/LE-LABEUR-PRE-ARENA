@@ -39,6 +39,10 @@ import { createPostgresDatabase } from '../src/backend/persistence/postgresDatab
 import { createWorkerPostgresClient } from '../src/backend/worker/pgClient';
 import { redactSqlSecrets, toPostgresClientPort } from '../src/backend/persistence/sqlClient';
 import { resolveRepositoryMode } from '../src/repositories/mode';
+import {
+  PAYMENT_OVERDUE_GRACE_PERIOD_MS,
+  contractActivatedEventId,
+} from '../src/domain/contractScheduleAutomation';
 import type { GoogleCredentialVerifier, GoogleExternalIdentity } from '../src/backend/productionContracts';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -236,7 +240,7 @@ async function main(): Promise<void> {
   const secrets = [connectionString, local?.password, resolved.target.connectionString];
 
   console.log('============================================================');
-  console.log(' LE LABEUR — P0-C / P0-E3 / P0-E4 / P0-E5 — vérification Worker/API → PostgreSQL');
+  console.log(' LE LABEUR — P0-C / P0-E3→E5 / P0-F / P0-AUTO-2 — vérification Worker/API → PostgreSQL');
   console.log('============================================================');
   console.log(`Source base      : ${sourceLabel}`);
   console.log(`Cible (sans secret): ${descriptor.host}:${descriptor.port}/${descriptor.database} (source=${descriptor.source})`);
@@ -276,7 +280,7 @@ async function main(): Promise<void> {
     });
 
     let migrationResult: Awaited<ReturnType<typeof applyMigrations>> | null = null;
-    await check('Migrations 0001→0005 appliquées sur le moteur réel', async () => {
+    await check('Migrations 0001→0007 appliquées sur le moteur réel', async () => {
       migrationResult = await applyMigrations(client, migrations, {
         statementTimeoutMs: 15000,
         onProgress: message => console.log(`     ${message}`),
@@ -297,6 +301,9 @@ async function main(): Promise<void> {
       const expectedTables = [
         'users', 'external_identities', 'sessions', 'permissions', 'role_permissions', 'user_permissions',
         'offers', 'applications', 'contracts', 'proposals',
+        // P0-AUTO-1 : outbox, jobs, idempotence, ledger. P0-AUTO-2 : échéances.
+        'automation_outbox', 'automation_jobs', 'automation_idempotency',
+        'automation_audit_ledger', 'automation_deadlines',
       ];
       const tables = await database.query<{ table_name: string }>(
         `SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'`,
@@ -1032,6 +1039,554 @@ async function main(): Promise<void> {
       );
       assert(applicationRow.rows[0]?.status === 'PENDING', 'HIRED/CONTRACTED restent l’étape d’automatisation post-contrat');
       assert(applicationRow.rows[0]?.contract_id === contract.id, 'la candidature reste rattachée à son contrat');
+    });
+
+    /* ================================================================== */
+    /* P0-AUTO-2 — automatisation contractuelle réelle                     */
+    /* ================================================================== */
+
+    let p0auto2ContractId = '';
+    let p0auto2OfferId = '';
+    let p0auto2ApplicationId = '';
+
+    await check('P0-AUTO-2 Worker/API → PostgreSQL : CONTRACT_ACTIVATED écrit dans l’Outbox dans la même transaction que l’activation', async () => {
+      assert(employerId && candidateId, 'acteurs nécessaires au cycle CONTRAT automatisé');
+
+      const employerHeaders = (key: string) => ({
+        cookie: `${SESSION_COOKIE_NAME}=${employerCookie}`,
+        'content-type': 'application/json',
+        'Idempotency-Key': key,
+      });
+      const candidateHeaders = (key: string) => ({
+        cookie: `${SESSION_COOKIE_NAME}=${sessionCookie}`,
+        'content-type': 'application/json',
+        'Idempotency-Key': key,
+      });
+
+      // Chaîne dédiée. Date de début ANTÉRIEURE à l’exécution : les échéances M1
+      // sont réellement échues, ce qui permet de vérifier les rappels J+3 sur le
+      // moteur PostgreSQL sans inventer aucune règle temporelle.
+      const offerResponse = await composition.worker.fetch(withSession('/api/v1/offers', employerCookie, {
+        method: 'POST',
+        headers: employerHeaders('p0auto2-offer-001'),
+        body: JSON.stringify({
+          title: 'Offre P0-AUTO-2 vérification PostgreSQL',
+          contractType: 'CDI',
+          remuneration: 175000,
+          currency: 'FCFA',
+          location: 'Cotonou',
+          summary: 'Offre créée pour vérifier l’automatisation contractuelle.',
+        }),
+      }));
+      assert(offerResponse.status === 201, `création offre : 201 attendu, reçu ${offerResponse.status}`);
+      const offer = await offerResponse.json() as { id: string };
+      p0auto2OfferId = offer.id;
+
+      const applicationResponse = await composition.worker.fetch(withSession(`/api/v1/offers/${offer.id}/applications`, sessionCookie, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'Idempotency-Key': 'p0auto2-application-001' },
+        body: JSON.stringify({ note: 'Candidature pour l’automatisation contractuelle.' }),
+      }));
+      assert(applicationResponse.status === 201, `soumission : 201 attendu, reçu ${applicationResponse.status}`);
+      const application = await applicationResponse.json() as { id: string };
+      p0auto2ApplicationId = application.id;
+
+      const proposalResponse = await composition.worker.fetch(withSession('/api/v1/conversations/cnv_p0auto2_verify/proposals', employerCookie, {
+        method: 'POST',
+        headers: employerHeaders('p0auto2-proposal-001'),
+        body: JSON.stringify({
+          offerId: offer.id,
+          applicationId: application.id,
+          missionTitle: 'Mission P0-AUTO-2 vérification PostgreSQL',
+          amount: 175000,
+          currency: 'FCFA',
+          periodicity: 'Mensuel',
+          startDate: '01 Août 2026',
+          durationMonths: 6,
+          location: 'Cotonou',
+          conditions: ['Temps plein'],
+        }),
+      }));
+      assert(proposalResponse.status === 201, `proposition : 201 attendu, reçu ${proposalResponse.status}`);
+      const proposal = await proposalResponse.json() as { id: string };
+
+      const accepted = await composition.worker.fetch(withSession(`/api/v1/proposals/${proposal.id}/respond`, sessionCookie, {
+        method: 'POST',
+        headers: candidateHeaders('p0auto2-proposal-accept-001'),
+        body: JSON.stringify({ action: 'ACCEPT' }),
+      }));
+      assert(accepted.status === 200, `acceptation : 200 attendu, reçu ${accepted.status}`);
+
+      const created = await composition.worker.fetch(withSession('/api/v1/contracts', employerCookie, {
+        method: 'POST',
+        headers: employerHeaders('p0auto2-contract-create-001'),
+        body: JSON.stringify({ proposalId: proposal.id }),
+      }));
+      assert(created.status === 201, `création contrat : 201 attendu, reçu ${created.status}`);
+      const contract = await created.json() as { id: string };
+      p0auto2ContractId = contract.id;
+
+      for (const [action, headers, key] of [
+        ['send', employerHeaders('p0auto2-contract-send-001'), employerCookie],
+        ['sign', candidateHeaders('p0auto2-contract-sign-001'), sessionCookie],
+        ['activate', employerHeaders('p0auto2-contract-activate-001'), employerCookie],
+      ] as Array<[string, Record<string, string>, string]>) {
+        const response = await composition.worker.fetch(withSession(`/api/v1/contracts/${contract.id}/${action}`, key, {
+          method: 'POST',
+          headers,
+          body: '{}',
+        }));
+        assert(response.status === 200, `${action} : 200 attendu, reçu ${response.status}`);
+      }
+
+      // 1. L’événement est écrit, la mutation aussi — et RIEN d’autre n’a encore
+      //    été produit : l’échéancier appartient au worker, pas à la requête.
+      const stored = await database.query<{
+        status: string; payment_schedule: unknown; history: unknown; commission_percentage: string;
+      }>('SELECT status, payment_schedule, history, commission_percentage FROM contracts WHERE id = $1', [contract.id]);
+      assert(stored.rows[0]?.status === 'ACTIVE', 'ACTIVE réellement persisté');
+      const scheduleBefore = stored.rows[0]?.payment_schedule as unknown[];
+      assert(scheduleBefore.length === 0, 'aucun échéancier écrit par la requête d’activation (traitement asynchrone réel)');
+      assert(Number(stored.rows[0]?.commission_percentage) === 25, 'commission_percentage du modèle inchangé (25)');
+
+      const events = await database.query<{ id: string; event_type: string; status: string; attempts: number; payload: unknown }>(
+        `SELECT id, event_type, status, attempts, payload FROM automation_outbox
+          WHERE aggregate_type = 'contract' AND aggregate_id = $1 ORDER BY id ASC`,
+        [contract.id],
+      );
+      assert(events.rows.length === 1, `un seul événement attendu, reçus ${events.rows.length}`);
+      assert(events.rows[0].event_type === 'CONTRACT_ACTIVATED', 'CONTRACT_ACTIVATED attendu');
+      assert(events.rows[0].id === contractActivatedEventId(contract.id), 'identifiant déterministe (dedupeKey « contractId + ACTIVATED »)');
+      assert(events.rows[0].status === 'PENDING' && events.rows[0].attempts === 0, 'événement en attente de son consumer');
+      const payload = events.rows[0].payload as Record<string, unknown>;
+      for (const field of ['contractId', 'proposalId', 'offerId', 'applicationId', 'occurredAt']) {
+        assert(payload[field] !== undefined, `charge utile documentée incomplète: ${field}`);
+      }
+
+      const deadlinesBefore = await database.query<{ count: string }>(
+        'SELECT count(*)::text AS count FROM automation_deadlines WHERE aggregate_id = $1', [contract.id],
+      );
+      assert(Number(deadlinesBefore.rows[0]?.count ?? 0) === 0, 'aucune échéance avant le worker');
+      const jobsBefore = await database.query<{ count: string }>(
+        'SELECT count(*)::text AS count FROM automation_jobs WHERE aggregate_id = $1', [contract.id],
+      );
+      assert(Number(jobsBefore.rows[0]?.count ?? 0) === 0, 'aucun rappel avant le worker');
+    });
+
+    await check('P0-AUTO-2 PostgreSQL réel : DEUX workers concurrents drainent l’Outbox — un seul échéancier, jamais deux', async () => {
+      // Seconde composition = second processus/instance réel, avec son propre
+      // moteur et son propre cache de rejeu, sur la MÊME base PostgreSQL.
+      const secondComposition = composeWorker(env, compositionClient, { googleVerifier: google.verifier });
+      assert(secondComposition.automationWorker !== undefined, 'un second worker doit être composé');
+
+      const [first, second] = await Promise.all([
+        composition.automationWorker!.drainEvents(25),
+        secondComposition.automationWorker!.drainEvents(25),
+      ]);
+      const entries = [...first.entries, ...second.entries];
+      const target = entries.filter(entry => entry.eventId === contractActivatedEventId(p0auto2ContractId));
+      assert(
+        target.length === 1,
+        `FOR UPDATE SKIP LOCKED doit confier l’événement à UN SEUL worker, reçu ${target.length}`,
+      );
+      assert(target[0].result === 'completed', `traitement attendu, reçu ${target[0].result}`);
+      for (const entry of entries) {
+        assert(entry.result !== 'retryable' && entry.result !== 'dead-letter', `aucun échec admis, reçu ${JSON.stringify(entry)}`);
+      }
+
+      // Les événements d’activation produits par les vérifications P0-F/P0-E5
+      // précédentes sont traités par le même drain : preuve que la file est réelle.
+      const pending = await database.query<{ count: string }>(
+        `SELECT count(*)::text AS count FROM automation_outbox
+          WHERE event_type = 'CONTRACT_ACTIVATED' AND status IN ('PENDING', 'PROCESSING', 'RETRYABLE')`,
+      );
+      assert(Number(pending.rows[0]?.count ?? 0) === 0, 'aucun événement d’activation ne doit rester en attente');
+
+      const stored = await database.query<{
+        payment_schedule: unknown; monthly_checkpoints: unknown; commission_ledger: unknown;
+        commission_amount_due: string; commission_status: string; current_month: number; history: unknown;
+      }>(
+        `SELECT payment_schedule, monthly_checkpoints, commission_ledger, commission_amount_due,
+                commission_status, current_month, history
+           FROM contracts WHERE id = $1`,
+        [p0auto2ContractId],
+      );
+      const schedule = stored.rows[0]?.payment_schedule as Array<Record<string, unknown>>;
+      assert(schedule.length === 6, `6 périodes attendues, reçues ${schedule.length}`);
+      assert(schedule[0].id === `PSE-${p0auto2ContractId}-M1`, 'identifiant d’entrée réel');
+      assert(schedule[0].salaryAmount === 175000, 'montant attendu réel');
+      assert(schedule[0].employeeShareAmount === 131250, 'part salarié 75 %');
+      assert(schedule[0].commissionAmount === 43750, 'commission M1 = 25 %');
+      assert(schedule[1].commissionAmount === 0 && schedule[1].commissionStatus === 'NOT_APPLICABLE', '0 % en M2+');
+      assert(Number(stored.rows[0]?.commission_amount_due) === 43750, 'commission due M1 persistée');
+      assert(stored.rows[0]?.commission_status === 'SCHEDULED', 'statut de commission réel');
+      assert(stored.rows[0]?.current_month === 1, 'aucun avancement mensuel inventé');
+      assert((stored.rows[0]?.monthly_checkpoints as unknown[]).length === 1, 'point de contrôle M1');
+      const ledger = stored.rows[0]?.commission_ledger as Array<Record<string, unknown>>;
+      assert(ledger.length === 1 && ledger[0].percentage === 25 && ledger[0].amountDue === 43750, 'grand livre de commission M1');
+      assert(
+        ledger.every(entry => entry.amountSubmitted === 0 && entry.paymentId === undefined),
+        'aucun paiement de commission effectué',
+      );
+      for (const entry of schedule) {
+        assert(entry.salaryStatus === 'SCHEDULED', 'aucun paiement salarial effectué');
+        assert(entry.salaryTransactionId === undefined && entry.salaryProofFileName === undefined, 'aucune preuve ni transaction');
+      }
+      const history = stored.rows[0]?.history as Array<{ event: string }>;
+      for (const event of ['CONTRACT_CREATED', 'EMPLOYER_SIGNED', 'EMPLOYEE_SIGNED', 'CONTRACT_ACTIVATED_BILATERAL', 'PAYMENT_SCHEDULE_CREATED']) {
+        assert(history.some(item => item.event === event), `événement ${event} absent de l’historique persisté`);
+      }
+      assert(
+        history.filter(item => item.event === 'PAYMENT_SCHEDULE_CREATED').length === 1,
+        'un seul échéancier créé malgré deux workers concurrents',
+      );
+
+      const deadlines = await database.query<{
+        id: string; kind: string; status: string; due_at: Date; sla: string; grace_period_ms: string; escalation: string;
+      }>(
+        `SELECT id, kind, status, due_at, sla, grace_period_ms, escalation FROM automation_deadlines
+          WHERE aggregate_id = $1 ORDER BY due_at ASC, id ASC`,
+        [p0auto2ContractId],
+      );
+      assert(deadlines.rows.length === 7, `7 échéances attendues (6 salaires + 1 commission), reçues ${deadlines.rows.length}`);
+      assert(deadlines.rows.filter(row => row.kind === 'SALARY_PAYMENT').length === 6, '6 échéances salariales');
+      assert(deadlines.rows.filter(row => row.kind === 'COMMISSION_PAYMENT').length === 1, 'une échéance de commission (M1 > 0)');
+      for (const row of deadlines.rows) {
+        assert(row.status === 'OPEN', 'échéance ouverte');
+        assert(row.due_at instanceof Date, 'dueAt TIMESTAMPTZ réel');
+        assert(row.due_at.getUTCHours() === 0 && row.due_at.getUTCMinutes() === 0, 'dueAt à minuit UTC (modèle de date réel)');
+        assert(Number(row.grace_period_ms) === PAYMENT_OVERDUE_GRACE_PERIOD_MS, 'grâce J+3 réelle');
+        assert(row.escalation === 'PAYMENT_OVERDUE_J3', 'escalade réelle');
+        assert(row.sla.length > 0, 'SLA renseigné');
+      }
+      const uniqueDeadlines = await database.query<{ count: string }>(
+        `SELECT count(DISTINCT idempotency_key)::text AS count FROM automation_deadlines WHERE aggregate_id = $1`,
+        [p0auto2ContractId],
+      );
+      assert(Number(uniqueDeadlines.rows[0]?.count ?? 0) === 7, 'aucune échéance dupliquée');
+
+      const jobs = await database.query<{ job_id: string; job_type: string; status: string; due_at: Date; idempotency_key: string; reference: string | null }>(
+        `SELECT job_id, job_type, status, due_at, idempotency_key, reference FROM automation_jobs
+          WHERE aggregate_id = $1 ORDER BY due_at ASC, job_id ASC`,
+        [p0auto2ContractId],
+      );
+      assert(jobs.rows.length === 14, `14 rappels attendus (7 échéances × 2), reçus ${jobs.rows.length}`);
+      const uniqueJobs = await database.query<{ count: string }>(
+        `SELECT count(DISTINCT idempotency_key)::text AS count FROM automation_jobs WHERE aggregate_id = $1`,
+        [p0auto2ContractId],
+      );
+      assert(Number(uniqueJobs.rows[0]?.count ?? 0) === 14, 'aucun rappel dupliqué');
+      assert(jobs.rows.every(row => row.status === 'PENDING' && row.reference !== null), 'rappels armés et référencés');
+      const salaryDue = jobs.rows.find(row => row.job_type === 'SALARY_DUE_REMINDER')!;
+      const salaryJ3 = jobs.rows.find(row => row.job_type === 'SALARY_OVERDUE_J3_REMINDER')!;
+      assert(
+        salaryJ3.due_at.getTime() - salaryDue.due_at.getTime() === PAYMENT_OVERDUE_GRACE_PERIOD_MS,
+        'le rappel J+3 est exactement 3 jours après l’échéance',
+      );
+      assert(
+        salaryJ3.idempotency_key.endsWith(':J3') && salaryDue.idempotency_key.endsWith(':DUE'),
+        'clés d’idempotence conformes au contrat d’outbox documenté',
+      );
+
+      // Rejeu complet : aucun double effet.
+      const replay = await composition.automationWorker!.drainEvents(25);
+      assert(
+        replay.entries.every(entry => entry.eventId !== contractActivatedEventId(p0auto2ContractId)),
+        'un événement déjà traité n’est jamais réclamé deux fois',
+      );
+      const afterReplay = await database.query<{ count: string }>(
+        `SELECT (SELECT count(*) FROM automation_deadlines WHERE aggregate_id = $1)
+              + (SELECT count(*) FROM automation_jobs WHERE aggregate_id = $1) AS count`,
+        [p0auto2ContractId],
+      );
+      assert(Number(afterReplay.rows[0]?.count ?? 0) === 21, `21 lignes d’automatisation attendues, reçu ${afterReplay.rows[0]?.count}`);
+
+      const audit = await database.query<{ action: string; actor_id: string; source: string; event_id: string | null; entity_id: string }>(
+        `SELECT action, actor_id, source, event_id, entity_id FROM automation_audit_ledger
+          WHERE entity_id = $1 ORDER BY occurred_at ASC`,
+        [p0auto2ContractId],
+      );
+      for (const action of ['CONTRACT_SCHEDULE_CREATED', 'CONTRACT_PAYMENT_DEADLINES_CREATED', 'CONTRACT_REMINDER_JOBS_SCHEDULED']) {
+        assert(audit.rows.some(row => row.action === action), `action d’audit manquante: ${action}`);
+      }
+      for (const row of audit.rows) {
+        assert(row.actor_id === 'SYSTEM', 'acteur SYSTEM');
+        assert(row.source === 'automation:P0-AUTO-2', 'source de l’automatisation');
+        assert(row.entity_id === p0auto2ContractId, 'contractId tracé');
+      }
+      assert(
+        audit.rows.some(row => row.event_id === contractActivatedEventId(p0auto2ContractId)),
+        'eventId tracé dans l’audit',
+      );
+      const reservation = await database.query<{ status: string; actor_id: string }>(
+        `SELECT status, actor_id FROM automation_idempotency
+          WHERE command = 'automation.CONTRACT_ACTIVATED' AND idempotency_key = $1`,
+        [`${p0auto2ContractId}:CONTRACT_ACTIVATED`],
+      );
+      assert(reservation.rows.length === 1 && reservation.rows[0].status === 'COMPLETED', 'idempotence durable clôturée');
+
+      // Post-contractuel NON ouvert : offre et candidatures inchangées.
+      const offerRow = await database.query<{ status: string }>('SELECT status FROM offers WHERE id = $1', [p0auto2OfferId]);
+      assert(offerRow.rows[0]?.status === 'ACTIVE', 'aucun passage FILLED (tranche post-contractuelle dédiée)');
+      const applicationRow = await database.query<{ status: string; contract_id: string | null }>(
+        'SELECT status, contract_id FROM applications WHERE id = $1', [p0auto2ApplicationId],
+      );
+      assert(applicationRow.rows[0]?.status === 'PENDING', 'aucun HIRED / CONTRACTED produit');
+      assert(applicationRow.rows[0]?.contract_id === p0auto2ContractId, 'lien P0-F conservé');
+    });
+
+    await check('P0-AUTO-2 PostgreSQL réel : périodicité « Hebdomadaire » sans règle — aucun échéancier inventé, règle manquante auditée', async () => {
+      const employerHeaders = (key: string) => ({
+        cookie: `${SESSION_COOKIE_NAME}=${employerCookie}`,
+        'content-type': 'application/json',
+        'Idempotency-Key': key,
+      });
+      const candidateHeaders = (key: string) => ({
+        cookie: `${SESSION_COOKIE_NAME}=${sessionCookie}`,
+        'content-type': 'application/json',
+        'Idempotency-Key': key,
+      });
+
+      const offerResponse = await composition.worker.fetch(withSession('/api/v1/offers', employerCookie, {
+        method: 'POST',
+        headers: employerHeaders('p0auto2-weekly-offer-001'),
+        body: JSON.stringify({
+          title: 'Offre hebdomadaire P0-AUTO-2',
+          contractType: 'CDD',
+          remuneration: 60000,
+          currency: 'FCFA',
+          location: 'Cotonou',
+          summary: 'Offre pour vérifier une périodicité sans règle de cadence.',
+        }),
+      }));
+      assert(offerResponse.status === 201, `création offre : 201 attendu, reçu ${offerResponse.status}`);
+      const offer = await offerResponse.json() as { id: string };
+
+      const applicationResponse = await composition.worker.fetch(withSession(`/api/v1/offers/${offer.id}/applications`, sessionCookie, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'Idempotency-Key': 'p0auto2-weekly-application-001' },
+        body: JSON.stringify({ note: 'Candidature hebdomadaire.' }),
+      }));
+      assert(applicationResponse.status === 201, `soumission : 201 attendu, reçu ${applicationResponse.status}`);
+      const application = await applicationResponse.json() as { id: string };
+
+      const proposalResponse = await composition.worker.fetch(withSession('/api/v1/conversations/cnv_p0auto2_weekly/proposals', employerCookie, {
+        method: 'POST',
+        headers: employerHeaders('p0auto2-weekly-proposal-001'),
+        body: JSON.stringify({
+          offerId: offer.id,
+          applicationId: application.id,
+          missionTitle: 'Mission hebdomadaire P0-AUTO-2',
+          amount: 60000,
+          currency: 'FCFA',
+          periodicity: 'Hebdomadaire',
+          startDate: '01 Août 2026',
+          durationMonths: 3,
+          location: 'Cotonou',
+          conditions: ['Temps partiel'],
+        }),
+      }));
+      assert(proposalResponse.status === 201, `proposition : 201 attendu, reçu ${proposalResponse.status}`);
+      const proposal = await proposalResponse.json() as { id: string };
+
+      const accepted = await composition.worker.fetch(withSession(`/api/v1/proposals/${proposal.id}/respond`, sessionCookie, {
+        method: 'POST',
+        headers: candidateHeaders('p0auto2-weekly-accept-001'),
+        body: JSON.stringify({ action: 'ACCEPT' }),
+      }));
+      assert(accepted.status === 200, `acceptation : 200 attendu, reçu ${accepted.status}`);
+
+      const created = await composition.worker.fetch(withSession('/api/v1/contracts', employerCookie, {
+        method: 'POST',
+        headers: employerHeaders('p0auto2-weekly-contract-create-001'),
+        body: JSON.stringify({ proposalId: proposal.id }),
+      }));
+      assert(created.status === 201, `création contrat : 201 attendu, reçu ${created.status}`);
+      const contract = await created.json() as { id: string; periodicity: string };
+      assert(contract.periodicity === 'Hebdomadaire', 'périodicité hebdomadaire réelle du modèle');
+
+      for (const [action, headers, cookie] of [
+        ['send', employerHeaders('p0auto2-weekly-send-001'), employerCookie],
+        ['sign', candidateHeaders('p0auto2-weekly-sign-001'), sessionCookie],
+        ['activate', employerHeaders('p0auto2-weekly-activate-001'), employerCookie],
+      ] as Array<[string, Record<string, string>, string]>) {
+        const response = await composition.worker.fetch(withSession(`/api/v1/contracts/${contract.id}/${action}`, cookie, {
+          method: 'POST',
+          headers,
+          body: '{}',
+        }));
+        assert(response.status === 200, `${action} : 200 attendu, reçu ${response.status}`);
+      }
+
+      const report = await composition.automationWorker!.drainEvents(25);
+      assert(
+        report.entries.some(entry => entry.eventId === contractActivatedEventId(contract.id) && entry.result === 'completed'),
+        `événement traité attendu, reçu ${JSON.stringify(report.entries)}`,
+      );
+
+      const stored = await database.query<{
+        status: string; periodicity: string; payment_schedule: unknown; monthly_checkpoints: unknown;
+        commission_ledger: unknown; commission_amount_due: string; commission_percentage: string; history: unknown;
+      }>(
+        `SELECT status, periodicity, payment_schedule, monthly_checkpoints, commission_ledger,
+                commission_amount_due, commission_percentage, history
+           FROM contracts WHERE id = $1`,
+        [contract.id],
+      );
+      assert(stored.rows[0]?.status === 'ACTIVE', 'le contrat reste actif');
+      assert(stored.rows[0]?.periodicity === 'Hebdomadaire', 'périodicité conservée telle quelle');
+      assert((stored.rows[0]?.payment_schedule as unknown[]).length === 0, 'AUCUN échéancier inventé pour un contrat hebdomadaire');
+      assert((stored.rows[0]?.monthly_checkpoints as unknown[]).length === 0, 'AUCUN point de contrôle inventé');
+      assert((stored.rows[0]?.commission_ledger as unknown[]).length === 0, 'AUCUNE commission inventée');
+      assert(Number(stored.rows[0]?.commission_amount_due) === 0, 'aucun montant inventé');
+      assert(Number(stored.rows[0]?.commission_percentage) === 25, 'la règle de 25 % n’est pas modifiée');
+
+      const history = stored.rows[0]?.history as Array<{ event: string; description: string }>;
+      const missing = history.find(entry => entry.event === 'PAYMENT_SCHEDULE_RULE_MISSING');
+      assert(missing !== undefined, 'la règle manquante doit être tracée dans l’historique métier');
+      assert(missing!.description.includes('Hebdomadaire'), 'la périodicité non résolue est nommée');
+
+      const deadlines = await database.query<{ count: string }>(
+        'SELECT count(*)::text AS count FROM automation_deadlines WHERE aggregate_id = $1', [contract.id],
+      );
+      assert(Number(deadlines.rows[0]?.count ?? 0) === 0, 'AUCUNE échéance inventée');
+      const jobs = await database.query<{ count: string }>(
+        'SELECT count(*)::text AS count FROM automation_jobs WHERE aggregate_id = $1', [contract.id],
+      );
+      assert(Number(jobs.rows[0]?.count ?? 0) === 0, 'AUCUN rappel inventé');
+
+      const audit = await database.query<{ action: string; after_state: unknown }>(
+        `SELECT action, after_state FROM automation_audit_ledger
+          WHERE entity_id = $1 AND action = 'CONTRACT_SCHEDULE_RULE_MISSING'`,
+        [contract.id],
+      );
+      assert(audit.rows.length === 1, 'la règle manquante est auditée une seule fois');
+      const state = audit.rows[0].after_state as Record<string, unknown>;
+      assert(state.periodicity === 'Hebdomadaire', 'périodicité auditée');
+      assert(typeof state.missingRule === 'string' && String(state.missingRule).length > 40, 'règle manquante documentée');
+
+      // Rejeu : toujours aucune invention.
+      const replay = await composition.automationWorker!.drainEvents(25);
+      assert(replay.claimed === 0, 'aucun événement à réclamer');
+      const historyAfter = await database.query<{ history: unknown }>(
+        'SELECT history FROM contracts WHERE id = $1', [contract.id],
+      );
+      assert(
+        (historyAfter.rows[0]?.history as Array<{ event: string }>)
+          .filter(entry => entry.event === 'PAYMENT_SCHEDULE_RULE_MISSING').length === 1,
+        'une seule entrée de règle manquante après rejeu',
+      );
+    });
+
+    await check('P0-AUTO-2 PostgreSQL réel : rappels échus → événements préparés, escalade J+3, AUCUN canal de notification', async () => {
+      // État produit par le cycle paiements (NON ouvert par cette tranche) :
+      // l’échéance M1 est basculée en DUE directement en base, ce qui est
+      // exactement l’état que `syncPaymentSchedule` produira plus tard.
+      const row = await database.query<{ payment_schedule: unknown }>(
+        'SELECT payment_schedule FROM contracts WHERE id = $1', [p0auto2ContractId],
+      );
+      const schedule = (row.rows[0]?.payment_schedule as Array<Record<string, unknown>>).map(entry =>
+        Number(entry.monthNumber) === 1 ? { ...entry, salaryStatus: 'DUE', commissionStatus: 'DUE' } : entry);
+      await database.query('UPDATE contracts SET payment_schedule = $2::jsonb WHERE id = $1', [
+        p0auto2ContractId,
+        JSON.stringify(schedule),
+      ]);
+
+      const report = await composition.automationWorker!.runDueJobs(50);
+      const entries = report.entries.filter(entry => entry.contractId === p0auto2ContractId);
+      assert(entries.length >= 4, `au moins les 4 rappels M1 échus attendus, reçus ${entries.length}`);
+
+      const salaryDue = entries.find(entry => entry.jobType === 'SALARY_DUE_REMINDER')!;
+      assert(salaryDue.outcome?.eligibility === 'ELIGIBLE', 'rappel salarial éligible');
+      assert(salaryDue.outcome?.notificationType === 'MONTHLY_CHECKPOINT', 'type de notification réel du modèle');
+      assert(salaryDue.outcome?.eventType === 'NOTIFICATION_REQUIRED', 'événement de la fondation, aucun canal');
+
+      const salaryJ3 = entries.find(entry => entry.jobType === 'SALARY_OVERDUE_J3_REMINDER')!;
+      assert(salaryJ3.outcome?.eligibility === 'ELIGIBLE', 'rappel J+3 éligible');
+      assert(salaryJ3.outcome?.daysLate! >= 3, `J+3 réel attendu, reçu ${salaryJ3.outcome?.daysLate}`);
+      assert(salaryJ3.outcome?.notificationType === 'PAYMENT_OVERDUE_J3', 'type réel J+3');
+      assert(salaryJ3.outcome?.eventType === 'PAYMENT_OVERDUE_J3', 'événement de domaine déjà déclaré');
+      assert(salaryJ3.outcome?.deadlineStatus === 'ESCALATED', 'échéance escaladée');
+
+      // Les échéances non basculées en DUE ne produisent RIEN (règle absente du
+      // périmètre : le basculement appartient au cycle paiements).
+      for (const entry of entries.filter(item => item.jobId !== salaryDue.jobId && item.jobId !== salaryJ3.jobId)) {
+        if (entry.outcome?.eligibility === 'NOT_ELIGIBLE') {
+          assert(entry.outcome?.eventId === null, 'aucun événement inventé pour une échéance non due');
+          assert(String(entry.outcome?.reason ?? '').includes('cycle paiements'), 'la raison documente la règle absente');
+        }
+      }
+
+      const events = await database.query<{ event_type: string; status: string; attempts: number; payload: unknown }>(
+        `SELECT event_type, status, attempts, payload FROM automation_outbox
+          WHERE aggregate_id = $1 AND event_type IN ('NOTIFICATION_REQUIRED', 'PAYMENT_OVERDUE_J3')
+          ORDER BY id ASC`,
+        [p0auto2ContractId],
+      );
+      assert(events.rows.length >= 4, `au moins 4 événements préparés, reçus ${events.rows.length}`);
+      for (const event of events.rows) {
+        const payload = event.payload as Record<string, unknown>;
+        assert(payload.channel === null, 'AUCUN canal de notification');
+        assert(String(payload.note).includes('aucun canal'), 'l’absence de canal est explicite');
+        assert(payload.contractId === p0auto2ContractId, 'contractId porté');
+        assert(payload.dedupeKey !== undefined, 'clé de déduplication réelle');
+      }
+
+      // Aucun consumer : les événements préparés restent PENDING et ne sont
+      // jamais réclamés par le worker (le module Notifications n’existe pas).
+      const drain = await composition.automationWorker!.drainEvents(50);
+      assert(
+        drain.entries.every(entry => entry.eventType !== 'NOTIFICATION_REQUIRED' && entry.eventType !== 'PAYMENT_OVERDUE_J3'),
+        'le worker ne réclame que les types ayant un handler réel',
+      );
+      const stillPending = await database.query<{ count: string }>(
+        `SELECT count(*)::text AS count FROM automation_outbox
+          WHERE aggregate_id = $1 AND event_type IN ('NOTIFICATION_REQUIRED', 'PAYMENT_OVERDUE_J3')
+            AND status = 'PENDING' AND attempts = 0`,
+        [p0auto2ContractId],
+      );
+      assert(Number(stillPending.rows[0]?.count ?? 0) === events.rows.length, 'événements préparés intacts');
+
+      const channels = await database.query<{ table_name: string }>(
+        `SELECT table_name FROM information_schema.tables
+          WHERE table_schema = current_schema()
+            AND (table_name ILIKE '%notification%' OR table_name ILIKE '%email%' OR table_name ILIKE '%sms%'
+                 OR table_name ILIKE '%whatsapp%' OR table_name ILIKE '%push%' OR table_name ILIKE '%payment%')`,
+      );
+      assert(channels.rows.length === 0, 'aucune table de notification ni de paiement créée');
+
+      const audit = await database.query<{ action: string; after_state: unknown }>(
+        `SELECT action, after_state FROM automation_audit_ledger
+          WHERE entity_id = $1 AND action IN ('SCHEDULE_J3_ELIGIBILITY_RECORDED', 'SCHEDULE_DUE_REMINDER_RECORDED')`,
+        [p0auto2ContractId],
+      );
+      assert(audit.rows.length >= 4, `audits de rappel attendus, reçus ${audit.rows.length}`);
+      assert(
+        audit.rows.some(item => item.action === 'SCHEDULE_J3_ELIGIBILITY_RECORDED'),
+        'l’action d’audit J+3 est le nom réel déjà documenté',
+      );
+      for (const item of audit.rows.filter(entry => entry.action === 'SCHEDULE_J3_ELIGIBILITY_RECORDED')) {
+        const state = item.after_state as Record<string, unknown>;
+        for (const field of ['scheduleEntryId', 'paymentKind', 'dueDate', 'status', 'daysLate', 'outboxEventId']) {
+          assert(state[field] !== undefined, `champ d’audit réel manquant: ${field}`);
+        }
+      }
+
+      // Rejeu des rappels : aucun second événement.
+      const again = await composition.automationWorker!.runDueJobs(50);
+      assert(
+        again.entries.every(entry => entry.contractId !== p0auto2ContractId),
+        'un job terminé n’est jamais réclamé deux fois',
+      );
+      const eventsAfter = await database.query<{ count: string }>(
+        `SELECT count(*)::text AS count FROM automation_outbox
+          WHERE aggregate_id = $1 AND event_type IN ('NOTIFICATION_REQUIRED', 'PAYMENT_OVERDUE_J3')`,
+        [p0auto2ContractId],
+      );
+      assert(
+        Number(eventsAfter.rows[0]?.count ?? 0) === events.rows.length,
+        'aucun événement de rappel dupliqué',
+      );
     });
 
     await check('Worker/API → PostgreSQL : ADMIN provisionné côté serveur + permissions SQL', async () => {

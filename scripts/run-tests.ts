@@ -22,6 +22,8 @@ import { runProposalDomainTests } from '../src/backend/api/proposals.test';
 import { runProposalTransitionTests } from '../src/domain/proposalTransitions.test';
 import { runContractTransitionTests } from '../src/domain/contractTransitions.test';
 import { runContractDomainTests } from '../src/backend/api/contracts.test';
+import { runContractScheduleAutomationTests } from '../src/domain/contractScheduleAutomation.test';
+import { runContractAutomationTests } from '../src/backend/automation/contractActivation.test';
 
 interface TestCase {
   name: string;
@@ -54,6 +56,8 @@ async function main(): Promise<void> {
   const proposalDomain = await runProposalDomainTests();
   const contractMatrix = runContractTransitionTests();
   const contractDomain = await runContractDomainTests();
+  const contractScheduleRules = runContractScheduleAutomationTests();
+  const contractAutomation = await runContractAutomationTests();
 
   const suites: Array<{ name: string; cases: TestCase[] }> = [
     { name: 'Domain deterministic', cases: deterministic.results.map(result => ({ name: result.name, success: result.success, detail: result.details })) },
@@ -80,6 +84,8 @@ async function main(): Promise<void> {
     { name: 'P0-E5 — émission et cycle PROPOSITION (PostgreSQL, autorisation, ownership, idempotence, concurrence, rollback, lecture ADMIN)', cases: proposalDomain },
     { name: 'P0-F — matrice CONTRAT (statuts réels, transitions ouvertes et refusées, signature, protection M1, événements documentés)', cases: contractMatrix.map(result => ({ name: result.name, success: result.success, detail: result.details })) },
     { name: 'P0-F — cycle CONTRAT (création depuis ACCEPTED, envoi, signature, activation, fin, terminaison; PostgreSQL, autorisation, idempotence, concurrence, rollback)', cases: contractDomain },
+    { name: 'P0-AUTO-2 — règles d’automatisation contractuelle (périodicités réelles, échéancier, commission 25 %, échéances J+3, rappels, règles manquantes non inventées, post-contrat reporté)', cases: contractScheduleRules.map(result => ({ name: result.name, success: result.success, detail: result.details })) },
+    { name: 'P0-AUTO-2 — CONTRACT_ACTIVATED réel (Outbox → Queue → Worker → AutomationEngine → échéancier salarial, échéancier de commission, échéances, rappels; PostgreSQL, idempotence, concurrence, retry, dead-letter, rollback, audit, séparation DEMO/API)', cases: contractAutomation },
   ];
 
   let total = 0;

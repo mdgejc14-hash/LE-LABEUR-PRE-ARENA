@@ -15,9 +15,15 @@
  * WITHDRAW (P0-E4) ; PROPOSITIONS pour l'émission, l'acceptation, la
  * déclinaison, l'expiration et la lecture ADMIN (P0-E5) ; CONTRATS pour la
  * création depuis une proposition acceptée, la signature, l'activation, la fin
- * et la rupture motivée (P0-F) ; les autres opérations métier — paiements,
- * commissions, plaintes, remplacements, notifications générales — restent
- * fermées. Le mode DEMO demeure séparé, inchangé et par défaut.
+ * et la rupture motivée (P0-F) ; P0-AUTO-2 ajoute l'automatisation réelle
+ * déclenchée par l'activation — événement `CONTRACT_ACTIVATED` écrit dans
+ * l'Outbox PostgreSQL dans la MÊME transaction, puis worker → AutomationEngine →
+ * échéancier salarial, échéancier de commission, échéances de paiement et jobs
+ * de rappel ; les autres opérations métier — paiements, plaintes,
+ * remplacements, notifications générales, offre `FILLED`, candidatures
+ * `HIRED` / `CONTRACTED` / `CLOSED_OFFER_FILLED` — restent fermées. Le mode
+ * DEMO demeure séparé, inchangé et par défaut, et n'est JAMAIS connecté à
+ * PostgreSQL.
  */
 
 import type { DatabaseHealthProbe, PostgreSqlDatabase } from '../services/database';
@@ -69,6 +75,13 @@ import {
   type ContractRepositoryStores,
   type OpenContractRepository,
 } from '../repositories/contractRepository';
+// P0-AUTO-2 — automatisation contractuelle réelle (Outbox → Queue → Worker →
+// AutomationEngine → jobs). Les adaptateurs PostgreSQL restent dans la couche
+// persistance ; la composition est le seul point de câblage autorisé.
+import { createSqlAutomationStores } from '../persistence/sqlAutomationStores';
+import { createContractAutomation, type ContractAutomation } from '../automation/contractActivation';
+import { createAutomationWorker, type AutomationWorker } from '../automation/worker';
+import type { AutomationStores } from '../automation/records';
 
 export interface WorkerEnvironment extends WorkerPersistenceEnvironment {
   GOOGLE_CLIENT_ID?: string;
@@ -115,6 +128,17 @@ export interface WorkerComposition {
   proposals?: OpenProposalRepository;
   /** P0-F : création depuis proposition acceptée, envoi, signature, activation, fin, rupture. */
   contracts?: OpenContractRepository;
+  /**
+   * P0-AUTO-2 : automatisation contractuelle (handler `CONTRACT_ACTIVATED` et
+   * registre des jobs de rappel). Absente quand aucune base durable n'existe.
+   */
+  automation?: ContractAutomation;
+  /**
+   * P0-AUTO-2 : worker d'automatisation. Déclenché explicitement (`drain`,
+   * `drainEvents`, `runDueJobs`) : aucun timer, aucun Cron, aucune Queue
+   * Cloudflare de production dans cette tranche.
+   */
+  automationWorker?: AutomationWorker;
 }
 
 /** Serveur/test only: allows deterministic verification without changing env or DEMO behavior. */
@@ -352,13 +376,19 @@ export function composeWorker(
 
   const runContractInTransaction = persistence.database
     ? async <T>(operation: (stores: ContractRepositoryStores) => Promise<T>): Promise<T> => {
-        return persistence.database!.run(async tx => operation({
-          contracts: createSqlContractStore(tx),
-          proposals: createSqlProposalStore(tx),
-          applications: createSqlApplicationStore(tx),
-          offers: createSqlOfferStore(tx),
-          users: createSqlUserStore(tx),
-        }));
+        return persistence.database!.run(async tx => {
+          // L'Outbox est lié à la MÊME transaction que la mutation du contrat :
+          // COMMIT → mutation + historique + événement ; ROLLBACK → aucun des trois.
+          const automationStores = createSqlAutomationStores(tx);
+          return operation({
+            contracts: createSqlContractStore(tx),
+            proposals: createSqlProposalStore(tx),
+            applications: createSqlApplicationStore(tx),
+            offers: createSqlOfferStore(tx),
+            users: createSqlUserStore(tx),
+            outbox: automationStores.outbox,
+          });
+        });
       }
     : undefined;
 
@@ -380,6 +410,35 @@ export function composeWorker(
     ? createContractApiHandlers(contractRepository)
     : {};
 
+  /*
+   * P0-AUTO-2 — automatisation contractuelle.
+   *
+   * Composée UNIQUEMENT quand une base PostgreSQL durable existe : sans elle il
+   * n'y a ni Outbox, ni file, ni idempotence durable, et l'activation d'un
+   * contrat est refusée (fail-closed) plutôt que produite sans événement.
+   * Le mode `memory` et le mode DEMO ne sont donc pas concernés.
+   */
+  const automationRuntime = persistence.database
+    ? {
+        withTransaction: <T>(operation: (stores: AutomationStores) => Promise<T>): Promise<T> =>
+          persistence.database!.run(async tx => operation(createSqlAutomationStores(tx))),
+        ...(overrides.now ? { now: overrides.now } : {}),
+      }
+    : undefined;
+
+  const contractAutomation = automationRuntime
+    ? createContractAutomation(automationRuntime)
+    : undefined;
+
+  const automationWorker = persistence.database && contractAutomation
+    ? createAutomationWorker({
+        database: persistence.database,
+        createStores: createSqlAutomationStores,
+        automation: contractAutomation,
+        ...(overrides.now ? { now: overrides.now } : {}),
+      })
+    : undefined;
+
   const domainHandlers = {
     ...offerHandlers,
     ...applicationHandlers,
@@ -395,6 +454,8 @@ export function composeWorker(
     applications: applicationRepository,
     proposals: proposalRepository,
     contracts: contractRepository,
+    ...(contractAutomation ? { automation: contractAutomation } : {}),
+    ...(automationWorker ? { automationWorker } : {}),
     health,
     probe: persistence.probe,
     target: persistence.target,

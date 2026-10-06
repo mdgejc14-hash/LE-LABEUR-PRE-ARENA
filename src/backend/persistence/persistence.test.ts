@@ -569,7 +569,17 @@ export async function runPostgresFoundationTests(): Promise<PostgresFoundationTe
       assert(schema.has(table), `table manquante: ${table}`);
       assert(schema.get(table)!.size > 0, `table vide: ${table}`);
     }
-    const automationTables = ['automation_outbox', 'automation_jobs', 'automation_idempotency', 'automation_audit_ledger'];
+    // P0-AUTO-1 : outbox, jobs, idempotence, ledger. P0-AUTO-2 ajoute
+    // `automation_deadlines`, la seule table nouvelle (le type `Deadline` de
+    // la fondation n'avait aucune persistance). Le garde-fou reste identique :
+    // toute autre table est refusée.
+    const automationTables = [
+      'automation_outbox',
+      'automation_jobs',
+      'automation_idempotency',
+      'automation_audit_ledger',
+      'automation_deadlines',
+    ];
     const extra = [...schema.keys()].filter(key => !CORE_TABLES.includes(key as (typeof CORE_TABLES)[number]) && !automationTables.includes(key));
     assert(extra.length === 0, `tables hors noyau détectées: ${extra.join(', ')}`);
   });

@@ -17,6 +17,9 @@ export const EXPECTED_MIGRATION_IDS: readonly string[] = [
   '0005_contract_lifecycle',
   // P0-AUTO-1 : outbox, jobs, idempotence et ledger transversaux.
   '0006_automation_foundation',
+  // P0-AUTO-2 : échéances (Deadline/SLA), unicité des clés d'idempotence de
+  // jobs, référence métier des jobs de rappel et index de lecture.
+  '0007_contract_automation',
 ];
 
 export const SCHEMA_MIGRATIONS_TABLE = 'schema_migrations';
