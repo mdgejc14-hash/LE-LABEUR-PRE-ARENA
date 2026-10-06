@@ -41,8 +41,23 @@ export interface CloudflareWorkerOptions {
   now?: () => Date;
 }
 
+/** Chargement minimal reçu d'un déclenchement planifié Cloudflare. */
+export interface CloudflareScheduledEvent {
+  readonly cron: string;
+  readonly scheduledTime: number;
+}
+
 export interface CloudflareWorkerRuntime {
   fetch(request: Request, env: CloudflareWorkerEnvironment, ctx?: CloudflareWorkerExecutionContext): Promise<Response>;
+  /**
+   * P0-PAY-1 — point d'ENTRÉE d'un déclenchement planifié : il appelle le worker
+   * d'automatisation DÉJÀ réel (`drain()` = événements → paiements échus → jobs
+   * de rappel). Aucune planification de production n'est installée ici :
+   * aucun bloc `[triggers]`/`crons` dans `wrangler.toml`, aucun timer applicatif,
+   * aucun `setInterval`. Déployer ce handler sans ajouter de cron ne déclenche
+   * donc rien — c'est une décision d'exploitation ultérieure.
+   */
+  scheduled?(event: CloudflareScheduledEvent, env: CloudflareWorkerEnvironment, ctx?: CloudflareWorkerExecutionContext): Promise<void>;
   /** Compatibilité/arrêt local : aucun pool n'est conservé entre requêtes. */
   dispose(): Promise<void>;
 }
@@ -57,6 +72,17 @@ export function runtimeTarget(env: WorkerEnvironment): ResolvedPostgresTarget | 
 function rawPersistenceMode(env: WorkerEnvironment): string {
   return (env.PERSISTENCE?.trim() || env.IDENTITY_STORE?.trim() || 'closed').toLowerCase();
 }
+
+/** Passée bornée par déclenchement (borne d'exploitation, jamais une taille de file). */
+/**
+ * Limite bornée du drain déclenché par un événement planifié.
+ *
+ * RESTREINT à ce module (non exporté) : dans un module d'entrée Worker, toute
+ * exportation de premier niveau est interprétée par workerd comme un handler.
+ * Un nombre exporté ferait échouer le démarrage du runtime — et aucun nombre de
+ * drain ne doit donc voyager hors de ce fichier.
+ */
+const SCHEDULED_DRAIN_LIMIT = 25;
 
 export function createCloudflareWorker(options: CloudflareWorkerOptions = {}): CloudflareWorkerRuntime {
   const createClient = options.createClient ?? createWorkerPostgresClient;
@@ -119,6 +145,47 @@ export function createCloudflareWorker(options: CloudflareWorkerOptions = {}): C
       }
     },
 
+    /**
+     * P0-PAY-1 — déclenchement planifié : une seule passée bornée de l'Outbox,
+     * du balayage `SCHEDULED → DUE` et des jobs échus, sur une construction
+     * éphémère du Worker (même discipline que `fetch` : pool créé puis fermé).
+     * Aucune route HTTP n'existe pour ce parcours et aucune erreur n'est exposée.
+     */
+    async scheduled(
+      event: CloudflareScheduledEvent,
+      env: CloudflareWorkerEnvironment,
+      ctx?: CloudflareWorkerExecutionContext,
+    ): Promise<void> {
+      void event;
+      const run = async (): Promise<void> => {
+        let created: WorkerPostgresClient | null = null;
+        try {
+          const target = runtimeTarget(env);
+          if (!target) return;
+          try {
+            created = createClient(target);
+          } catch {
+            return;
+          }
+          const composition = composeWorker(env, created?.client, {
+            ...(options.now ? { now: options.now } : {}),
+          });
+          await composition.automationWorker?.drain(SCHEDULED_DRAIN_LIMIT);
+          if (created) await created.end();
+          created = null;
+        } catch {
+          // Un déclenchement planifié ne propage jamais un détail interne.
+        } finally {
+          if (created) await created.end().catch(() => undefined);
+        }
+      };
+      if (ctx?.waitUntil) {
+        ctx.waitUntil(run());
+        return;
+      }
+      await run();
+    },
+
     /** Aucun pool persistant : conservé pour compatibilité d'interface. */
     async dispose(): Promise<void> {
       return undefined;
@@ -135,5 +202,12 @@ export default {
     ctx: CloudflareWorkerExecutionContext,
   ): Promise<Response> {
     return defaultRuntime.fetch(request, env, ctx);
+  },
+  scheduled(
+    event: CloudflareScheduledEvent,
+    env: CloudflareWorkerEnvironment,
+    ctx: CloudflareWorkerExecutionContext,
+  ): Promise<void> {
+    return defaultRuntime.scheduled!(event, env, ctx);
   },
 };

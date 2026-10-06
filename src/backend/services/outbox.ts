@@ -39,6 +39,18 @@ export const OUTBOX_EFFECT_CONTRACTS: readonly OutboxEffectContract[] = [
   { eventType: 'ACCOUNT_UNBLOCKED', sideEffects: ['notify the account owner'], idempotencyKey: 'event.id' },
   { eventType: 'PAYMENT_OVERDUE_J3', sideEffects: ['notify employer and authorized Admins', 'record scheduler audit event'], idempotencyKey: 'schedule-entry + payment-kind + due-date + J3' },
   /**
+   * P0-PAY-1 — cycle PAIEMENT réellement produit dans l'Outbox transactionnelle
+   * (`automation_outbox`), et contracté ici pour le futur moteur de
+   * notifications : AUCUN consumer n'est branché, aucun canal n'existe.
+   * `PAYMENT_DECLARED` (déjà déclaré ci-dessus) porte la declaration de
+   * l'employeur ; `PAYMENT_APPROVED` porte la verification favorable ;
+   * `PAYMENT_REJECTED` le rejet motive. Les payloads de reference sont decrits
+   * dans `src/domain/paymentLifecycle.ts` (`DOCUMENTED_PAYMENT_EVENTS`).
+   */
+  { eventType: 'PAYMENT_DUE', sideEffects: ['no asynchronous effect in P0-PAY-1 (notification module is a later step)'], idempotencyKey: 'paymentId + DUE' },
+  { eventType: 'PAYMENT_PENDING_VERIFICATION', sideEffects: ['queue the declaration for Admin review (no channel in P0-PAY-1)'], idempotencyKey: 'paymentId + PENDING_VERIFICATION + attemptNumber' },
+  { eventType: 'PAYMENT_PAID', sideEffects: ['refresh schedule state', 'no fund movement is ever triggered by this event'], idempotencyKey: 'paymentId + PAID' },
+  /**
    * P0-E3/P0-E4 — cycle CANDIDATURE.
    *
    * Contrats DÉCLARÉS pour le futur moteur Outbox/Queue : aucun producteur,

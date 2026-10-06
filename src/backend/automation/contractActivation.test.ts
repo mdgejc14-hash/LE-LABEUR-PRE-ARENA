@@ -695,8 +695,36 @@ async function runReminderExecutionPhase(
       for (const row of audit) {
         assert(row.entity_id === contractId, 'contractId conservé');
         assert(row.actor_id === 'SYSTEM', 'source actor SYSTEM');
-        assert(row.source === 'automation:P0-AUTO-2', 'source de l’automatisation');
+        // P0-PAY-1 a ajouté une écriture d'automatisation SUR LE CONTRAT : la
+        // materialisation des lignes `payments`. Elle porte sa PROPRE source, et
+        // aucune action de P0-AUTO-2 ne peut en hériter — la séparation reste
+        // donc contrôlée, ligne par ligne, au lieu d'être globale et floue.
+        const expectedSource = row.action === 'PAYMENTS_MATERIALIZED' || row.action === 'PAYMENT_PRE_DUE_REMINDER_RECORDED'
+          ? 'automation:P0-PAY-1'
+          : 'automation:P0-AUTO-2';
+        assert(row.source === expectedSource, `source de l’automatisation (${row.action})`);
         assert(row.occurred_at !== null, 'horodatage réel');
+      }
+      const materialization = audit.find(row => row.action === 'PAYMENTS_MATERIALIZED');
+      if (materialization) {
+        const state = stateOf(materialization);
+        // Attendu = un paiement salarial par période, plus une commission
+        // uniquement là où elle est strictement positive (règle réelle du modèle,
+        // jamais une hypothèse sur le nombre de lignes).
+        const schedule = readJsonArray((await readContractSchedule(harness, contractId))?.payment_schedule);
+        const expected = schedule.length + schedule.filter(entry => Number(entry.commissionAmount) > 0).length;
+        assert(expected > 0, 'échéancier de référence disponible pour le calcul');
+        assert(
+          state.requested === expected && state.created === expected,
+          `materialisation du cycle complète (${expected} paiements attendus), reçus ${JSON.stringify({ requested: state.requested, created: state.created })}`,
+        );
+        assert(state.duplicates === 0, 'première materialisation sans doublon');
+        assert(Array.isArray(state.payments) && (state.payments as unknown[]).length === expected, 'détail des paiements tracé');
+        assert(
+          (state.payments as { status?: string }[]).every(payment => payment.status === 'SCHEDULED'),
+          'aucun paiement materialisé au-delà de SCHEDULED',
+        );
+        assert(state.note === 'Aucun paiement exécuté : agrégat métier du cycle uniquement.', 'absence de paiement réel affirmée');
       }
       const scheduleAudit = audit.find(row => row.action === 'CONTRACT_SCHEDULE_CREATED')!;
       assert(scheduleAudit.event_id === contractActivatedEventId(contractId), 'eventId tracé');
@@ -1449,18 +1477,57 @@ export async function runContractAutomationTests(): Promise<OfferTestResult[]> {
         assert(entry.commissionTransactionId === undefined, 'aucune transaction de commission');
         assert(entry.salaryProofFileName === undefined, 'aucune preuve salariale');
       }
+      // P0-PAY-1 a OUVERT le cycle métier des paiements : les deux tables du cycle
+      // existent désormais, et elles viennent de la migration 0008 — JAMAIS de
+      // l'automatisation contractuelle. Le contrôle porte donc sur la frontière
+      // réelle : deux tables métier, et rien du côté fournisseur.
       const paymentTables = await harness.database.query<{ table_name: string }>(
         `SELECT table_name FROM information_schema.tables
-          WHERE table_schema = current_schema()
-            AND (table_name ILIKE '%payment%' OR table_name ILIKE '%mobile_money%' OR table_name ILIKE '%otp%')`,
+          WHERE table_schema = current_schema() AND table_name ILIKE '%payment%'
+          ORDER BY table_name`,
       );
-      assert(paymentTables.rows.length === 0, 'aucune table de paiement créée par P0-AUTO-2');
+      assert(
+        JSON.stringify(paymentTables.rows.map(row => row.table_name)) === JSON.stringify(['payment_declarations', 'payments']),
+        `seules les tables du cycle P0-PAY-1 sont admises, reçues ${paymentTables.rows.map(row => row.table_name).join(', ')}`,
+      );
+      const providerTables = await harness.database.query<{ table_name: string }>(
+        `SELECT table_name FROM information_schema.tables
+          WHERE table_schema = current_schema()
+            AND (table_name ILIKE '%mobile_money%' OR table_name ILIKE '%otp%'
+                 OR table_name ILIKE '%provider%' OR table_name ILIKE '%webhook%'
+                 OR table_name ILIKE '%aggregator%' OR table_name ILIKE '%momo%')`,
+      );
+      assert(providerTables.rows.length === 0, 'aucune table de fournisseur, de webhook, d’OTP ou d’agrégateur');
+
+      // Aucun paiement n'est déclaré, vérifié ni payé par l'automatisation : les
+      // lignes materialisées sont toutes `SCHEDULED`, et l'échéancier du contrat
+      // reste au premier statut.
+      const paymentStatuses = await harness.database.query<{ status: string; count: string }>(
+        'SELECT status, count(*)::text AS count FROM payments GROUP BY status ORDER BY status',
+      );
+      assert(
+        paymentStatuses.rows.length === 0
+          || (paymentStatuses.rows.length === 1 && paymentStatuses.rows[0].status === 'SCHEDULED'),
+        `aucun statut de paiement au-delà de SCHEDULED, reçus ${paymentStatuses.rows.map(row => `${row.status}×${row.count}`).join(', ')}`,
+      );
+      const declarationRows = await harness.database.query<{ count: string }>(
+        'SELECT count(*)::text AS count FROM payment_declarations',
+      );
+      assert(Number(declarationRows.rows[0]?.count ?? 0) === 0, 'aucune déclaration produite par l’automatisation');
+
+      // La route de déclaration est OUVERTE depuis P0-PAY-1 : elle n'est plus un
+      // handler absent, et une charge utile vide y est refusée par la validation
+      // du domaine (400), jamais exécutée. Les points de contrôle mensuels, eux,
+      // restent fermés : hors périmètre.
       const routes = await harness.worker.fetch(authRequest('/api/v1/payments/commission-declarations', employer.token, {
         method: 'POST',
-        headers: { 'content-type': 'application/json', 'Idempotency-Key': 'p0auto2-closed-payment-001' },
+        headers: { 'content-type': 'application/json', 'Idempotency-Key': 'p0auto2-open-payment-001' },
         body: '{}',
       }));
-      assert(routes.status === 501, `la déclaration de paiement reste fermée (501), reçu ${routes.status}`);
+      assert(
+        routes.status === 400,
+        `la déclaration de paiement est ouverte et validée (400 attendu), reçu ${routes.status}`,
+      );
       const monthly = await harness.worker.fetch(authRequest(`/api/v1/contracts/${mainContractId}/monthly-actions`, employer.token, {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'Idempotency-Key': 'p0auto2-closed-monthly-001' },

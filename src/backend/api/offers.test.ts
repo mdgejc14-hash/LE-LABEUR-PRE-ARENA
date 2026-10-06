@@ -30,6 +30,7 @@ import type { OpenProposalRepository } from '../repositories/proposalRepository'
 import type { OpenContractRepository } from '../repositories/contractRepository';
 import type { ContractAutomation } from '../automation/contractActivation';
 import type { AutomationWorker } from '../automation/worker';
+import type { OpenPaymentRepository } from '../repositories/paymentRepository';
 import type { PostgreSqlDatabase } from '../services/database';
 import { createPostgresDatabase } from '../persistence/postgresDatabase';
 import { createSqlOfferStore } from '../persistence/sqlCoreStores';
@@ -176,6 +177,8 @@ export interface TestHarness {
   automation?: ContractAutomation;
   /** P0-AUTO-2 : worker d'automatisation (déclenché explicitement, aucun timer). */
   automationWorker?: AutomationWorker;
+  /** P0-PAY-1 : repository du cycle PAIEMENT (déclaration, vérification, décision). */
+  payments?: OpenPaymentRepository;
   clock: { value: Date };
   credentials: Record<string, string>;
   close: () => Promise<void>;
@@ -211,6 +214,7 @@ export async function createOffersTestHarness(): Promise<TestHarness> {
     contracts: composition.contracts,
     automation: composition.automation,
     automationWorker: composition.automationWorker,
+    payments: composition.payments,
     clock,
     credentials: google.credentials,
     close: async () => {

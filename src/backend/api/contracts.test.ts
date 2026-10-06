@@ -1116,7 +1116,7 @@ export async function runContractDomainTests(): Promise<OfferTestResult[]> {
       assert(sentStored?.status === 'SIGNATURE' && sentStored?.history.length === 2, 'SENT → ACTIVE refusé sans écriture');
     });
 
-    await check('P0-F Périmètre: cycle mensuel, paiements, incidents, remplacements, notifications et messages restent fermés (501)', async () => {
+    await check('P0-F Périmètre: points de contrôle mensuels, incidents, remplacements, notifications et messages restent fermés (501); cycle Paiements ouvert mais sans aucun paiement exécuté', async () => {
       const chain = await seedProposalChain(harness, { employerId, employeeId: candidateId });
       const deliveredContractId = await createDraftContract(harness, employerToken, 'p0f-closed-create-001', chain.proposalId);
 
@@ -1124,11 +1124,6 @@ export async function runContractDomainTests(): Promise<OfferTestResult[]> {
         harness.worker.fetch(authRequest(`/api/v1/contracts/${deliveredContractId}/monthly-actions`, employerToken, {
           method: 'POST',
           headers: { 'content-type': 'application/json', 'Idempotency-Key': 'p0f-closed-monthly-001' },
-          body: '{}',
-        })),
-        harness.worker.fetch(authRequest('/api/v1/payments/commission-declarations', employerToken, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json', 'Idempotency-Key': 'p0f-closed-payments-001' },
           body: '{}',
         })),
         harness.worker.fetch(authRequest('/api/v1/incidents', employerToken, {
@@ -1144,6 +1139,36 @@ export async function runContractDomainTests(): Promise<OfferTestResult[]> {
           body: '{}',
         })),
       ]);
+      // P0-PAY-1 a OUVERT le domaine PAIEMENT. Ces routes ne sont donc plus des
+      // handlers absents, et l'assertion porte désormais sur la FRONTIÈRE réelle :
+      //  - la déclaration est refusée pour charge utile vide (400), jamais 501 ;
+      //  - l'avancement mensuel est refusé sur un contrat DRAFT (409), parce que
+      //    seul un contrat ACTIF progresse ;
+      //  - aucun paiement n'est écrit, aucune ligne `payments` n'existe pour ce
+      //    contrat : la tranche ne déplace aucun fonds.
+      const declaration = await harness.worker.fetch(authRequest('/api/v1/payments/commission-declarations', employerToken, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'Idempotency-Key': 'p0f-open-payments-001' },
+        body: '{}',
+      }));
+      assert(
+        declaration.status === 400,
+        `400 attendu (validation du domaine Paiement, plus 501), reçu ${declaration.status}`,
+      );
+      const advanceOnDraft = await harness.worker.fetch(authRequest(
+        `/api/v1/contracts/${deliveredContractId}/payments/advance-month`,
+        employerToken,
+        { method: 'POST', headers: { 'content-type': 'application/json', 'Idempotency-Key': 'p0f-open-advance-001' }, body: '{}' },
+      ));
+      assert(
+        advanceOnDraft.status === 409,
+        `409 attendu (contrat non actif, plus 501), reçu ${advanceOnDraft.status}`,
+      );
+      const paymentRows = await harness.database.query<{ count: string }>(
+        'SELECT count(*)::text AS count FROM payments WHERE contract_id = $1',
+        [deliveredContractId],
+      );
+      assert(Number(paymentRows.rows[0]?.count ?? 0) === 0, 'aucun paiement créé hors du cycle');
       assert(
         closed.every(response => response.status === 501),
         `501 attendu pour tout handler non ouvert, reçus ${closed.map(response => response.status).join('/')}`,

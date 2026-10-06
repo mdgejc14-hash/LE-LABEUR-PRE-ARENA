@@ -20,6 +20,9 @@ export const EXPECTED_MIGRATION_IDS: readonly string[] = [
   // P0-AUTO-2 : échéances (Deadline/SLA), unicité des clés d'idempotence de
   // jobs, référence métier des jobs de rappel et index de lecture.
   '0007_contract_automation',
+  // P0-PAY-1 : agrégat Payment du cycle (payments) et tentatives de déclaration
+  // employeur append-only (payment_declarations). Aucun paiement réel.
+  '0008_payment_cycle',
 ];
 
 export const SCHEMA_MIGRATIONS_TABLE = 'schema_migrations';

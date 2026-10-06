@@ -78,6 +78,17 @@ import {
 } from '../../domain/contractScheduleAutomation';
 
 /** Source déclarée de chaque écriture d'automatisation (jamais devinée). */
+import {
+  PAYMENT_PRE_DUE_JOB_TYPE,
+  buildPaymentDraftsFromSchedule,
+} from '../../domain/paymentLifecycle';
+import {
+  armPreDueReminderJobs,
+  handlePreDueReminderJob,
+  materializeContractPayments,
+  type PreDueReminderOutcome,
+} from './paymentCycle';
+
 export const AUTOMATION_SOURCE = 'automation:P0-AUTO-2';
 
 /** Types d'événements réellement traités par cette tranche. */
@@ -97,6 +108,13 @@ export const DEFERRED_NOTIFICATION_EVENT_TYPES: readonly DomainEventType[] = [
 export interface AutomationTransactionRuntime {
   withTransaction<T>(operation: (stores: AutomationStores) => Promise<T>): Promise<T>;
   now?: () => Date;
+  /**
+   * P0-PAY-1 — avance de rappel pré-échéance, résolue depuis la configuration de
+   * l'exploitant (`PAYMENT_PRE_DUE_LEAD_TIME_MS`). `null` (ou absent) = AUCUN job
+   * pré-échéance : le modèle ne fixe aucune valeur par défaut et cette tranche
+   * n'en invente pas.
+   */
+  paymentPreDueLeadTimeMs?: number | null;
 }
 
 export class ContractAutomationError extends Error {
@@ -237,6 +255,10 @@ export interface ContractAutomation {
   handledEventTypes: readonly DomainEventType[];
   /** Types de jobs que le worker peut réclamer. */
   handledJobTypes: readonly string[];
+  /** P0-PAY-1 — type du job de rappel pré-échéance, `null` si l'avance n'est pas décidée. */
+  preDueJobType: string | null;
+  /** P0-PAY-1 — handler du rappel pré-échéance (aucun effet sur les états du paiement). */
+  handlePreDueJob?(input: { job: AutomationJob; stores: AutomationStores; now: Date }): Promise<PreDueReminderOutcome>;
   /** Trace un échec HORS de la transaction échouée (sinon l'audit serait annulé). */
   recordFailure(input: {
     eventId?: string;
@@ -250,6 +272,7 @@ export function createContractAutomation(
   runtime: AutomationTransactionRuntime,
 ): ContractAutomation {
   const clock = runtime.now ?? (() => new Date());
+  const preDueLeadTimeMs = runtime.paymentPreDueLeadTimeMs ?? null;
 
   const withTransaction = runtime.withTransaction;
 
@@ -528,7 +551,40 @@ export function createContractAutomation(
         },
       });
 
-      // 7. Clôture de la réservation d'idempotence.
+      // 7. P0-PAY-1 — agrégat Payment du cycle : lignes `payments` dérivées de
+      //    l'échéancier QUI VIENT D'ÊTRE VALIDÉ, puis armement éventuel des
+      //    rappels pré-échéance. Dans la MÊME transaction : un rollback annule
+      //    échéancier, échéances, rappels ET paiements. Sans stores de paiement
+      //    (runtime sans base durable), le comportement reste exactement celui de
+      //    P0-AUTO-2 — c'est la raison pour laquelle `stores.payments` est
+      //    optionnel plutôt qu'ajouté de force à tous les appels.
+      const materialization = await materializeContractPayments({
+        stores,
+        contractId,
+        employerId: contract.employerId,
+        candidateId: contract.employeeId,
+        paymentSchedule: plan.paymentSchedule,
+        timestamp,
+        eventId: context.event.eventId,
+        reference: context.idempotencyKey,
+      });
+      const preDue = await armPreDueReminderJobs({
+        stores,
+        contractId,
+        drafts: buildPaymentDraftsFromSchedule({
+          contractId,
+          employerId: contract.employerId,
+          candidateId: contract.employeeId,
+          paymentSchedule: plan.paymentSchedule,
+          scheduledAt: timestamp,
+        }),
+        leadTimeMs: preDueLeadTimeMs,
+        timestamp,
+        eventId: context.event.eventId,
+        reference: context.idempotencyKey,
+      });
+
+      // 8. Clôture de la réservation d'idempotence.
       await stores.idempotency.complete(
         AUTOMATION_SYSTEM_ACTOR,
         CONTRACT_ACTIVATION_COMMAND,
@@ -539,6 +595,8 @@ export function createContractAutomation(
           periods: plan.paymentSchedule.length,
           deadlines: deadlinesCreated,
           reminderJobs: jobsCreated,
+          payments: materialization.created,
+          preDueJobs: preDue.created,
         },
       );
     });
@@ -789,12 +847,26 @@ export function createContractAutomation(
       handleReminderJob({ job, paymentKind, stage, stores, now }));
   }
 
+  // P0-PAY-1 — le rappel pré-échéance est un job de plus dans la MÊME file
+  // (`automation_jobs`, claim verrouillé `FOR UPDATE SKIP LOCKED`) : aucun second
+  // ordonnanceur. Il n'entre PAS dans `REMINDER_JOB_TYPES` (ensemble verrouillé
+  // par les tests du modèle, sémantique DUE/J3 différente) : il est exposé par un
+  // point d'extension explicite du worker et n'est réclamé que si l'exploitant a
+  // décidé l'avance.
+  const preDueJobType = preDueLeadTimeMs === null ? null : PAYMENT_PRE_DUE_JOB_TYPE;
+
   return {
     registry,
     engine: new AutomationEngine(registry),
     jobs,
     handledEventTypes: HANDLED_EVENT_TYPES,
-    handledJobTypes: [...REMINDER_JOB_TYPES],
+    handledJobTypes: preDueJobType === null
+      ? [...REMINDER_JOB_TYPES]
+      : [...REMINDER_JOB_TYPES, preDueJobType],
+    preDueJobType,
+    async handlePreDueJob(input) {
+      return handlePreDueReminderJob(input);
+    },
     async recordFailure(input) {
       // Écrit HORS de la transaction échouée : un rollback ne doit jamais
       // effacer la trace de l'erreur (ÉTAPE 10).

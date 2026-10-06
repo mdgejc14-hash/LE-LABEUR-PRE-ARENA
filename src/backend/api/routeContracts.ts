@@ -71,6 +71,13 @@ export const API_ROUTE_CONTRACTS = [
   { key: 'payments.read', method: 'GET', path: '/api/v1/payments/:paymentId', authentication: 'required', scope: 'owner' },
   { key: 'payments.contract.list', method: 'GET', path: '/api/v1/contracts/:contractId/payments', authentication: 'required', scope: 'owner', collection: true },
   { key: 'payments.commission.declare', method: 'POST', path: '/api/v1/payments/commission-declarations', authentication: 'required', scope: 'owner', roles: ['EMPLOYER'], idempotency: true, auditOnMutation: true },
+  // P0-PAY-1 — flux de SALAIRE séparé du flux de COMMISSION : deux routes, deux
+  // natures, et aucune ne lit le champ `paymentType` du client.
+  { key: 'payments.salary.declare', method: 'POST', path: '/api/v1/payments/salary-declarations', authentication: 'required', scope: 'owner', roles: ['EMPLOYER'], idempotency: true, auditOnMutation: true },
+  // Avancement mensuel M1 → M2 (règle réelle du modèle) : commande du CYCLE
+  // PAIEMENTS, distincte de `contracts.monthly-action` (points de contrôle et
+  // confirmations bilatérales, hors périmètre).
+  { key: 'payments.advance-month', method: 'POST', path: '/api/v1/contracts/:contractId/payments/advance-month', authentication: 'required', scope: 'owner', roles: ['EMPLOYER'], idempotency: true, auditOnMutation: true },
   { key: 'schedules.mine.list', method: 'GET', path: '/api/v1/my/schedules', authentication: 'required', scope: 'self', collection: true },
 
   { key: 'incidents.mine.list', method: 'GET', path: '/api/v1/my/incidents', authentication: 'required', scope: 'self', collection: true },
@@ -118,6 +125,7 @@ export const API_ROUTE_CONTRACTS = [
   { key: 'admin.payments.list', method: 'GET', path: '/api/v1/admin/payments', authentication: 'required', scope: 'admin', permission: 'payments:read:any', collection: true },
   { key: 'admin.payments.approve', method: 'POST', path: '/api/v1/admin/payments/:paymentId/approve', authentication: 'required', scope: 'admin', permission: 'payments:approve', idempotency: true, auditOnMutation: true },
   { key: 'admin.payments.reject', method: 'POST', path: '/api/v1/admin/payments/:paymentId/reject', authentication: 'required', scope: 'admin', permission: 'payments:reject', idempotency: true, auditOnMutation: true },
+  { key: 'admin.payments.confirm', method: 'POST', path: '/api/v1/admin/payments/:paymentId/confirm', authentication: 'required', scope: 'admin', permission: 'payments:approve', idempotency: true, auditOnMutation: true },
   { key: 'admin.schedules.list', method: 'GET', path: '/api/v1/admin/schedules', authentication: 'required', scope: 'admin', permission: 'schedules:read:any', collection: true },
   { key: 'admin.incidents.list', method: 'GET', path: '/api/v1/admin/incidents', authentication: 'required', scope: 'admin', permission: 'incidents:read:any', collection: true },
   { key: 'admin.incidents.arbitrate', method: 'POST', path: '/api/v1/admin/incidents/:incidentId/arbitrate', authentication: 'required', scope: 'admin', permission: 'incidents:arbitrate', idempotency: true, auditOnMutation: true },

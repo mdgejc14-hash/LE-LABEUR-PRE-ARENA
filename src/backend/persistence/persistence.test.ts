@@ -580,8 +580,35 @@ export async function runPostgresFoundationTests(): Promise<PostgresFoundationTe
       'automation_audit_ledger',
       'automation_deadlines',
     ];
-    const extra = [...schema.keys()].filter(key => !CORE_TABLES.includes(key as (typeof CORE_TABLES)[number]) && !automationTables.includes(key));
+    // P0-PAY-1 : `payments` (agrégat du cycle) et `payment_declarations`
+    // (tentatives de déclaration, append-only), créées par la migration 0008 et
+    // par elle seule. Le garde-fou reste identique : TOUTE AUTRE table est
+    // refusée — en particulier aucune table de fournisseur, de webhook, d'OTP,
+    // d'agrégateur, de mobile money ou de KYC.
+    const paymentTables = ['payments', 'payment_declarations'];
+    const extra = [...schema.keys()].filter(key =>
+      !CORE_TABLES.includes(key as (typeof CORE_TABLES)[number])
+      && !automationTables.includes(key)
+      && !paymentTables.includes(key));
     assert(extra.length === 0, `tables hors noyau détectées: ${extra.join(', ')}`);
+
+    const paymentMigrationName = files.find(name => name.startsWith('0008'));
+    assert(paymentMigrationName === '0008_payment_cycle.sql', `migration 0008 attendue, reçue ${String(paymentMigrationName)}`);
+    const paymentSql = paymentMigrationName
+      ? stripSqlComments(read(resolve(MIGRATIONS_DIR, paymentMigrationName)))
+      : '';
+    for (const table of paymentTables) {
+      assert(
+        new RegExp(`CREATE TABLE IF NOT EXISTS ${table}\\b`).test(paymentSql),
+        `la table ${table} doit être créée par 0008_payment_cycle.sql uniquement`,
+      );
+    }
+    for (const forbidden of [/provider/i, /webhook/i, /\botp\b/i, /kyc/i, /aggregator/i, /mobile[_ ]?money/i, /sms/i]) {
+      assert(
+        !forbidden.test([...schema.keys()].join('_')),
+        `aucune table de paiement réel n'est admise (motif ${forbidden} rencontré)`,
+      );
+    }
   });
 
   await check('Migrations: domaines d’états identiques aux types TypeScript', () => {

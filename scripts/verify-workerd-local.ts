@@ -35,7 +35,7 @@
 import EmbeddedPostgres from 'embedded-postgres';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { createServer, type Server } from 'node:http';
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -249,7 +249,9 @@ async function main(): Promise<void> {
     try {
       health = await waitForHttp(`${base}/healthz`, 120_000);
     } catch (error) {
-      throw new Error(`${String((error as Error).message)}\n--- wrangler.log ---\n${require('node:fs').readFileSync(wranglerLog, 'utf8').slice(-3000)}`);
+      // `require` n'existe pas dans ce module ESM : lire le log avec l'import
+      // du dessus, sinon l'erreur de diagnostic écrasait la cause réelle.
+      throw new Error(`${String((error as Error).message)}\n--- wrangler.log ---\n${readFileSync(wranglerLog, 'utf8').slice(-3000)}`);
     }
 
     await check('workerd + Hyperdrive local : /healthz réel (base joignable, migrations appliquées)', async () => {
@@ -1063,10 +1065,34 @@ async function main(): Promise<void> {
       for (const action of ['CONTRACT_SCHEDULE_CREATED', 'CONTRACT_PAYMENT_DEADLINES_CREATED', 'CONTRACT_REMINDER_JOBS_SCHEDULED', 'SCHEDULE_J3_ELIGIBILITY_RECORDED']) {
         assert(audit.rows.some(row => row.action === action), `action d’audit manquante: ${action}`);
       }
+      // P0-PAY-1 : le cycle paiements écrit SA propre trace sur le même contrat,
+      // sous sa source — les deux automatisations restent attribuables.
       assert(
-        audit.rows.every(row => row.actor_id === 'SYSTEM' && row.source === 'automation:P0-AUTO-2'),
+        audit.rows.some(row => row.action === 'PAYMENTS_MATERIALIZED' && row.source === 'automation:P0-PAY-1'),
+        'la matérialisation du cycle paiements est tracée sous sa source propre',
+      );
+      assert(
+        audit.rows.every(row => row.actor_id === 'SYSTEM' && (
+          row.source === 'automation:P0-AUTO-2'
+          || (row.source === 'automation:P0-PAY-1' && row.action === 'PAYMENTS_MATERIALIZED')
+        )),
         'source et acteur réels de l’automatisation',
       );
+
+      // Un paiement par échéance de l’échéancier, tous encore SCHEDULED : le cycle
+      // matériel des états métier, il n’exécute aucun paiement.
+      const cycle = await pool.query<{ rows: number; scheduled: number }>(
+        `SELECT count(*)::int AS rows,
+                count(*) FILTER (WHERE status <> 'SCHEDULED')::int AS scheduled
+           FROM payments WHERE contract_id = $1`,
+        [contract.id],
+      );
+      assert(cycle.rows[0]?.rows === 7, `7 lignes de paiement attendues (6 salaires + 1 commission), reçues ${String(cycle.rows[0]?.rows)}`);
+      assert(cycle.rows[0]?.scheduled === 0, 'aucun paiement sorti de SCHEDULED sans échéance atteinte');
+      const declarations = await pool.query<{ count: string }>(
+        'SELECT count(*)::text AS count FROM payment_declarations',
+      );
+      assert(Number(declarations.rows[0]?.count ?? 0) === 0, 'aucune déclaration inventée par l’automatisation');
       assert(
         audit.rows.some(row => row.event_id === contractActivatedEventId(contract.id)),
         'eventId tracé dans l’audit',

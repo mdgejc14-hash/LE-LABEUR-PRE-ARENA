@@ -280,7 +280,7 @@ async function main(): Promise<void> {
     });
 
     let migrationResult: Awaited<ReturnType<typeof applyMigrations>> | null = null;
-    await check('Migrations 0001→0007 appliquées sur le moteur réel', async () => {
+    await check('Migrations 0001→0008 appliquées sur le moteur réel', async () => {
       migrationResult = await applyMigrations(client, migrations, {
         statementTimeoutMs: 15000,
         onProgress: message => console.log(`     ${message}`),
@@ -304,6 +304,8 @@ async function main(): Promise<void> {
         // P0-AUTO-1 : outbox, jobs, idempotence, ledger. P0-AUTO-2 : échéances.
         'automation_outbox', 'automation_jobs', 'automation_idempotency',
         'automation_audit_ledger', 'automation_deadlines',
+        // P0-PAY-1 : cycle métier des paiements (aucune table de fournisseur).
+        'payments', 'payment_declarations',
       ];
       const tables = await database.query<{ table_name: string }>(
         `SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'`,
@@ -1311,9 +1313,41 @@ async function main(): Promise<void> {
       }
       for (const row of audit.rows) {
         assert(row.actor_id === 'SYSTEM', 'acteur SYSTEM');
-        assert(row.source === 'automation:P0-AUTO-2', 'source de l’automatisation');
+        // Le cycle paiements écrit SES propres lignes d’audit sur le même contrat,
+        // sous sa source : les deux traces restent distinctes et attribuable.
+        assert(
+          row.source === (row.action === 'PAYMENTS_MATERIALIZED' ? 'automation:P0-PAY-1' : 'automation:P0-AUTO-2'),
+          `source de l’automatisation attendue pour ${row.action}, reçue ${row.source}`,
+        );
         assert(row.entity_id === p0auto2ContractId, 'contractId tracé');
       }
+
+      // P0-PAY-1 sur le moteur RÉEL : un paiement par échéance de l’échéancier,
+      // aucun doublon malgré deux drains, aucun statut inventé, aucun job armé
+      // sans décision de l’exploitant (aucune valeur par défaut).
+      const cycleRows = await database.query<{
+        id: string; payment_type: string; status: string; amount: string; idempotency_key: string; due_at: Date;
+      }>(
+        `SELECT id, payment_type, status, amount::text, idempotency_key, due_at FROM payments
+          WHERE contract_id = $1 ORDER BY payment_type, month_number`,
+        [p0auto2ContractId],
+      );
+      assert(cycleRows.rows.length === 7, `7 lignes de paiement attendues (6 salaires + 1 commission M1), reçues ${cycleRows.rows.length}`);
+      assert(cycleRows.rows.every(row => row.status === 'SCHEDULED'), 'le cycle part de SCHEDULED : aucun paiement dû non plus');
+      assert(Number(cycleRows.rows.find(row => row.payment_type === 'PLATFORM_FEE')?.amount ?? 0) > 0, 'commission M1 materialisée');
+      assert(!cycleRows.rows.some(row => row.payment_type === 'PLATFORM_FEE' && Number(row.amount) === 0),
+        'aucune ligne de commission à 0 % (règle réelle, rien d’inventé)');
+      const uniqueCycleKeys = await database.query<{ count: string }>(
+        'SELECT count(DISTINCT idempotency_key)::text AS count FROM payments WHERE contract_id = $1',
+        [p0auto2ContractId],
+      );
+      assert(Number(uniqueCycleKeys.rows[0]?.count ?? 0) === 7, 'aucun paiement dupliqué par le rejeu du worker');
+      const preDueJobs = await database.query<{ count: string }>(
+        `SELECT count(*)::text AS count FROM automation_jobs
+          WHERE aggregate_id = $1 AND job_type = 'PAYMENT_PRE_DUE_REMINDER'`,
+        [p0auto2ContractId],
+      );
+      assert(Number(preDueJobs.rows[0]?.count ?? 0) === 0, 'aucun rappel pré-échéance armé sans configuration');
       assert(
         audit.rows.some(row => row.event_id === contractActivatedEventId(p0auto2ContractId)),
         'eventId tracé dans l’audit',
@@ -1551,9 +1585,29 @@ async function main(): Promise<void> {
         `SELECT table_name FROM information_schema.tables
           WHERE table_schema = current_schema()
             AND (table_name ILIKE '%notification%' OR table_name ILIKE '%email%' OR table_name ILIKE '%sms%'
-                 OR table_name ILIKE '%whatsapp%' OR table_name ILIKE '%push%' OR table_name ILIKE '%payment%')`,
+                 OR table_name ILIKE '%whatsapp%' OR table_name ILIKE '%push%')`,
       );
-      assert(channels.rows.length === 0, 'aucune table de notification ni de paiement créée');
+      assert(channels.rows.length === 0, 'aucune table de canal de notification créée');
+
+      // P0-PAY-1 : SEULES les deux tables du cycle métier existent. Aucun
+      // fournisseur, aucun webhook, aucun OTP, aucun KYC, aucun agrégateur.
+      const paymentTables = await database.query<{ table_name: string }>(
+        `SELECT table_name FROM information_schema.tables
+          WHERE table_schema = current_schema() AND table_name ILIKE '%payment%'
+          ORDER BY table_name`,
+      );
+      assert(
+        JSON.stringify(paymentTables.rows.map(row => row.table_name)) === JSON.stringify(['payment_declarations', 'payments']),
+        `aucune autre table de paiement que le cycle métier, reçues ${paymentTables.rows.map(row => row.table_name).join(', ')}`,
+      );
+      const providerTables = await database.query<{ table_name: string }>(
+        `SELECT table_name FROM information_schema.tables
+          WHERE table_schema = current_schema()
+            AND (table_name ILIKE '%provider%' OR table_name ILIKE '%webhook%' OR table_name ILIKE '%otp%'
+                 OR table_name ILIKE '%kyc%' OR table_name ILIKE '%aggregator%' OR table_name ILIKE '%momo%'
+                 OR table_name ILIKE '%mobile_money%')`,
+      );
+      assert(providerTables.rows.length === 0, 'aucune table de paiement réel: ' + providerTables.rows.map(row => row.table_name).join(', '));
 
       const audit = await database.query<{ action: string; after_state: unknown }>(
         `SELECT action, after_state FROM automation_audit_ledger
