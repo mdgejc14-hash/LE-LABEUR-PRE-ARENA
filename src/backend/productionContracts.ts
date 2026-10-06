@@ -136,13 +136,15 @@ export type OutboxEventType =
   | 'PAYMENT_VERIFIED'
   | 'PAYMENT_REJECTED'
   /**
-   * P0-PAY-1 — cycle PAIEMENT. Ces trois types complètent la chaîne
+   * P0-PAY-1 — cycle PAIEMENT. Ces types complètent la chaîne
    * `SCHEDULED → DUE → PENDING_VERIFICATION → VERIFIED → PAID` :
    * `PAYMENT_DUE` (échéance atteinte), `PAYMENT_PENDING_VERIFICATION`
    * (déclaration soumise, en attente) et `PAYMENT_PAID` (rapprochement local,
    * AUCUN mouvement de fonds). Ils sont produits dans l'Outbox transactionnelle
-   * réelle et n'ont volontairement AUCUN consumer : aucun canal, aucun SMS,
-   * aucun webhook.
+   * réelle. P0-SALARY-1 consomme `PAYMENT_PAID` pour les seuls salaires afin de
+   * déclencher la demande de confirmation existante; cela ne confirme jamais le
+   * salaire du travailleur. Aucun de ces événements ne déclenche de canal de
+   * notification, de SMS ni de webhook sortant.
    */
   | 'PAYMENT_DUE'
   | 'PAYMENT_PENDING_VERIFICATION'

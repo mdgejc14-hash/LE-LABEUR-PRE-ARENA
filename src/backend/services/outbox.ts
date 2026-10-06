@@ -7,8 +7,10 @@ export interface OutboxEffectContract {
 }
 
 /**
- * Event contract for later transactional outbox wiring. These are not emitted
- * by the mock and are not yet persisted or consumed in Phase 1.
+ * Provider-neutral catalogue of event intents. This catalogue is not itself a
+ * dispatcher: individual P0 modules own their producers and consumers. Payment
+ * and salary events, for example, use the durable PostgreSQL outbox; the salary
+ * confirmation consumer is not a notification channel or a fund transfer.
  */
 export const OUTBOX_EFFECT_CONTRACTS: readonly OutboxEffectContract[] = [
   { eventType: 'PAYMENT_DECLARED', sideEffects: ['notify the relevant reviewer', 'update payment activity feed'], idempotencyKey: 'event.id' },
@@ -42,16 +44,16 @@ export const OUTBOX_EFFECT_CONTRACTS: readonly OutboxEffectContract[] = [
   { eventType: 'PAYMENT_OVERDUE_J3', sideEffects: ['notify employer and authorized Admins', 'record scheduler audit event'], idempotencyKey: 'schedule-entry + payment-kind + due-date + J3' },
   /**
    * P0-PAY-1 — cycle PAIEMENT réellement produit dans l'Outbox transactionnelle
-   * (`automation_outbox`), et contracté ici pour le futur moteur de
-   * notifications : AUCUN consumer n'est branché, aucun canal n'existe.
-   * `PAYMENT_DECLARED` (déjà déclaré ci-dessus) porte la declaration de
-   * l'employeur ; `PAYMENT_APPROVED` porte la verification favorable ;
-   * `PAYMENT_REJECTED` le rejet motive. Les payloads de reference sont decrits
-   * dans `src/domain/paymentLifecycle.ts` (`DOCUMENTED_PAYMENT_EVENTS`).
+   * (`automation_outbox`). P0-SALARY-1 consomme `PAYMENT_PAID` pour les seuls
+   * salaires et déclenche la demande de confirmation existante; aucun consumer
+   * de notification ni aucun canal externe n'est branché. `PAYMENT_DECLARED`
+   * porte la déclaration de l'employeur; `PAYMENT_APPROVED` la vérification
+   * favorable; `PAYMENT_REJECTED` le rejet motivé. Les payloads de référence sont
+   * décrits dans `src/domain/paymentLifecycle.ts` (`DOCUMENTED_PAYMENT_EVENTS`).
    */
   { eventType: 'PAYMENT_DUE', sideEffects: ['no asynchronous effect in P0-PAY-1 (notification module is a later step)'], idempotencyKey: 'paymentId + DUE' },
   { eventType: 'PAYMENT_PENDING_VERIFICATION', sideEffects: ['queue the declaration for Admin review (no channel in P0-PAY-1)'], idempotencyKey: 'paymentId + PENDING_VERIFICATION + attemptNumber' },
-  { eventType: 'PAYMENT_PAID', sideEffects: ['refresh schedule state', 'no fund movement is ever triggered by this event'], idempotencyKey: 'paymentId + PAID' },
+  { eventType: 'PAYMENT_PAID', sideEffects: ['request P0-SALARY-1 worker confirmation for SALARY only', 'no worker confirmation and no fund movement are implied'], idempotencyKey: 'paymentId + PAID' },
   /** P0-PAY-3 : l'Outbox ne fait qu'ordonner un job idempotent de batch; aucun mouvement ni canal. */
   { eventType: 'PAYMENT_RECONCILIATION_BATCH_REQUESTED', sideEffects: ['enqueue the bounded reconciliation job in automation_jobs; no payment transition or fund movement'], idempotencyKey: 'batchId + initial' },
   /**

@@ -83,11 +83,15 @@ vaut `false` partout, et `docs` + tests le verrouillent.
    `isSalaryPaidToEmployee`, statut projeté) et jamais dupliquées dans une table
    de confort. `VERIFIED` n'élargit pas le domaine du contrat : il est projeté
    en `PENDING_VERIFICATION`.
-8. **Événements sans canal.** `PAYMENT_DUE`, `PAYMENT_DECLARED`,
-   `PAYMENT_PENDING_VERIFICATION`, `PAYMENT_APPROVED`, `PAYMENT_PAID`,
-   `PAYMENT_REJECTED` sont écrits dans l'outbox durable (agrégat `payment`) et
-   restent `PENDING` : aucun consumer, aucun canal (module Notifications =
-   étape suivante). `PAYMENT_OVERDUE_J3` de P0-AUTO-2 est inchangé.
+8. **Événements sans canal de notification.** `PAYMENT_DUE`, `PAYMENT_DECLARED`,
+   `PAYMENT_PENDING_VERIFICATION`, `PAYMENT_APPROVED`, `PAYMENT_PAID` et
+   `PAYMENT_REJECTED` sont écrits dans l'outbox durable (agrégat `payment`).
+   Complément ultérieur P0-SALARY-1 : `PAYMENT_PAID` est consommé par
+   `AutomationEngine` pour un paiement `SALARY` et déclenche la demande de
+   confirmation salariale existante; ce consumer ne confirme pas le salaire et
+   ne déplace aucun fonds. Les autres événements restent sans consumer métier
+   dans ce cycle; aucun canal de notification n'est branché. `PAYMENT_OVERDUE_J3`
+   de P0-AUTO-2 est inchangé.
 9. **Frontière fournisseur préparée, jamais branchée.**
    `PaymentProviderAdapter` + `verifyTransaction()` / `handleWebhook()` /
    `reconcile()` existent comme abstraction avec refus explicite
