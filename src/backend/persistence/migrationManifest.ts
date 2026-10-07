@@ -44,6 +44,11 @@ export const EXPECTED_MIGRATION_IDS: readonly string[] = [
   // SHA-256, append-only), liens version ↔ entité métier et politiques de
   // conservation par type (aucune durée inventée : PENDING_LEGAL_VALIDATION).
   '0016_documents',
+  // P0-CRON-QUEUE : horodatage du claim de l'Outbox (récupération des
+  // claims orphelins après crash) et index de récupération bornée des jobs
+  // `RUNNING`. Aucune table nouvelle : ni deuxième queue, ni deuxième
+  // ordonnanceur.
+  '0017_cron_queue',
 ];
 
 export const SCHEMA_MIGRATIONS_TABLE = 'schema_migrations';

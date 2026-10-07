@@ -246,9 +246,11 @@ export interface WorkerComposition {
    */
   automation?: ContractAutomation;
   /**
-   * P0-AUTO-2 : worker d'automatisation. Déclenché explicitement (`drain`,
-   * `drainEvents`, `runDueJobs`) : aucun timer, aucun Cron, aucune Queue
-   * Cloudflare de production dans cette tranche.
+   * P0-AUTO-2 / P0-CRON-QUEUE : worker d'automatisation. Déclenché
+   * explicitement (`drain`, `drainEvents`, `runDueJobs`) OU périodiquement par
+   * le Cron Trigger existant via `runScheduledCycle` (passée bornée :
+   * récupération des claims orphelins → drain → audit du tick). Aucun timer
+   * applicatif, aucune Queue Cloudflare de production dans cette tranche.
    */
   automationWorker?: AutomationWorker;
   /**
@@ -748,6 +750,14 @@ export function composeWorker(
   const reputationAutomation = runReputationAutomationInTransaction
     ? createReputationAutomation({
         runInTransaction: runReputationAutomationInTransaction,
+        // P0-CRON-QUEUE — stores de réconciliation LIÉS À LA TRANSACTION du
+        // worker (jamais au pool) : requis par le job planifié
+        // REPUTATION_RECONCILIATION (cœur idempotent partagé).
+        createStores: executor => ({
+          reputation: createSqlReputationStore(executor),
+          reader: createSqlReputationFactReader(executor),
+          audit: createSqlAutomationStores(executor).audit,
+        }),
         ...(overrides.now ? { now: overrides.now } : {}),
       })
     : undefined;

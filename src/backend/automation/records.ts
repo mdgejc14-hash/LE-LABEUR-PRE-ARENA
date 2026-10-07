@@ -70,6 +70,22 @@ export interface DomainEventOutbox {
   markRetryable(eventId: string, error: string, availableAt: string): Promise<void>;
   markDeadLetter(eventId: string, error: string): Promise<void>;
   listByAggregate(aggregateType: string, aggregateId: string): Promise<PersistedOutboxEvent[]>;
+  /**
+   * P0-CRON-QUEUE — récupération des claims orphelins (crash du worker APRÈS
+   * réservation, AVANT ack) : les lignes `PROCESSING` dont le claim est plus
+   * vieux que `staleBefore` repassent `RETRYABLE` (rejeu idempotent) ou
+   * `DEAD_LETTER` quand la borne de tentatives EXISTANTE est atteinte. Aucun
+   * mécanisme de dead-letter n'est ajouté : ce sont les mêmes bornes
+   * (`attempts`, `last_error`) que le retry du worker.
+   */
+  recoverStale(input: {
+    now: string;
+    staleBefore: string;
+    maxAttempts: number;
+    reason: string;
+  }): Promise<{ recovered: number; deadLettered: number; ids: string[] }>;
+  /** Lecture d'exploitation : compte par statut (aucun état inventé). */
+  countByStatus(): Promise<Record<string, number>>;
 }
 
 /* ------------------------------------------------------------------ */
@@ -104,6 +120,21 @@ export interface ScheduledJobStore {
   findByIdempotencyKey(idempotencyKey: string): Promise<AutomationJob | null>;
   /** Claim borné et verrouillé des jobs échus (`FOR UPDATE SKIP LOCKED`). */
   claimDue(input: { limit: number; jobTypes?: readonly string[]; now: string }): Promise<AutomationJob[]>;
+  /**
+   * P0-CRON-QUEUE — récupération des jobs `RUNNING` orphelins (crash APRÈS
+   * réservation, AVANT le passage à `COMPLETED`) : rejeu `RETRYABLE` (les
+   * handlers existants sont idempotents — rejeu sans double effet) ou `FAILED`
+   * quand la borne de tentatives EXISTANTE est atteinte. Le job n'est JAMAIS
+   * perdu en silence.
+   */
+  recoverStale(input: {
+    now: string;
+    staleBefore: string;
+    maxAttempts: number;
+    reason: string;
+  }): Promise<{ recovered: number; failed: number; ids: string[] }>;
+  /** Lecture d'exploitation : compte par statut (aucun état inventé). */
+  countByStatus(): Promise<Record<string, number>>;
   /**
    * Compare-and-set de statut : un job déjà `COMPLETED` ne peut jamais repasser
    * `RUNNING`, donc jamais être exécuté deux fois.
