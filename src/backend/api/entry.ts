@@ -105,7 +105,7 @@ import {
   runDuePaymentSweep,
 } from '../automation/paymentCycle';
 import { createContractAutomation, type ContractAutomation } from '../automation/contractActivation';
-import { createAutomationWorker, type AutomationWorker } from '../automation/worker';
+import { createAutomationWorker, type AutomationWorker, type SupplementalAutomationProcessor } from '../automation/worker';
 import type { AutomationStores } from '../automation/records';
 import { createSqlClaimStore } from '../persistence/sqlClaimStores';
 import { createSqlReplacementStore } from '../persistence/sqlReplacementStores';
@@ -114,6 +114,17 @@ import { createMatchingRepository, createMatchingApiHandlers, type OpenMatchingR
 import { createClaimRepository, createClaimApiHandlers, type ClaimRepositoryStores, type OpenClaimRepository } from '../disputes/claimRepository';
 import { createReplacementRepository, createReplacementApiHandlers, type OpenReplacementRepository, type ReplacementRepositoryStores } from '../replacements/replacementRepository';
 import { createClaimAutomation } from '../disputes/claimAutomation';
+// P0-REPUTATION — ledger de réputation : règles versionnées, faits documentés
+// déjà persistés, corrections ADMIN auditées. Aucun second ledger d'audit, aucun
+// système de notification, aucun impact sur le ranking P0-MATCHING.
+import { createSqlReputationStore, createSqlReputationFactReader } from '../persistence/sqlReputationStores';
+import {
+  createReputationRepository,
+  createReputationApiHandlers,
+  type OpenReputationRepository,
+  type ReputationRepositoryStores,
+} from '../reputation/reputationRepository';
+import { createReputationAutomation, type ReputationAutomationStores } from '../reputation/reputationAutomation';
 import { resolveClaimEvidenceDeadline } from '../disputes/config';
 // P0-NOTIFICATIONS — couche de notification : le canal In-App est persisté, et
 // les canaux Push/Email ne sont que des ABSTRACTIONS (aucun provider réel,
@@ -186,6 +197,11 @@ export interface WorkerComposition {
   replacements?: OpenReplacementRepository;
   /** P0-MATCHING : qualification versionnée + résultats persistés, uniquement en PostgreSQL durable. */
   matching?: OpenMatchingRepository;
+  /**
+   * P0-REPUTATION : ledger d'événements documentés + vue dérivée. Présent
+   * uniquement en PostgreSQL durable (transaction, audit et idempotence).
+   */
+  reputation?: OpenReputationRepository;
   claimDeadlineConfiguration?: ReturnType<typeof resolveClaimEvidenceDeadline>;
   /**
    * P0-AUTO-2 : automatisation contractuelle (handler `CONTRACT_ACTIVATED` et
@@ -646,6 +662,52 @@ export function composeWorker(
     ? createMatchingApiHandlers(matchingRepository)
     : {};
 
+  /*
+   * P0-REPUTATION — ledger d'événements documentés.
+   *
+   * Composée UNIQUEMENT avec une base PostgreSQL durable : sans transaction, il
+   * n'y a ni garantie d'unicité « un fait = une entrée », ni ledger d'audit, ni
+   * idempotence durable, et les routes restent `501 NOT_IMPLEMENTED` (fail-closed).
+   *
+   * Le processeur de réputation OBSERVE deux événements réels de l'Outbox
+   * (`SALARY_CONFIRMED`, `CLAIM_RESOLVED`) et n'écrit que des entrées et des
+   * traces d'audit : aucun événement Outbox ajouté, donc aucune notification
+   * déclenchée par un calcul de réputation.
+   */
+  const reputationAvailable = Boolean(persistence.database && persistence.core);
+  const buildReputationStores = (tx: Parameters<typeof createSqlReputationStore>[0]): ReputationRepositoryStores => ({
+    reputation: createSqlReputationStore(tx),
+    users: createSqlUserStore(tx),
+    reader: createSqlReputationFactReader(tx),
+    automation: createAutomationStores(tx),
+  });
+  const runReputationInTransaction = reputationAvailable && persistence.database
+    ? async <T>(operation: (reputationStores: ReputationRepositoryStores) => Promise<T>): Promise<T> =>
+        persistence.database!.run(async tx => operation(buildReputationStores(tx)))
+    : undefined;
+  const reputationRepository = reputationAvailable && persistence.database && runReputationInTransaction
+    ? createReputationRepository({
+        stores: buildReputationStores(persistence.database),
+        runInTransaction: runReputationInTransaction,
+        ...(overrides.now ? { now: overrides.now } : {}),
+      })
+    : undefined;
+  const reputationHandlers = reputationRepository ? createReputationApiHandlers(reputationRepository) : {};
+  const runReputationAutomationInTransaction = runReputationInTransaction
+    ? async <T>(operation: (reputationStores: ReputationAutomationStores) => Promise<T>): Promise<T> =>
+        runReputationInTransaction(async stores => operation({
+          reputation: stores.reputation,
+          audit: stores.automation.audit,
+          reader: stores.reader,
+        }))
+    : undefined;
+  const reputationAutomation = runReputationAutomationInTransaction
+    ? createReputationAutomation({
+        runInTransaction: runReputationAutomationInTransaction,
+        ...(overrides.now ? { now: overrides.now } : {}),
+      })
+    : undefined;
+
   const paymentProviderRegistry = createPaymentProviderRegistry(
     overrides.paymentProviderAdapter ? [overrides.paymentProviderAdapter] : [],
   );
@@ -795,6 +857,16 @@ export function composeWorker(
     ? createNotificationApiHandlers(notificationService)
     : {};
 
+  /**
+   * Observateurs supplémentaires branchés sur l'Outbox EXISTANTE, dans l'ordre
+   * de composition : notification (P0-NOTIFICATIONS) puis réputation
+   * (P0-REPUTATION). Un événement est routé vers TOUS ceux qui déclarent son
+   * type : chacun observe, aucun ne « vole » l'événement à un autre.
+   */
+  const observerProcessors: SupplementalAutomationProcessor[] = [];
+  if (notificationAutomation) observerProcessors.push(notificationAutomation);
+  if (reputationAutomation) observerProcessors.push(reputationAutomation);
+
   const automationWorker = persistence.database && contractAutomation
     ? createAutomationWorker({
         database: persistence.database,
@@ -803,7 +875,7 @@ export function composeWorker(
         ...(claimAutomation ? { supplemental: claimAutomation } : {}),
         // P0-NOTIFICATIONS — le même événement peut être observé par plusieurs
         // processeurs : `CLAIM_CREATED` reste traité par le Claim ET notifié.
-        ...(notificationAutomation ? { processors: [notificationAutomation] } : {}),
+        ...(observerProcessors.length > 0 ? { processors: observerProcessors } : {}),
         ...(overrides.now ? { now: overrides.now } : {}),
         ...(paymentRepository
           ? {
@@ -838,6 +910,9 @@ export function composeWorker(
     ...replacementHandlers,
     // P0-MATCHING — qualification, revue humaine et résultats explicables.
     ...matchingHandlers,
+    // P0-REPUTATION — lecture de sa propre réputation, réconciliation idempotente
+    // et, côté ADMIN, examen et correction motivée. Absent sans base durable.
+    ...reputationHandlers,
     // P0-PAY-1 — cycle Payment existant.
     ...paymentHandlers,
     ...(persistence.database && mode === 'postgres' ? createSalaryConfirmationHandlers(persistence.database, overrides.salaryTestOtpSink, createSqlAutomationStores) : {}),
@@ -860,6 +935,7 @@ export function composeWorker(
     claims: claimRepository,
     replacements: replacementRepository,
     matching: matchingRepository,
+    ...(reputationRepository ? { reputation: reputationRepository } : {}),
     claimDeadlineConfiguration,
     payments: paymentRepository,
     paymentReconciliation,

@@ -34,6 +34,7 @@ import { runReplacementDomainTests } from '../src/backend/api/replacements.test'
 import { runContractAutomationTests } from '../src/backend/automation/contractActivation.test';
 import { runNotificationTests } from '../src/backend/notifications/notifications.test';
 import { runMatchingTests } from '../src/backend/matching/matching.test';
+import { runReputationTests } from '../src/backend/api/reputation.test';
 
 interface TestCase {
   name: string;
@@ -78,6 +79,7 @@ async function main(): Promise<void> {
   const replacementDomain = await runReplacementDomainTests();
   const notificationLayer = await runNotificationTests();
   const matching = await runMatchingTests();
+  const reputation = await runReputationTests();
 
   const suites: Array<{ name: string; cases: TestCase[] }> = [
     { name: 'Domain deterministic', cases: deterministic.results.map(result => ({ name: result.name, success: result.success, detail: result.details })) },
@@ -115,6 +117,7 @@ async function main(): Promise<void> {
     { name: 'P0-REPLACEMENT — workflow persistant (REPLACE, ownership, idempotence/concurrence, Application → Proposal → Contract, liens historiques, notifications, paiements non transférés)', cases: replacementDomain },
     { name: 'P0-NOTIFICATIONS — couche de notification (événement → Outbox/Automation existants → In-App → Push/Email en abstraction; destinataires, lu/non lu, idempotence, rejeu, concurrence, retry, couverture auditée)', cases: notificationLayer },
     { name: 'P0-MATCHING — qualification indépendante, revue humaine, ranking explicable, consentement, idempotence, concurrence, ownership et exclusion des facteurs sensibles', cases: matching },
+    { name: 'P0-REPUTATION — ledger d’événements documentés (faits réels, règles versionnées, explications, idempotence, concurrence, neutralité des litiges ouverts, corrections ADMIN auditées, permissions, non-régression P0-MATCHING/PAIEMENT/REPLACEMENT)', cases: reputation },
     { name: 'P0-AUTO-2 — CONTRACT_ACTIVATED réel (Outbox → Queue → Worker → AutomationEngine → échéancier salarial, échéancier de commission, échéances, rappels; PostgreSQL, idempotence, concurrence, retry, dead-letter, rollback, audit, séparation DEMO/API)', cases: contractAutomation },
   ];
 

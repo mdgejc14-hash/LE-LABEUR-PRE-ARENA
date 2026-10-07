@@ -36,6 +36,10 @@ export const EXPECTED_MIGRATION_IDS: readonly string[] = [
   '0013_replacements',
   // P0-MATCHING : qualification d'offre, profils minimaux et snapshots explicables.
   '0014_matching',
+  // P0-REPUTATION : ledger d'événements documentés (fait source, règle/version,
+  // impact, explication, statut réversible, historique append-only). Aucun
+  // second ledger d'audit : `automation_audit_ledger` reste l'unique trace.
+  '0015_reputation_ledger',
 ];
 
 export const SCHEMA_MIGRATIONS_TABLE = 'schema_migrations';
