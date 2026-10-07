@@ -1809,6 +1809,30 @@ async function main(): Promise<void> {
       assert(audit.rows.some(row => row.action === 'CLAIM_CREATED') && audit.rows.some(row => row.action === 'CLAIM_EVIDENCE_REQUESTED') && audit.rows.some(row => row.action === 'CLAIM_EVIDENCE_DEADLINE_SCHEDULED'), 'ledger audit existant mis à jour');
     });
 
+    await check('workerd → Hyperdrive → PostgreSQL : P0-SECURITY-ANTI-FRAUD (routes internes bloquées, anti-falsification, 401/403 et audit forensique dans automation_audit_ledger)', async () => {
+      const headers = { cookie: `${SESSION_COOKIE_NAME}=${sessionCookie}` };
+      const internalRes = await fetch(`${base}/api/v1/internal/cron`, { headers });
+      assert(internalRes.status === 404, `route interne attendue 404 sous workerd, reçu ${internalRes.status}`);
+
+      const forgedRes = await fetch(`${base}/api/v1/offers?actorId=usr_forged`, { headers });
+      assert(forgedRes.status === 400, `paramètre falsifié attendu 400 sous workerd, reçu ${forgedRes.status}`);
+
+      const unauthRes = await fetch(`${base}/api/v1/me`);
+      assert(unauthRes.status === 401, `/api/v1/me sans session attendu 401 sous workerd, reçu ${unauthRes.status}`);
+
+      const rbacRes = await fetch(`${base}/api/v1/admin/users`, { headers });
+      assert(rbacRes.status === 403, `CANDIDATE sur route ADMIN attendu 403 sous workerd, reçu ${rbacRes.status}`);
+
+      const secAudits = await pool.query<{ action: string }>(
+        "SELECT action FROM automation_audit_ledger WHERE source = 'api:P0-SECURITY-ANTI-FRAUD'",
+      );
+      const actions = secAudits.rows.map(r => r.action);
+      assert(actions.includes('SECURITY_INTERNAL_ROUTE_BLOCKED'), 'SECURITY_INTERNAL_ROUTE_BLOCKED audité via Hyperdrive');
+      assert(actions.includes('SECURITY_PARAMETER_FORGERY_REJECTED'), 'SECURITY_PARAMETER_FORGERY_REJECTED audité via Hyperdrive');
+      assert(actions.includes('SECURITY_AUTH_FAILED'), 'SECURITY_AUTH_FAILED audité via Hyperdrive');
+      assert(actions.includes('SECURITY_ACCESS_DENIED'), 'SECURITY_ACCESS_DENIED audité via Hyperdrive');
+    });
+
     await check('workerd → PostgreSQL : session relue, /me résolu, logout révoqué en base', async () => {
       const headers = { cookie: `${SESSION_COOKIE_NAME}=${sessionCookie}` };
       const session = await fetch(`${base}/api/v1/auth/session`, { headers });

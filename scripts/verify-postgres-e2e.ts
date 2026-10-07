@@ -2007,6 +2007,25 @@ async function main(): Promise<void> {
       await database.query('DELETE FROM users WHERE id = $1', [adminId]);
     });
 
+    await check('P0-SECURITY-ANTI-FRAUD (PostgreSQL réel) : routes internes bloquées, anti-falsification, RBAC et audit forensique dans automation_audit_ledger', async () => {
+      const internalRes = await composition.worker.fetch(withSession('/api/v1/internal/cron', sessionCookie));
+      assert(internalRes.status === 404, `route interne attendue 404, reçu ${internalRes.status}`);
+
+      const forgedRes = await composition.worker.fetch(withSession('/api/v1/offers?actorId=usr_forged', sessionCookie));
+      assert(forgedRes.status === 400, `paramètre falsifié attendu 400, reçu ${forgedRes.status}`);
+
+      const rbacRes = await composition.worker.fetch(withSession('/api/v1/admin/users', sessionCookie));
+      assert(rbacRes.status === 403, `CANDIDATE sur route ADMIN attendu 403, reçu ${rbacRes.status}`);
+
+      const secAudits = await database.query<{ action: string }>(
+        "SELECT action FROM automation_audit_ledger WHERE source = 'api:P0-SECURITY-ANTI-FRAUD'",
+      );
+      const actions = secAudits.rows.map(r => r.action);
+      assert(actions.includes('SECURITY_INTERNAL_ROUTE_BLOCKED'), 'audit SECURITY_INTERNAL_ROUTE_BLOCKED persisté');
+      assert(actions.includes('SECURITY_PARAMETER_FORGERY_REJECTED'), 'audit SECURITY_PARAMETER_FORGERY_REJECTED persisté');
+      assert(actions.includes('SECURITY_ACCESS_DENIED'), 'audit SECURITY_ACCESS_DENIED persisté');
+    });
+
     await check('Worker/API → PostgreSQL : logout révoque la session en base', async () => {
       const response = await composition.worker.fetch(withSession('/api/v1/auth/logout', sessionCookie, { method: 'POST' }));
       assert(response.status === 200, `logout attendu 200, reçu ${response.status}`);

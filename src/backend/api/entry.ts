@@ -31,11 +31,22 @@ import { createSalaryConfirmationHandlers } from '../payments/salaryConfirmation
  */
 
 import type { DatabaseHealthProbe, PostgreSqlDatabase } from '../services/database';
+import { toAdminUserDto } from '../identity/dto';
 import { createGoogleCredentialVerifier } from '../identity/googleVerifier';
+import { newEntityId } from '../identity/ids';
 import type { GoogleCredentialVerifier } from '../productionContracts';
 import { createSessionService } from '../identity/sessionService';
-import { createSqlIdentityStores, createSqlUserStore } from '../identity/sqlStores';
+import { createSqlIdentityStores, createSqlSessionStore, createSqlUserStore } from '../identity/sqlStores';
 import { createInMemoryIdentityStores, type IdentityStores } from '../identity/stores';
+import { ApiError } from './errors';
+import {
+  SECURITY_AUDIT_SOURCE,
+  requireAdmin,
+  requireAuth,
+  type RateLimitPolicyConfig,
+  type SecurityAuditSink,
+  type SecurityRateLimiter,
+} from './security';
 import { createInMemoryCoreStores } from '../persistence/coreStores';
 import {
   describePostgresTarget,
@@ -317,6 +328,9 @@ export interface WorkerCompositionOverrides {
   documentUrlSigningSecret?: string;
   /** ICE/TURN issuer injecté uniquement si sa disponibilité et sa portée sont réelles. */
   webrtcIceConfigurationIssuer?: WebRtcIceConfigurationIssuer;
+  /** P0-SECURITY-ANTI-FRAUD — limiteur de débit déterministe minimal. */
+  rateLimiter?: SecurityRateLimiter;
+  rateLimitPolicy?: RateLimitPolicyConfig;
 }
 
 function isInjectedDatabase(value: PostgreSqlDatabase | PostgresClientPort): value is PostgreSqlDatabase {
@@ -1040,6 +1054,133 @@ export function composeWorker(
     : undefined;
   const webrtcHandlers = webrtcRepository ? createWebRtcApiHandlers(webrtcRepository) : {};
 
+  /*
+   * P0-SECURITY-ANTI-FRAUD — journalisation forensique transversale dans le
+   * ledger existant `automation_audit_ledger` (aucun second ledger global) et
+   * blocage ADMIN motivé d'un utilisateur avec révocation immédiate des
+   * sessions actives.
+   */
+  const onSecurityAudit: SecurityAuditSink | undefined = persistence.database && mode === 'postgres'
+    ? async event => {
+        const auditStore = createSqlAutomationStores(persistence.database!).audit;
+        await auditStore.append({
+          id: newEntityId('rev'),
+          actorId: event.actorId ?? 'ANONYMOUS',
+          timestamp: (overrides.now ?? (() => new Date()))().toISOString(),
+          entityId: `security:${event.targetEntityId || event.routeKey}`,
+          action: event.action,
+          source: SECURITY_AUDIT_SOURCE,
+          reference: event.requestId,
+          afterState: {
+            routeKey: event.routeKey,
+            method: event.method,
+            path: event.path,
+            actorRole: event.actorRole ?? null,
+            targetEntityId: event.targetEntityId ?? null,
+            status: event.status,
+            errorCode: event.errorCode,
+            reason: event.reason,
+          },
+        });
+      }
+    : undefined;
+
+  const adminSecurityHandlers = persistence.database && mode === 'postgres'
+    ? {
+        'admin.users.block': async (context: import('./worker').ApiRouteContext) => {
+          const actor = requireAuth(context.actor);
+          requireAdmin(actor, 'users:block');
+          const targetUserId = context.params.userId?.trim() ?? '';
+          if (!targetUserId) {
+            throw new ApiError('VALIDATION_ERROR', 'Identifiant utilisateur requis.');
+          }
+          if (targetUserId === actor.id) {
+            throw new ApiError('BUSINESS_RULE_VIOLATION', 'Un administrateur ne peut pas bloquer son propre compte.', undefined, 409);
+          }
+          const rawBody = await context.request.text();
+          let parsedBody: Record<string, unknown> = {};
+          if (rawBody.trim()) {
+            try {
+              const candidate = JSON.parse(rawBody) as unknown;
+              if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) {
+                throw new Error('not-object');
+              }
+              parsedBody = candidate as Record<string, unknown>;
+            } catch {
+              throw new ApiError('VALIDATION_ERROR', 'Corps JSON invalide.');
+            }
+          }
+          const extraKeys = Object.keys(parsedBody).filter(key => key !== 'reason');
+          if (extraKeys.length > 0) {
+            throw new ApiError('VALIDATION_ERROR', `Champs non autorisés : ${extraKeys.join(', ')}.`, {
+              fields: extraKeys,
+            });
+          }
+          const reason = typeof parsedBody.reason === 'string' ? parsedBody.reason.trim() : '';
+          if (reason.length < 3) {
+            throw new ApiError('VALIDATION_ERROR', 'Un motif explicite (au moins 3 caractères) est obligatoire pour bloquer un compte.', {
+              reason: ['Motif obligatoire.'],
+            });
+          }
+          const idempotencyKey = context.command?.idempotencyKey ?? '';
+          const fingerprint = JSON.stringify({ targetUserId, reason });
+          const nowIso = (overrides.now ?? (() => new Date()))().toISOString();
+
+          return persistence.database!.run(async tx => {
+            const automation = createSqlAutomationStores(tx);
+            const commandName = 'admin.users.block';
+            const reserved = await automation.idempotency.reserve({
+              actorId: actor.id,
+              command: commandName,
+              key: idempotencyKey,
+              payloadHash: fingerprint,
+            });
+            if (reserved.kind === 'conflict') {
+              throw new ApiError('IDEMPOTENCY_CONFLICT', 'Clé d’idempotence déjà utilisée avec des paramètres différents.', undefined, 409);
+            }
+            if (reserved.kind === 'replay') {
+              return reserved.result;
+            }
+            if (reserved.kind === 'in-progress') {
+              throw new ApiError('IDEMPOTENCY_CONFLICT', 'Une commande identique est déjà en cours de traitement.', undefined, 409);
+            }
+
+            const locked = await tx.query<{ status: string }>(
+              'SELECT status FROM users WHERE id = $1 FOR UPDATE',
+              [targetUserId],
+            );
+            if (locked.rows.length === 0) {
+              throw new ApiError('NOT_FOUND', 'Utilisateur introuvable.');
+            }
+            const beforeStatus = locked.rows[0].status;
+            await tx.query(
+              "UPDATE users SET status = 'BLOCKED', updated_at = $2 WHERE id = $1",
+              [targetUserId, nowIso],
+            );
+            await createSqlSessionStore(tx).revokeAllForUser(targetUserId, nowIso);
+            const updatedUser = await createSqlUserStore(tx).findById(targetUserId);
+            if (!updatedUser) {
+              throw new ApiError('NOT_FOUND', 'Utilisateur introuvable.');
+            }
+            const dto = toAdminUserDto(updatedUser);
+            await automation.audit.append({
+              id: newEntityId('rev'),
+              actorId: actor.id,
+              timestamp: nowIso,
+              entityId: targetUserId,
+              action: 'USER_BLOCKED',
+              source: SECURITY_AUDIT_SOURCE,
+              reference: idempotencyKey,
+              beforeState: { status: beforeStatus },
+              afterState: { status: 'BLOCKED', reason, sessionsRevoked: true },
+            });
+            await automation.idempotency.complete(actor.id, commandName, idempotencyKey, dto);
+            return dto;
+          });
+        },
+      }
+    : {};
+
   const domainHandlers = {
     ...offerHandlers,
     ...applicationHandlers,
@@ -1070,6 +1211,7 @@ export function composeWorker(
     // DÉJÀ déclarées par le catalogue de routes). Absent sans base durable,
     // ces routes restent alors fermées (501).
     ...notificationHandlers,
+    ...adminSecurityHandlers,
   };
 
   return {
@@ -1109,6 +1251,9 @@ export function composeWorker(
       health,
       cookie: { secure: env.COOKIE_SECURE !== 'false' },
       now: overrides.now,
+      rateLimiter: overrides.rateLimiter,
+      rateLimitPolicy: overrides.rateLimitPolicy,
+      onSecurityAudit,
       handlers: domainHandlers,
     }),
   };

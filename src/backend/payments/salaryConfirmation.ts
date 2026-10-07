@@ -21,7 +21,11 @@ export function createSalaryConfirmationHandlers(db: PostgreSqlDatabase, testOtp
     let result;
     try { result = await db.run(async tx => {
       const p = (await tx.query<Payment>('SELECT * FROM payments WHERE id = $1 FOR UPDATE', [paymentId])).rows[0];
-      if (!p || p.payment_type !== 'SALARY' || p.status !== 'PAID' || (!automated && p.employer_id !== actorId)) throw invalid();
+      if (!p) throw invalid();
+      if (!automated && p.employer_id !== actorId) {
+        throw new ApiError('FORBIDDEN', 'Action non autorisée : seul l’employeur du paiement peut demander une confirmation salariale.');
+      }
+      if (p.payment_type !== 'SALARY' || p.status !== 'PAID') throw invalid();
       const contract = (await tx.query<{ id: string }>(`SELECT id FROM contracts WHERE id = $1 AND employer_id = $2 AND candidate_id = $3 AND currency = $4
         AND EXISTS (SELECT 1 FROM jsonb_array_elements(payment_schedule) entry WHERE entry->>'id' = $5 AND entry->>'periodKey' = $6
           AND (entry->>'monthNumber')::integer = $7 AND (entry->>'employeeShareAmount')::numeric = $8::numeric AND entry->>'currency' = $4)`,
@@ -72,7 +76,11 @@ export function createSalaryConfirmationHandlers(db: PostgreSqlDatabase, testOtp
     if (!body || typeof body.otp !== 'string' || !/^\d{6}$/.test(body.otp) || typeof body.nonce !== 'string') throw new ApiError('VALIDATION_ERROR', 'OTP et nonce requis.');
     try { return await db.run(async tx => {
       const p = (await tx.query<Payment>('SELECT * FROM payments WHERE id = $1 FOR UPDATE', [params.paymentId])).rows[0];
-      if (!p || p.payment_type !== 'SALARY' || p.status !== 'PAID' || p.candidate_id !== actor.id) throw invalid();
+      if (!p) throw invalid();
+      if (p.candidate_id !== actor.id) {
+        throw new ApiError('FORBIDDEN', 'Action non autorisée : seul le travailleur bénéficiaire peut confirmer ce salaire.');
+      }
+      if (p.payment_type !== 'SALARY' || p.status !== 'PAID') throw invalid();
       const proof = (await tx.query<Proof>('SELECT * FROM salary_confirmations WHERE payment_id = $1 FOR UPDATE', [p.id])).rows[0];
       if (!proof || proof.contract_id !== p.contract_id || proof.candidate_id !== p.candidate_id || proof.employer_id !== p.employer_id || proof.period_key !== p.period_key || Number(proof.amount) !== Number(p.amount) || proof.currency !== p.currency) throw invalid();
       const stores = createSqlAutomationStores(tx);

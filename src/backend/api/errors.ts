@@ -7,6 +7,7 @@ export type ApiErrorCode =
   | 'IDEMPOTENCY_CONFLICT'
   | 'IDEMPOTENCY_KEY_REQUIRED'
   | 'BUSINESS_RULE_VIOLATION'
+  | 'RATE_LIMITED'
   | 'NOT_IMPLEMENTED'
   | 'SERVICE_UNAVAILABLE'
   | 'INTERNAL_ERROR';
@@ -29,10 +30,38 @@ const STATUS_BY_CODE: Record<ApiErrorCode, number> = {
   IDEMPOTENCY_CONFLICT: 409,
   IDEMPOTENCY_KEY_REQUIRED: 400,
   BUSINESS_RULE_VIOLATION: 422,
+  RATE_LIMITED: 429,
   NOT_IMPLEMENTED: 501,
   SERVICE_UNAVAILABLE: 503,
   INTERNAL_ERROR: 500,
 };
+
+/**
+ * Redacts connection strings, session cookies, bearer tokens, passwords, and
+ * internal R2 object keys so no client-exposed error can ever leak a secret.
+ */
+export function redactClientErrorText(text: string): string {
+  return text
+    .replace(/postgres(?:ql)?:\/\/[^\s"'<>]+/gi, '[secret-redacted]')
+    .replace(/(__Host-lelabeur_session=)[^\s;"']+/gi, '$1[redacted]')
+    .replace(/\b(Bearer\s+)[A-Za-z0-9._~+/-]+=*/gi, '$1[redacted]')
+    .replace(/\b(password|secret|token_hash|signing_secret)\s*=\s*[^\s&;"']+/gi, '$1=[redacted]')
+    .replace(/\bdocs\/[A-Za-z0-9_./-]+/g, '[internal-key-redacted]');
+}
+
+function redactErrorDetails(
+  details: Record<string, string[]> | undefined,
+): Record<string, string[]> | undefined {
+  if (!details) return undefined;
+  const sanitized: Record<string, string[]> = {};
+  for (const [key, values] of Object.entries(details)) {
+    if (/object_?key|token_?hash|secret|password/i.test(key)) continue;
+    sanitized[key] = Array.isArray(values)
+      ? values.map(value => redactClientErrorText(String(value)))
+      : [];
+  }
+  return Object.keys(sanitized).length > 0 ? sanitized : undefined;
+}
 
 export class ApiError extends Error {
   readonly status: number;
@@ -55,21 +84,24 @@ export function apiErrorResponse(error: unknown, requestId: string): Response {
     : new ApiError('INTERNAL_ERROR', 'Une erreur interne est survenue.');
 
   const exposeMessage = apiError.status < 500;
+  const sanitizedDetails = exposeMessage ? redactErrorDetails(apiError.details) : undefined;
   const body: ApiErrorBody = {
     error: {
       code: apiError.code,
-      message: exposeMessage ? apiError.message : 'Une erreur interne est survenue.',
+      message: exposeMessage ? redactClientErrorText(apiError.message) : 'Une erreur interne est survenue.',
       requestId,
-      ...(exposeMessage && apiError.details ? { details: apiError.details } : {}),
+      ...(sanitizedDetails ? { details: sanitizedDetails } : {}),
     },
   };
 
+  const retryAfter = sanitizedDetails?.retryAfterSeconds?.[0];
   return new Response(JSON.stringify(body), {
     status: apiError.status,
     headers: {
       'content-type': 'application/json; charset=utf-8',
       'cache-control': 'no-store',
       'x-request-id': requestId,
+      ...(apiError.status === 429 && retryAfter ? { 'retry-after': retryAfter } : {}),
     },
   });
 }

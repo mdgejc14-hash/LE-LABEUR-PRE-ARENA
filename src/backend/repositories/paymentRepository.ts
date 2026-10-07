@@ -2267,6 +2267,8 @@ export function createPaymentRepository(
       }).catch(() => null);
 
       // 5. Exécution dans une transaction PostgreSQL unique
+      let pendingRollbackAudit: Parameters<typeof appendAudit>[1] | null = null;
+      try {
       return await inTransaction(async current => {
         const durableKey = `${webhookResult.provider}:webhook:${webhookResult.externalTransactionId}:${webhookResult.eventType}`;
         const fingerprint = await sha256Fingerprint(input.rawBody);
@@ -2341,7 +2343,7 @@ export function createPaymentRepository(
         }
 
         if (!payment) {
-          await appendAudit(current, {
+          pendingRollbackAudit = {
             action: PAYMENT_AUDIT_ACTIONS.duplicateDetected,
             actorId: `provider:${webhookResult.provider}`,
             paymentId: 'UNKNOWN',
@@ -2354,7 +2356,7 @@ export function createPaymentRepository(
             error: 'Paiement cible introuvable pour ce webhook.',
             beforeState: {},
             afterState: { externalTransactionId: webhookResult.externalTransactionId },
-          });
+          };
           throw new ApiError('NOT_FOUND', 'Paiement cible introuvable pour cette transaction externe.', undefined, 404);
         }
 
@@ -2366,7 +2368,7 @@ export function createPaymentRepository(
           webhookResult.externalTransactionId,
         );
         if (conflictPayment && conflictPayment.paymentId !== paymentId) {
-          await appendAudit(current, {
+          pendingRollbackAudit = {
             action: PAYMENT_AUDIT_ACTIONS.duplicateDetected,
             actorId: `provider:${webhookResult.provider}`,
             paymentId,
@@ -2379,7 +2381,7 @@ export function createPaymentRepository(
             error: `Cette transaction externe ${webhookResult.externalTransactionId} est déjà associée au paiement ${conflictPayment.paymentId}.`,
             beforeState: { paymentId },
             afterState: { conflictPaymentId: conflictPayment.paymentId },
-          });
+          };
           throw new ApiError('IDEMPOTENCY_CONFLICT', `Cette transaction externe est déjà associée à un autre paiement (${conflictPayment.paymentId}).`, undefined, 409);
         }
 
@@ -2388,7 +2390,7 @@ export function createPaymentRepository(
           webhookResult.externalTransactionId,
         );
         if (conflictDecl && conflictDecl.paymentId !== paymentId) {
-          await appendAudit(current, {
+          pendingRollbackAudit = {
             action: PAYMENT_AUDIT_ACTIONS.duplicateDetected,
             actorId: `provider:${webhookResult.provider}`,
             paymentId,
@@ -2401,7 +2403,7 @@ export function createPaymentRepository(
             error: `Cette transaction externe a déjà été déclarée sur le paiement ${conflictDecl.paymentId}.`,
             beforeState: { paymentId },
             afterState: { conflictPaymentId: conflictDecl.paymentId },
-          });
+          };
           throw new ApiError('IDEMPOTENCY_CONFLICT', 'Cette transaction externe a déjà été utilisée sur un autre paiement.', undefined, 409);
         }
 
@@ -2513,8 +2515,8 @@ export function createPaymentRepository(
             };
           }
 
-          // Si le paiement est DUE : refus de transition
-          await appendAudit(current, {
+          // Si le paiement est DUE : refus de transition (audit persisté après rollback)
+          pendingRollbackAudit = {
             action: PAYMENT_AUDIT_ACTIONS.verificationMismatch,
             actorId: `provider:${webhookResult.provider}`,
             paymentId,
@@ -2527,7 +2529,7 @@ export function createPaymentRepository(
             error: mismatchReason,
             beforeState: { status: locked.status },
             afterState: { status: locked.status, verdict: 'MISMATCHED', reasons: mismatches },
-          });
+          };
 
           throw new ApiError('BUSINESS_RULE_VIOLATION', mismatchReason, undefined, 422);
         }
@@ -2708,6 +2710,12 @@ export function createPaymentRepository(
           action: 'VERIFIED',
         };
       });
+      } catch (error) {
+        if (pendingRollbackAudit) {
+          await appendAudit(stores, pendingRollbackAudit).catch(() => null);
+        }
+        throw error;
+      }
     },
 
     /* -------------------------------------------------------------- */
