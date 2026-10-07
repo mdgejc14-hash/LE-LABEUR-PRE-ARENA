@@ -1329,6 +1329,22 @@ export function createContractRepository(
             );
           }
 
+          // Rejeu sans double effet (P0-LOAD-TESTS) : la confirmation est
+          // idempotente pour UN MÊME acteur dans le MÊME état, quelle que soit
+          // la clé d'idempotence client. Sans cette garde, un rejeu avec une
+          // clé distincte — séquentiel ou concurrent — apposerait une seconde
+          // entrée `EXECUTION_CONFIRMED` dans l'historique, qui deviendrait une
+          // seconde entrée de réputation (`EXECUTION_CONFIRMED_PARTY`). La
+          // seconde partie du contrat conserve le droit de confirmer : c'est
+          // bien le même acteur qui ne peut pas doubler sa propre entrée.
+          const alreadyConfirmedByActor = contract.history.some(
+            (entry: { event: string; actor?: string }) =>
+              entry.event === 'EXECUTION_CONFIRMED' && entry.actor === actor.id,
+          );
+          if (alreadyConfirmedByActor) {
+            return toProjectionFromStores(contract, currentStores);
+          }
+
           // Protection M1 : en premier mois, un incident doit être signalé.
           if (contract.currentMonth < 2) {
             if (!contract.incidentId) {
