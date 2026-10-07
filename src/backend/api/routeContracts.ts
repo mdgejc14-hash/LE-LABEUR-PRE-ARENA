@@ -118,6 +118,21 @@ export const API_ROUTE_CONTRACTS = [
   { key: 'admin.claims.restriction.apply', method: 'POST', path: '/api/v1/admin/claims/:claimId/restrictions', authentication: 'required', scope: 'admin', permission: 'incidents:arbitrate', idempotency: true, auditOnMutation: true },
   { key: 'admin.claims.restriction.release', method: 'POST', path: '/api/v1/admin/claims/:claimId/restrictions/:restrictionId/release', authentication: 'required', scope: 'admin', permission: 'incidents:arbitrate', idempotency: true, auditOnMutation: true },
 
+  // P0-REPUTATION — ledger d'événements documentés, lisible par son sujet.
+  // Le score n'est jamais la source de vérité : la vue dérivée est recalculée à
+  // chaque lecture à partir des entrées ACTIVE. La réconciliation est une
+  // commande idempotente et auditée : un calcul ne produit aucune notification.
+  { key: 'reputation.mine.read', method: 'GET', path: '/api/v1/my/reputation', authentication: 'required', scope: 'self' },
+  { key: 'reputation.mine.entries.list', method: 'GET', path: '/api/v1/my/reputation/entries', authentication: 'required', scope: 'self', collection: true },
+  { key: 'reputation.mine.reconcile', method: 'POST', path: '/api/v1/my/reputation/reconcile', authentication: 'required', scope: 'self', idempotency: true, auditOnMutation: true },
+  // ADMIN : mêmes faits, avec la source et la règle. Permissions EXISTANTES
+  // (`audit:read` pour l'examen, `incidents:arbitrate` pour la correction) :
+  // aucun code de permission n'est créé par cette tranche.
+  { key: 'admin.reputation.entries.list', method: 'GET', path: '/api/v1/admin/reputation/entries', authentication: 'required', scope: 'admin', permission: 'audit:read', collection: true },
+  { key: 'admin.reputation.entries.read', method: 'GET', path: '/api/v1/admin/reputation/entries/:reputationId', authentication: 'required', scope: 'admin', permission: 'audit:read' },
+  { key: 'admin.reputation.entries.correct', method: 'POST', path: '/api/v1/admin/reputation/entries/:reputationId/correct', authentication: 'required', scope: 'admin', permission: 'incidents:arbitrate', idempotency: true, auditOnMutation: true },
+  { key: 'admin.reputation.reconcile', method: 'POST', path: '/api/v1/admin/reputation/reconcile', authentication: 'required', scope: 'admin', permission: 'incidents:arbitrate', idempotency: true, auditOnMutation: true },
+
   { key: 'incidents.mine.list', method: 'GET', path: '/api/v1/my/incidents', authentication: 'required', scope: 'self', collection: true },
   { key: 'incidents.read', method: 'GET', path: '/api/v1/incidents/:incidentId', authentication: 'required', scope: 'owner' },
   { key: 'incidents.report', method: 'POST', path: '/api/v1/incidents', authentication: 'required', scope: 'owner', idempotency: true, auditOnMutation: true },

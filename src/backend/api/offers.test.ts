@@ -36,6 +36,7 @@ import type { OpenReplacementRepository } from '../replacements/replacementRepos
 import type { PaymentReconciliationBatchService } from '../payments/paymentReconciliationBatch';
 import type { PaymentProviderRegistry } from '../payments/paymentProviderRegistry';
 import type { OpenNotificationService } from '../notifications/notificationService';
+import type { OpenReputationRepository } from '../reputation/reputationRepository';
 import type { NotificationChannelRegistry } from '../notifications/channels';
 import type { PostgreSqlDatabase } from '../services/database';
 import { createPostgresDatabase } from '../persistence/postgresDatabase';
@@ -189,6 +190,8 @@ export interface TestHarness {
   automationWorker?: AutomationWorker;
   /** P0-NOTIFICATIONS : service de notification In-App (absent sans base durable). */
   notifications?: OpenNotificationService;
+  /** P0-REPUTATION : ledger d'événements documentés (absent sans base durable). */
+  reputation?: OpenReputationRepository;
   /** P0-PAY-1 : repository du cycle PAIEMENT (déclaration, vérification, décision). */
   payments?: OpenPaymentRepository;
   /** P0-PAY-3 : service durable d'import batch, ledger externe, retries et revue. */
@@ -245,6 +248,7 @@ export async function createOffersTestHarness(
     automation: composition.automation,
     automationWorker: composition.automationWorker,
     notifications: composition.notifications,
+    reputation: composition.reputation,
     payments: composition.payments,
     paymentReconciliation: composition.paymentReconciliation,
     paymentProviders: composition.paymentProviders,
