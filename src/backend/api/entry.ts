@@ -42,6 +42,7 @@ import {
   resolvePersistenceDecision,
   resolvePostgresTarget,
   type PersistenceDecision,
+  type PersistenceReason,
   type SafePostgresDescriptor,
   type WorkerPersistenceEnvironment,
 } from '../persistence/config';
@@ -57,7 +58,12 @@ import {
 } from '../persistence/sqlCoreStores';
 import type { PostgresClientPort } from '../persistence/sqlClient';
 import { buildHealthPayload, detectWorkerRuntime, type BoundaryHealthResponse } from './health';
-import { createApiWorker, type ApiHealthReporter } from './worker';
+import { createApiWorker, type ApiHealthReporter, type ApiReadinessReporter } from './worker';
+// P0-CLOUDFLARE-PRODUCTION — rapport de PRÉPARATION (`/readyz`) : observations
+// réelles uniquement (sonde, migrations, file durable, ticks de cron, R2, audit).
+// Il est TOUJOURS composé, même frontière fermée : c'est lui qui rend le blocage
+// observable au lieu de le laisser implicite.
+import { createReadinessReporter, type ReadinessDependencies } from './readiness';
 import { createIdentityApiWorker } from './identityWorker';
 import {
   createApplicationApiHandlers,
@@ -177,6 +183,13 @@ export interface WorkerEnvironment extends WorkerPersistenceEnvironment {
   /** P0-DISPUTE-1 — aucune durée n'est posée si l'exploitant ne la configure pas. */
   CLAIM_EVIDENCE_DEADLINE_MS?: string;
   /**
+   * P0-CLOUDFLARE-PRODUCTION — cadence de cron DÉCLARÉE, miroir exact de
+   * `[env.production.triggers] crons` (valeur PUBLIQUE, jamais un secret).
+   * Elle permet à `/readyz` de distinguer « cadence déclarée » de « tick
+   * réellement tracé » : sans elle, la planification n'est pas prouvable.
+   */
+  CRON_CADENCE?: string;
+  /**
    * P0-R2 — binding Cloudflare R2 du bucket documentaire (interface
    * structurelle). AUCUN binding n'est déclaré dans `wrangler.toml` dans cette
    * tranche : sans bucket injecté, le domaine documents reste fermé (501).
@@ -211,6 +224,13 @@ export interface WorkerComposition {
   core?: CoreStores;
   /** Rapport `/healthz` réel (sonde + migrations), sans aucun secret. */
   health: ApiHealthReporter;
+  /**
+   * P0-CLOUDFLARE-PRODUCTION — rapport `/readyz` réel : préparation de
+   * production observée (PostgreSQL, migrations, file durable, Cron tracé, R2,
+   * documents, notifications, audit). Jamais simulé : un composant absent est
+   * `blocked`.
+   */
+  readiness: ApiReadinessReporter;
   /** Sonde réelle ; absente quand aucune base n'est configurée. */
   probe?: DatabaseHealthProbe;
   /** Descripteur sûr de la cible, si une cible a été résolue. */
@@ -303,6 +323,16 @@ export interface WorkerCompositionOverrides {
   documentStorage?: ObjectStorage;
   /** P0-R2 — secret HMAC des URL signées, réservé aux vérifications/à l'exploitation. */
   documentUrlSigningSecret?: string;
+  /**
+   * P0-CLOUDFLARE-PRODUCTION — fermeture de PRODUCTION décidée par le garde-fou
+   * (`evaluateProductionGuard`) AVANT toute composition de domaine : la
+   * composition reste fermée, aucun client n'est construit, et la cause est
+   * publiée par `/healthz` (motif) et `/readyz` (motif + conséquences).
+   */
+  productionBlock?: {
+    reason: PersistenceReason;
+    violations: readonly string[];
+  };
 }
 
 function isInjectedDatabase(value: PostgreSqlDatabase | PostgresClientPort): value is PostgreSqlDatabase {
@@ -387,7 +417,16 @@ export function composeWorker(
   injected?: PostgreSqlDatabase | PostgresClientPort,
   overrides: WorkerCompositionOverrides = {},
 ): WorkerComposition {
-  const persistence = resolveWorkerPersistence(env, injected);
+  /**
+   * P0-CLOUDFLARE-PRODUCTION — un blocage de production NE COMPOSE RIEN : aucune
+   * connexion, aucun store, aucune route métier. La décision est prise par
+   * l'entrée Cloudflare (`evaluateProductionGuard`) et transmise ici pour que le
+   * motif soit publié, jamais deviné.
+   */
+  const productionBlock = overrides.productionBlock;
+  const persistence: WorkerPersistenceResolution = productionBlock
+    ? { decision: { kind: 'misconfigured', reason: productionBlock.reason } }
+    : resolveWorkerPersistence(env, injected);
   const runtime = {
     runtime: detectWorkerRuntime(),
     declaredEnvironment: env.WORKER_ENV?.trim() || null,
@@ -409,8 +448,30 @@ export function composeWorker(
       health: checked,
       target: persistence.target,
       migrations,
+      ...(productionBlock ? { violations: productionBlock.violations } : {}),
     });
   };
+
+  /**
+   * Rapport de préparation : les capacités réellement composées (automatisation,
+   * notifications, documents) sont renseignées au fil de la composition ; la
+   * frontière fermée laisse ces checks explicitement `blocked`.
+   */
+  const readinessCapabilities: Pick<
+    ReadinessDependencies,
+    'automationWorker' | 'notificationsAvailable' | 'documentsAvailable'
+  > = {};
+  const readiness: ApiReadinessReporter = () => createReadinessReporter({
+    env,
+    runtime,
+    decision: persistence.decision,
+    ...(persistence.probe ? { probe: persistence.probe } : {}),
+    ...(persistence.database ? { database: persistence.database } : {}),
+    ...(persistence.target ? { target: persistence.target } : {}),
+    ...(productionBlock ? { violations: productionBlock.violations } : {}),
+    ...readinessCapabilities,
+    ...(overrides.now ? { now: overrides.now } : {}),
+  })();
 
   const audience = env.GOOGLE_CLIENT_ID?.trim();
   if (!audience) {
@@ -420,11 +481,12 @@ export function composeWorker(
       mode: 'closed',
       persistence: persistence.decision,
       health,
+      readiness,
       probe: persistence.probe,
       target: persistence.target,
       // Frontière fermée : aucun canal n'est composé, donc aucun provider.
       notificationChannels: createNotificationChannelRegistry().describe(),
-      worker: createApiWorker({ authenticate: async () => null, health }),
+      worker: createApiWorker({ authenticate: async () => null, health, readiness }),
     };
   }
 
@@ -441,11 +503,12 @@ export function composeWorker(
       mode: 'closed',
       persistence: persistence.decision,
       health,
+      readiness,
       probe: persistence.probe,
       target: persistence.target,
       // Frontière fermée : aucun canal n'est composé, donc aucun provider.
       notificationChannels: createNotificationChannelRegistry().describe(),
-      worker: createApiWorker({ authenticate: async () => null, health }),
+      worker: createApiWorker({ authenticate: async () => null, health, readiness }),
     };
   }
 
@@ -997,6 +1060,11 @@ export function composeWorker(
       })
     : undefined;
 
+  // Capacités RÉELLEMENT composées : c'est ce que `/readyz` observe ensuite.
+  readinessCapabilities.automationWorker = automationWorker;
+  readinessCapabilities.notificationsAvailable = Boolean(notificationService);
+  readinessCapabilities.documentsAvailable = Boolean(documentRepository);
+
   const domainHandlers = {
     ...offerHandlers,
     ...applicationHandlers,
@@ -1055,12 +1123,14 @@ export function composeWorker(
     ...(notificationService ? { notifications: notificationService } : {}),
     notificationChannels: (overrides.notificationChannels ?? createNotificationChannelRegistry()).describe(),
     health,
+    readiness,
     probe: persistence.probe,
     target: persistence.target,
     worker: createIdentityApiWorker({
       sessions,
       stores,
       health,
+      readiness,
       cookie: { secure: env.COOKIE_SECURE !== 'false' },
       now: overrides.now,
       handlers: domainHandlers,

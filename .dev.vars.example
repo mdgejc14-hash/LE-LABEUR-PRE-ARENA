@@ -24,6 +24,13 @@ CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE="postgresql://lelabeur:
 # sans binding, les routes documents répondent 501 (fermeture franche).
 # DOCUMENT_URL_SIGNING_SECRET=""
 
+# P0-CLOUDFLARE-PRODUCTION — cadence de cron DÉCLARÉE, miroir de `[triggers]` de
+# wrangler.toml. Valeur PUBLIQUE (jamais un secret) : `/readyz` la compare au
+# dernier tick réellement tracé (`CRON_TICK_EXECUTED`). La cadence de production
+# est une DÉCISION D'EXPLOITATION, documentée dans
+# docs/P0-CLOUDFLARE_PRODUCTION.md.
+# CRON_CADENCE="*/5 * * * *"
+
 # Variable NON standard, acceptée uniquement si elle pointe vers la boucle locale
 # (127.0.0.1 / localhost). Elle permet de vérifier le parcours d'authentification
 # complet contre un JWKS de test servi localement. Ignorée partout ailleurs.

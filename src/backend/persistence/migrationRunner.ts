@@ -8,7 +8,11 @@
  *    transaction que la migration elle-même (application + trace atomiques) ;
  *  - être idempotent : une migration déjà appliquée n'est jamais rejouée, et
  *    toute divergence de checksum est refusée (pas de relecture silencieuse) ;
- *  - n'exposer aucun secret : les erreurs sont expurgées avant d'être levées.
+ *  - n'exposer aucun secret : les erreurs sont expurgées avant d'être levées ;
+ *  - P0-CLOUDFLARE-PRODUCTION — sérialiser DEUX exécutions concurrentes (deux
+ *    opérateurs, une CI et un poste) par un verrou consultatif de session
+ *    PostgreSQL : le second exécutant attend, constate les migrations déjà
+ *    tracées et ne rejoue rien. Le verrou est libéré dans tous les cas.
  *
  * Les fichiers SQL fournis contiennent leur propre enveloppe `BEGIN;`/`COMMIT;`.
  * Le runner refuse une enveloppe absente, multiple ou mal placée, puis exécute
@@ -19,10 +23,18 @@ import { createHash } from 'node:crypto';
 import { readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-import { redactSqlSecrets, type PostgresClientPort } from './sqlClient';
+import { redactSqlSecrets, type PostgresClientPort, type SqlConnectionHandle } from './sqlClient';
 import { SCHEMA_MIGRATIONS_DDL, SCHEMA_MIGRATIONS_TABLE } from './migrationManifest';
 
 export const MIGRATION_ID_PATTERN = /^[0-9]{4}_[a-z0-9_]+$/;
+
+/**
+ * Verrou consultatif de session (constante, jamais une valeur libre) : une
+ * seule exécution de migrations à la fois sur une base donnée. Il protège
+ * l'UNIQUE table de suivi `schema_migrations` — il ne crée ni verrou applicatif
+ * métier, ni table, ni mécanisme concurrent parallèle.
+ */
+export const MIGRATION_ADVISORY_LOCK_KEY = 741852963;
 
 export interface MigrationFile {
   /** Identifiant stable, dérivé du nom de fichier sans extension. */
@@ -157,63 +169,83 @@ export async function applyMigrations(
 ): Promise<ApplyMigrationsResult> {
   const applied: string[] = [];
   const skipped: string[] = [];
+  // UNE connexion dédiée pour toute l'exécution : la table de suivi, les lots
+  // transactionnels et le verrou consultatif vivent sur la MÊME session.
+  let handle: SqlConnectionHandle | undefined;
+  let locked = false;
 
   try {
-    await client.query(SCHEMA_MIGRATIONS_DDL);
-  } catch (error) {
-    throw migrationFailure(error, secrets);
-  }
-
-  for (const migration of migrations) {
-    let existing: string | null = null;
-    try {
-      const result = await client.query<{ checksum: string }>(
-        `SELECT checksum FROM ${SCHEMA_MIGRATIONS_TABLE} WHERE id = $1`,
-        [migration.id],
-      );
-      existing = result.rows[0]?.checksum ?? null;
-    } catch (error) {
-      throw migrationFailure(error, secrets);
-    }
-
-    if (existing !== null) {
-      if (existing !== migration.checksum) {
-        throw new MigrationError(
-          `Checksum divergent pour ${migration.id}: la migration a été modifiée après application.`,
-        );
-      }
-      skipped.push(migration.id);
-      options.onProgress?.(`= ${migration.id} (déjà appliquée)`);
-      continue;
-    }
-
-    const batch = buildMigrationBatch(migration, options.statementTimeoutMs);
-    const startedAt = Date.now();
-    let handle;
     try {
       handle = await client.acquire();
-      await handle.query(batch.sql);
+      await handle.query('SELECT pg_advisory_lock($1)', [MIGRATION_ADVISORY_LOCK_KEY]);
+      locked = true;
+      await handle.query(SCHEMA_MIGRATIONS_DDL);
     } catch (error) {
       throw migrationFailure(error, secrets);
-    } finally {
+    }
+
+    for (const migration of migrations) {
+      let existing: string | null = null;
       try {
-        await handle?.release();
-      } catch {
-        // Libération best-effort : l'erreur d'origine reste prioritaire.
+        const result = await handle.query<{ checksum: string }>(
+          `SELECT checksum FROM ${SCHEMA_MIGRATIONS_TABLE} WHERE id = $1`,
+          [migration.id],
+        );
+        existing = result.rows[0]?.checksum ?? null;
+      } catch (error) {
+        throw migrationFailure(error, secrets);
       }
-    }
 
+      if (existing !== null) {
+        if (existing !== migration.checksum) {
+          throw new MigrationError(
+            `Checksum divergent pour ${migration.id}: la migration a été modifiée après application.`,
+          );
+        }
+        skipped.push(migration.id);
+        options.onProgress?.(`= ${migration.id} (déjà appliquée)`);
+        continue;
+      }
+
+      const batch = buildMigrationBatch(migration, options.statementTimeoutMs);
+      const startedAt = Date.now();
+      try {
+        await handle.query(batch.sql);
+      } catch (error) {
+        throw migrationFailure(error, secrets);
+      }
+
+      try {
+        await handle.query(
+          `UPDATE ${SCHEMA_MIGRATIONS_TABLE} SET duration_ms = $1 WHERE id = $2 AND duration_ms = 0`,
+          [Date.now() - startedAt, migration.id],
+        );
+      } catch {
+        // La migration est appliquée et tracée; la durée est un confort d'exploitation.
+      }
+
+      applied.push(migration.id);
+      options.onProgress?.(`+ ${migration.id} appliquée`);
+    }
+  } finally {
+    // Un lot interrompu laisse la session en transaction avortée : le ROLLBACK
+    // garantit que la libération du verrou aboutit, sans masquer l'erreur
+    // d'origine (déjà levée par l'appelant).
     try {
-      await client.query(
-        `UPDATE ${SCHEMA_MIGRATIONS_TABLE} SET duration_ms = $1 WHERE id = $2 AND duration_ms = 0`,
-        [Date.now() - startedAt, migration.id],
-      );
+      if (handle && locked) await handle.query('ROLLBACK');
     } catch {
-      // La migration est appliquée et tracée; la durée est un confort d'exploitation.
+      // Aucune transaction ouverte : rien à annuler.
     }
-
-    applied.push(migration.id);
-    options.onProgress?.(`+ ${migration.id} appliquée`);
+    try {
+      if (handle && locked) await handle.query('SELECT pg_advisory_unlock($1)', [MIGRATION_ADVISORY_LOCK_KEY]);
+    } catch {
+      // La fermeture de la session libère le verrou de toute façon.
+    }
+    try {
+      await handle?.release();
+    } catch {
+      // Libération best-effort : l'erreur d'origine reste prioritaire.
+    }
   }
 
   return { applied, skipped };

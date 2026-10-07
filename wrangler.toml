@@ -1,17 +1,26 @@
 # =============================================================================
-# LE LABEUR — configuration Cloudflare Worker (P0-C)
+# LE LABEUR — configuration Cloudflare Worker (P0-C → P0-CLOUDFLARE-PRODUCTION)
 # =============================================================================
-# État réel de cette configuration dans la session P0-C :
+# État réel de cette configuration :
 #   * code Worker : RÉEL (src/backend/worker/cloudflareEntry.ts) ;
-#   * binding Hyperdrive de développement : PRÉPARÉ — l'ID ci-dessous est un
-#     PLACEHOLDER explicite ; aucun Hyperdrive n'existe côté Cloudflare ;
-#   * environnement `production` : PRÉPARÉ — le binding y est volontairement
-#     absent (voir plus bas) ; le Worker y démarre donc FERMÉ, jamais avec une
-#     base implicite.
+#   * profil par défaut = DÉVELOPPEMENT (`wrangler dev`, `wrangler dev
+#     --test-scheduled`) : utilisable sans aucun compte Cloudflare ;
+#   * environnement `production` : PRÉPARÉ, vérifié localement, NON DÉPLOYÉ —
+#     deux ressources externes manquent réellement (Hyperdrive et bucket R2) et
+#     aucun credential Cloudflare n'existe dans cette session. Le profil refuse
+#     donc de servir le trafic tant que ces ressources n'existent pas :
+#     `/healthz` → 503 `degraded`, `/readyz` → 503 `blocked`, aucune route
+#     métier, aucun travail planifié.
 #
 # Secrets : JAMAIS dans ce fichier. Utiliser `wrangler secret put <NOM> --env <env>`
 # ou `.dev.vars` (gitignoré) en développement local.
-# Les `vars` ci-dessous sont non secrets (modes, limites, audience OAuth publique).
+# Les `vars` ci-dessous sont NON SECRETES (modes, limites, cadence d'exploitation,
+# audience OAuth publique).
+#
+# Contrôle AVANT déploiement : `npm run deploy:preflight`
+# (audit des ressources requises, des placeholders et des invariants de
+# production ; signale explicitement BLOCKED_EXTERNAL_ACCESS quand l'accès
+# Cloudflare n'est pas disponible).
 # =============================================================================
 
 name = "lelabeur-api"
@@ -45,6 +54,10 @@ WORKER_ENV = "development"
 # CLAIM_EVIDENCE_DEADLINE_MS = ""  # entier strictement positif en millisecondes
 # Audience OAuth Google PUBLIQUE (aucun secret). Vide = frontière fermée (401/501).
 GOOGLE_CLIENT_ID = ""
+# P0-CLOUDFLARE-PRODUCTION — cadence DÉCLARÉE, miroir de `[triggers] crons`
+# ci-dessous. Elle est lue par `/readyz` pour distinguer « cron déclaré » de
+# « cron réellement exécuté » (dernier tick tracé). Bandeau de 5 champs.
+CRON_CADENCE = "*/5 * * * *"
 
 # Binding Hyperdrive de développement.
 # `id` : PLACEHOLDER — à remplacer par l'ID retourné par
@@ -56,6 +69,20 @@ binding = "HYPERDRIVE"
 id = "00000000-0000-0000-0000-000000000000"
 
 # -----------------------------------------------------------------------------
+# DIFFUSION PÉRIODIQUE (Cron Triggers) — profil de DÉVELOPPEMENT
+# -----------------------------------------------------------------------------
+# Ce bloc rend `wrangler dev --test-scheduled` possible (POST
+# /__scheduled?cron=… → handler `scheduled()` réel → runScheduledCycle()).
+#
+# La cadence est une DÉCISION D'EXPLOITATION, pas une règle métier : celle-ci est
+# une cadence TECHNIQUE (validation/exploitation), identique à `CRON_CADENCE` et
+# à `[env.production.triggers]`. Elle doit être confirmée par l'exploitant avant
+# toute mise en service publique — la procédure est décrite dans
+# docs/P0-CLOUDFLARE_PRODUCTION.md.
+[triggers]
+crons = ["*/5 * * * *"]
+
+# -----------------------------------------------------------------------------
 # PRODUCTION (wrangler deploy --env production)
 # -----------------------------------------------------------------------------
 # `vars` et les bindings ne sont PAS hérités : chaque environnement doit les
@@ -63,12 +90,17 @@ id = "00000000-0000-0000-0000-000000000000"
 [env.production]
 name = "lelabeur-api"
 
+[env.production.observability]
+enabled = true
+
 [env.production.vars]
 PERSISTENCE = "postgres"
 DB_POOL_MAX = "5"
 DB_STATEMENT_TIMEOUT_MS = "15000"
 DB_APPLICATION_NAME = "lelabeur-worker"
 SESSION_TTL_SECONDS = "43200"
+# Invariant de production : le cookie de session reste TLS (le garde-fou refuse
+# `false` : fermeture franche, cf. src/backend/worker/productionGuard.ts).
 COOKIE_SECURE = "true"
 WORKER_ENV = "production"
 # P0-PAY-1 — même règle qu'en développement : aucune valeur par défaut installée.
@@ -76,49 +108,91 @@ WORKER_ENV = "production"
 # P0-DISPUTE-1 — aucune durée de preuve implicite; valeur validée par l'exploitant.
 # CLAIM_EVIDENCE_DEADLINE_MS = ""  # entier positif en millisecondes
 GOOGLE_CLIENT_ID = ""
+# Cadence déclarée : DOIT rester identique à `[env.production.triggers] crons`
+# (vérifié par les tests de configuration, pas par un commentaire).
+CRON_CADENCE = "*/5 * * * *"
 
-# Binding Hyperdrive de production : VOLONTAIREMENT ABSENT.
-# Aucun Hyperdrive réel n'existe dans cette session, et le placeholder de
-# développement n'est pas hérité. Conséquence voulue : déployé tel quel, le
-# Worker de production répond 503 sur /healthz (`misconfigured`) et refuse
-# toute route protégée — jamais de base implicite.
+# -----------------------------------------------------------------------------
+# R2 — bucket documentaire (P0-R2 / DOCUMENTS & PREUVES)
+# -----------------------------------------------------------------------------
+# Le bucket est PRIVÉ : aucun domaine public, aucun accès direct par clé
+# d'objet. Le contenu ne sort que par une route authentifiée et contrôlée
+# (ownership/parties/permissions) — `object_key` n'est jamais exposé.
 #
-# Pour l'activer :
-#   1. npx wrangler hyperdrive create lelabeur-prod --connection-string="postgresql://…" --caching-disabled=true
-#      (cache désactivé : les lectures d'identité/session exigent un état frais)
-#   2. npx wrangler secret put POSTGRES_CONNECTION_STRING --env production   # (repli optionnel)
-#   3. décommenter le bloc ci-dessous avec l'ID réel, puis redéployer :
+# Le nom ci-dessous est l'identifiant PUBLIC du bucket prévu pour la production.
+# Il doit être créé par l'exploitant avant le déploiement :
+#   npx wrangler r2 bucket create lelabeur-documents-production
+# Sans bucket réel, `wrangler deploy` échoue (« bucket not found ») : c'est
+# voulu — aucun domaine documentaire ne doit être déployé vers un bucket
+# inexistant, et `/readyz` vérifie une lecture `head` réelle du binding.
+[[env.production.r2_buckets]]
+binding = "DOCUMENTS_BUCKET"
+bucket_name = "lelabeur-documents-production"
+
+# -----------------------------------------------------------------------------
+# DIFFUSION PÉRIODIQUE (Cron Triggers) — profil de PRODUCTION
+# -----------------------------------------------------------------------------
+# Chaîne réelle : Cron Trigger → `scheduled()` → `runScheduledCycle()`
+# (récupération des claims orphelins → Outbox → paiements échus → jobs échus →
+# audit `CRON_TICK_EXECUTED`). Le déclencheur n'exécute AUCUNE action métier
+# arbitraire et n'existe aucune route HTTP de drain.
+#
+# CADENCE : `*/5 * * * *` est une cadence TECHNIQUE de validation/exploitation
+# (SLA de traitement le plus court possible sans charge inutile), pas une règle
+# métier. Elle est identique à `CRON_CADENCE` (profil production) et à la
+# cadence du profil par défaut. Toute modification d'exploitation doit mettre à
+# jour LES DEUX valeurs : le test de configuration échoue sinon.
+[env.production.triggers]
+crons = ["*/5 * * * *"]
+
+# -----------------------------------------------------------------------------
+# HYPERDRIVE — binding de PRODUCTION : VOLONTAIREMENT ABSENT
+# -----------------------------------------------------------------------------
+# `wrangler deploy --env production --dry-run` affiche donc l'avertissement
+# « hyperdrive exists at the top level, but not on env.production » : c'est
+# ATTENDU tant que la ressource n'existe pas (le bundle de production se
+# construit, 1,2 Mio / 234 Kio gzip, et le Worker démarre FERMÉ). L'avertissement
+# disparaît dès que le bloc ci-dessous est activé avec un ID réel.
+# Aucun Hyperdrive n'existe dans cette session, et une valeur inventée serait
+# exactement ce que cette tranche interdit. Déployé tel quel, le Worker de
+# production démarre donc FERMÉ :
+#   * le garde-fou de production (`evaluateProductionGuard`) détecte l'absence de
+#     cible PostgreSQL exploitable ;
+#   * `/healthz` → 503 `degraded`, motif `production-missing-hyperdrive` ;
+#   * `/readyz` → 503 `blocked` (PostgreSQL, migrations, file, cron, audit) ;
+#   * aucune route métier, aucun travail planifié — jamais de base implicite.
+#
+# Activer réellement (4 étapes, dans cet ordre) :
+#   1. npx wrangler hyperdrive create lelabeur-prod \
+#        --connection-string="postgresql://…" --caching-disabled=true
+#      (cache DÉSACTIVÉ : les lectures d'identité/session/permissions exigent un
+#      état frais, et les écritures n'invalident pas les lectures en cache)
+#   2. reporter l'ID retourné ci-dessous et décommenter le bloc
+#   3. MIGRATION_DATABASE_URL="postgresql://…" npm run migrate -- --status
+#      MIGRATION_DATABASE_URL="postgresql://…" npm run migrate
+#   4. npx wrangler secret put GOOGLE_CLIENT_ID --env production   # audience publique
+#      npx wrangler secret put DOCUMENT_URL_SIGNING_SECRET --env production
+#      npm run deploy:preflight && npx wrangler deploy --env production
 #
 # [[env.production.hyperdrive]]
 # binding = "HYPERDRIVE"
 # id = "<ID_HYPERDRIVE_PRODUCTION>"
 
 # -----------------------------------------------------------------------------
-# P0-CRON-QUEUE — frontière du déclencheur périodique, PRÉPARÉE, non installée.
+# QUEUES CLOUDFLARE — DÉCISION EXPLICITE : AUCUNE
 # -----------------------------------------------------------------------------
-# Le Worker EXPOSE le handler `scheduled()` (P0-PAY-1) et il exécute désormais
-# la PASSÉE bornée du worker d'automatisation EXISTANT :
-#   scheduled() → recoverStaleClaims (crash après réservation, avant ack)
-#               → drain (événements → paiements échus → jobs échus)
-#               → audit `CRON_TICK_EXECUTED`
-# AUCUN bloc `[triggers]` n'est ACTIF : aucune planification de production
-# n'est installée dans cette tranche, conformément à l'étape CLOUDFLARE
-# PRODUCTION. Déployer sans cron ne déclenche donc rien ; l'activation — et
-# le choix de la cadence (décision d'exploitation, jamais une valeur par
-# défaut dans le code) — appartient à cette étape. Pour l'activer :
-#
-# [env.production.triggers]
-# crons = ["* * * * *"]   # cadence à décider par l'exploitant
-#
-# Garde-fous (code, pas configuration) : le trigger ne produit aucune action
-# métier arbitraire (il ne fait que déclencher le worker d'automatisation),
-# chaque tick est audité, et la borne d'orphanisation des claims
-# (10 min > timeout d'énoncé 15 s) protège des traitements réellement en cours.
+# L'architecture du dépôt porte DÉJÀ sa file durable : `automation_outbox` +
+# `automation_jobs` en PostgreSQL (claim `FOR UPDATE SKIP LOCKED`, tentatives,
+# `available_at`, dead-letter, récupération des claims orphelins). Ajouter une
+# Cloudflare Queue créerait un DEUXIÈME système de file, avec deux vérités et
+# deux mécanismes de reprise — explicitement hors périmètre.
+# Aucun binding `[[queues.producers]]` / `[[queues.consumers]]` n'est donc
+# déclaré, et un test de configuration échoue si l'un apparaît.
+# Conséquence : le producteur ET le consommateur restent `scheduled()` →
+# `runScheduledCycle()` → file PostgreSQL EXISTANTE.
 # -----------------------------------------------------------------------------
 
 # -----------------------------------------------------------------------------
-# Hors périmètre P0-C (volontairement absents) :
-# R2, Queues, Durable Objects, KV : aucun binding, aucune migration DO.
-# (Cron Triggers : voir le bloc P0-CRON-QUEUE ci-dessus — frontière préparée,
-# aucun bloc actif.)
+# Hors périmètre (volontairement absents) : Durable Objects, KV, D1, Services,
+# Hyperdrive de repli par `POSTGRES_CONNECTION_STRING`.
 # -----------------------------------------------------------------------------

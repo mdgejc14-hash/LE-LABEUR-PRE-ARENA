@@ -14,6 +14,8 @@
     "verify:postgres": "tsx scripts/verify-postgres-e2e.ts",
     "dev:worker": "wrangler dev",
     "deploy:worker": "wrangler deploy --env production",
+    "deploy:preflight": "tsx scripts/deploy-production-preflight.ts",
+    "smoke:production": "tsx scripts/smoke-cloudflare-production.ts",
     "verify:workerd": "tsx scripts/verify-workerd-local.ts"
   },
   "dependencies": {

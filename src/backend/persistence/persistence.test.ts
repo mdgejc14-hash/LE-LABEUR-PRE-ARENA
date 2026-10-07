@@ -1157,10 +1157,22 @@ export async function runPostgresFoundationTests(): Promise<PostgresFoundationTe
           // Frontières Worker autorisées : composition serveur (P0-A) et runtime
           // Cloudflare réel (P0-C : entrée Worker + pilote pg). Aucun autre fichier
           // ne peut importer la persistance au runtime.
+          //
+          // P0-CLOUDFLARE-PRODUCTION ajoute trois modules du runtime Cloudflare :
+          //   * `productionGuard.ts` / `productionResources.ts` : lisent la
+          //     CONFIGURATION de persistance (cible résolue, mode demandé) pour
+          //     fermer la frontière — jamais de connexion ;
+          //   * `api/readiness.ts` : rapport `/readyz`, reçoit un port SQL injecté
+          //     (aucun pilote) et n'utilise que des helpers expurgés.
+          // Aucun de ces modules n'ouvre de connexion ni n'est atteignable depuis
+          // le bundle navigateur (test dédié de la configuration Cloudflare).
           const workerBoundaryFiles = new Set([
             'src/backend/api/entry.ts',
+            'src/backend/api/readiness.ts',
             'src/backend/worker/cloudflareEntry.ts',
             'src/backend/worker/pgClient.ts',
+            'src/backend/worker/productionGuard.ts',
+            'src/backend/worker/productionResources.ts',
           ]);
           if (workerBoundaryFiles.has(relative)) continue;
           offenders.push(relative);

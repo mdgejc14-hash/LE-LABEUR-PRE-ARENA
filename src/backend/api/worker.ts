@@ -5,8 +5,19 @@ import { healthStatusCode, type BoundaryHealthResponse } from './health';
 import { parsePageRequest } from './pagination';
 import { API_ROUTE_CONTRACTS, findApiPath, findApiRoute, routePathMatches, type ApiRouteContract, type ApiRouteKey } from './routeContracts';
 import { requireAdmin, requireAuth, requirePermission } from './security';
+// P0-CLOUDFLARE-PRODUCTION — `/readyz` : préparation de production observée.
+// Le détail n'est servi qu'à un ADMIN disposant de la permission EXISTANTE
+// `audit:read` ; tout autre appelant ne reçoit que des statuts (aucun hôte,
+// aucun compteur, aucun identifiant d'exploitation).
+import {
+  projectReadiness,
+  readinessStatusCode,
+  READINESS_API_VERSION,
+  type ReadinessReport,
+} from './readiness';
 
 export type { BoundaryHealthResponse, HealthRuntimeDescriptor, MigrationState, PersistenceHealthReport } from './health';
+export type { ReadinessReport, ReadinessResponse } from './readiness';
 
 export interface ApiRouteContext {
   request: Request;
@@ -24,6 +35,12 @@ export type ApiRouteHandler = (context: ApiRouteContext) => Promise<unknown | Re
 /** Rapport `/healthz` : construit à partir de l'état réel observé. */
 export type ApiHealthReporter = () => Promise<BoundaryHealthResponse> | BoundaryHealthResponse;
 
+/** Rapport `/readyz` : préparation de production observée (aucune invention). */
+export type ApiReadinessReporter = () => Promise<ReadinessReport> | ReadinessReport;
+
+/** Permission EXISTANTE ouvrant le détail d'exploitation du rapport. */
+export const READINESS_DETAIL_PERMISSION = 'audit:read';
+
 export interface ApiWorkerDependencies {
   /** Must verify a server session cookie/token; never read actor fields from request data. */
   authenticate(request: Request): Promise<AuthenticatedActor | null>;
@@ -36,6 +53,11 @@ export interface ApiWorkerDependencies {
    * annoncée tant qu'elle n'est pas réellement sondée.
    */
   health?: ApiHealthReporter;
+  /**
+   * Sans rapporteur, `/readyz` répond `blocked` avec une liste de vérifications
+   * vide : jamais un `ready` par défaut.
+   */
+  readiness?: ApiReadinessReporter;
 }
 
 const boundaryOnlyHealth: BoundaryHealthResponse = {
@@ -113,6 +135,36 @@ export function createApiWorker(dependencies: ApiWorkerDependencies): { fetch(re
           }
         }
         return apiJsonResponse(body, healthStatusCode(body), requestId);
+      }
+
+      if (url.pathname === '/readyz' && request.method.toUpperCase() === 'GET') {
+        if (!dependencies.readiness) {
+          // Aucun rapporteur : la préparation n'est PAS prouvée → jamais `ready`.
+          return apiJsonResponse(
+            {
+              status: 'blocked',
+              apiVersion: READINESS_API_VERSION,
+              checkedAt: new Date().toISOString(),
+              detailed: false,
+              checks: [],
+            },
+            503,
+            requestId,
+          );
+        }
+        let report: ReadinessReport;
+        try {
+          report = await dependencies.readiness();
+        } catch {
+          // Un rapporteur défaillant ne produit jamais un 500 opaque.
+          return apiErrorResponse(new ApiError('SERVICE_UNAVAILABLE', 'Le rapport de préparation a échoué.'), requestId);
+        }
+        // Détail réservé à un ADMIN disposant de la permission EXISTANTE `audit:read`.
+        const actor = await dependencies.authenticate(request).catch(() => null);
+        const detailed = Boolean(
+          actor && actor.role === 'ADMIN' && actor.permissions.includes(READINESS_DETAIL_PERMISSION),
+        );
+        return apiJsonResponse(projectReadiness(report, detailed), readinessStatusCode(report), requestId);
       }
 
       try {

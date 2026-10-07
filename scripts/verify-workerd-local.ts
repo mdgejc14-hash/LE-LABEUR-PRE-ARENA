@@ -230,12 +230,18 @@ async function main(): Promise<void> {
     wrangler = spawn(resolve(REPO_ROOT, 'node_modules', '.bin', 'wrangler'), [
       'dev',
       '--local',
+      // P0-CLOUDFLARE-PRODUCTION — expose POST /__scheduled : le handler
+      // `scheduled()` RÉEL est ainsi exécuté par workerd, avec le binding
+      // Hyperdrive local et PostgreSQL réel (aucun Cloudflare déployé).
+      '--test-scheduled',
       '--port', String(WRANGLER_PORT),
       '--var', `GOOGLE_CLIENT_ID:${AUDIENCE}`,
       '--var', 'WORKER_ENV:workerd-local',
       '--var', 'PERSISTENCE:postgres',
       '--var', 'COOKIE_SECURE:false',
       '--var', 'SESSION_TTL_SECONDS:600',
+      // Cadence déclarée : miroir de [triggers] de wrangler.toml, publiée à /readyz.
+      '--var', 'CRON_CADENCE:*/5 * * * *',
       // Durée locale de vérification explicite; la configuration produit n'a pas de défaut.
       '--var', 'CLAIM_EVIDENCE_DEADLINE_MS:60000',
       '--var', `TEST_ONLY_GOOGLE_JWKS_URL:http://127.0.0.1:${jwks.port}/jwks`,
@@ -290,6 +296,67 @@ async function main(): Promise<void> {
       assert(body.runtime.hyperdriveBinding === true, 'binding Hyperdrive attendu');
       assert(body.runtime.declaredEnvironment === 'workerd-local', 'environnement déclaré attendu');
       assert(!text.includes(password), 'aucun secret ne doit apparaître dans /healthz');
+    });
+
+    await check('P0-CPROD workerd : /readyz réel (10 vérifications, projection publique sans détail) et frontière fermée par défaut', async () => {
+      const response = await fetch(`${base}/readyz`);
+      const text = await response.text();
+      const body = JSON.parse(text) as {
+        status: string;
+        apiVersion: string;
+        detailed: boolean;
+        violations?: unknown;
+        resources?: unknown;
+        checks: Array<{ id: string; status: string }>;
+      };
+      assert(response.status === 200 || response.status === 503, `200/503 attendus, reçu ${response.status}`);
+      assert(body.apiVersion === 'v1', 'apiVersion v1 attendue');
+      assert(body.detailed === false, 'un appelant anonyme ne reçoit PAS le détail d’exploitation');
+      assert(body.resources === undefined && body.violations === undefined, 'aucun inventaire ni motif détaillé côté public');
+      const byId = new Map(body.checks.map(check => [check.id, check.status]));
+      for (const id of ['worker', 'postgres', 'migrations', 'queue', 'cron', 'automation', 'notifications', 'documents', 'r2', 'audit']) {
+        assert(byId.has(id), `vérification « ${id} » absente du rapport`);
+      }
+      // Observé réellement ici : Worker vivant, PostgreSQL joignable, migrations appliquées.
+      assert(byId.get('worker') === 'ok', 'Worker vivant attendu');
+      assert(byId.get('postgres') === 'ok', 'PostgreSQL réellement sondé attendu');
+      assert(byId.get('migrations') === 'ok', 'migrations appliquées attendues');
+      // Aucun binding R2 dans cette vérification : le domaine reste explicitement fermé.
+      assert(byId.get('r2') === 'blocked', `binding R2 absent attendu sans binding, reçu ${byId.get('r2')}`);
+      assert(!text.includes(password), 'aucun secret ne doit apparaître dans /readyz');
+      assert(!text.includes(String(port)), 'aucun détail de connexion ne doit apparaître côté public');
+    });
+
+    await check('P0-CPROD workerd : le Cron Trigger RÉEL exécute scheduled() → audit du tick, puis /readyz le constate', async () => {
+      const before = await pool.query<{ count: string }>(
+        "SELECT count(*)::text AS count FROM automation_audit_ledger WHERE action = 'CRON_TICK_EXECUTED'",
+      );
+      const scheduled = await fetch(`${base}/__scheduled?cron=${encodeURIComponent('*/5 * * * *')}`, { method: 'POST' });
+      assert(scheduled.status < 400, `déclenchement planifié refusé: ${scheduled.status}`);
+      // `scheduled()` confie la passée à `ctx.waitUntil` : la trace peut être
+      // écrite juste après la réponse HTTP — on l'attend explicitement.
+      const expected = Number(before.rows[0]?.count ?? 0) + 1;
+      let after = await pool.query<{ count: string; source: string | null }>(
+        `SELECT count(*)::text AS count, max(source) AS source
+           FROM automation_audit_ledger WHERE action = 'CRON_TICK_EXECUTED'`,
+      );
+      for (let attempt = 0; attempt < 30 && Number(after.rows[0]?.count ?? 0) < expected; attempt += 1) {
+        await new Promise(resolvePromise => setTimeout(resolvePromise, 500));
+        after = await pool.query<{ count: string; source: string | null }>(
+          `SELECT count(*)::text AS count, max(source) AS source
+             FROM automation_audit_ledger WHERE action = 'CRON_TICK_EXECUTED'`,
+        );
+      }
+      assert(
+        Number(after.rows[0]?.count ?? 0) === expected,
+        `un et un seul tick tracé par déclenchement (attendu ${expected}, reçu ${after.rows[0]?.count})`,
+      );
+      assert(after.rows[0]?.source === 'automation:P0-CRON-QUEUE', 'trace attribuée à la couche existante');
+      // La preuve est dans la BASE RÉELLE, pas dans la réponse HTTP du déclencheur.
+      const readiness = await fetch(`${base}/readyz`);
+      const body = await readiness.json() as { checks: Array<{ id: string; status: string }> };
+      const cron = body.checks.find(check => check.id === 'cron');
+      assert(cron?.status === 'ok', `cadence déclarée ET tick tracé attendus, reçu ${cron?.status}`);
     });
 
     await check('workerd : frontière fermée pour les routes métier non ouvertes (501), OFFRES ouvert (200), et sans session (401)', async () => {
