@@ -207,7 +207,8 @@ export function createSqlDomainEventOutbox(db: SqlQueryExecutor): DomainEventOut
       const sql =
         `UPDATE automation_outbox
             SET status = 'PROCESSING',
-                attempts = attempts + 1
+                attempts = attempts + 1,
+                processing_started_at = $1
           WHERE id IN (
             SELECT id
               FROM automation_outbox
@@ -268,6 +269,48 @@ export function createSqlDomainEventOutbox(db: SqlQueryExecutor): DomainEventOut
         [aggregateType, aggregateId],
       );
       return result.rows.map(toOutboxEvent);
+    },
+
+    async recoverStale(input) {
+      // P0-CRON-QUEUE — crash APRÈS réservation, AVANT ack : la ligne est
+      // `PROCESSING` avec un claim plus vieux que la borne. Rejeu `RETRYABLE`
+      // (les handlers sont idempotents) ou `DEAD_LETTER` si la borne de
+      // tentatives EXISTANTE est atteinte. `processing_started_at IS NULL` =
+      // claim hérité d'avant la migration : orphelin par définition.
+      const result = await db.query<OutboxRow>(
+        `UPDATE automation_outbox
+            SET status = CASE WHEN attempts >= $3 THEN 'DEAD_LETTER' ELSE 'RETRYABLE' END,
+                available_at = CASE WHEN attempts >= $3 THEN available_at ELSE $1 END,
+                last_error = CASE WHEN attempts >= $3 THEN $4 ELSE COALESCE($4, last_error) END
+          WHERE id IN (
+            SELECT id
+              FROM automation_outbox
+             WHERE status = 'PROCESSING'
+               AND (processing_started_at IS NULL OR processing_started_at <= $2)
+             ORDER BY id ASC
+             FOR UPDATE SKIP LOCKED
+          )
+          RETURNING *`,
+        [input.now, input.staleBefore, input.maxAttempts, input.reason],
+      );
+      let recovered = 0;
+      let deadLettered = 0;
+      const ids: string[] = [];
+      for (const row of result.rows) {
+        ids.push(row.id);
+        if (row.status === 'DEAD_LETTER') deadLettered += 1;
+        else recovered += 1;
+      }
+      return { recovered, deadLettered, ids };
+    },
+
+    async countByStatus() {
+      const result = await db.query<{ status: string; count: unknown }>(
+        'SELECT status, count(*) AS count FROM automation_outbox GROUP BY status',
+      );
+      const counts: Record<string, number> = {};
+      for (const row of result.rows) counts[row.status] = Number(row.count ?? 0);
+      return counts;
     },
   };
 }
@@ -429,6 +472,51 @@ export function createSqlScheduledJobStore(db: SqlQueryExecutor): ScheduledJobSt
         [aggregateType, aggregateId],
       );
       return result.rows.map(toScheduledJob);
+    },
+
+    async recoverStale(input) {
+      // P0-CRON-QUEUE — crash APRÈS réservation, AVANT le passage à
+      // `COMPLETED` : le job est `RUNNING` avec un claim plus vieux que la
+      // borne (`started_at`, posé par le claim). Rejeu `RETRYABLE` — les
+      // handlers existants sont idempotents (réserve d'idempotence en tête,
+      // audit à identifiant déterministe), donc le rejeu n'a JAMAIS de second
+      // effet métier — ou `FAILED` si la borne de tentatives EXISTANTE est
+      // atteinte. `started_at IS NULL` = job hérité : orphelin par définition.
+      const result = await db.query<JobRow>(
+        `UPDATE automation_jobs
+            SET status = CASE WHEN attempts >= $3 THEN 'FAILED' ELSE 'RETRYABLE' END,
+                completed_at = CASE WHEN attempts >= $3 THEN $1 ELSE completed_at END,
+                due_at = CASE WHEN attempts >= $3 THEN due_at ELSE $1 END,
+                last_error = CASE WHEN attempts >= $3 THEN $4 ELSE COALESCE($4, last_error) END
+          WHERE job_id IN (
+            SELECT job_id
+              FROM automation_jobs
+             WHERE status = 'RUNNING'
+               AND (started_at IS NULL OR started_at <= $2)
+             ORDER BY job_id ASC
+             FOR UPDATE SKIP LOCKED
+          )
+          RETURNING *`,
+        [input.now, input.staleBefore, input.maxAttempts, input.reason],
+      );
+      let recovered = 0;
+      let failed = 0;
+      const ids: string[] = [];
+      for (const row of result.rows) {
+        ids.push(row.job_id);
+        if (row.status === 'FAILED') failed += 1;
+        else recovered += 1;
+      }
+      return { recovered, failed, ids };
+    },
+
+    async countByStatus() {
+      const result = await db.query<{ status: string; count: unknown }>(
+        'SELECT status, count(*) AS count FROM automation_jobs GROUP BY status',
+      );
+      const counts: Record<string, number> = {};
+      for (const row of result.rows) counts[row.status] = Number(row.count ?? 0);
+      return counts;
     },
   };
 }

@@ -9,10 +9,19 @@
  *   → `AutomationEngine` (fondation P0-AUTO-1) → handler → `ScheduledJob`
  *   (`automation_jobs`) → échéances (`automation_deadlines`) → ledger d'audit.
  *
- * Ce worker est EXPLICITEME déclenché (`drainEvents`, `runDueJobs`, `drain`) :
- * aucun `setInterval`, aucun timer, aucun Cron Trigger Cloudflare, aucune
- * Cloudflare Queue de production. Le déclencheur (Cron, `scheduled`, tâche
- * d'exploitation) appartient à une tranche ultérieure.
+ * Ce worker est déclenché par UNE front unique :
+ *  - explicitement (`drainEvents`, `runDueJobs`, `drain`) : aucun
+ *    `setInterval`, aucun timer applicatif, aucune Cloudflare Queue de
+ *    production ;
+ *  - périodiquement (`runScheduledCycle`) : la PASSÉE bornée exécutée par le
+ *    Cron Trigger existant (`scheduled()` de `cloudflareEntry.ts`). P0-CRON-
+ *    QUEUE : le déclencheur ne « pense » PAS la plateforme — il ne fait que
+ *    (1) récupérer les claims orphelins (crash après réservation, avant ack :
+ *    rejeu idempotent, jamais un job perdu en silence) et (2) lancer le drain
+ *    EXISTANT, une seule fois, avec trace d'audit du tick
+ *    (`CRON_TICK_EXECUTED`). Aucune action métier n'est produite par le
+ *    trigger lui-même ; AUCUN `[triggers]` de production n'est installé dans
+ *    cette tranche (décision CLOUDFLARE PRODUCTION).
  *
  * Concurrence : deux workers peuvent tourner simultanément. Le claim verrouillé
  * leur distribue des messages DIFFÉRENTS, et l'idempotence durable
@@ -34,13 +43,54 @@ import {
   type ReminderJobOutcome,
 } from './contractActivation';
 import type { PaymentDueSweepReport, PreDueReminderOutcome } from './paymentCycle';
-import { contractActivatedIdempotencyKey } from '../../domain/contractScheduleAutomation';
+import {
+  AUTOMATION_SYSTEM_ACTOR,
+  contractActivatedIdempotencyKey,
+} from '../../domain/contractScheduleAutomation';
+import { newEntityId } from '../identity/ids';
 
 /** Tentatives avant mise en `DEAD_LETTER` / `FAILED` (bornes d'exploitation). */
 export const DEFAULT_MAX_ATTEMPTS = 5;
 /** Délai de rejeu d'un message `RETRYABLE`. Aucune règle métier : valeur d'exploitation. */
 export const DEFAULT_RETRY_DELAY_MS = 30_000;
 export const DEFAULT_CLAIM_LIMIT = 25;
+/**
+ * P0-CRON-QUEUE — borne d'orphanisation d'un claim (`RUNNING` / `PROCESSING`) :
+ * crash après réservation, avant ack. Valeur d'exploitation UNIQUEMENT — elle
+ * doit rester supérieure au timeout de toute requête déclarée
+ * (`DB_STATEMENT_TIMEOUT_MS = 15 000`) : un traitement réellement en cours ne
+ * doit jamais être confondu avec un orphelin. Le rejeu est sans double effet
+ * parce que les handlers existants sont idempotents.
+ */
+export const DEFAULT_STALE_CLAIM_MS = 10 * 60_000;
+
+/** Source déclarée de la couche déclenchement périodique (audit). */
+export const CRON_QUEUE_SOURCE = 'automation:P0-CRON-QUEUE';
+
+export interface StaleRecoveryReport {
+  at: string;
+  eventsRecovered: number;
+  eventsDeadLettered: number;
+  jobsRecovered: number;
+  jobsFailed: number;
+}
+
+/**
+ * P0-CRON-QUEUE — rapport d'une PASSÉE du déclenchement périodique : ce qu'un
+ * tick Cron a réellement fait (récupération des orphelins + drain complet),
+ * avec horodatage, afin que chaque déclenchement soit identifiable dans
+ * l'audit (exigence observabilité).
+ */
+export interface ScheduledCycleReport {
+  /** Identifiant du déclencheur (`scheduled` pour le Cron Trigger Cloudflare). */
+  trigger: string;
+  at: string;
+  durationMs: number;
+  recovered: StaleRecoveryReport;
+  events: EventDrainReport;
+  payments: PaymentDueSweepReport;
+  jobs: JobRunReport;
+}
 
 export interface SupplementalAutomationProcessor {
   handledEventTypes: readonly DomainEventType[];
@@ -75,6 +125,8 @@ export interface AutomationWorkerDependencies {
   now?: () => Date;
   maxAttempts?: number;
   retryDelayMs?: number;
+  /** P0-CRON-QUEUE — borne d'orphanisation d'un claim (valeur d'exploitation). */
+  staleClaimMs?: number;
   /**
    * P0-PAY-1 — balayage des paiements échus (`SCHEDULED → DUE`), exécuté dans la
    * MÊME transaction que les stores du worker. Absent (runtime sans base durable
@@ -140,6 +192,23 @@ export interface AutomationWorker {
    * bascule d'échéance.
    */
   drain(limit?: number): Promise<{ events: EventDrainReport; payments: PaymentDueSweepReport; jobs: JobRunReport }>;
+  /**
+   * P0-CRON-QUEUE — récupération déterministe des claims orphelins (crash
+   * APRÈS réservation, AVANT ack) : les lignes `PROCESSING` / `RUNNING` dont le
+   * claim est plus vieux que la borne repassent `RETRYABLE` (rejeu idempotent
+   * des handlers EXISTANTS) ou au terminal `DEAD_LETTER` / `FAILED` quand la
+   * borne de tentatives est atteinte. Aucun job ne reste perdu en silence ;
+   * chaque récupération est tracée dans le ledger d'audit EXISTANT.
+   */
+  recoverStaleClaims(): Promise<StaleRecoveryReport>;
+  /**
+   * P0-CRON-QUEUE — une PASSÉE bornée du déclenchement périodique, telle que
+   * l'exécute le Cron Trigger : récupération des orphelins, puis le drain
+   * complet EXISTANT (événements → paiements échus → jobs échus), puis la
+   * trace d'audit du tick (`CRON_TICK_EXECUTED`). Le déclencheur ne produit
+   * AUCUNE action métier directement : il ne fait que lancer ce worker.
+   */
+  runScheduledCycle(input?: { limit?: number; trigger?: string }): Promise<ScheduledCycleReport>;
   handledEventTypes: readonly string[];
   handledJobTypes: readonly string[];
 }
@@ -187,6 +256,7 @@ export function createAutomationWorker(
   const clock = dependencies.now ?? (() => new Date());
   const maxAttempts = dependencies.maxAttempts ?? DEFAULT_MAX_ATTEMPTS;
   const retryDelayMs = dependencies.retryDelayMs ?? DEFAULT_RETRY_DELAY_MS;
+  const staleClaimMs = dependencies.staleClaimMs ?? DEFAULT_STALE_CLAIM_MS;
 
   const inTransaction = <T>(operation: (stores: AutomationStores) => Promise<T>): Promise<T> =>
     database.run(async transaction => operation(createStores(transaction)));
@@ -424,6 +494,165 @@ export function createAutomationWorker(
       const sweep = dependencies.duePayments;
       if (!sweep) return { scanned: 0, applied: 0, duplicates: 0, paymentIds: [] };
       return inTransaction(stores => sweep(stores, limit));
+    },
+
+    async recoverStaleClaims(): Promise<StaleRecoveryReport> {
+      const at = clock();
+      const staleBefore = new Date(at.getTime() - staleClaimMs).toISOString();
+      const reason =
+        `Claim orphelin : traitement ${CRON_QUEUE_SOURCE} relâché après la borne d'exploitation `
+        + `(${staleClaimMs} ms) — crash probable après réservation, avant ack.`;
+
+      const outbox = await inTransaction(stores => stores.outbox.recoverStale({
+        now: at.toISOString(),
+        staleBefore,
+        maxAttempts,
+        reason,
+      }));
+      const jobs = await inTransaction(stores => stores.jobs.recoverStale({
+        now: at.toISOString(),
+        staleBefore,
+        maxAttempts,
+        reason,
+      }));
+
+      const report: StaleRecoveryReport = {
+        at: at.toISOString(),
+        eventsRecovered: outbox.recovered,
+        eventsDeadLettered: outbox.deadLettered,
+        jobsRecovered: jobs.recovered,
+        jobsFailed: jobs.failed,
+      };
+
+      if (outbox.recovered > 0 || outbox.deadLettered > 0) {
+        await inTransaction(stores => stores.audit.append({
+          id: newEntityId('rev'),
+          actorId: AUTOMATION_SYSTEM_ACTOR,
+          timestamp: report.at,
+          entityId: 'outbox',
+          action: outbox.deadLettered > 0
+            ? 'STALE_OUTBOX_EVENTS_DEAD_LETTERED'
+            : 'STALE_OUTBOX_EVENTS_RECOVERED',
+          source: CRON_QUEUE_SOURCE,
+          afterState: {
+            recovered: outbox.recovered,
+            deadLettered: outbox.deadLettered,
+            staleAfterMs: staleClaimMs,
+            maxAttempts,
+            eventIds: outbox.ids.slice(0, 20),
+            note: 'Rejeu idempotent : aucun second effet métier possible.',
+          },
+        }));
+      }
+      if (jobs.recovered > 0 || jobs.failed > 0) {
+        await inTransaction(stores => stores.audit.append({
+          id: newEntityId('rev'),
+          actorId: AUTOMATION_SYSTEM_ACTOR,
+          timestamp: report.at,
+          entityId: 'jobs',
+          action: jobs.failed > 0 ? 'STALE_JOBS_FAILED' : 'STALE_JOBS_RECOVERED',
+          source: CRON_QUEUE_SOURCE,
+          afterState: {
+            recovered: jobs.recovered,
+            failed: jobs.failed,
+            staleAfterMs: staleClaimMs,
+            maxAttempts,
+            jobIds: jobs.ids.slice(0, 20),
+            note: 'Rejeu idempotent : aucun second effet métier possible.',
+          },
+        }));
+      }
+
+      return report;
+    },
+
+    async runScheduledCycle(input: { limit?: number; trigger?: string } = {}): Promise<ScheduledCycleReport> {
+      const limit = input.limit ?? DEFAULT_CLAIM_LIMIT;
+      const trigger = input.trigger ?? 'scheduled';
+      const startedAt = clock();
+      const report: ScheduledCycleReport = {
+        trigger,
+        at: startedAt.toISOString(),
+        durationMs: 0,
+        recovered: {
+          at: startedAt.toISOString(),
+          eventsRecovered: 0,
+          eventsDeadLettered: 0,
+          jobsRecovered: 0,
+          jobsFailed: 0,
+        },
+        events: { claimed: 0, completed: 0, duplicates: 0, retried: 0, deadLettered: 0, entries: [] },
+        payments: { scanned: 0, applied: 0, duplicates: 0, paymentIds: [] },
+        jobs: { claimed: 0, completed: 0, retried: 0, failed: 0, entries: [] },
+      };
+
+      try {
+        // L'ordre importe : les orphelins sont remis en file AVANT le claim,
+        // puis le drain EXISTANT s'exécute tel quel (événements → paiements →
+        // jobs). Le déclencheur n'appelle AUCUNE action métier directement.
+        report.recovered = await this.recoverStaleClaims();
+        report.events = await this.drainEvents(limit);
+        report.payments = await this.runDuePayments(limit);
+        report.jobs = await this.runDueJobs(limit);
+      } catch (error) {
+        // Un tick partiel/échoué reste identifiable : la trace est écrite
+        // HORS de la transaction échouée, comme les autres échecs du worker.
+        const message = errorMessage(error);
+        await inTransaction(stores => stores.audit.append({
+          id: newEntityId('rev'),
+          actorId: AUTOMATION_SYSTEM_ACTOR,
+          timestamp: clock().toISOString(),
+          entityId: `cron:${trigger}`,
+          action: 'CRON_TICK_FAILED',
+          source: CRON_QUEUE_SOURCE,
+          afterState: { trigger, at: report.at, error: message },
+        })).catch(() => undefined);
+        throw error;
+      }
+
+      report.durationMs = clock().getTime() - startedAt.getTime();
+      // Trace du tick : chaque déclenchement périodique est identifiable
+      // (timestamp, déclencheur, compteurs de chaque étape du drain réel).
+      await inTransaction(stores => stores.audit.append({
+        id: newEntityId('rev'),
+        actorId: AUTOMATION_SYSTEM_ACTOR,
+        timestamp: clock().toISOString(),
+        entityId: `cron:${trigger}`,
+        action: 'CRON_TICK_EXECUTED',
+        source: CRON_QUEUE_SOURCE,
+        afterState: {
+          trigger,
+          at: report.at,
+          durationMs: report.durationMs,
+          limit,
+          recovered: {
+            eventsRecovered: report.recovered.eventsRecovered,
+            eventsDeadLettered: report.recovered.eventsDeadLettered,
+            jobsRecovered: report.recovered.jobsRecovered,
+            jobsFailed: report.recovered.jobsFailed,
+          },
+          events: {
+            claimed: report.events.claimed,
+            completed: report.events.completed,
+            duplicates: report.events.duplicates,
+            retried: report.events.retried,
+            deadLettered: report.events.deadLettered,
+          },
+          payments: {
+            scanned: report.payments.scanned,
+            applied: report.payments.applied,
+            duplicates: report.payments.duplicates,
+          },
+          jobs: {
+            claimed: report.jobs.claimed,
+            completed: report.jobs.completed,
+            retried: report.jobs.retried,
+            failed: report.jobs.failed,
+          },
+        },
+      }));
+
+      return report;
     },
 
     async drain(limit = DEFAULT_CLAIM_LIMIT) {

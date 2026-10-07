@@ -29,13 +29,23 @@ import {
   REPUTATION_RULE_CODES,
   REPUTATION_RULES_VERSION,
   REPUTATION_SCORE_VERSION,
-  assertNoProtectedAttributeFields,
   type ReputationSourceEntityType,
   type ReputationStatus,
 } from '../../domain/reputationRules';
-import { buildReputationEntries, computeReputationView, type ReputationView } from './reputationLedger';
-import { listDocumentedFactsForSubject, type ReputationFactReader } from './reputationFacts';
+import { computeReputationView, type ReputationView } from './reputationLedger';
+import type { ReputationFactReader } from './reputationFacts';
 import type { ReputationEntryQuery, ReputationEntryRecord, ReputationLedgerStore, ReputationAdminQuery } from './records';
+import {
+  reconcileReputationSubject,
+  type ReputationReconciliationReport,
+} from './reconciliationCore';
+
+/**
+ * P0-CRON-QUEUE — la réconciliation vit dans `reconciliationCore.ts` (cœur
+ * partagé entre la commande explicite EXISTANTE et le job planifié) : ce dépôt
+ * ne fait que la DÉLÉGUER. Aucune règle n'est modifiée.
+ */
+export type { ReputationReconciliationReport } from './reconciliationCore';
 
 export const REPUTATION_API_SOURCE = 'api:P0-REPUTATION';
 
@@ -88,17 +98,6 @@ export interface ReputationEntryDetail extends ReputationEntryView {
     entityId: string;
   };
   history: ReputationEntryRecord['history'];
-}
-
-export interface ReputationReconciliationReport {
-  subjectUserId: string;
-  scanned: number;
-  appended: number;
-  duplicates: number;
-  rulesVersion: string;
-  reconciledAt: string;
-  /** Aucune donnée sensible n'est collectée : rappel explicite de la finalité. */
-  purpose: string;
 }
 
 export interface ReputationCorrectionInput {
@@ -288,78 +287,30 @@ export function createReputationRepository(
   };
 
   /**
-   * Réconciliation : applique les faits DÉJÀ PERSISTÉS du sujet. Idempotente par
+   * Réconciliation : DÉLÉGUÉE au cœur partagé (`reconciliationCore.ts`), qui
+   * est aussi le seul chemin du job planifié P0-CRON-QUEUE. Idempotente par
    * construction (même clé de déduplication) : une seconde exécution n'ajoute
    * aucune ligne. Elle n'ÉCRIT QUE des entrées du sujet demandé et des traces
    * d'audit ; jamais une donnée métier d'un autre domaine.
    */
-  const reconcileSubject = async (
+  const reconcileSubject = (
     current: ReputationRepositoryStores,
     input: { subjectUserId: string; actorId: string; at: string; command?: ProductionCommandContext },
-  ): Promise<ReputationReconciliationReport> => {
-    const { facts, scanned } = await listDocumentedFactsForSubject(current.reader, input.subjectUserId);
-    let appended = 0;
-    let duplicates = 0;
-
-    for (const resolved of facts) {
-      const drafts = buildReputationEntries({
-        fact: resolved.fact,
-        subjects: resolved.subjects,
-        provenance: 'RECONCILIATION',
-        createdAt: input.at,
-        // La réconciliation d'un utilisateur n'écrit JAMAIS dans le ledger d'un autre.
-        onlySubjectUserId: input.subjectUserId,
-      });
-      for (const draft of drafts) {
-        assertNoProtectedAttributeFields(draft as unknown as Record<string, unknown>);
-        const outcome = await current.reputation.appendIfAbsent(draft);
-        if (outcome.kind === 'duplicate') {
-          duplicates += 1;
-          continue;
-        }
-        appended += 1;
-        await audit(current, {
-          entityId: outcome.entry.reputationId,
-          actorId: input.actorId,
-          at: input.at,
-          action: 'REPUTATION_ENTRY_CREATED',
-          ...(input.command ? { command: input.command } : {}),
-          beforeState: { entryPresent: false },
-          afterState: {
-            subjectUserId: outcome.entry.subjectUserId,
-            sourceEvent: outcome.entry.sourceEvent,
-            sourceEntityType: outcome.entry.sourceEntityType,
-            sourceEntityId: outcome.entry.sourceEntityId,
-            ruleCode: outcome.entry.ruleCode,
-            ruleVersion: outcome.entry.ruleVersion,
-            impact: outcome.entry.impact,
-            direction: outcome.entry.direction,
-            provenance: outcome.entry.provenance,
-            occurredAt: outcome.entry.occurredAt,
-          },
-        });
-      }
-    }
-
-    await audit(current, {
-      entityId: input.subjectUserId,
-      actorId: input.actorId,
-      at: input.at,
-      action: 'REPUTATION_RECONCILED',
-      ...(input.command ? { command: input.command } : {}),
-      afterState: { scanned, appended, duplicates, rulesVersion: REPUTATION_RULES_VERSION },
-    });
-
-    return {
-      subjectUserId: input.subjectUserId,
-      scanned,
-      appended,
-      duplicates,
-      rulesVersion: REPUTATION_RULES_VERSION,
-      reconciledAt: input.at,
-      purpose: 'Finalité : documenter une fiabilité de coopération à partir de faits déjà persistés (minimisation, aucun attribut protégé).',
-    };
-  };
+  ): Promise<ReputationReconciliationReport> =>
+    reconcileReputationSubject(
+      {
+        reputation: current.reputation,
+        reader: current.reader,
+        audit: current.automation.audit,
+      },
+      {
+        subjectUserId: input.subjectUserId,
+        actorId: input.actorId,
+        at: input.at,
+        source: REPUTATION_API_SOURCE,
+        ...(input.command ? { reference: input.command.idempotencyKey } : {}),
+      },
+    );
 
   const pageEntries = async (
     records: ReputationEntryRecord[],

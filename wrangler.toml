@@ -94,14 +94,31 @@ GOOGLE_CLIENT_ID = ""
 # id = "<ID_HYPERDRIVE_PRODUCTION>"
 
 # -----------------------------------------------------------------------------
-# Hors périmètre P0-C (volontairement absents) :
-# R2, Queues, Cron Triggers, Durable Objects, KV : aucun binding, aucune
-# migration DO.
+# P0-CRON-QUEUE — frontière du déclencheur périodique, PRÉPARÉE, non installée.
+# -----------------------------------------------------------------------------
+# Le Worker EXPOSE le handler `scheduled()` (P0-PAY-1) et il exécute désormais
+# la PASSÉE bornée du worker d'automatisation EXISTANT :
+#   scheduled() → recoverStaleClaims (crash après réservation, avant ack)
+#               → drain (événements → paiements échus → jobs échus)
+#               → audit `CRON_TICK_EXECUTED`
+# AUCUN bloc `[triggers]` n'est ACTIF : aucune planification de production
+# n'est installée dans cette tranche, conformément à l'étape CLOUDFLARE
+# PRODUCTION. Déployer sans cron ne déclenche donc rien ; l'activation — et
+# le choix de la cadence (décision d'exploitation, jamais une valeur par
+# défaut dans le code) — appartient à cette étape. Pour l'activer :
 #
-# P0-PAY-1 : le Worker EXPOSE un handler `scheduled()` (point d'entrée d'une
-# passée bornée du worker d'automatisation : Outbox → paiements échus → jobs de
-# rappel), mais AUCUN bloc `[triggers] crons` n'est déclaré : aucune
-# planification de production n'est installée dans cette tranche. Déployer sans
-# cron ne déclenche donc rien ; l'activation relève d'une décision
-# d'exploitation ultérieure.
+# [env.production.triggers]
+# crons = ["* * * * *"]   # cadence à décider par l'exploitant
+#
+# Garde-fous (code, pas configuration) : le trigger ne produit aucune action
+# métier arbitraire (il ne fait que déclencher le worker d'automatisation),
+# chaque tick est audité, et la borne d'orphanisation des claims
+# (10 min > timeout d'énoncé 15 s) protège des traitements réellement en cours.
+# -----------------------------------------------------------------------------
+
+# -----------------------------------------------------------------------------
+# Hors périmètre P0-C (volontairement absents) :
+# R2, Queues, Durable Objects, KV : aucun binding, aucune migration DO.
+# (Cron Triggers : voir le bloc P0-CRON-QUEUE ci-dessus — frontière préparée,
+# aucun bloc actif.)
 # -----------------------------------------------------------------------------

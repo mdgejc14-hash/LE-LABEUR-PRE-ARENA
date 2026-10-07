@@ -32,6 +32,7 @@ import { runPaymentMissionCloseTests } from '../src/backend/api/paymentMissionCl
 import { runClaimDomainTests } from '../src/backend/api/claims.test';
 import { runReplacementDomainTests } from '../src/backend/api/replacements.test';
 import { runContractAutomationTests } from '../src/backend/automation/contractActivation.test';
+import { runCronQueueTests } from '../src/backend/automation/cronQueue.test';
 import { runNotificationTests } from '../src/backend/notifications/notifications.test';
 import { runMatchingTests } from '../src/backend/matching/matching.test';
 import { runReputationTests } from '../src/backend/api/reputation.test';
@@ -72,6 +73,7 @@ async function main(): Promise<void> {
   const postContractDomain = await runPostContractDomainTests();
   const contractScheduleRules = runContractScheduleAutomationTests();
   const contractAutomation = await runContractAutomationTests();
+  const cronQueue = await runCronQueueTests();
   const paymentLifecycle = runPaymentLifecycleTests();
   const paymentCycle = await runPaymentCycleTests();
   const externalPaymentProvider = await runExternalPaymentProviderTests();
@@ -122,6 +124,7 @@ async function main(): Promise<void> {
     { name: 'P0-REPUTATION — ledger d’événements documentés (faits réels, règles versionnées, explications, idempotence, concurrence, neutralité des litiges ouverts, corrections ADMIN auditées, permissions, non-régression P0-MATCHING/PAIEMENT/REPLACEMENT)', cases: reputation },
     { name: 'P0-R2 — DOCUMENTS & PREUVES (upload, métadonnées, hash SHA-256, versionnement append-only, récupération exacte, ownership/permissions/anti-IDOR, audit existant, liens version↔entité/acceptation, intégrité, révocation, rétention sans durée inventée, idempotence, concurrence, garde-fous juridiques/financiers, non-régression)', cases: documents },
     { name: 'P0-AUTO-2 — CONTRACT_ACTIVATED réel (Outbox → Queue → Worker → AutomationEngine → échéancier salarial, échéancier de commission, échéances, rappels; PostgreSQL, idempotence, concurrence, retry, dead-letter, rollback, audit, séparation DEMO/API)', cases: contractAutomation },
+    { name: 'P0-CRON-QUEUE — déclenchement périodique sur la queue EXISTANTE (Cron scheduled() réel → worker : jobs échus/futurs, double déclenchement, deux workers, retry, dead-letter, crash après réservation, idempotence métier, audit du tick, échéances paiement/claim/salaire, notification workflow existant, réputation planifiable, sécurité, non-régression R2/REPUTATION/MATCHING/REPLACEMENT/PAIEMENT/NOTIFICATIONS; PostgreSQL PGlite, aucun Cloudflare réel)', cases: cronQueue },
   ];
 
   let total = 0;

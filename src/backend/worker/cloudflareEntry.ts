@@ -50,12 +50,21 @@ export interface CloudflareScheduledEvent {
 export interface CloudflareWorkerRuntime {
   fetch(request: Request, env: CloudflareWorkerEnvironment, ctx?: CloudflareWorkerExecutionContext): Promise<Response>;
   /**
-   * P0-PAY-1 — point d'ENTRÉE d'un déclenchement planifié : il appelle le worker
-   * d'automatisation DÉJÀ réel (`drain()` = événements → paiements échus → jobs
-   * de rappel). Aucune planification de production n'est installée ici :
-   * aucun bloc `[triggers]`/`crons` dans `wrangler.toml`, aucun timer applicatif,
-   * aucun `setInterval`. Déployer ce handler sans ajouter de cron ne déclenche
-   * donc rien — c'est une décision d'exploitation ultérieure.
+   * P0-PAY-1 / P0-CRON-QUEUE — point d'ENTRÉE du déclenchement planifié.
+   *
+   * Garde-fou de sécurité : le trigger ne peut produire AUCUNE action métier
+   * arbitraire — il appelle UNIQUEMENT la passée bornée du worker
+   * d'automatisation DÉJÀ réel (`runScheduledCycle` = récupération des claims
+   * orphelins → événements → paiements échus → jobs échus), et chaque tick est
+   * tracé dans l'audit (`CRON_TICK_EXECUTED`). Les actions métier restent dans
+   * les workers/services déjà autorisés (handlers déclarés, idempotence,
+   * ownership, permissions).
+   *
+   * Aucune planification de production n'est installée dans cette tranche :
+   * aucun bloc `[triggers]`/`crons` ACTIF dans `wrangler.toml` (le bloc est
+   * préparé et documenté), aucun timer applicatif, aucun `setInterval`.
+   * Déployer ce handler sans activer le cron ne déclenche donc rien —
+   * l'activation est la décision CLOUDFLARE PRODUCTION.
    */
   scheduled?(event: CloudflareScheduledEvent, env: CloudflareWorkerEnvironment, ctx?: CloudflareWorkerExecutionContext): Promise<void>;
   /** Compatibilité/arrêt local : aucun pool n'est conservé entre requêtes. */
@@ -146,10 +155,13 @@ export function createCloudflareWorker(options: CloudflareWorkerOptions = {}): C
     },
 
     /**
-     * P0-PAY-1 — déclenchement planifié : une seule passée bornée de l'Outbox,
-     * du balayage `SCHEDULED → DUE` et des jobs échus, sur une construction
-     * éphémère du Worker (même discipline que `fetch` : pool créé puis fermé).
-     * Aucune route HTTP n'existe pour ce parcours et aucune erreur n'est exposée.
+     * P0-PAY-1 / P0-CRON-QUEUE — déclenchement planifié : une seule passée
+     * bornée (récupération des claims orphelins + Outbox + balayage
+     * `SCHEDULED → DUE` + jobs échus), sur une construction éphémère du Worker
+     * (même discipline que `fetch` : pool créé puis fermé). Le trigger n'appelle
+     * QUE le worker d'automatisation existant — aucune autre méthode, aucune
+     * action métier directe. Aucune route HTTP n'existe pour ce parcours et
+     * aucune erreur n'est exposée.
      */
     async scheduled(
       event: CloudflareScheduledEvent,
@@ -170,11 +182,16 @@ export function createCloudflareWorker(options: CloudflareWorkerOptions = {}): C
           const composition = composeWorker(env, created?.client, {
             ...(options.now ? { now: options.now } : {}),
           });
-          await composition.automationWorker?.drain(SCHEDULED_DRAIN_LIMIT);
+          await composition.automationWorker?.runScheduledCycle({
+            limit: SCHEDULED_DRAIN_LIMIT,
+            trigger: 'scheduled',
+          });
           if (created) await created.end();
           created = null;
         } catch {
-          // Un déclenchement planifié ne propage jamais un détail interne.
+          // Un déclenchement planifié ne propage jamais un détail interne
+          // (la trace `CRON_TICK_FAILED` reste dans l'audit si elle a pu
+          // être écrite).
         } finally {
           if (created) await created.end().catch(() => undefined);
         }
