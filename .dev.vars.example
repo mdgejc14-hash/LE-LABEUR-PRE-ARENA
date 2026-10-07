@@ -18,11 +18,18 @@ CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE="postgresql://lelabeur:
 # ABSENT par défaut : la route d'émission d'URL signée répond alors 501 explicite
 # (jamais une URL non vérifiable) et le téléchargement authentifié classique reste
 # disponible. Ne renseigner qu'avec une valeur de test locale ; AUCUN secret de
-# production ne doit apparaître ici ni être provisionné depuis cette tranche.
-# Aucun binding R2 n'est configuré : `wrangler.toml` reste sans `r2_buckets` ;
-# l'adaptateur stockage est injecté par composition (env.DOCUMENTS_BUCKET) et,
-# sans binding, les routes documents répondent 501 (fermeture franche).
+# production ne doit apparaître ici ni être committé.
+# P0-CLOUDFLARE-PRODUCTION : le profil de développement de `wrangler.toml` déclare
+# le binding `DOCUMENTS_BUCKET` (`[[r2_buckets]]`), servi par le SIMULATEUR LOCAL
+# de `wrangler dev` — aucun bucket Cloudflare n'est requis ni créé. Le bucket de
+# PRODUCTION reste à créer par l'exploitant (`<R2_BUCKET_NAME_PRODUCTION>`) et son
+# binding reste commenté : sans lui, les routes documents répondent 501.
 # DOCUMENT_URL_SIGNING_SECRET=""
+
+# P0-CLOUDFLARE-PRODUCTION — test LOCAL du déclencheur périodique.
+# `npm run dev:worker:scheduled` active l'endpoint `/__scheduled` (JAMAIS en
+# production, jamais dans la porte de déploiement) :
+#   curl -sS "http://127.0.0.1:8787/__scheduled?cron=*+*+*+*+*""
 
 # Variable NON standard, acceptée uniquement si elle pointe vers la boucle locale
 # (127.0.0.1 / localhost). Elle permet de vérifier le parcours d'authentification

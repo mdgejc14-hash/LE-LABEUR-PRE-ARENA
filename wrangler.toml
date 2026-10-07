@@ -1,17 +1,28 @@
 # =============================================================================
-# LE LABEUR — configuration Cloudflare Worker (P0-C)
+# LE LABEUR — configuration Cloudflare Worker (P0-C puis P0-CLOUDFLARE-PRODUCTION)
 # =============================================================================
-# État réel de cette configuration dans la session P0-C :
-#   * code Worker : RÉEL (src/backend/worker/cloudflareEntry.ts) ;
-#   * binding Hyperdrive de développement : PRÉPARÉ — l'ID ci-dessous est un
-#     PLACEHOLDER explicite ; aucun Hyperdrive n'existe côté Cloudflare ;
-#   * environnement `production` : PRÉPARÉ — le binding y est volontairement
-#     absent (voir plus bas) ; le Worker y démarre donc FERMÉ, jamais avec une
-#     base implicite.
+# État RÉEL et vérifiable de cette configuration :
+#   * code Worker : RÉEL (`src/backend/worker/cloudflareEntry.ts`, handlers
+#     `fetch` et `scheduled`) ;
+#   * profil par défaut = DÉVELOPPEMENT LOCAL (`wrangler dev`) : binding
+#     Hyperdrive alimenté par `CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE`
+#     et binding R2 servi par le SIMULATEUR LOCAL de `wrangler dev` ;
+#   * profil `production` : PREPARED — il déclare ses `vars` et son Cron
+#     Trigger, et laisse VOLONTAIREMENT absents les bindings de ressources
+#     Cloudflare (Hyperdrive, R2) qui n'existent pas. Déployé tel quel, le
+#     Worker répond 503 `misconfigured` sur `/healthz`, refuse toute route
+#     protégée, et le tick de Cron devient un no-op tracé (jamais une base
+#     implicite, jamais une écriture partielle).
 #
 # Secrets : JAMAIS dans ce fichier. Utiliser `wrangler secret put <NOM> --env <env>`
 # ou `.dev.vars` (gitignoré) en développement local.
 # Les `vars` ci-dessous sont non secrets (modes, limites, audience OAuth publique).
+#
+# Aucun identifiant Cloudflare (account ID, zone ID, Hyperdrive ID, bucket R2,
+# Queue, jeton d'API, URL de production) n'est inventé dans ce fichier : les
+# valeurs d'infrastructure absentes sont documentées en commentaire, et
+# `npm run verify:cloudflare -- --require-production` refuse explicitement un
+# déploiement production tant qu'une ressource réelle manque.
 # =============================================================================
 
 name = "lelabeur-api"
@@ -55,6 +66,24 @@ GOOGLE_CLIENT_ID = ""
 binding = "HYPERDRIVE"
 id = "00000000-0000-0000-0000-000000000000"
 
+# P0-CLOUDFLARE-PRODUCTION — binding R2 du bucket documentaire, profil LOCAL
+# UNIQUEMENT.
+#
+#   `binding`     : nom lu par le code (`env.DOCUMENTS_BUCKET`), câblé par la
+#                   composition dans l'adaptateur `createR2BucketObjectStorage`
+#                   (port `ObjectStorage` inchangé : hash, versionnement et
+#                   contrôle d'accès restent dans le service documentaire).
+#   `bucket_name` : bucket du SIMULATEUR LOCAL de `wrangler dev`. Ce n'est PAS
+#                   un bucket de production : aucun bucket Cloudflare n'existe
+#                   dans cette session, et le nom ci-dessous ne doit jamais être
+#                   créé pour la production. Un déploiement du profil par défaut
+#                   échouerait donc faute de bucket (« bucket not found ») :
+#                   c'est voulu — la seule porte de déploiement est
+#                   `--env production`, elle-même protégée par le préflight.
+[[r2_buckets]]
+binding = "DOCUMENTS_BUCKET"
+bucket_name = "lelabeur-documents-local-simulator"
+
 # -----------------------------------------------------------------------------
 # PRODUCTION (wrangler deploy --env production)
 # -----------------------------------------------------------------------------
@@ -62,6 +91,9 @@ id = "00000000-0000-0000-0000-000000000000"
 # redéclarer (sinon le déploiement part avec des vars vides et zéro binding).
 [env.production]
 name = "lelabeur-api"
+
+[env.production.observability]
+enabled = true
 
 [env.production.vars]
 PERSISTENCE = "postgres"
@@ -77,11 +109,48 @@ WORKER_ENV = "production"
 # CLAIM_EVIDENCE_DEADLINE_MS = ""  # entier positif en millisecondes
 GOOGLE_CLIENT_ID = ""
 
-# Binding Hyperdrive de production : VOLONTAIREMENT ABSENT.
-# Aucun Hyperdrive réel n'existe dans cette session, et le placeholder de
-# développement n'est pas hérité. Conséquence voulue : déployé tel quel, le
-# Worker de production répond 503 sur /healthz (`misconfigured`) et refuse
-# toute route protégée — jamais de base implicite.
+# -----------------------------------------------------------------------------
+# P0-CLOUDFLARE-PRODUCTION — CRON TRIGGER, ACTIVÉ.
+# -----------------------------------------------------------------------------
+# Le Worker EXPOSE le handler `scheduled()` (P0-PAY-1 / P0-CRON-QUEUE) et
+# celui-ci exécute la PASSÉE bornée du worker d'automatisation EXISTANT :
+#
+#   Cron Trigger → scheduled() → recoverStaleClaims (crash après réservation,
+#   avant ack) → drain (événements → paiements échus → jobs échus)
+#   → audit durable `CRON_TICK_EXECUTED`
+#
+# Aucun SECOND ordonnanceur, aucun timer applicatif, aucune logique métier dans
+# le trigger : le Cron ne fait que déclencher le worker existant.
+#
+# Composé avec la queue EXISTANTE (`automation_outbox` / `automation_jobs`, avec
+# claim verrouillé `FOR UPDATE SKIP LOCKED`, tentatives, `available_at`,
+# `last_error` et `DEAD_LETTER`). Aucune Cloudflare Queue n'est activée :
+# la file canonique du projet est transactionnelle (écrite dans la MÊME
+# transaction que la mutation métier) — voir la section QUEUE plus bas.
+#
+# CADENCE RETENUE POUR CETTE TRANCHE : un tick toutes les 5 minutes.
+#   * c'est une valeur d'EXPLOITATION (aucune règle métier n'en dépend) et elle
+#     reste sous le contrôle de l'exploitant : la modifier ici ne change aucun
+#     comportement métier ;
+#   * elle borne la latence d'une échéance atteinte à 5 minutes
+#     (`SCHEDULED → DUE`, rappels pré-échéance, jobs de rappel, escalades J+3) ;
+#   * chaque tick est borné à 25 messages par étape
+#     (`SCHEDULED_DRAIN_LIMIT`, code) : ~300 messages/heure au maximum, très
+#     au-dessus du volume attendu pour un premier déploiement ;
+#   * la granularité minimale acceptée par Cloudflare est 1 minute.
+#
+# INERTE SANS BASE : si aucun binding Hyperdrive (ni secret de repli) n'est
+# configuré, `scheduled()` se termine en no-op tracé et n'écrit RIEN — activer
+# le Cron avant la base ne provoque ni erreur, ni écriture partielle.
+[env.production.triggers]
+crons = ["*/5 * * * *"]
+
+# -----------------------------------------------------------------------------
+# HYPERDRIVE (production) — VOLONTAIREMENT ABSENT : aucun Hyperdrive réel
+# n'existe dans cette session, et le placeholder de développement n'est pas
+# hérité. Conséquence voulue : déployé tel quel, le Worker de production répond
+# 503 sur /healthz (`misconfigured`) et refuse toute route protégée — jamais de
+# base implicite.
 #
 # Pour l'activer :
 #   1. npx wrangler hyperdrive create lelabeur-prod --connection-string="postgresql://…" --caching-disabled=true
@@ -94,31 +163,51 @@ GOOGLE_CLIENT_ID = ""
 # id = "<ID_HYPERDRIVE_PRODUCTION>"
 
 # -----------------------------------------------------------------------------
-# P0-CRON-QUEUE — frontière du déclencheur périodique, PRÉPARÉE, non installée.
-# -----------------------------------------------------------------------------
-# Le Worker EXPOSE le handler `scheduled()` (P0-PAY-1) et il exécute désormais
-# la PASSÉE bornée du worker d'automatisation EXISTANT :
-#   scheduled() → recoverStaleClaims (crash après réservation, avant ack)
-#               → drain (événements → paiements échus → jobs échus)
-#               → audit `CRON_TICK_EXECUTED`
-# AUCUN bloc `[triggers]` n'est ACTIF : aucune planification de production
-# n'est installée dans cette tranche, conformément à l'étape CLOUDFLARE
-# PRODUCTION. Déployer sans cron ne déclenche donc rien ; l'activation — et
-# le choix de la cadence (décision d'exploitation, jamais une valeur par
-# défaut dans le code) — appartient à cette étape. Pour l'activer :
+# R2 (production) — VOLONTAIREMENT ABSENT : aucun bucket réel n'existe dans
+# cette session, et le bucket du simulateur local n'est PAS hérité (bindings non
+# hérités). Sans bucket, le domaine DOCUMENTS reste FERMÉ (501), jamais un
+# stockage implicite. Le port `ObjectStorage` reste inchangé : aucun
+# `object_key` n'est jamais exposé par une réponse d'API.
 #
-# [env.production.triggers]
-# crons = ["* * * * *"]   # cadence à décider par l'exploitant
+# Pour l'activer, après création du bucket par l'exploitant :
+#   1. npx wrangler r2 bucket create <R2_BUCKET_NAME_PRODUCTION>
+#   2. décommenter le bloc ci-dessous avec le nom RÉEL du bucket, puis redéployer :
 #
-# Garde-fous (code, pas configuration) : le trigger ne produit aucune action
-# métier arbitraire (il ne fait que déclencher le worker d'automatisation),
-# chaque tick est audité, et la borne d'orphanisation des claims
-# (10 min > timeout d'énoncé 15 s) protège des traitements réellement en cours.
-# -----------------------------------------------------------------------------
+# [[env.production.r2_buckets]]
+# binding = "DOCUMENTS_BUCKET"
+# bucket_name = "<R2_BUCKET_NAME_PRODUCTION>"
 
 # -----------------------------------------------------------------------------
-# Hors périmètre P0-C (volontairement absents) :
-# R2, Queues, Durable Objects, KV : aucun binding, aucune migration DO.
-# (Cron Triggers : voir le bloc P0-CRON-QUEUE ci-dessus — frontière préparée,
-# aucun bloc actif.)
+# QUEUE (production) — DÉCISION D'ARCHITECTURE EXPLICITE : la file canonique du
+# projet est l'Outbox PostgreSQL transactionnelle (`automation_outbox` +
+# `automation_jobs`), déjà dotée de tout ce qu'une file doit garantir :
+# claim verrouillé (`FOR UPDATE SKIP LOCKED`), tentatives bornées, rejeu
+# (`RETRYABLE` + `available_at`), lettre morte (`DEAD_LETTER`) et récupération
+# des claims orphelins. Elle est écrite dans la MÊME transaction que la mutation
+# métier : il n'existe aucun chemin où l'événement est perdu ou dupliqué.
+#
+# Aucun binding `queues` n'est activé, et l'entrée Worker n'expose AUCUN handler
+# `queue()` : ajouter une seconde file sans producteur transactionnel
+# introduirait un double écrit (base + Cloudflare Queue) et donc un risque de
+# divergence, sans bénéfice pour la latence réelle du drain. Un test encode
+# cette décision (`src/backend/worker/cloudflareConfig.test.ts`).
+#
+# Si l'exploitant décide plus tard d'ajouter une Cloudflare Queue comme
+# TRANSPORT SUPPLÉMENTAIRE (jamais comme remplacement), les conditions
+# minimales sont :
+#   * conserver les mêmes clés d'idempotence (l'Outbox reste la source de
+#     vérité, la Queue n'est qu'un accélérateur de réveil) ;
+#   * un consumer `queue()` qui appelle UNIQUEMENT le worker d'automatisation
+#     existant (`drainEvents` / `runDueJobs`), jamais une action métier directe ;
+#   * `max_retries` + `dead_letter_queue` déclarés, et un test d'idempotence
+#     mis à jour en conséquence.
+#
+# [[env.production.queues.producers]]
+# binding = "AUTOMATION_QUEUE"
+# queue = "<QUEUE_NAME_PRODUCTION>"
+
+# -----------------------------------------------------------------------------
+# Hors périmètre, volontairement absents : Durable Objects, KV (le signaling
+# WebRTC et son Durable Object restent une tranche ultérieure et séparée :
+# voir docs/PRODUCTION_BACKEND_BOUNDARY.md).
 # -----------------------------------------------------------------------------

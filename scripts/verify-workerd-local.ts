@@ -25,6 +25,15 @@
  *    AUCUN Cron ni Queue Cloudflare de production) le consomme et crée
  *    réellement l'échéancier salarial, l'échéancier de commission, les
  *    échéances et les jobs de rappel — avec audit, idempotence et escalade J+3 ;
+ *  - P0-CLOUDFLARE-PRODUCTION : le DÉCLENCHEUR de production est exercé par
+ *    workerd lui-même via l'endpoint local `GET /__scheduled?cron=…`
+ *    (`wrangler dev --test-scheduled`) — le handler `scheduled()` réel, appelé
+ *    comme le fera le Cron Trigger Cloudflare, consomme l'Outbox et laisse une
+ *    trace d'audit durable, sans double effet au second déclenchement ;
+ *  - P0-CLOUDFLARE-PRODUCTION : le binding R2 (`DOCUMENTS_BUCKET`, simulateur
+ *    local de `wrangler dev`) porte réellement le binaire déposé : dépôt,
+ *    empreinte SHA-256, téléchargement identique octet pour octet, intégrité
+ *    recalculée, et AUCUNE clé d'objet exposée par l'API ;
  *  - P0-NOTIFICATIONS : les mêmes événements sont projetés en notifications
  *    In-App (canal prioritaire), lues et marquées comme lues via des requêtes
  *    HTTP réelles TRAVERSANT workerd. Les canaux Push et Email restent des
@@ -165,11 +174,13 @@ async function main(): Promise<void> {
   mkdirSync(WORK_DIR, { recursive: true });
 
   console.log('============================================================');
-  console.log(' LE LABEUR — P0-C / P0-E3→E5 / P0-F / P0-AUTO-2 / P0-MATCHING / P0-DISPUTE-1 — runtime workerd + binding Hyperdrive local');
+  console.log(' LE LABEUR — P0-C → P0-CLOUDFLARE-PRODUCTION — runtime workerd + binding Hyperdrive local');
   console.log('============================================================');
   console.log('Runtime          : workerd (wrangler dev --local) — PAS un déploiement Cloudflare');
   console.log('Base             : PostgreSQL 17.10 RÉEL local (binaire embarqué, TEST/LOCAL)');
   console.log('Hyperdrive réel  : NON — binding alimenté par la variable locale, aucun Hyperdrive déployé');
+  console.log('Cron Trigger     : handler scheduled() appelé localement via /__scheduled (aucun trigger Cloudflare installé)');
+  console.log('R2               : binding DOCUMENTS_BUCKET servi par le SIMULATEUR local de wrangler dev (aucun bucket Cloudflare)');
   console.log('------------------------------------------------------------');
 
   const port = Number(process.env.PG_PORT ?? 55435);
@@ -230,6 +241,11 @@ async function main(): Promise<void> {
     wrangler = spawn(resolve(REPO_ROOT, 'node_modules', '.bin', 'wrangler'), [
       'dev',
       '--local',
+      // P0-CLOUDFLARE-PRODUCTION — permet d'appeler le handler `scheduled()` par
+      // HTTP (`GET /__scheduled?cron=…`), exactement comme le fera le Cron
+      // Trigger Cloudflare. Ce drapeau est LOCAL : il n'existe pas dans la
+      // configuration de production (vérifié par `npm run verify:cloudflare`).
+      '--test-scheduled',
       '--port', String(WRANGLER_PORT),
       '--var', `GOOGLE_CLIENT_ID:${AUDIENCE}`,
       '--var', 'WORKER_ENV:workerd-local',
@@ -1231,6 +1247,317 @@ async function main(): Promise<void> {
         audit.rows.some(row => row.event_id === contractActivatedEventId(contract.id)),
         'eventId tracé dans l’audit',
       );
+    });
+
+    /* ---------------------------------------------------------------- */
+    /* P0-CLOUDFLARE-PRODUCTION — R2 réel sous workerd                   */
+    /* ---------------------------------------------------------------- */
+
+    await check('P0-CLOUDFLARE-PRODUCTION workerd : binding R2 → dépôt réel, empreinte SHA-256, téléchargement, intégrité et aucune clé d’objet exposée', async () => {
+      const employerJson = (key: string) => ({
+        cookie: `${SESSION_COOKIE_NAME}=${employerCookie}`,
+        'content-type': 'application/json',
+        'Idempotency-Key': key,
+      });
+      const employerAuth = { cookie: `${SESSION_COOKIE_NAME}=${employerCookie}` };
+      const content = '%PDF-1.4 document vérifié à travers le binding R2 (workerd local)';
+      const bytes = new TextEncoder().encode(content);
+
+      // 1. Le domaine DOCUMENTS est OUVERT : le binding R2 est réellement lu par
+      //    la composition (`env.DOCUMENTS_BUCKET`), sans injection locale.
+      const grantResponse = await fetch(`${base}/api/v1/documents/upload-grants`, {
+        method: 'POST',
+        headers: employerJson('p0cf-workerd-doc-grant-001'),
+        body: JSON.stringify({
+          title: 'Contrat vérifié sous workerd',
+          fileName: 'contrat.pdf',
+          contentType: 'application/pdf',
+          sizeBytes: bytes.length,
+          documentType: 'CONTRACT_DOCUMENT',
+        }),
+      });
+      assert(
+        grantResponse.status < 400,
+        `grant attendu (< 400), reçu ${grantResponse.status}: ${await grantResponse.clone().text()}`,
+      );
+      const grant = await grantResponse.json() as {
+        document: { documentId: string; status: string; currentVersionNumber: number };
+        version: { versionId: string; status: string; cryptographicHash?: string; hashAlgorithm: string };
+        upload: { url: string; method: string; contentType: string; expectedSizeBytes: number };
+      };
+      assert(grant.upload.url.startsWith('/api/v1/documents/'), 'URL de dépôt servie par l’API (jamais une clé d’objet)');
+
+      // 2. Dépôt réel du binaire (put R2) puis lecture (get/head R2).
+      const uploadResponse = await fetch(`${base}${grant.upload.url}`, {
+        method: 'POST',
+        headers: {
+          cookie: `${SESSION_COOKIE_NAME}=${employerCookie}`,
+          'content-type': 'application/pdf',
+          'Idempotency-Key': 'p0cf-workerd-doc-content-001',
+        },
+        body: new Uint8Array(bytes),
+      });
+      assert(uploadResponse.status < 400, `dépôt attendu (< 400), reçu ${uploadResponse.status}: ${await uploadResponse.clone().text()}`);
+
+      const detailResponse = await fetch(`${base}/api/v1/documents/${grant.document.documentId}`, { headers: employerAuth });
+      assert(detailResponse.status === 200, `lecture du document attendue (200), reçue ${detailResponse.status}`);
+      const detailText = await detailResponse.text();
+      const detail = JSON.parse(detailText) as { versions: Array<{ versionId: string; cryptographicHash?: string; hashAlgorithm: string; status: string }> };
+      const version = detail.versions.find(item => item.versionId === grant.version.versionId);
+      assert(version !== undefined, 'version déposée listée par l’API');
+      assert(Boolean(version!.cryptographicHash), 'empreinte calculée et persistée');
+      assert(version!.hashAlgorithm === 'SHA-256', 'algorithme d’empreinte SHA-256');
+
+      // 3. Téléchargement authentifié : les octets reviennent EXACTEMENT (le
+      //    binaire a fait l’aller-retour par R2).
+      const download = await fetch(`${base}/api/v1/documents/${grant.document.documentId}/versions/${grant.version.versionId}/content`, { headers: employerAuth });
+      assert(download.status === 200, `téléchargement attendu (200), reçu ${download.status}`);
+      const downloaded = new Uint8Array(await download.arrayBuffer());
+      assert(downloaded.length === bytes.length, `taille téléchargée ${downloaded.length} ≠ déposée ${bytes.length}`);
+      assert(new TextDecoder().decode(downloaded) === content, 'contenu identique après aller-retour R2');
+
+      // 4. Intégrité recalculée par le service documentaire sur l’objet R2.
+      const verification = await fetch(`${base}/api/v1/documents/${grant.document.documentId}/versions/${grant.version.versionId}/verify`, {
+        method: 'POST',
+        headers: employerJson('p0cf-workerd-doc-verify-001'),
+        body: '{}',
+      });
+      assert(verification.status < 400, `vérification attendue (< 400), reçue ${verification.status}`);
+      const verified = await verification.json() as { match: boolean; objectPresent: boolean; actualHash?: string };
+      assert(verified.match === true && verified.objectPresent === true, 'empreinte conforme sur l’objet réellement stocké');
+
+      // 5. La clé d’objet EXISTE en base et n’apparaît dans AUCUNE réponse.
+      const keyRow = await pool.query<{ object_key: string }>(
+        'SELECT object_key FROM document_versions WHERE version_id = $1', [grant.version.versionId],
+      );
+      const objectKey = keyRow.rows[0]?.object_key ?? '';
+      assert(objectKey.length > 0, 'clé d’objet persistée en base');
+      for (const payload of [detailText, JSON.stringify(verified)]) {
+        assert(!payload.includes(objectKey), 'la clé d’objet ne doit jamais sortir par l’API');
+        assert(!/object_?key/i.test(payload), 'aucun champ objectKey/object_key dans une réponse');
+      }
+      assert(!detailText.includes('docs/'), 'aucun chemin interne de bucket dans une réponse');
+
+      // 6. Sans secret de signature configuré, la présignature reste 501 : le
+      //    téléchargement passe par l’API contrôlée, jamais par R2 en direct.
+      const signed = await fetch(`${base}/api/v1/documents/${grant.document.documentId}/signed-download-url`, {
+        method: 'POST',
+        headers: employerJson('p0cf-workerd-doc-signed-001'),
+        body: JSON.stringify({ versionId: grant.version.versionId }),
+      });
+      assert(signed.status === 501, `501 attendu sans secret de signature, reçu ${signed.status}`);
+
+      // 7. Un tiers n’accède pas au document (contrôle d’accès préservé).
+      const outsider = await fetch(`${base}/api/v1/documents/${grant.document.documentId}`, {
+        headers: { cookie: `${SESSION_COOKIE_NAME}=${otherEmployerCookie}` },
+      });
+      assert(outsider.status === 403 || outsider.status === 404, `tiers refusé, reçu ${outsider.status}`);
+    });
+
+    /* ---------------------------------------------------------------- */
+    /* P0-CLOUDFLARE-PRODUCTION — Cron réel sous workerd                 */
+    /* ---------------------------------------------------------------- */
+
+    await check('P0-CLOUDFLARE-PRODUCTION workerd : Cron Trigger réel (/__scheduled) → worker EXISTANT → Outbox → échéancier → audit durable, sans double effet', async () => {
+      const ownerJson = (key: string) => ({
+        cookie: `${SESSION_COOKIE_NAME}=${employerCookie}`,
+        'content-type': 'application/json',
+        'Idempotency-Key': key,
+      });
+      const workerJson = (key: string) => ({
+        cookie: `${SESSION_COOKIE_NAME}=${sessionCookie}`,
+        'content-type': 'application/json',
+        'Idempotency-Key': key,
+      });
+
+      /** Attend une ligne (le handler peut terminer via ctx.waitUntil). */
+      const waitForRow = async <Row extends Record<string, unknown>>(
+        sql: string,
+        params: readonly unknown[],
+        accept: (rows: Row[]) => boolean,
+        label: string,
+      ): Promise<Row[]> => {
+        const deadline = Date.now() + 30_000;
+        let rows: Row[] = [];
+        while (Date.now() < deadline) {
+          const result = await pool.query<Row>(sql, [...params]);
+          rows = result.rows;
+          if (accept(rows)) return rows;
+          await new Promise(resolvePromise => setTimeout(resolvePromise, 250));
+        }
+        const logTail = readFileSync(wranglerLog, 'utf8')
+          .split('\n')
+          .filter(line => line.includes('cron_tick'))
+          .slice(-4)
+          .join(' | ');
+        throw new Error(
+          `délai dépassé en attendant ${label} (dernier état: ${JSON.stringify(rows[0] ?? null)})`
+          + `${logTail ? ` — journaux du Worker: ${logTail}` : ''}`,
+        );
+      };
+
+      // 1. Chaîne réelle jusqu’à l’ACTIVATION : l’événement reste PENDING, car
+      //    AUCUN consumer applicatif n’a tourné (le déclencheur n’existe pas
+      //    encore dans ce parcours).
+      const offerResponse = await fetch(`${base}/api/v1/offers`, {
+        method: 'POST',
+        headers: ownerJson('p0cf-workerd-cron-offer-001'),
+        body: JSON.stringify({
+          title: 'Offre workerd P0-CLOUDFLARE-PRODUCTION',
+          contractType: 'CDI',
+          remuneration: 175000,
+          currency: 'FCFA',
+          location: 'Cotonou',
+          summary: 'Offre utilisée pour vérifier le déclenchement périodique réel sous workerd.',
+        }),
+      });
+      assert(offerResponse.status === 201, `création offre : 201 attendu, reçu ${offerResponse.status}`);
+      const offer = await offerResponse.json() as { id: string };
+
+      const applicationResponse = await fetch(`${base}/api/v1/offers/${offer.id}/applications`, {
+        method: 'POST',
+        headers: workerJson('p0cf-workerd-cron-application-001'),
+        body: JSON.stringify({ note: 'Candidature pour le déclenchement périodique.' }),
+      });
+      assert(applicationResponse.status === 201, `soumission : 201 attendu, reçu ${applicationResponse.status}`);
+      const application = await applicationResponse.json() as { id: string };
+
+      const proposalResponse = await fetch(`${base}/api/v1/conversations/cnv_p0cf_workerd/proposals`, {
+        method: 'POST',
+        headers: ownerJson('p0cf-workerd-cron-proposal-001'),
+        body: JSON.stringify({
+          offerId: offer.id,
+          applicationId: application.id,
+          missionTitle: 'Mission workerd P0-CLOUDFLARE-PRODUCTION',
+          amount: 175000,
+          currency: 'FCFA',
+          periodicity: 'Mensuel',
+          startDate: '01 Août 2026',
+          durationMonths: 6,
+          location: 'Cotonou',
+          conditions: ['Temps plein'],
+        }),
+      });
+      assert(proposalResponse.status === 201, `proposition : 201 attendu, reçue ${proposalResponse.status}`);
+      const proposal = await proposalResponse.json() as { id: string };
+
+      const accepted = await fetch(`${base}/api/v1/proposals/${proposal.id}/respond`, {
+        method: 'POST', headers: workerJson('p0cf-workerd-cron-accept-001'), body: JSON.stringify({ action: 'ACCEPT' }),
+      });
+      assert(accepted.status === 200, `acceptation : 200 attendu, reçu ${accepted.status}`);
+
+      const created = await fetch(`${base}/api/v1/contracts`, {
+        method: 'POST', headers: ownerJson('p0cf-workerd-cron-contract-001'), body: JSON.stringify({ proposalId: proposal.id }),
+      });
+      assert(created.status === 201, `création contrat : 201 attendu, reçu ${created.status}`);
+      const contract = await created.json() as { id: string };
+      for (const [step, url, key, json] of [
+        ['envoi', 'send', 'p0cf-workerd-cron-send-001', ownerJson],
+        ['signature', 'sign', 'p0cf-workerd-cron-sign-001', workerJson],
+        ['activation', 'activate', 'p0cf-workerd-cron-activate-001', ownerJson],
+      ] as const) {
+        const response = await fetch(`${base}/api/v1/contracts/${contract.id}/${url}`, { method: 'POST', headers: json(key), body: '{}' });
+        assert(response.status === 200, `${step} : 200 attendu, reçu ${response.status}`);
+      }
+      const eventId = contractActivatedEventId(contract.id);
+      const pending = await pool.query<{ status: string }>('SELECT status FROM automation_outbox WHERE id = $1', [eventId]);
+      assert(pending.rows[0]?.status === 'PENDING', 'événement PENDING avant tout déclenchement (aucun consumer automatique)');
+
+      const ticksBefore = await pool.query<{ count: string }>(
+        `SELECT count(*)::text AS count FROM automation_audit_ledger WHERE action = 'CRON_TICK_EXECUTED'`,
+      );
+
+      // 2. LE DÉCLENCHEUR DE PRODUCTION, exécuté par workerd : rien d’autre que
+      //    le handler `scheduled()` — le même que celui du Cron Cloudflare.
+      const tick = await fetch(`${base}/__scheduled?cron=*+*+*+*+*`);
+      assert(tick.status === 200, `déclenchement : 200 attendu, reçu ${tick.status}`);
+
+      // 3. Effets RÉELS du tick : événement consommé, échéancier et échéances
+      //    projetés par le worker EXISTANT.
+      await waitForRow(
+        'SELECT status, attempts FROM automation_outbox WHERE id = $1',
+        [eventId],
+        rows => (rows[0] as { status?: string } | undefined)?.status === 'PROCESSED',
+        'l’événement CONTRACT_ACTIVATED traité',
+      );
+      const schedule = await waitForRow<{ payment_schedule: unknown }>(
+        'SELECT payment_schedule FROM contracts WHERE id = $1',
+        [contract.id],
+        rows => Array.isArray(rows[0]?.payment_schedule) && (rows[0]!.payment_schedule as unknown[]).length === 6,
+        'l’échéancier salarial',
+      );
+      const periods = schedule[0].payment_schedule as Array<Record<string, unknown>>;
+      assert(periods.length === 6, `6 périodes attendues, reçues ${periods.length}`);
+      assert(periods[0].commissionAmount === 43750 && periods[0].employeeShareAmount === 131250, 'règle 25 % / 75 % inchangée');
+      const deadlinesAndJobs = await pool.query<{ deadlines: string; jobs: string }>(
+        `SELECT (SELECT count(*)::text FROM automation_deadlines WHERE aggregate_id = $1) AS deadlines,
+                (SELECT count(*)::text FROM automation_jobs WHERE aggregate_id = $1) AS jobs`,
+        [contract.id],
+      );
+      assert(Number(deadlinesAndJobs.rows[0]?.deadlines ?? 0) === 7, `7 échéances attendues, reçues ${deadlinesAndJobs.rows[0]?.deadlines}`);
+      assert(Number(deadlinesAndJobs.rows[0]?.jobs ?? 0) === 14, `14 rappels attendus, reçus ${deadlinesAndJobs.rows[0]?.jobs}`);
+
+      // 4. Le balayage des échéances atteintes fait partie du même tick (paiement
+      //    M1 dû depuis 01/09) — aucun paiement n’est exécuté pour autant.
+      const materialized = await waitForRow<{ rows: string; not_scheduled: string; detail: string }>(
+        // Alias en minuscules : PostgreSQL replie les identifiants non cités.
+        `SELECT count(*)::text AS rows,
+                count(*) FILTER (WHERE status <> 'SCHEDULED')::text AS not_scheduled,
+                string_agg(payment_type || ':' || status || ':' || due_at::text, ' | ' ORDER BY due_at) AS detail
+           FROM payments WHERE contract_id = $1`,
+        [contract.id],
+        rows => Number(rows[0]?.rows ?? 0) === 7 && Number(rows[0]?.not_scheduled ?? 0) >= 1,
+        'le balayage des échéances atteintes (SCHEDULED → DUE)',
+      );
+      assert(Number(materialized[0].rows) === 7, `7 lignes de paiement attendues, reçues ${materialized[0].rows}`);
+      assert(
+        Number(materialized[0].not_scheduled) >= 1,
+        `le tick bascule réellement les échéances atteintes (SCHEDULED → DUE) — état réel: ${materialized[0].detail}`,
+      );
+      // Deux échéances sont atteintes à la date du jour (01/09 et 01/10) : le
+      // tick les bascule, SANS exécuter aucun paiement réel pour autant.
+      assert(
+        /:DUE:/.test(materialized[0].detail) && /:SCHEDULED:/.test(materialized[0].detail),
+        `mélange attendu de paiements échus et futurs, état réel: ${materialized[0].detail}`,
+      );
+
+      // 5. Trace DURABLE du tick dans le ledger existant.
+      const ticks = await waitForRow<{ actor_id: string; source: string; entity_id: string; after_state: unknown }>(
+        `SELECT actor_id, source, entity_id, after_state FROM automation_audit_ledger
+          WHERE action = 'CRON_TICK_EXECUTED' ORDER BY occurred_at ASC`,
+        [],
+        rows => rows.length > Number(ticksBefore.rows[0]?.count ?? 0),
+        'la trace CRON_TICK_EXECUTED du tick',
+      );
+      const lastTick = ticks[ticks.length - 1];
+      assert(lastTick.actor_id === 'SYSTEM', `acteur SYSTEM attendu, reçu ${lastTick.actor_id}`);
+      assert(lastTick.source === 'automation:P0-CRON-QUEUE', `source du déclencheur attendue, reçue ${lastTick.source}`);
+      assert(lastTick.entity_id === 'cron:scheduled', `entité du tick attendue, reçue ${lastTick.entity_id}`);
+      const tickState = lastTick.after_state as unknown;
+      const tickStateRecord = (typeof tickState === 'string' ? JSON.parse(tickState) : tickState) as Record<string, unknown>;
+      assert(Number((tickStateRecord.events as Record<string, unknown> | undefined)?.completed ?? 0) >= 1, 'compteur d’événements du tick réel');
+
+      // 6. SECOND déclenchement : aucun double effet métier (idempotence).
+      const secondTick = await fetch(`${base}/__scheduled?cron=*+*+*+*+*`);
+      assert(secondTick.status === 200, `second déclenchement : 200 attendu, reçu ${secondTick.status}`);
+      const afterSecond = await waitForRow<{ count: string }>(
+        `SELECT count(*)::text AS count FROM automation_audit_ledger WHERE action = 'CRON_TICK_EXECUTED'`,
+        [],
+        rows => Number(rows[0]?.count ?? 0) > ticks.length,
+        'la trace du second tick',
+      );
+      assert(Number(afterSecond[0].count) === ticks.length + 1, `un tick = une trace (attendu ${ticks.length + 1}, reçu ${afterSecond[0].count})`);
+      const stable = await pool.query<{ schedule: string; deadlines: string; jobs: string; outbox: string }>(
+        `SELECT (SELECT jsonb_array_length(payment_schedule)::text FROM contracts WHERE id = $1) AS schedule,
+                (SELECT count(*)::text FROM automation_deadlines WHERE aggregate_id = $1) AS deadlines,
+                (SELECT count(*)::text FROM automation_jobs WHERE aggregate_id = $1) AS jobs,
+                (SELECT count(*)::text FROM automation_outbox WHERE aggregate_id = $1 AND status = 'PROCESSED') AS outbox`,
+        [contract.id],
+      );
+      assert(Number(stable.rows[0]?.schedule ?? 0) === 6, 'un second tick ne duplique JAMAIS l’échéancier');
+      assert(Number(stable.rows[0]?.deadlines ?? 0) === 7, 'un second tick ne duplique JAMAIS les échéances');
+      assert(Number(stable.rows[0]?.jobs ?? 0) === 14, 'un second tick ne duplique JAMAIS les rappels');
+      assert(Number(stable.rows[0]?.outbox ?? 0) >= 1, 'l’événement reste traité une seule fois');
     });
 
     await check('P0-NOTIFICATIONS workerd → PostgreSQL : notifications In-App lues et marquées lues à travers des requêtes HTTP réelles', async () => {

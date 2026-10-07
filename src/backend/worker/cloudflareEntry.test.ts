@@ -10,6 +10,62 @@
 import { createCloudflareWorker, runtimeTarget } from './cloudflareEntry';
 import type { WorkerPostgresClient } from './pgClient';
 import { toPostgresClientPort, type DriverPoolLike, type DriverQueryResult } from '../persistence/sqlClient';
+import { PGlite } from '@electric-sql/pglite';
+import { authRequest, authenticateActor, createOffersTestHarness } from '../api/offers.test';
+import { createR2BucketObjectStorage, type R2BucketLike } from '../documents/storage';
+
+/** Pilote `DriverPoolLike` sur une instance PGlite (base PostgreSQL réelle locale). */
+function createPGliteDriver(database: PGlite): DriverPoolLike {
+  const query = async <RowT = Record<string, unknown>>(
+    sql: string,
+    values: readonly unknown[] = [],
+  ): Promise<DriverQueryResult<RowT>> => {
+    const result = await database.query<RowT>(sql, [...values]);
+    return { rows: result.rows, rowCount: result.rowCount };
+  };
+  return {
+    query,
+    async connect() {
+      return { query, release() {} };
+    },
+  };
+}
+
+/**
+ * Binding R2 en mémoire (même surface structurelle que `R2Bucket`). Il sert à
+ * prouver que l'entrée Worker CÂBLE réellement le binding R2 de l'environnement
+ * dans le port `ObjectStorage` — sans compte Cloudflare ni bucket réel.
+ */
+function fakeR2Bucket(): R2BucketLike & { keys(): string[] } {
+  const objects = new Map<string, { bytes: Uint8Array; contentType?: string }>();
+  return {
+    keys: () => [...objects.keys()],
+    async put(key, value, options) {
+      const bytes = value instanceof Uint8Array
+        ? value
+        : new Uint8Array(await new Response(value as ReadableStream).arrayBuffer());
+      objects.set(key, { bytes, ...(options?.httpMetadata?.contentType ? { contentType: options.httpMetadata.contentType } : {}) });
+      return { key };
+    },
+    async get(key) {
+      const found = objects.get(key);
+      if (!found) return null;
+      return {
+        size: found.bytes.length,
+        ...(found.contentType ? { httpMetadata: { contentType: found.contentType } } : {}),
+        arrayBuffer: async () => found.bytes.slice().buffer,
+      };
+    },
+    async head(key) {
+      const found = objects.get(key);
+      if (!found) return null;
+      return { size: found.bytes.length, ...(found.contentType ? { httpMetadata: { contentType: found.contentType } } : {}) };
+    },
+    async delete(key) {
+      for (const candidate of Array.isArray(key) ? key : [key]) objects.delete(candidate);
+    },
+  };
+}
 
 export interface CloudflareEntryTestResult {
   name: string;
@@ -148,6 +204,127 @@ export async function runCloudflareEntryTests(): Promise<CloudflareEntryTestResu
     assert(firstTarget?.connectionString !== secondTarget?.connectionString, 'les cibles doivent différer');
     assert(Boolean(firstTarget?.connectionString), 'cible résolue attendue');
     await runtime.dispose();
+  });
+
+  await check('P0-CRON-QUEUE Worker: scheduled() sans binding = no-op explicite (aucun client, aucune écriture)', async () => {
+    let created = 0;
+    const logs: string[] = [];
+    const originalLog = console.log;
+    console.log = (...args: unknown[]) => { logs.push(args.map(String).join(' ')); };
+    const runtime = createCloudflareWorker({
+      createClient: () => {
+        created += 1;
+        return { client: toPostgresClientPort(createScriptedPool()), end: async () => undefined };
+      },
+    });
+    try {
+      // PERSISTENCE=postgres SANS binding : la production déployée telle quelle.
+      await runtime.scheduled!(
+        { cron: '*/5 * * * *', scheduledTime: Date.now() },
+        { GOOGLE_CLIENT_ID: 'client-id', PERSISTENCE: 'postgres', WORKER_ENV: 'production' },
+      );
+      // PERSISTENCE='closed' (frontière fermée) : même garantie.
+      await runtime.scheduled!(
+        { cron: '*/5 * * * *', scheduledTime: Date.now() },
+        { GOOGLE_CLIENT_ID: 'client-id' },
+      );
+    } finally {
+      console.log = originalLog;
+    }
+    assert(created === 0, 'aucun client PostgreSQL ne doit être construit sans cible');
+    const ticks = logs.filter(line => line.includes('cron_tick'));
+    assert(ticks.length === 2, `un signal d’exploitation par tick attendu, reçus ${ticks.length}`);
+    for (const line of ticks) {
+      assert(line.includes('cron_tick_skipped'), `tick sans cible = no-op tracé, reçu ${line}`);
+      assert(!/postgres(ql)?:\/\//.test(line), 'aucune chaîne de connexion dans un log de tick');
+    }
+  });
+
+  await check('P0-R2 Worker: binding R2 de l’environnement → domaine DOCUMENTS ouvert, objet réellement stocké, aucune clé exposée', async () => {
+    const harness = await createOffersTestHarness();
+    try {
+      const { token, userId } = await authenticateActor(harness, 'employer-1', 'EMPLOYER');
+      const driver = createPGliteDriver(harness.pg);
+      const runtime = createCloudflareWorker({
+        createClient: (): WorkerPostgresClient => ({ client: toPostgresClientPort(driver), end: async () => undefined }),
+        // Même horloge que le harnais : sans elle, la session réelle serait vue
+        // comme expirée par l'entrée (et le test mesurerait autre chose).
+        now: () => harness.clock.value,
+      });
+      const baseEnv = {
+        GOOGLE_CLIENT_ID: 'p0cf-entry-test.apps.googleusercontent.com',
+        PERSISTENCE: 'postgres',
+        WORKER_ENV: 'test-local',
+        HYPERDRIVE: { connectionString: 'postgresql://lelabeur:secret@127.0.0.1:55432/lelabeur?sslmode=disable' },
+      };
+      const bytes = new TextEncoder().encode('%PDF-1.4 contrat via binding R2');
+      const grantBody = JSON.stringify({
+        title: 'Contrat via binding R2',
+        fileName: 'contrat.pdf',
+        contentType: 'application/pdf',
+        sizeBytes: bytes.length,
+        documentType: 'CONTRACT_DOCUMENT',
+      });
+      const grantRequest = () => authRequest('/api/v1/documents/upload-grants', token, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'Idempotency-Key': 'p0cf-entry-grant-001' },
+        body: grantBody,
+      });
+
+      // Sans bucket : le domaine reste FERMÉ (aucune version sans objet).
+      const closed = await runtime.fetch(grantRequest(), baseEnv);
+      assert(closed.status === 501, `501 attendu sans binding R2, reçu ${closed.status}`);
+
+      // Avec le binding R2 : la route existe et exige la session (401 sans cookie).
+      const bucket = fakeR2Bucket();
+      const envWithBucket = { ...baseEnv, DOCUMENTS_BUCKET: bucket };
+      const anonymous = await runtime.fetch(
+        authRequest('/api/v1/documents/upload-grants', null, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'Idempotency-Key': 'p0cf-entry-grant-anon' },
+          body: grantBody,
+        }),
+        envWithBucket,
+      );
+      assert(anonymous.status === 401, `401 attendu sans session, reçu ${anonymous.status}`);
+
+      // Dépôt authentifié : le grant, le contenu (put R2) puis la lecture.
+      const granted = await runtime.fetch(grantRequest(), envWithBucket);
+      assert(granted.status < 400, `grant attendu (< 400), reçu ${granted.status}: ${await granted.clone().text()}`);
+      const grant = await granted.json() as {
+        document: { documentId: string; ownerUserId: string };
+        version: { versionId: string };
+        upload: { url: string; contentType: string };
+      };
+      assert(grant.document.ownerUserId === userId, 'propriétaire dérivé côté serveur');
+      assert(grant.upload.url.startsWith('/api/v1/documents/'), 'URL de dépôt servie par l’API, jamais une clé d’objet');
+
+      const uploaded = await runtime.fetch(
+        authRequest(grant.upload.url, token, {
+          method: 'POST',
+          headers: { 'content-type': 'application/pdf', 'Idempotency-Key': 'p0cf-entry-content-001' },
+          body: new Uint8Array(bytes),
+        }),
+        envWithBucket,
+      );
+      assert(uploaded.status < 400, `dépôt attendu (< 400), reçu ${uploaded.status}: ${await uploaded.clone().text()}`);
+      assert(bucket.keys().length === 1, `un objet R2 attendu, reçus ${bucket.keys().length}`);
+
+      const detail = await runtime.fetch(
+        authRequest(`/api/v1/documents/${grant.document.documentId}`, token),
+        envWithBucket,
+      );
+      const detailText = await detail.text();
+      assert(detail.status === 200, `lecture attendue (200), reçue ${detail.status}`);
+      assert(!/object_?key/i.test(detailText), 'aucune clé d’objet dans une réponse d’API');
+      assert(!detailText.includes(bucket.keys()[0]), 'le chemin de l’objet n’est jamais exposé');
+
+      // Le contenu relu provient bien de l’objet R2 stocké.
+      const readBack = await createR2BucketObjectStorage(bucket).get(bucket.keys()[0]);
+      assert(readBack !== null && readBack.size === bytes.length, 'objet R2 réellement écrit par le dépôt');
+    } finally {
+      await harness.close();
+    }
   });
 
   await check('P0-C Worker: mode mémoire explicite ≠ postgres, aucune confusion de mode', async () => {
