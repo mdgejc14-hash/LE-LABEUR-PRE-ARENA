@@ -42,6 +42,17 @@ export const API_ROUTE_CONTRACTS = [
   { key: 'offers.favorites.list', method: 'GET', path: '/api/v1/my/favorites', authentication: 'required', scope: 'self' },
   { key: 'offers.favorites.toggle', method: 'POST', path: '/api/v1/offers/:offerId/favorite', authentication: 'required', scope: 'self', idempotency: true, auditOnMutation: true },
 
+  // P0-MATCHING — qualification obligatoire avant tout classement privé.
+  { key: 'matching.qualification.submit', method: 'POST', path: '/api/v1/offers/:offerId/qualification', authentication: 'required', scope: 'owner', roles: ['EMPLOYER'], idempotency: true, auditOnMutation: true },
+  { key: 'matching.qualification.read', method: 'GET', path: '/api/v1/offers/:offerId/qualification', authentication: 'required', scope: 'owner', roles: ['EMPLOYER'] },
+  { key: 'matching.qualification.summary', method: 'GET', path: '/api/v1/offers/:offerId/qualification-summary', authentication: 'public', scope: 'public' },
+  { key: 'matching.profile.read', method: 'GET', path: '/api/v1/my/matching-profile', authentication: 'required', scope: 'self', roles: ['CANDIDATE'] },
+  { key: 'matching.profile.update', method: 'PATCH', path: '/api/v1/my/matching-profile', authentication: 'required', scope: 'self', roles: ['CANDIDATE'], idempotency: true, auditOnMutation: true },
+  { key: 'matching.runs.create', method: 'POST', path: '/api/v1/offers/:offerId/matching-runs', authentication: 'required', scope: 'owner', roles: ['EMPLOYER'], idempotency: true, auditOnMutation: true },
+  { key: 'matching.runs.read', method: 'GET', path: '/api/v1/matching-runs/:runId', authentication: 'required', scope: 'owner', roles: ['EMPLOYER'] },
+  { key: 'matching.qualification.review.list', method: 'GET', path: '/api/v1/admin/qualifications/review', authentication: 'required', scope: 'admin', roles: ['ADMIN'], permission: 'offers:moderate', collection: true },
+  { key: 'matching.qualification.review', method: 'POST', path: '/api/v1/admin/qualifications/:qualificationId/review', authentication: 'required', scope: 'admin', roles: ['ADMIN'], permission: 'offers:moderate', idempotency: true, auditOnMutation: true },
+
   { key: 'applications.mine.list', method: 'GET', path: '/api/v1/my/applications', authentication: 'required', scope: 'self', collection: true, roles: ['CANDIDATE'] },
   { key: 'applications.employer.list', method: 'GET', path: '/api/v1/employer/applications', authentication: 'required', scope: 'self', collection: true, roles: ['EMPLOYER'] },
   { key: 'applications.offer.list', method: 'GET', path: '/api/v1/offers/:offerId/applications', authentication: 'required', scope: 'owner', collection: true, roles: ['EMPLOYER'] },
