@@ -4,6 +4,15 @@
 chaîne d'exécution Worker → Hyperdrive → PostgreSQL **réellement exécutée en
 local**, et prépare la configuration Cloudflare réelle sans jamais la revendiquer.
 
+> **Mise à jour P0-CLOUDFLARE-PRODUCTION (2026-10-07)** : les lignes « R2,
+> Queues, Cron, Durable Objects, KV : hors périmètre » ci-dessous décrivent
+> l'état de P0-C. Cette tranche d'infrastructure ajoute — sans modifier une
+> règle métier — le Cron Trigger déclaré et prouvé localement, le binding R2 de
+> production, les invariants de production (fermeture franche), le rapport
+> `GET /readyz` et les contrôles de déploiement. **Aucun déploiement n'a été
+> réalisé** (aucun compte Cloudflare). Référence à jour :
+> [`docs/P0-CLOUDFLARE_PRODUCTION.md`](./P0-CLOUDFLARE_PRODUCTION.md).
+
 ## 1. Matrice d'état (à lire avant toute affirmation)
 
 | Élément | État | Preuve / limite |
@@ -19,7 +28,7 @@ local**, et prépare la configuration Cloudflare réelle sans jamais la revendiq
 | Compte Cloudflare / déploiement / `wrangler dev --remote` | **INDISPONIBLE** | `npx wrangler whoami` → « You are not authenticated » |
 | Base PostgreSQL distante / managée (Neon, Supabase, RDS…) | **INDISPONIBLE** | Aucune chaîne de connexion réelle, aucun credential |
 | Audience Google réelle (`GOOGLE_CLIENT_ID`) | **INDISPONIBLE** | Valeur publique absente ; sans elle le Worker reste fermé (401/501) |
-| R2, Queues, Cron, Durable Objects, KV | **HORS PÉRIMÈTRE P0-C** | Aucun binding, aucun handler `scheduled` |
+| R2, Queues, Cron, Durable Objects, KV | **P0-C : hors périmètre — voir P0-CLOUDFLARE-PRODUCTION** | Cron déclaré (`*/5 * * * *`, cadence d'exploitation) ; binding R2 de production déclaré (bucket privé, à créer) ; **aucune** Cloudflare Queue (décision : la file durable reste `automation_outbox`) |
 
 > Aucun secret n'est présent dans le dépôt : vérifié automatiquement par la suite
 > `P0-C — configuration Cloudflare Worker` (`npm test`) et par les assertions de
@@ -51,7 +60,9 @@ déployé remplace la variable locale. Le code Worker est identique.
 | `[[hyperdrive]] id` | `00000000-0000-0000-0000-000000000000` | **PLACEHOLDER** — à remplacer après `wrangler hyperdrive create` |
 | `[vars]` (défaut) | `PERSISTENCE=postgres`, `WORKER_ENV=development`, limites de pool/timeout, `COOKIE_SECURE=true` | Développement (`wrangler dev`) |
 | `[env.production.vars]` | mêmes clés, `WORKER_ENV=production` | **Redéclarées** : les `vars` et bindings ne sont pas hérités par les environnements Wrangler |
-| `[env.production]` Hyperdrive | **absent (voulu)** | Déployé tel quel, le Worker répond 503 (`misconfigured`) au lieu d'utiliser une base implicite |
+| `[env.production]` Hyperdrive | **absent (voulu)** | Déployé tel quel, le Worker répond 503 (`degraded`, motif `production-missing-hyperdrive`) au lieu d'utiliser une base implicite |
+| `[triggers]` / `[env.production.triggers]` | `["*/5 * * * *"]` | Cadence **technique** (décision d'exploitation à confirmer) ; publiée par `CRON_CADENCE`, vérifiée par `/readyz` |
+| `[[env.production.r2_buckets]]` | `DOCUMENTS_BUCKET` → `lelabeur-documents-production` | Bucket privé, à créer par l'exploitant ; aucun domaine public ; présignature R2 restée bloquée |
 
 Secrets autorisés (jamais dans le dépôt) : `wrangler secret put POSTGRES_CONNECTION_STRING --env production`,
 ou `.dev.vars` local (gitignoré) avec `CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE`.
@@ -62,8 +73,10 @@ ou `.dev.vars` local (gitignoré) avec `CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_S
 npm test                 # 1232/1232 PASS (dont 28 tests P0-F et 13 tests de matrice P0-F)
 npm run lint             # tsc --noEmit : aucune erreur
 npm run build            # bundle navigateur inchangé (pg absent)
-npm run verify:postgres  # 19/19 PASS — Worker/API → PostgreSQL réel
-npm run verify:workerd   # 9/9 PASS — workerd + binding Hyperdrive + PostgreSQL réel
+npm run verify:postgres  # 28/28 PASS — Worker/API → PostgreSQL réel (dont migrations concurrentes)
+npm run verify:workerd   # 16/16 PASS — workerd + binding Hyperdrive + PostgreSQL réel (dont Cron réel et /readyz)
+npm run deploy:preflight # 12/12 contrôles locaux + blocages externes explicites (aucun déploiement)
+npm run smoke:production # BLOCKED_EXTERNAL_ACCESS sans Worker déployé (lecture seule)
 npm run migrate -- --status  # état réel des migrations (aucune valeur secrète affichée)
 ```
 
@@ -160,6 +173,19 @@ d'origine, comportement des verrous consultatifs à travers un Hyperdrive déplo
   seed des rôles n'est pas complété (à traiter en P0-D, sans invention).
 - **`vars`/bindings non hérités** : le profil `production` redéclare
   explicitement ses vars ; il ne déclare aucun Hyperdrive tant qu'aucun n'existe.
+
+## 7bis. Frontière de PRODUCTION (P0-CLOUDFLARE-PRODUCTION)
+
+- **Invariants bloquants** (`src/backend/worker/productionGuard.ts`) : production
+  ⇒ `PERSISTENCE=postgres`, `COOKIE_SECURE≠false`, aucun override de test, cible
+  PostgreSQL réellement résolue. Toute violation ferme le Worker (503 motivé) et
+  neutralise `scheduled()`.
+- **`GET /readyz`** : dix vérifications observées (Worker, PostgreSQL,
+  migrations, file durable, Cron tracé, automatisation, notifications,
+  documents, R2, audit). Statuts seuls sans session ; détail réservé à un ADMIN
+  disposant de `audit:read`. Aucune écriture, aucun secret.
+- **Migrations** : verrou consultatif de session — deux exécutions concurrentes
+  ne rejouent jamais une migration (vérifié sur PostgreSQL réel).
 
 ## 8. Sécurité
 

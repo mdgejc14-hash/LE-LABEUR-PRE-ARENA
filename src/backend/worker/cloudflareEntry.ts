@@ -15,8 +15,19 @@
  *  - aucune connexion n'est tentée au démarrage : seul `/healthz` sonde la base,
  *    et toutes les erreurs restent expurgées.
  *
- * ⚠️ Cette entrée n'est PAS déployée : aucun compte Cloudflare, aucun ID
- * Hyperdrive et aucune base distante ne sont disponibles dans cette session.
+ * P0-CLOUDFLARE-PRODUCTION :
+ *  - la configuration de production est AUDITÉE avant composition
+ *    (`evaluateProductionGuard`) : persistance PostgreSQL exigée, cookie TLS
+ *    exigé, aucun override de test, cible PostgreSQL réellement résolue. Toute
+ *    violation ferme la frontière (503 motivé) et neutralise `scheduled()` ;
+ *  - `/readyz` est servi par la composition (`readiness`) : PostgreSQL,
+ *    migrations, file durable, ticks de cron, R2, documents, notifications et
+ *    audit, observés — jamais simulés.
+ *
+ * ⚠️ Aucun déploiement n'est réalisé par cette tranche : aucun compte
+ * Cloudflare, aucun ID Hyperdrive et aucune base distante ne sont disponibles.
+ * La configuration préparée REFUSE de fonctionner tant que ces ressources
+ * n'existent pas réellement.
  */
 
 import { composeWorker, type WorkerEnvironment } from '../api/entry';
@@ -25,6 +36,10 @@ import {
   type ResolvedPostgresTarget,
 } from '../persistence/config';
 import { createWorkerPostgresClient, type WorkerPostgresClient } from './pgClient';
+// P0-CLOUDFLARE-PRODUCTION — invariants de PRODUCTION évalués AVANT toute
+// composition : une production mal configurée reste fermée (aucune connexion,
+// aucune route métier, aucun travail planifié) au lieu de servir le trafic.
+import { evaluateProductionGuard } from './productionGuard';
 
 export interface CloudflareWorkerEnvironment extends WorkerEnvironment {}
 
@@ -60,11 +75,12 @@ export interface CloudflareWorkerRuntime {
    * les workers/services déjà autorisés (handlers déclarés, idempotence,
    * ownership, permissions).
    *
-   * Aucune planification de production n'est installée dans cette tranche :
-   * aucun bloc `[triggers]`/`crons` ACTIF dans `wrangler.toml` (le bloc est
-   * préparé et documenté), aucun timer applicatif, aucun `setInterval`.
-   * Déployer ce handler sans activer le cron ne déclenche donc rien —
-   * l'activation est la décision CLOUDFLARE PRODUCTION.
+   * P0-CLOUDFLARE-PRODUCTION : le bloc `[triggers]` ACTIF de `wrangler.toml`
+   * déclare la cadence (profil par défaut pour `wrangler dev --test-scheduled`,
+   * profil `production` pour le déploiement). La cadence est une décision
+   * d'EXPLOITATION, publiée par la variable `CRON_CADENCE` et vérifiée par
+   * `/readyz` (dernier tick réellement tracé dans le ledger d'audit). Aucun
+   * timer applicatif, aucun `setInterval`, aucun second ordonnanceur.
    */
   scheduled?(event: CloudflareScheduledEvent, env: CloudflareWorkerEnvironment, ctx?: CloudflareWorkerExecutionContext): Promise<void>;
   /** Compatibilité/arrêt local : aucun pool n'est conservé entre requêtes. */
@@ -101,6 +117,18 @@ export function createCloudflareWorker(options: CloudflareWorkerOptions = {}): C
     env: CloudflareWorkerEnvironment,
     ctx?: CloudflareWorkerExecutionContext,
   ): Promise<Response> {
+    // P0-CLOUDFLARE-PRODUCTION — production invalide : frontière fermée, motif publié.
+    const guard = evaluateProductionGuard(env);
+    if (guard.blocking) {
+      const composition = composeWorker(env, undefined, {
+        productionBlock: {
+          reason: guard.primaryReason!,
+          violations: guard.violations.map(violation => violation.message),
+        },
+      });
+      return composition.worker.fetch(request);
+    }
+
     let created: WorkerPostgresClient | null = null;
     try {
       const target = runtimeTarget(env);
@@ -170,6 +198,10 @@ export function createCloudflareWorker(options: CloudflareWorkerOptions = {}): C
     ): Promise<void> {
       void event;
       const run = async (): Promise<void> => {
+        // Une production invalide ne déclenche AUCUN travail planifié : le
+        // déclencheur reste sans effet plutôt que d'exécuter une automatisation
+        // sur une configuration non prouvée.
+        if (evaluateProductionGuard(env).blocking) return;
         let created: WorkerPostgresClient | null = null;
         try {
           const target = runtimeTarget(env);

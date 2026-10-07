@@ -47,6 +47,12 @@ export interface PersistenceHealthReport {
   migrations?: MigrationState;
   /** Message déjà expurgé ; jamais de chaîne de connexion ni de mot de passe. */
   error?: string;
+  /**
+   * P0-CLOUDFLARE-PRODUCTION — invariants de production violés (messages déjà
+   * expurgés, aucune valeur de secret). Présent uniquement quand la frontière a
+   * été fermée par `evaluateProductionGuard`.
+   */
+  violations?: string[];
 }
 
 export type BoundaryHealthResponse =
@@ -70,6 +76,11 @@ export interface HealthReportInputs {
   health?: DatabaseHealth;
   target?: SafePostgresDescriptor;
   migrations?: MigrationState;
+  /**
+   * P0-CLOUDFLARE-PRODUCTION — invariants de production violés (messages
+   * expurgés). Aucun secret n'y transite : ce sont des motifs de fermeture.
+   */
+  violations?: readonly string[];
 }
 
 /** Construit le corps `/healthz` sans jamais inventer d'état. */
@@ -98,6 +109,9 @@ export function buildHealthPayload(inputs: HealthReportInputs): BoundaryHealthRe
   if (inputs.migrations) report.migrations = inputs.migrations;
   if (inputs.health && !inputs.health.reachable && inputs.health.error) {
     report.error = inputs.health.error;
+  }
+  if (inputs.violations && inputs.violations.length > 0) {
+    report.violations = [...inputs.violations];
   }
 
   const degraded = decision.kind === 'memory' ? false : report.reachable !== true;

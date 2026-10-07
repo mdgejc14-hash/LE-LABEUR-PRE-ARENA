@@ -35,7 +35,16 @@ export type PersistenceReason =
   | 'placeholder-connection-string'
   | 'invalid-pool-max'
   | 'invalid-statement-timeout'
-  | 'invalid-application-name';
+  | 'invalid-application-name'
+  /**
+   * P0-CLOUDFLARE-PRODUCTION — motifs de FERMETURE propres à la production.
+   * Ils ne sont produits que par `evaluateProductionGuard` (WORKER_ENV=production) :
+   * une production mal configurée reste fermée au lieu de servir le trafic.
+   */
+  | 'production-requires-postgres'
+  | 'production-insecure-cookie'
+  | 'production-test-jwks-override'
+  | 'production-missing-hyperdrive';
 
 export interface PersistenceDecision {
   /** Mode effectif de la composition : 'misconfigured' n'ouvre jamais l'API. */

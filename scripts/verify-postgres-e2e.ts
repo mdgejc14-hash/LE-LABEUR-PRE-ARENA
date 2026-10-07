@@ -20,7 +20,7 @@
 
 import EmbeddedPostgres from 'embedded-postgres';
 import { Pool } from 'pg';
-import { mkdirSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -34,7 +34,12 @@ import { createSqlPermissionStore } from '../src/backend/identity/permissionStor
 import { createSqlUserStore } from '../src/backend/identity/sqlStores';
 import { createSqlApplicationStore } from '../src/backend/persistence/sqlCoreStores';
 import { describePostgresTarget, resolvePostgresTarget } from '../src/backend/persistence/config';
-import { applyMigrations, loadMigrations, migrationStatus } from '../src/backend/persistence/migrationRunner';
+import {
+  MIGRATION_ADVISORY_LOCK_KEY,
+  applyMigrations,
+  loadMigrations,
+  migrationStatus,
+} from '../src/backend/persistence/migrationRunner';
 import { createPostgresDatabase } from '../src/backend/persistence/postgresDatabase';
 import { createWorkerPostgresClient } from '../src/backend/worker/pgClient';
 import { redactSqlSecrets, toPostgresClientPort } from '../src/backend/persistence/sqlClient';
@@ -2025,6 +2030,67 @@ async function main(): Promise<void> {
       await database.query('DELETE FROM users WHERE id = $1', [candidateId]);
       if (employerId) await database.query('DELETE FROM users WHERE id = $1', [employerId]);
       if (otherEmployerId) await database.query('DELETE FROM users WHERE id = $1', [otherEmployerId]);
+    });
+
+    await check('P0-CPROD migrations : deux exécutions CONCURRENTES ne rejouent jamais une migration (verrou consultatif)', async () => {
+      // Répertoire temporaire : les 17 migrations réelles + UNE migration sonde
+      // idempotente, afin d'observer un vrai conflit d'application.
+      const directory = mkdtempSync(resolve(REPO_ROOT, '.tmp', 'migration-lock-'));
+      const concurrentPools: Pool[] = [];
+      try {
+        for (const migration of migrations) {
+          writeFileSync(resolve(directory, migration.file), migration.sql);
+        }
+        writeFileSync(
+          resolve(directory, '0018_lock_probe.sql'),
+          '-- Sonde P0-CLOUDFLARE-PRODUCTION (appliquée puis retirée)\nBEGIN;\nCREATE TABLE IF NOT EXISTS migration_lock_probe (id TEXT PRIMARY KEY);\nCOMMIT;\n',
+        );
+        const concurrentMigrations = loadMigrations(directory);
+        assert(concurrentMigrations.length === migrations.length + 1, 'jeu de migrations de contrôle attendu');
+
+        const poolA = new Pool({ connectionString, max: 1 });
+        const poolB = new Pool({ connectionString, max: 1 });
+        concurrentPools.push(poolA, poolB);
+        const [first, second] = await Promise.all([
+          applyMigrations(toPostgresClientPort(poolA), concurrentMigrations, {}, secrets),
+          applyMigrations(toPostgresClientPort(poolB), concurrentMigrations, {}, secrets),
+        ]);
+
+        const appliedProbe = [...first.applied, ...second.applied].filter(id => id === '0018_lock_probe');
+        assert(appliedProbe.length === 1, `la migration doit être appliquée exactement une fois, reçu ${appliedProbe.length}`);
+        assert(
+          first.applied.length + second.applied.length === 1,
+          'aucune autre migration ne doit être rejouée pendant la concurrence',
+        );
+        assert(
+          first.skipped.length + second.skipped.length === concurrentMigrations.length * 2 - 1,
+          'le second exécutant doit constater le travail déjà tracé (aucune double application)',
+        );
+
+        const recorded = await database.query<{ count: string }>(
+          `SELECT count(*)::text AS count FROM schema_migrations WHERE id = '0018_lock_probe'`,
+        );
+        assert(Number(recorded.rows[0]?.count ?? 0) === 1, 'une seule trace pour la migration concurrente');
+
+        // Verrou réellement libéré : la clé est immédiatement reprenable par une
+        // autre session (sinon la session A aurait laissé la base verrouillée).
+        const lockProbe = await poolA.query<{ locked: boolean }>(
+          'SELECT pg_try_advisory_lock($1) AS locked',
+          [MIGRATION_ADVISORY_LOCK_KEY],
+        );
+        assert(lockProbe.rows[0]?.locked === true, 'verrou libéré après l’exécution');
+        await poolA.query('SELECT pg_advisory_unlock($1)', [MIGRATION_ADVISORY_LOCK_KEY]);
+      } finally {
+        for (const concurrentPool of concurrentPools) await concurrentPool.end().catch(() => undefined);
+        // Nettoyage réversible : la sonde disparaît complètement.
+        await database.query('DROP TABLE IF EXISTS migration_lock_probe').catch(() => undefined);
+        await database.query(`DELETE FROM schema_migrations WHERE id = '0018_lock_probe'`).catch(() => undefined);
+        rmSync(directory, { recursive: true, force: true });
+      }
+
+      const finalStatus = await migrationStatus(client, migrations);
+      assert(finalStatus.pending.length === 0, 'aucune migration réelle en attente après la concurrence');
+      assert(finalStatus.applied.length === migrations.length, 'état des migrations inchangé');
     });
 
     await check('MODE DEMO inchangé : MockRepository par défaut, API seulement si explicite', () => {

@@ -14,6 +14,10 @@ import { runHealthReportTests } from '../src/backend/api/health.test';
 import { runMigrationRunnerTests } from '../src/backend/persistence/migrationRunner.test';
 import { runCloudflareConfigTests } from '../src/backend/worker/cloudflareConfig.test';
 import { runCloudflareEntryTests } from '../src/backend/worker/cloudflareEntry.test';
+// P0-CLOUDFLARE-PRODUCTION — invariants de production, inventaire des ressources
+// et rapport de préparation `/readyz` (aucun accès Cloudflare, aucun secret).
+import { runProductionGuardTests } from '../src/backend/worker/productionGuard.test';
+import { runReadinessTests } from '../src/backend/api/readiness.test';
 import { runOfferDomainTests } from '../src/backend/api/offers.test';
 import { runApplicationDomainTests } from '../src/backend/api/applications.test';
 import { runApplicationDecisionTests } from '../src/backend/api/applicationDecisions.test';
@@ -61,6 +65,8 @@ async function main(): Promise<void> {
   const migrationRunner = await runMigrationRunnerTests();
   const cloudflareConfig = await runCloudflareConfigTests();
   const cloudflareEntry = await runCloudflareEntryTests();
+  const productionGuard = await runProductionGuardTests();
+  const readiness = await runReadinessTests();
   const offerDomain = await runOfferDomainTests();
   const applicationDomain = await runApplicationDomainTests();
   const applicationDecisionMatrix = runApplicationTransitionTests();
@@ -102,6 +108,8 @@ async function main(): Promise<void> {
     { name: 'P0-C — runner de migrations (manifeste, enveloppe, idempotence, checksum)', cases: migrationRunner },
     { name: 'P0-C — configuration Cloudflare Worker (bindings, secrets, isolation pg)', cases: cloudflareConfig },
     { name: 'P0-C — entrée Worker Cloudflare (composition, fermeture, cycle de pool)', cases: cloudflareEntry },
+    { name: 'P0-CLOUDFLARE-PRODUCTION — invariants de production, inventaire des ressources, wrangler.toml de production (fail-closed, placeholders refusés, aucune seconde file, aucun secret)', cases: productionGuard },
+    { name: 'P0-CLOUDFLARE-PRODUCTION — /readyz (10 vérifications observées : PostgreSQL, migrations, file durable, cron tracé, R2, documents, notifications, audit; projection publique vs détail ADMIN)', cases: readiness },
     { name: 'P0-E1 / P0-E2 — domaine OFFRES (création, cycle de vie des statuts, persistance, rôles, ownership, idempotence, rollback)', cases: offerDomain },
     { name: 'P0-E3 — soumission et consultation propriétaire des CANDIDATURES (PostgreSQL, rôles, ownership, idempotence, concurrence, rollback)', cases: applicationDomain },
     { name: 'P0-E4 — matrice de décision CANDIDATURE (statuts du code, transitions refusées, motifs, événements documentés)', cases: applicationDecisionMatrix },

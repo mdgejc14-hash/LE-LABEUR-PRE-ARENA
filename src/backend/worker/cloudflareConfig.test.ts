@@ -89,14 +89,43 @@ export async function runCloudflareConfigTests(): Promise<CloudflareConfigTestRe
     assert(/WORKER_ENV\s*=\s*"production"/.test(wrangler), 'WORKER_ENV=production attendu');
     assert(/WORKER_ENV\s*=\s*"development"/.test(wrangler), 'WORKER_ENV=development attendu');
     // Les bindings ne sont pas hérités : le placeholder de développement ne doit pas
-    // être réutilisé tel quel en production.
+    // être réutilisé tel quel en production, et AUCUN ID Hyperdrive n'est inventé.
     const productionBlock = wrangler.slice(wrangler.indexOf('[env.production]'));
     assert(!/^\s*\[\[env\.production\.hyperdrive\]\]/m.test(productionBlock), 'production ne doit pas activer un Hyperdrive inexistant');
     assert(/npx wrangler hyperdrive create/.test(productionBlock), 'la création du Hyperdrive de production doit être documentée');
-    // Hors périmètre P0-C.
-    for (const forbidden of ['r2_buckets', 'queues', 'durable_objects', 'kv_namespaces', 'triggers = ', 'scheduled']) {
-      assert(!activeWrangler.toLowerCase().includes(forbidden), `P0-C ne doit déclarer aucun ${forbidden}`);
+    // La frontière Cloudflare de cette tranche est explicitement documentée.
+    assert(/P0-CLOUDFLARE-PRODUCTION/.test(wrangler), 'la tranche en cours doit être identifiable dans la configuration');
+  });
+
+  await check('P0-CPROD config: frontière de production complète, fail-closed, sans second système de file', () => {
+    // 1. R2 déclaré UNIQUEMENT en production, bucket privé, aucun domaine public.
+    assert(/\[\[env\.production\.r2_buckets\]\]/.test(wrangler), 'binding R2 de production attendu');
+    assert(/binding\s*=\s*"DOCUMENTS_BUCKET"/.test(wrangler), 'binding DOCUMENTS_BUCKET attendu');
+    assert(/bucket_name\s*=\s*"[^"]+"/.test(wrangler), 'nom de bucket explicite attendu');
+    assert(!/r2\.dev/i.test(activeWrangler), 'aucun domaine public r2.dev dans la configuration active');
+    assert(
+      !/(^|\s)(public_url|custom_domain|custom_domains|preview_url)\s*=/m.test(activeWrangler),
+      'aucun domaine public personnalisé pour le bucket',
+    );
+
+    // 2. Cron : cadence déclarée dans les deux profils, publiée par CRON_CADENCE.
+    const crons = [...activeWrangler.matchAll(/crons\s*=\s*\[([^\]]*)\]/g)].map(match => match[1].trim());
+    assert(crons.length === 2, `deux blocs crons attendus (défaut + production), reçu ${crons.length}`);
+    assert(crons[0] === crons[1], 'les deux profils doivent déclarer la même cadence');
+    const cadences = [...activeWrangler.matchAll(/CRON_CADENCE\s*=\s*"([^"]+)"/g)].map(match => match[1].trim());
+    assert(cadences.length === 2, 'CRON_CADENCE doit être déclarée dans les deux profils');
+    assert(cadences.every(cadence => cadence === crons[0].replace(/"/g, '')), 'CRON_CADENCE doit refléter exactement le trigger');
+    assert(/\[env\.production\.triggers\]/.test(wrangler), 'les triggers de production doivent être déclarés explicitement');
+    assert(/cadence TECHNIQUE|décision d'EXPLOITATION|DÉCISION D'EXPLOITATION/i.test(wrangler), 'la cadence doit être documentée comme décision d’exploitation');
+
+    // 3. Aucun second système de file, de stockage ou d'ordonnanceur.
+    for (const forbidden of ['queues', 'durable_objects', 'kv_namespaces', 'd1_databases', 'services']) {
+      assert(!activeWrangler.toLowerCase().includes(forbidden), `aucun ${forbidden} : la file durable reste automation_outbox`);
     }
+    assert(/automation_outbox/.test(wrangler), 'la décision « une seule file » doit être documentée dans la configuration');
+
+    // 4. Observabilité activée en production.
+    assert(/\[env\.production\.observability\]/.test(wrangler), 'observabilité de production explicite attendue');
   });
 
   await check('P0-C config: aucun secret PostgreSQL committé', () => {
@@ -121,7 +150,7 @@ export async function runCloudflareConfigTests(): Promise<CloudflareConfigTestRe
 
   await check('P0-C config: scripts npm de migration/vérification présents', () => {
     const pkg = JSON.parse(readRepoFile('package.json')) as { scripts: Record<string, string>; dependencies: Record<string, string>; devDependencies: Record<string, string> };
-    for (const script of ['migrate', 'verify:postgres', 'dev:worker']) {
+    for (const script of ['migrate', 'verify:postgres', 'dev:worker', 'deploy:preflight', 'smoke:production']) {
       assert(Boolean(pkg.scripts[script]), `script npm manquant: ${script}`);
     }
     assert(Boolean(pkg.dependencies.pg), 'pg doit être une dépendance de production (runtime Worker)');
