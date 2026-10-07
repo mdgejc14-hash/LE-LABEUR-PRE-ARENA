@@ -39,6 +39,7 @@ export const OUTBOX_EFFECT_CONTRACTS: readonly OutboxEffectContract[] = [
   { eventType: 'CONTRACT_ACTIVATED', sideEffects: ['refresh offer and application views', 'notify employer AND worker (CONTRACT_ACTIVE, In-App)', 'FILLED / HIRED automation stays a later step'], idempotencyKey: 'contractId + ACTIVATED' },
   { eventType: 'CONTRACT_ENDED', sideEffects: ['close the mission for both parties'], idempotencyKey: 'contractId + ENDED' },
   { eventType: 'CONTRACT_TERMINATED', sideEffects: ['freeze the schedule and notify the OTHER party (rule ready; the producer belongs to a later tranche)'], idempotencyKey: 'contractId + TERMINATED' },
+  { eventType: 'WEBRTC_SESSION_INVITED', sideEffects: ['notify only the other persisted contract party in-app; no external channel'], idempotencyKey: 'sessionId + INVITED' },
   { eventType: 'INCIDENT_OPENED', sideEffects: ['notify authorized participants and Admin queue'], idempotencyKey: 'event.id' },
   { eventType: 'INCIDENT_DECIDED', sideEffects: ['notify incident participants of the recorded decision'], idempotencyKey: 'event.id' },
   { eventType: 'REPLACEMENT_CREATED', sideEffects: ['open the authorized dossier from Claim REPLACE', 'notify the old contract parties and authorized Admins (In-App)'], idempotencyKey: 'replacementId + CREATED' },

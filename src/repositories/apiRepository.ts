@@ -16,7 +16,7 @@ import type {
   UserProfile,
   UserRole,
 } from '../types';
-import type { CursorPage, DocumentMetadata, ProductionAuditEvent, PublicProfileProjection, ScheduleEntrySnapshot, ShortLivedIceConfiguration, ShortLivedSignalingCredential, SignedDocumentUrl } from '../backend/productionContracts';
+import type { CursorPage, DocumentMetadata, ProductionAuditEvent, PublicProfileProjection, ScheduleEntrySnapshot, ShortLivedIceConfiguration, ShortLivedSignalingCredential, SignedDocumentUrl, WebRtcEntityType, WebRtcIceConfiguration, WebRtcSessionCredential, WebRtcSessionView, WebRtcSignalingMessage } from '../backend/productionContracts';
 import type { RevenueMetrics } from './interfaces';
 import { HttpApiClient, type ApiClientOptions } from './apiClient';
 
@@ -139,6 +139,7 @@ export class ApiRepository {
   readonly audit;
   readonly documents;
   readonly calls;
+  readonly webrtc;
 
   constructor(private readonly http: HttpApiClient = new HttpApiClient()) {
     this.auth = {
@@ -323,6 +324,35 @@ export class ApiRepository {
         callId ? `/calls/${encodeURIComponent(callId)}/signaling-credential` : '/calls/signaling-credential',
         { method: 'POST', body: {} },
       ),
+    };
+
+    this.webrtc = {
+      listMine: (page: ApiPageOptions = {}) => this.page<WebRtcSessionView>('/my/webrtc-sessions', page),
+      create: (input: { entityType: WebRtcEntityType; entityId: string }, command: IdempotentCommandOptions) =>
+        this.http.request<WebRtcSessionView>('/webrtc-sessions', { method: 'POST', body: input, idempotencyKey: command.idempotencyKey }),
+      get: (sessionId: string) => this.http.request<WebRtcSessionView>(`/webrtc-sessions/${encodeURIComponent(sessionId)}`),
+      join: (sessionId: string) => this.http.request<WebRtcSessionView>(`/webrtc-sessions/${encodeURIComponent(sessionId)}/join`, { method: 'POST', body: {} }),
+      issueCredential: (sessionId: string) => this.http.request<WebRtcSessionCredential>(`/webrtc-sessions/${encodeURIComponent(sessionId)}/credentials`, { method: 'POST', body: {} }),
+      getIceConfiguration: (sessionId: string) => this.http.request<WebRtcIceConfiguration>(`/webrtc-sessions/${encodeURIComponent(sessionId)}/ice-configuration`, { method: 'POST', body: {} }),
+      sendSignal: (sessionId: string, credential: string, message: Record<string, unknown>, command: IdempotentCommandOptions) =>
+        this.http.request<WebRtcSignalingMessage>(`/webrtc-sessions/${encodeURIComponent(sessionId)}/signaling`, {
+          method: 'POST', body: message, idempotencyKey: command.idempotencyKey,
+          headers: { 'X-WebRTC-Credential': credential },
+        }),
+      pollSignaling: (sessionId: string, credential: string, afterSequence = 0, limit = 25) =>
+        this.http.request<{ messages: WebRtcSignalingMessage[]; nextSequence: number; hasMore: boolean }>(
+          `/webrtc-sessions/${encodeURIComponent(sessionId)}/signaling`,
+          { query: { afterSequence, limit }, headers: { 'X-WebRTC-Credential': credential } },
+        ),
+      reportTransportConnected: (sessionId: string, credential: string, command: IdempotentCommandOptions) =>
+        this.http.request<WebRtcSessionView>(`/webrtc-sessions/${encodeURIComponent(sessionId)}/connected`, {
+          method: 'POST', body: {}, idempotencyKey: command.idempotencyKey,
+          headers: { 'X-WebRTC-Credential': credential },
+        }),
+      close: (sessionId: string, command: IdempotentCommandOptions) =>
+        this.http.request<WebRtcSessionView>(`/webrtc-sessions/${encodeURIComponent(sessionId)}/close`, {
+          method: 'POST', body: {}, idempotencyKey: command.idempotencyKey,
+        }),
     };
   }
 

@@ -156,6 +156,16 @@ import {
   type DocumentRepositoryStores,
   type OpenDocumentRepository,
 } from '../documents/documentRepository';
+// P0-WEBRTC — sessions temporaires persistées par PostgreSQL, parties réelles
+// du contrat uniquement; aucune connexion, TURN ou clé n'est inventée ici.
+import { createSqlWebRtcSessionStore } from '../webrtc/sqlSessionStore';
+import { createWebRtcApiHandlers } from '../webrtc/webrtcApi';
+import {
+  createWebRtcSessionRepository,
+  type WebRtcIceConfigurationIssuer,
+  type WebRtcSessionRepository as OpenWebRtcSessionRepository,
+  type WebRtcSessionRepositoryStores,
+} from '../webrtc/webrtcRepository';
 
 export interface WorkerEnvironment extends WorkerPersistenceEnvironment {
   GOOGLE_CLIENT_ID?: string;
@@ -239,6 +249,8 @@ export interface WorkerComposition {
    * aucune version sans objet, aucun objet sans version).
    */
   documents?: OpenDocumentRepository;
+  /** P0-WEBRTC — signaling REST-polling; absent without durable PostgreSQL. */
+  webrtc?: OpenWebRtcSessionRepository;
   claimDeadlineConfiguration?: ReturnType<typeof resolveClaimEvidenceDeadline>;
   /**
    * P0-AUTO-2 : automatisation contractuelle (handler `CONTRACT_ACTIVATED` et
@@ -303,6 +315,8 @@ export interface WorkerCompositionOverrides {
   documentStorage?: ObjectStorage;
   /** P0-R2 — secret HMAC des URL signées, réservé aux vérifications/à l'exploitation. */
   documentUrlSigningSecret?: string;
+  /** ICE/TURN issuer injecté uniquement si sa disponibilité et sa portée sont réelles. */
+  webrtcIceConfigurationIssuer?: WebRtcIceConfigurationIssuer;
 }
 
 function isInjectedDatabase(value: PostgreSqlDatabase | PostgresClientPort): value is PostgreSqlDatabase {
@@ -997,6 +1011,35 @@ export function composeWorker(
       })
     : undefined;
 
+  /*
+   * P0-WEBRTC — session, signaling, credentials and audit are durable and
+   * transactional. REST polling is the current transport; no Durable Object,
+   * TURN server, DNS entry or Cloudflare binding is fabricated by composition.
+   * An ICE issuer is optional and can only be supplied by an environment that
+   * has a real scoped provider. Without it, the API reports NOT_CONFIGURED.
+   */
+  const webrtcAvailable = Boolean(persistence.database && mode === 'postgres');
+  const buildWebRtcStores = (tx: Parameters<typeof createSqlWebRtcSessionStore>[0]): WebRtcSessionRepositoryStores => {
+    const automationStores = createSqlAutomationStores(tx);
+    return {
+      sessions: createSqlWebRtcSessionStore(tx),
+      contracts: createSqlContractStore(tx),
+      users: createSqlUserStore(tx),
+      audit: automationStores.audit,
+      outbox: automationStores.outbox,
+      idempotency: automationStores.idempotency,
+    };
+  };
+  const webrtcRepository: OpenWebRtcSessionRepository | undefined = webrtcAvailable && persistence.database
+    ? createWebRtcSessionRepository({
+        database: persistence.database,
+        createStores: buildWebRtcStores,
+        ...(overrides.webrtcIceConfigurationIssuer ? { iceConfigurationIssuer: overrides.webrtcIceConfigurationIssuer } : {}),
+        ...(overrides.now ? { now: overrides.now } : {}),
+      })
+    : undefined;
+  const webrtcHandlers = webrtcRepository ? createWebRtcApiHandlers(webrtcRepository) : {};
+
   const domainHandlers = {
     ...offerHandlers,
     ...applicationHandlers,
@@ -1016,6 +1059,8 @@ export function composeWorker(
     // liens version ↔ entité, téléchargement contrôlé et révocations ADMIN.
     // Absent sans base durable ET stockage objet injecté.
     ...documentHandlers,
+    // P0-WEBRTC — calls liés aux seules parties d'un contrat actif.
+    ...webrtcHandlers,
     // P0-PAY-1 — cycle Payment existant.
     ...paymentHandlers,
     ...(persistence.database && mode === 'postgres' ? createSalaryConfirmationHandlers(persistence.database, overrides.salaryTestOtpSink, createSqlAutomationStores) : {}),
@@ -1040,6 +1085,7 @@ export function composeWorker(
     matching: matchingRepository,
     ...(reputationRepository ? { reputation: reputationRepository } : {}),
     ...(documentRepository ? { documents: documentRepository } : {}),
+    ...(webrtcRepository ? { webrtc: webrtcRepository } : {}),
     claimDeadlineConfiguration,
     payments: paymentRepository,
     paymentReconciliation,

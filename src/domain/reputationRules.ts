@@ -445,6 +445,12 @@ export const REPUTATION_FACT_COVERAGE: readonly ReputationFactCoverage[] = [
     reason: 'L’activation est un début d’engagement : elle ne prouve aucune exécution.',
   },
   {
+    source: 'WEBRTC_SESSION_INVITED',
+    status: 'NO_REPUTATION_RULE',
+    producer: 'src/backend/webrtc/webrtcRepository.ts',
+    reason: 'Une invitation à un appel est une action de communication, jamais un fait de performance ou de faute.',
+  },
+  {
     source: 'CONTRACT_SIGNED',
     status: 'NO_REPUTATION_RULE',
     producer: null,

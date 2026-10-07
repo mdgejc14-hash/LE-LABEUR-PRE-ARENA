@@ -37,6 +37,7 @@ import { runNotificationTests } from '../src/backend/notifications/notifications
 import { runMatchingTests } from '../src/backend/matching/matching.test';
 import { runReputationTests } from '../src/backend/api/reputation.test';
 import { runDocumentDomainTests } from '../src/backend/api/documents.test';
+import { runWebRtcTests } from '../src/backend/webrtc/webrtc.test';
 
 interface TestCase {
   name: string;
@@ -84,6 +85,7 @@ async function main(): Promise<void> {
   const matching = await runMatchingTests();
   const reputation = await runReputationTests();
   const documents = await runDocumentDomainTests();
+  const webrtc = await runWebRtcTests();
 
   const suites: Array<{ name: string; cases: TestCase[] }> = [
     { name: 'Domain deterministic', cases: deterministic.results.map(result => ({ name: result.name, success: result.success, detail: result.details })) },
@@ -123,6 +125,7 @@ async function main(): Promise<void> {
     { name: 'P0-MATCHING — qualification indépendante, revue humaine, ranking explicable, consentement, idempotence, concurrence, ownership et exclusion des facteurs sensibles', cases: matching },
     { name: 'P0-REPUTATION — ledger d’événements documentés (faits réels, règles versionnées, explications, idempotence, concurrence, neutralité des litiges ouverts, corrections ADMIN auditées, permissions, non-régression P0-MATCHING/PAIEMENT/REPLACEMENT)', cases: reputation },
     { name: 'P0-R2 — DOCUMENTS & PREUVES (upload, métadonnées, hash SHA-256, versionnement append-only, récupération exacte, ownership/permissions/anti-IDOR, audit existant, liens version↔entité/acceptation, intégrité, révocation, rétention sans durée inventée, idempotence, concurrence, garde-fous juridiques/financiers, non-régression)', cases: documents },
+    { name: 'P0-WEBRTC — contrat actif, participants réels, invitation Outbox, signaling REST/offer-answer-ICE, credentials courts, replay, expiration, révocation, fermeture, purge, statut ICE/TURN et absence d’enregistrement/biométrie', cases: webrtc },
     { name: 'P0-AUTO-2 — CONTRACT_ACTIVATED réel (Outbox → Queue → Worker → AutomationEngine → échéancier salarial, échéancier de commission, échéances, rappels; PostgreSQL, idempotence, concurrence, retry, dead-letter, rollback, audit, séparation DEMO/API)', cases: contractAutomation },
     { name: 'P0-CRON-QUEUE — déclenchement périodique sur la queue EXISTANTE (Cron scheduled() réel → worker : jobs échus/futurs, double déclenchement, deux workers, retry, dead-letter, crash après réservation, idempotence métier, audit du tick, échéances paiement/claim/salaire, notification workflow existant, réputation planifiable, sécurité, non-régression R2/REPUTATION/MATCHING/REPLACEMENT/PAIEMENT/NOTIFICATIONS; PostgreSQL PGlite, aucun Cloudflare réel)', cases: cronQueue },
   ];

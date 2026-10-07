@@ -68,6 +68,7 @@ export const NOTIFICATION_EVENT_COVERAGE: readonly NotificationEventCoverage[] =
   { eventType: 'CONTRACT_SENT', status: 'MAPPED', producer: null, consumer: 'NotificationAutomation' },
   { eventType: 'CONTRACT_SIGNED', status: 'MAPPED', producer: null, consumer: 'NotificationAutomation' },
   { eventType: 'CONTRACT_ACTIVATED', status: 'MAPPED', producer: 'src/backend/repositories/contractRepository.ts', consumer: 'NotificationAutomation (en plus du handler CONTRACT_ACTIVATED existant)' },
+  { eventType: 'WEBRTC_SESSION_INVITED', status: 'MAPPED', producer: 'src/backend/webrtc/webrtcRepository.ts', consumer: 'NotificationAutomation (Outbox existante; invitation In-App uniquement)' },
   { eventType: 'CONTRACT_ENDED', requestedAs: 'CONTRACT_COMPLETED', status: 'UNMAPPED', producer: null, consumer: 'NotificationAutomation', reason: 'Le modèle ne déclare aucun `NotificationType` de fin de mission et le moteur DEMO n’en produit aucun sur la fin normale.' },
   { eventType: 'CONTRACT_TERMINATED', status: 'MAPPED', producer: null, consumer: 'NotificationAutomation' },
   { eventType: 'EXECUTION_CONFIRMED', requestedAs: 'EXECUTION_CONFIRMED', status: 'UNMAPPED', producer: 'src/backend/repositories/contractRepository.ts (entrée d’HISTORIQUE, aucun événement d’Outbox)', consumer: 'NotificationAutomation', reason: 'Nom réel du dépôt, mais il n’existe QUE comme entrée d’historique de contrat : aucun événement d’Outbox n’est émis, donc aucun déclencheur ne peut le porter sans créer un producteur hors périmètre.' },
@@ -289,6 +290,18 @@ export function resolveNotificationIntents(event: NotificationEventLike): Notifi
         link: { screen: 'CHAT_DETAIL', id: text(payload, 'conversationId') },
         dedupeKey: `proposal:${aggregateId}:DECLINED`,
         payload: { proposalId: text(payload, 'proposalId') ?? aggregateId },
+      }];
+
+    /* ---------------- CONTRAT / APPEL WEBRTC ---------------- */
+    case 'WEBRTC_SESSION_INVITED':
+      return [{
+        notificationType: 'INCOMING_CALL',
+        title: 'Invitation à un appel temporaire',
+        message: 'Votre interlocuteur vous propose un appel temporaire lié à votre contrat actif. Rejoignez-le depuis votre espace contrat.',
+        audiences: ['OTHER_PARTY'],
+        link: { screen: 'CONTRACTS', id: text(payload, 'contractId') ?? aggregateId },
+        dedupeKey: `webrtc:${text(payload, 'sessionId') ?? event.eventId}:INVITED`,
+        payload: { contractId: text(payload, 'contractId') ?? aggregateId, sessionId: text(payload, 'sessionId') ?? '' },
       }];
 
     /* ---------------- CONTRAT ---------------- */

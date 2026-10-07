@@ -38,6 +38,7 @@ import type { PaymentProviderRegistry } from '../payments/paymentProviderRegistr
 import type { OpenNotificationService } from '../notifications/notificationService';
 import type { OpenReputationRepository } from '../reputation/reputationRepository';
 import type { OpenDocumentRepository } from '../documents/documentRepository';
+import type { WebRtcIceConfigurationIssuer, WebRtcSessionRepository as OpenWebRtcSessionRepository } from '../webrtc/webrtcRepository';
 import type { ObjectStorage } from '../services/documents';
 import type { NotificationChannelRegistry } from '../notifications/channels';
 import type { PostgreSqlDatabase } from '../services/database';
@@ -196,6 +197,8 @@ export interface TestHarness {
   reputation?: OpenReputationRepository;
   /** P0-R2 : dépôt DOCUMENTS & PREUVES (absent sans base durable ni stockage injecté). */
   documents?: OpenDocumentRepository;
+  /** P0-WEBRTC : appels temporaires, uniquement avec PostgreSQL durable. */
+  webrtc?: OpenWebRtcSessionRepository;
   /** P0-PAY-1 : repository du cycle PAIEMENT (déclaration, vérification, décision). */
   payments?: OpenPaymentRepository;
   /** P0-PAY-3 : service durable d'import batch, ledger externe, retries et revue. */
@@ -222,6 +225,7 @@ export async function createOffersTestHarness(
      */
     documentStorage?: ObjectStorage;
     documentUrlSigningSecret?: string;
+    webrtcIceConfigurationIssuer?: WebRtcIceConfigurationIssuer;
   } = {},
 ): Promise<TestHarness> {
   offerIdempotencyCache.clear();
@@ -247,6 +251,7 @@ export async function createOffersTestHarness(
     ...(options.notificationChannels ? { notificationChannels: options.notificationChannels } : {}),
     ...(options.documentStorage ? { documentStorage: options.documentStorage } : {}),
     ...(options.documentUrlSigningSecret ? { documentUrlSigningSecret: options.documentUrlSigningSecret } : {}),
+    ...(options.webrtcIceConfigurationIssuer ? { webrtcIceConfigurationIssuer: options.webrtcIceConfigurationIssuer } : {}),
   });
 
   return {
@@ -263,6 +268,7 @@ export async function createOffersTestHarness(
     notifications: composition.notifications,
     reputation: composition.reputation,
     documents: composition.documents,
+    webrtc: composition.webrtc,
     payments: composition.payments,
     paymentReconciliation: composition.paymentReconciliation,
     paymentProviders: composition.paymentProviders,

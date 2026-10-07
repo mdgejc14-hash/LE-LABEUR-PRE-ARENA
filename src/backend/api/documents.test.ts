@@ -395,12 +395,11 @@ export async function runDocumentDomainTests(): Promise<OfferTestResult[]> {
     assert(DOCUMENT_TYPES.length === 8 && RETENTION_CLASSES.length === 5, 'typologie et classes de conservation attendues');
   });
 
-  await check('P0-R2 migrations: manifeste aligné, 0017 dernière, rétention semée sans durée inventée', async () => {
+  await check('P0-R2 migrations: manifeste aligné, rétention documentaire sans durée inventée', async () => {
     const files = readdirSync(MIGRATIONS_DIR).filter(file => file.endsWith('.sql')).sort();
     assert(files.length === EXPECTED_MIGRATION_IDS.length, 'le manifeste doit couvrir exactement les migrations du dépôt');
-    // P0-CRON-QUEUE : `0017_cron_queue` est désormais la dernière migration
-    // (0016_documents reste la dernière migration du domaine documents).
-    assert(EXPECTED_MIGRATION_IDS[EXPECTED_MIGRATION_IDS.length - 1] === '0017_cron_queue', '0017_cron_queue doit être la dernière migration');
+    // P0-WEBRTC 0018 vient après la dernière migration dédiée au domaine R2.
+    assert(EXPECTED_MIGRATION_IDS[EXPECTED_MIGRATION_IDS.length - 1] === '0018_webrtc_sessions', '0018_webrtc_sessions doit être la dernière migration');
     const migration = readFileSync(resolve(MIGRATIONS_DIR, '0016_documents.sql'), 'utf8');
     assert(migration.includes('PENDING_LEGAL_VALIDATION'), 'durées en attente de validation juridique');
     assert(!/INSERT INTO document_retention_policies[^;]*retention_days[^;]*[0-9]/is.test(migration.replace(/retention_days\s+INTEGER[^,]*/i, '')), 'aucune durée ne doit être semée');

@@ -5,6 +5,8 @@ export interface ApiRequestOptions {
   query?: Record<string, string | number | boolean | null | undefined>;
   body?: unknown;
   idempotencyKey?: string;
+  /** Narrow request-scoped headers (e.g. a temporary WebRTC capability). */
+  headers?: HeadersInit;
   signal?: AbortSignal;
 }
 
@@ -52,6 +54,16 @@ export class HttpApiClient {
 
     const headers = new Headers({ accept: 'application/json' });
     if (options.body !== undefined) headers.set('content-type', 'application/json');
+    if (options.headers) {
+      const supplied = new Headers(options.headers);
+      supplied.forEach((value, name) => {
+        const normalized = name.toLowerCase();
+        if (normalized === 'cookie' || normalized === 'authorization' || normalized === 'host' || normalized === 'content-length') {
+          throw new Error(`Caller-supplied ${name} header is not allowed.`);
+        }
+        if (normalized !== 'idempotency-key') headers.set(name, value);
+      });
+    }
     if (options.idempotencyKey) headers.set('Idempotency-Key', options.idempotencyKey);
 
     let response: Response;

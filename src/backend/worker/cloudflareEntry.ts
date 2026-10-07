@@ -58,12 +58,14 @@ export interface CloudflareWorkerRuntime {
    * P0-PAY-1 / P0-CRON-QUEUE — point d'ENTRÉE du déclenchement planifié.
    *
    * Garde-fou de sécurité : le trigger ne peut produire AUCUNE action métier
-   * arbitraire — il appelle UNIQUEMENT la passée bornée du worker
-   * d'automatisation DÉJÀ réel (`runScheduledCycle` = récupération des claims
-   * orphelins → événements → paiements échus → jobs échus), et chaque tick est
-   * tracé dans l'audit (`CRON_TICK_EXECUTED`). Les actions métier restent dans
-   * les workers/services déjà autorisés (handlers déclarés, idempotence,
-   * ownership, permissions).
+   * arbitraire — il appelle la passée bornée du worker d'automatisation DÉJÀ
+   * réel (`runScheduledCycle` = récupération des claims orphelins → événements
+   * → paiements échus → jobs échus), puis la maintenance bornée des seules
+   * sessions WebRTC éphémères (expiration, redaction, purge). Chaque tick est
+   * tracé dans l'audit (`CRON_TICK_EXECUTED`); les transitions WebRTC utilisent
+   * aussi le ledger partagé. Aucune file ni ordonnanceur parallèle n'est créé.
+   * Les mutations restent dans les workers/services déjà autorisés (handlers
+   * déclarés, idempotence, ownership, permissions).
    *
    * P0-CLOUDFLARE-PRODUCTION — le déclencheur est désormais DÉCLARÉ dans le
    * profil `production` de `wrangler.toml` (`[env.production.triggers]`,
@@ -190,13 +192,14 @@ export function createCloudflareWorker(options: CloudflareWorkerOptions = {}): C
     },
 
     /**
-     * P0-PAY-1 / P0-CRON-QUEUE — déclenchement planifié : une seule passée
-     * bornée (récupération des claims orphelins + Outbox + balayage
-     * `SCHEDULED → DUE` + jobs échus), sur une construction éphémère du Worker
-     * (même discipline que `fetch` : pool créé puis fermé). Le trigger n'appelle
-     * QUE le worker d'automatisation existant — aucune autre méthode, aucune
-     * action métier directe. Aucune route HTTP n'existe pour ce parcours et
-     * aucune erreur n'est exposée.
+     * P0-PAY-1 / P0-CRON-QUEUE / P0-WEBRTC — déclenchement planifié : une
+     * passée bornée du worker d'automatisation existant (récupération des claims
+     * orphelins + Outbox + balayage `SCHEDULED → DUE` + jobs échus), puis la
+     * maintenance des sessions temporaires WebRTC (expiration, redaction des
+     * messages, purge bornée), sur une construction éphémère du Worker (même
+     * discipline que `fetch` : pool créé puis fermé). Aucun second ordonnanceur,
+     * aucune queue distincte, aucune route HTTP dédiée et aucun détail interne
+     * exposé.
      *
      * OBSERVABILITÉ (P0-CLOUDFLARE-PRODUCTION) — chaque tick produit UNE ligne
      * structurée compacte, composée uniquement de compteurs (jamais un
@@ -239,18 +242,23 @@ export function createCloudflareWorker(options: CloudflareWorkerOptions = {}): C
             limit: SCHEDULED_DRAIN_LIMIT,
             trigger: 'scheduled',
           });
-          if (report) {
+          const webrtcMaintenance = await composition.webrtc?.runScheduledMaintenance();
+          if (report || webrtcMaintenance) {
             logTick('cron_tick_executed', cron, startedAt, {
-              eventsClaimed: report.events.claimed,
-              eventsCompleted: report.events.completed,
-              eventsRetried: report.events.retried,
-              eventsDeadLettered: report.events.deadLettered,
-              paymentsApplied: report.payments.applied,
-              jobsClaimed: report.jobs.claimed,
-              jobsCompleted: report.jobs.completed,
-              jobsRetried: report.jobs.retried,
-              jobsFailed: report.jobs.failed,
-              staleRecovered: report.recovered.eventsRecovered + report.recovered.jobsRecovered,
+              ...(report ? {
+                eventsClaimed: report.events.claimed,
+                eventsCompleted: report.events.completed,
+                eventsRetried: report.events.retried,
+                eventsDeadLettered: report.events.deadLettered,
+                paymentsApplied: report.payments.applied,
+                jobsClaimed: report.jobs.claimed,
+                jobsCompleted: report.jobs.completed,
+                jobsRetried: report.jobs.retried,
+                jobsFailed: report.jobs.failed,
+                staleRecovered: report.recovered.eventsRecovered + report.recovered.jobsRecovered,
+              } : {}),
+              webrtcExpired: webrtcMaintenance?.expired ?? 0,
+              webrtcPurged: webrtcMaintenance?.purged ?? 0,
             });
           }
           if (created) await created.end();
