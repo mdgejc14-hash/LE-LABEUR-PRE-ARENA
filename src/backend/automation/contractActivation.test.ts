@@ -1577,14 +1577,22 @@ export async function runContractAutomationTests(): Promise<OfferTestResult[]> {
       assert(monthly.status === 501, `le cycle mensuel reste fermé (501), reçu ${monthly.status}`);
     });
 
-    await check('P0-AUTO-2 Périmètre: aucun KYC, aucune collecte d’identité, aucun R2 documentaire', async () => {
+    await check('P0-AUTO-2 Périmètre: aucun KYC, aucune collecte d’identité, aucun R2 documentaire au-delà de la brique P0-R2 sanctionnée', async () => {
       const kycTables = await harness.database.query<{ table_name: string }>(
         `SELECT table_name FROM information_schema.tables
           WHERE table_schema = current_schema()
             AND (table_name ILIKE '%kyc%' OR table_name ILIKE '%identity_document%'
                  OR table_name ILIKE '%document%' OR table_name ILIKE '%r2%')`,
       );
-      assert(kycTables.rows.length === 0, 'aucune table KYC/documentaire créée');
+      // P0-R2 (DOCUMENTS & PREUVES) introduit exactement 4 tables documentaires
+      // sanctionnées ; la mission d'automatisation n'en crée aucune autre.
+      const sanctioned = ['document_entity_links', 'document_retention_policies', 'document_versions', 'documents'];
+      const unexpected = kycTables.rows.map(r => r.table_name).filter(name => !sanctioned.includes(name));
+      assert(unexpected.length === 0, `aucune table KYC/documentaire créée au-delà de P0-R2 (${unexpected.join(', ')})`);
+      assert(
+        kycTables.rows.every(r => r.table_name.startsWith('document')),
+        'aucune table KYC ou R2 brute créée',
+      );
       const kycColumns = await harness.database.query<{ column_name: string }>(
         `SELECT column_name FROM information_schema.columns
           WHERE table_schema = current_schema() AND table_name = 'users'

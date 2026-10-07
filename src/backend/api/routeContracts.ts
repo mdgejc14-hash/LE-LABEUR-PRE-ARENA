@@ -159,11 +159,28 @@ export const API_ROUTE_CONTRACTS = [
   { key: 'calls.call-signaling-credential', method: 'POST', path: '/api/v1/calls/:callId/signaling-credential', authentication: 'required', scope: 'participant' },
   { key: 'resources.published.list', method: 'GET', path: '/api/v1/resources', authentication: 'public', scope: 'public', collection: true },
   { key: 'resources.published.read', method: 'GET', path: '/api/v1/resources/:resourceId', authentication: 'public', scope: 'public' },
+  // P0-R2 — DOCUMENTS & PREUVES : les trois routes historiques (upload-grant,
+  // signed-download, mine.list) sont implémentées ici, et complétées par le
+  // versionnement append-only, le recalcul d'empreinte, les liens version ↔
+  // entité métier et les lectures/révocations ADMIN. Le contenu binaire ne
+  // transite JAMAIS par une clé d'objet exposée : seulement par ces routes,
+  // sous contrôle d'accès serveur.
   { key: 'documents.mine.list', method: 'GET', path: '/api/v1/my/documents', authentication: 'required', scope: 'self', collection: true },
   { key: 'documents.upload-grant', method: 'POST', path: '/api/v1/documents/upload-grants', authentication: 'required', scope: 'self', idempotency: true, auditOnMutation: true },
   { key: 'documents.signed-download', method: 'POST', path: '/api/v1/documents/:documentId/signed-download-url', authentication: 'required', scope: 'owner' },
+  { key: 'documents.read', method: 'GET', path: '/api/v1/documents/:documentId', authentication: 'required', scope: 'owner' },
+  { key: 'documents.versions.list', method: 'GET', path: '/api/v1/documents/:documentId/versions', authentication: 'required', scope: 'owner' },
+  { key: 'documents.versions.create', method: 'POST', path: '/api/v1/documents/:documentId/versions', authentication: 'required', scope: 'owner', idempotency: true, auditOnMutation: true },
+  { key: 'documents.versions.content.upload', method: 'POST', path: '/api/v1/documents/:documentId/versions/:versionId/content', authentication: 'required', scope: 'owner', idempotency: true, auditOnMutation: true },
+  { key: 'documents.versions.content.download', method: 'GET', path: '/api/v1/documents/:documentId/versions/:versionId/content', authentication: 'required', scope: 'owner' },
+  { key: 'documents.versions.integrity.verify', method: 'POST', path: '/api/v1/documents/:documentId/versions/:versionId/verify', authentication: 'required', scope: 'owner', idempotency: true, auditOnMutation: true },
+  { key: 'documents.links.list', method: 'GET', path: '/api/v1/documents/:documentId/versions/:versionId/links', authentication: 'required', scope: 'owner' },
+  { key: 'documents.links.create', method: 'POST', path: '/api/v1/documents/:documentId/versions/:versionId/links', authentication: 'required', scope: 'owner', idempotency: true, auditOnMutation: true },
 
   { key: 'admin.documents.list', method: 'GET', path: '/api/v1/admin/documents', authentication: 'required', scope: 'admin', permission: 'documents:read:any', collection: true },
+  { key: 'admin.documents.read', method: 'GET', path: '/api/v1/admin/documents/:documentId', authentication: 'required', scope: 'admin', permission: 'documents:read:any' },
+  { key: 'admin.documents.revoke', method: 'POST', path: '/api/v1/admin/documents/:documentId/revoke', authentication: 'required', scope: 'admin', permission: 'incidents:arbitrate', idempotency: true, auditOnMutation: true },
+  { key: 'admin.documents.versions.revoke', method: 'POST', path: '/api/v1/admin/documents/:documentId/versions/:versionId/revoke', authentication: 'required', scope: 'admin', permission: 'incidents:arbitrate', idempotency: true, auditOnMutation: true },
   { key: 'admin.calls.list', method: 'GET', path: '/api/v1/admin/calls', authentication: 'required', scope: 'admin', permission: 'calls:read:any', collection: true },
   { key: 'admin.match-events.list', method: 'GET', path: '/api/v1/admin/match-events', authentication: 'required', scope: 'admin', permission: 'match:read:any', collection: true },
   { key: 'admin.communication-events.list', method: 'GET', path: '/api/v1/admin/communication-events', authentication: 'required', scope: 'admin', permission: 'communications:read:any', collection: true },

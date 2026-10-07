@@ -137,6 +137,25 @@ import {
   createNotificationChannelRegistry,
   type NotificationChannelRegistry,
 } from '../notifications/channels';
+// P0-R2 — DOCUMENTS & PREUVES : métadonnées PostgreSQL + objet via le port
+// `ObjectStorage` déjà déclaré (adaptateur R2 injecté, jamais deviné). Aucune
+// pré-signature ni binding de production ici ; le stockage est fourni par la
+// composition (tests : adaptateur local) ou par un binding R2 futur.
+import type { ObjectStorage } from '../services/documents';
+import { createR2BucketObjectStorage, type R2BucketLike } from '../documents/storage';
+import {
+  createSqlDocumentAccessReader,
+  createSqlDocumentLinkStore,
+  createSqlDocumentRetentionStore,
+  createSqlDocumentStore,
+  createSqlDocumentVersionStore,
+} from '../persistence/sqlDocumentStores';
+import {
+  createDocumentApiHandlers,
+  createDocumentRepository,
+  type DocumentRepositoryStores,
+  type OpenDocumentRepository,
+} from '../documents/documentRepository';
 
 export interface WorkerEnvironment extends WorkerPersistenceEnvironment {
   GOOGLE_CLIENT_ID?: string;
@@ -157,6 +176,18 @@ export interface WorkerEnvironment extends WorkerPersistenceEnvironment {
   PAYMENT_PRE_DUE_LEAD_TIME_MS?: string;
   /** P0-DISPUTE-1 — aucune durée n'est posée si l'exploitant ne la configure pas. */
   CLAIM_EVIDENCE_DEADLINE_MS?: string;
+  /**
+   * P0-R2 — binding Cloudflare R2 du bucket documentaire (interface
+   * structurelle). AUCUN binding n'est déclaré dans `wrangler.toml` dans cette
+   * tranche : sans bucket injecté, le domaine documents reste fermé (501).
+   */
+  DOCUMENTS_BUCKET?: R2BucketLike;
+  /**
+   * P0-R2 — secret HMAC des URL de téléchargement signées. Non requis : sans
+   * lui, le téléchargement authentifié fonctionne et la seule émission d'URL
+   * signée répond 501. Jamais de valeur committée (secret d'exploitation).
+   */
+  DOCUMENT_URL_SIGNING_SECRET?: string;
 }
 
 export type WorkerIdentityMode = 'closed' | 'memory' | 'postgres';
@@ -202,6 +233,12 @@ export interface WorkerComposition {
    * uniquement en PostgreSQL durable (transaction, audit et idempotence).
    */
   reputation?: OpenReputationRepository;
+  /**
+   * P0-R2 — dépôt DOCUMENTS & PREUVES : présent UNIQUEMENT avec une base
+   * PostgreSQL durable ET un stockage objet injecté (fail-closed sinon :
+   * aucune version sans objet, aucun objet sans version).
+   */
+  documents?: OpenDocumentRepository;
   claimDeadlineConfiguration?: ReturnType<typeof resolveClaimEvidenceDeadline>;
   /**
    * P0-AUTO-2 : automatisation contractuelle (handler `CONTRACT_ACTIVATED` et
@@ -257,6 +294,13 @@ export interface WorkerCompositionOverrides {
    * l'infrastructure réelle (fournisseur, secrets, workers) est hors tranche.
    */
   notificationChannels?: NotificationChannelRegistry;
+  /**
+   * P0-R2 — stockage objet INJECTÉ (adaptateur local pour les vérifications,
+   * binding R2 pour la production future). Jamais construit depuis le dépôt.
+   */
+  documentStorage?: ObjectStorage;
+  /** P0-R2 — secret HMAC des URL signées, réservé aux vérifications/à l'exploitation. */
+  documentUrlSigningSecret?: string;
 }
 
 function isInjectedDatabase(value: PostgreSqlDatabase | PostgresClientPort): value is PostgreSqlDatabase {
@@ -708,6 +752,51 @@ export function composeWorker(
       })
     : undefined;
 
+  /*
+   * P0-R2 — DOCUMENTS & PREUVES.
+   *
+   * Composé UNIQUEMENT quand une base PostgreSQL durable ET un stockage objet
+   * injecté existent : sans transaction, il n'y a ni version append-only, ni
+   * audit existant, ni idempotence durable ; sans stockage objet injecté
+   * (adaptateur local vérifié, ou binding R2 futur), aucune promesse de
+   * contenu ne serait tenable. Dans tous les autres cas, les routes du
+   * domaine restent `501 NOT_IMPLEMENTED` (fail-closed), et aucun objet
+   * physique n'est jamais exposé par sa clé.
+   */
+  const documentStorageAdapter: ObjectStorage | undefined =
+    overrides.documentStorage
+      ?? (env.DOCUMENTS_BUCKET ? createR2BucketObjectStorage(env.DOCUMENTS_BUCKET) : undefined);
+  const documentUrlSigningSecret =
+    overrides.documentUrlSigningSecret
+      ?? (env.DOCUMENT_URL_SIGNING_SECRET?.trim() ? env.DOCUMENT_URL_SIGNING_SECRET.trim() : undefined);
+  const documentsAvailable = Boolean(persistence.database && persistence.core && documentStorageAdapter);
+  const buildDocumentStores = (tx: Parameters<typeof createSqlDocumentStore>[0]): DocumentRepositoryStores => {
+    const automationStores = createAutomationStores(tx);
+    return {
+      documents: createSqlDocumentStore(tx),
+      versions: createSqlDocumentVersionStore(tx),
+      links: createSqlDocumentLinkStore(tx),
+      retention: createSqlDocumentRetentionStore(tx),
+      access: createSqlDocumentAccessReader(tx),
+      users: createSqlUserStore(tx),
+      automation: { audit: automationStores.audit, idempotency: automationStores.idempotency },
+    };
+  };
+  const runDocumentInTransaction = documentsAvailable && persistence.database
+    ? async <T>(operation: (documentStores: DocumentRepositoryStores) => Promise<T>): Promise<T> =>
+        persistence.database!.run(async tx => operation(buildDocumentStores(tx)))
+    : undefined;
+  const documentRepository = documentsAvailable && persistence.database && runDocumentInTransaction && documentStorageAdapter
+    ? createDocumentRepository({
+        stores: buildDocumentStores(persistence.database),
+        runInTransaction: runDocumentInTransaction,
+        storage: documentStorageAdapter,
+        ...(documentUrlSigningSecret ? { urlSigningSecret: documentUrlSigningSecret } : {}),
+        ...(overrides.now ? { now: overrides.now } : {}),
+      })
+    : undefined;
+  const documentHandlers = documentRepository ? createDocumentApiHandlers(documentRepository) : {};
+
   const paymentProviderRegistry = createPaymentProviderRegistry(
     overrides.paymentProviderAdapter ? [overrides.paymentProviderAdapter] : [],
   );
@@ -913,6 +1002,10 @@ export function composeWorker(
     // P0-REPUTATION — lecture de sa propre réputation, réconciliation idempotente
     // et, côté ADMIN, examen et correction motivée. Absent sans base durable.
     ...reputationHandlers,
+    // P0-R2 — DOCUMENTS & PREUVES : upload, versionnement append-only, empreinte,
+    // liens version ↔ entité, téléchargement contrôlé et révocations ADMIN.
+    // Absent sans base durable ET stockage objet injecté.
+    ...documentHandlers,
     // P0-PAY-1 — cycle Payment existant.
     ...paymentHandlers,
     ...(persistence.database && mode === 'postgres' ? createSalaryConfirmationHandlers(persistence.database, overrides.salaryTestOtpSink, createSqlAutomationStores) : {}),
@@ -936,6 +1029,7 @@ export function composeWorker(
     replacements: replacementRepository,
     matching: matchingRepository,
     ...(reputationRepository ? { reputation: reputationRepository } : {}),
+    ...(documentRepository ? { documents: documentRepository } : {}),
     claimDeadlineConfiguration,
     payments: paymentRepository,
     paymentReconciliation,

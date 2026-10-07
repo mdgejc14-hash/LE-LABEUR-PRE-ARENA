@@ -9,7 +9,8 @@
 const BASE32 = '0123456789abcdefghjkmnpqrstvwxyz';
 
 // P0-NOTIFICATIONS : `ntf` = notification In-App (boîte de réception).
-export type IdPrefix = 'usr' | 'ses' | 'ofr' | 'app' | 'ctr' | 'prp' | 'rep' | 'idn' | 'prb' | 'set' | 'rev' | 'clm' | 'cor' | 'evr' | 'rsk' | 'ntf' | 'qlf' | 'mtr' | 'rpt';
+// P0-R2 : `doc` = document, `dver` = version documentaire, `dlnk` = lien entité ↔ version.
+export type IdPrefix = 'usr' | 'ses' | 'ofr' | 'app' | 'ctr' | 'prp' | 'rep' | 'idn' | 'prb' | 'set' | 'rev' | 'clm' | 'cor' | 'evr' | 'rsk' | 'ntf' | 'qlf' | 'mtr' | 'rpt' | 'doc' | 'dver' | 'dlnk';
 
 function randomBytes(length: number): Uint8Array {
   const bytes = new Uint8Array(length);
