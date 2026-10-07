@@ -13,6 +13,17 @@ CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE="postgresql://lelabeur:
 # validation explicite de l'exploitant (entier positif en millisecondes).
 # CLAIM_EVIDENCE_DEADLINE_MS=""
 
+# P0-R2 — DOCUMENTS & PREUVES.
+# Secret HMAC (≥ 32 caractères) de signature des URL de téléchargement contrôlées.
+# ABSENT par défaut : la route d'émission d'URL signée répond alors 501 explicite
+# (jamais une URL non vérifiable) et le téléchargement authentifié classique reste
+# disponible. Ne renseigner qu'avec une valeur de test locale ; AUCUN secret de
+# production ne doit apparaître ici ni être provisionné depuis cette tranche.
+# Aucun binding R2 n'est configuré : `wrangler.toml` reste sans `r2_buckets` ;
+# l'adaptateur stockage est injecté par composition (env.DOCUMENTS_BUCKET) et,
+# sans binding, les routes documents répondent 501 (fermeture franche).
+# DOCUMENT_URL_SIGNING_SECRET=""
+
 # Variable NON standard, acceptée uniquement si elle pointe vers la boucle locale
 # (127.0.0.1 / localhost). Elle permet de vérifier le parcours d'authentification
 # complet contre un JWKS de test servi localement. Ignorée partout ailleurs.

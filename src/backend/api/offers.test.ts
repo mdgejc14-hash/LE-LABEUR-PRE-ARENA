@@ -37,6 +37,8 @@ import type { PaymentReconciliationBatchService } from '../payments/paymentRecon
 import type { PaymentProviderRegistry } from '../payments/paymentProviderRegistry';
 import type { OpenNotificationService } from '../notifications/notificationService';
 import type { OpenReputationRepository } from '../reputation/reputationRepository';
+import type { OpenDocumentRepository } from '../documents/documentRepository';
+import type { ObjectStorage } from '../services/documents';
 import type { NotificationChannelRegistry } from '../notifications/channels';
 import type { PostgreSqlDatabase } from '../services/database';
 import { createPostgresDatabase } from '../persistence/postgresDatabase';
@@ -192,6 +194,8 @@ export interface TestHarness {
   notifications?: OpenNotificationService;
   /** P0-REPUTATION : ledger d'événements documentés (absent sans base durable). */
   reputation?: OpenReputationRepository;
+  /** P0-R2 : dépôt DOCUMENTS & PREUVES (absent sans base durable ni stockage injecté). */
+  documents?: OpenDocumentRepository;
   /** P0-PAY-1 : repository du cycle PAIEMENT (déclaration, vérification, décision). */
   payments?: OpenPaymentRepository;
   /** P0-PAY-3 : service durable d'import batch, ledger externe, retries et revue. */
@@ -211,6 +215,13 @@ export async function createOffersTestHarness(
      * locales. Aucune composition de production n'en injecte.
      */
     notificationChannels?: NotificationChannelRegistry;
+    /**
+     * P0-R2 — stockage objet et secret de signature INJECTÉS pour les
+     * vérifications locales. Aucune composition de production n'injecte
+     * d'adaptateur local.
+     */
+    documentStorage?: ObjectStorage;
+    documentUrlSigningSecret?: string;
   } = {},
 ): Promise<TestHarness> {
   offerIdempotencyCache.clear();
@@ -234,6 +245,8 @@ export async function createOffersTestHarness(
     now: () => clock.value,
     ...(salaryTestOtpSink ? { salaryTestOtpSink } : {}),
     ...(options.notificationChannels ? { notificationChannels: options.notificationChannels } : {}),
+    ...(options.documentStorage ? { documentStorage: options.documentStorage } : {}),
+    ...(options.documentUrlSigningSecret ? { documentUrlSigningSecret: options.documentUrlSigningSecret } : {}),
   });
 
   return {
@@ -249,6 +262,7 @@ export async function createOffersTestHarness(
     automationWorker: composition.automationWorker,
     notifications: composition.notifications,
     reputation: composition.reputation,
+    documents: composition.documents,
     payments: composition.payments,
     paymentReconciliation: composition.paymentReconciliation,
     paymentProviders: composition.paymentProviders,

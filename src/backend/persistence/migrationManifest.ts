@@ -40,6 +40,10 @@ export const EXPECTED_MIGRATION_IDS: readonly string[] = [
   // impact, explication, statut réversible, historique append-only). Aucun
   // second ledger d'audit : `automation_audit_ledger` reste l'unique trace.
   '0015_reputation_ledger',
+  // P0-R2 : métadonnées documentaires, versions adressées par contenu (hash
+  // SHA-256, append-only), liens version ↔ entité métier et politiques de
+  // conservation par type (aucune durée inventée : PENDING_LEGAL_VALIDATION).
+  '0016_documents',
 ];
 
 export const SCHEMA_MIGRATIONS_TABLE = 'schema_migrations';
