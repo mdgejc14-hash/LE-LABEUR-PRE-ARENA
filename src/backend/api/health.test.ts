@@ -80,7 +80,7 @@ export async function runHealthReportTests(): Promise<HealthTestResult[]> {
         HYPERDRIVE: { connectionString },
       },
       toPostgresClientPort(createScriptedDriver({
-        migrationIds: ['0001_identity_and_core', '0002_role_permissions_seed', '0003_core_nucleus_alignment', '0004_proposals', '0005_contract_lifecycle', '0006_automation_foundation', '0007_contract_automation', '0008_payment_cycle', '0009_payment_external_reconciliation', '0010_salary_confirmation', '0011_dispute_claims', '0012_notifications', '0013_replacements', '0014_matching', '0015_reputation_ledger', '0016_documents', '0017_cron_queue'],
+        migrationIds: ['0001_identity_and_core', '0002_role_permissions_seed', '0003_core_nucleus_alignment', '0004_proposals', '0005_contract_lifecycle', '0006_automation_foundation', '0007_contract_automation', '0008_payment_cycle', '0009_payment_external_reconciliation', '0010_salary_confirmation', '0011_dispute_claims', '0012_notifications', '0013_replacements', '0014_matching', '0015_reputation_ledger', '0016_documents', '0017_cron_queue', '0018_webrtc_sessions'],
       })),
     );
     assert(composition.mode === 'postgres', 'mode postgres attendu');

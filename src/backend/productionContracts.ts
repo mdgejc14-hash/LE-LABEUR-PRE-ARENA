@@ -199,7 +199,9 @@ export type OutboxEventType =
   | 'CONTRACT_SENT'
   | 'CONTRACT_ACTIVATED'
   | 'CONTRACT_ENDED'
-  | 'CONTRACT_TERMINATED';
+  | 'CONTRACT_TERMINATED'
+  /** P0-WEBRTC — invitation liée à une session de contrat persistée. */
+  | 'WEBRTC_SESSION_INVITED';
 
 export interface OutboxEvent {
   id: string;
@@ -299,6 +301,71 @@ export interface ShortLivedIceServerCredential {
 export interface ShortLivedIceConfiguration {
   iceServers: ShortLivedIceServerCredential[];
   expiresAt: string;
+}
+
+/** P0-WEBRTC — état explicite de l'abstraction STUN/TURN, jamais un faux provider. */
+export type WebRtcIceConfigurationState = 'AVAILABLE' | 'NOT_CONFIGURED' | 'BLOCKED_EXTERNAL_ACCESS';
+
+export interface WebRtcIceConfiguration {
+  state: WebRtcIceConfigurationState;
+  iceServers: ShortLivedIceServerCredential[];
+  /** STUN public sans credential: null; TURN temporaire: expiration obligatoire. */
+  expiresAt: string | null;
+  reason?: string;
+}
+
+export type WebRtcEntityType = 'CONTRACT';
+export type WebRtcSessionStatus = 'CREATED' | 'CONNECTING' | 'ACTIVE' | 'CLOSED' | 'EXPIRED' | 'FAILED';
+export type WebRtcParticipantRole = 'EMPLOYER' | 'CANDIDATE';
+export type WebRtcSignalingMessageType =
+  | 'INVITATION'
+  | 'PARTICIPANT_JOINED'
+  | 'OFFER'
+  | 'ANSWER'
+  | 'ICE_CANDIDATE'
+  | 'TRANSPORT_CONNECTED'
+  | 'SESSION_CLOSED';
+
+export interface WebRtcSessionParticipant {
+  userId: string;
+  role: WebRtcParticipantRole;
+  invitedAt: string;
+  joinedAt?: string;
+}
+
+/** Projection publique minimale; aucun credential ni payload ICE/SDP n'y figure. */
+export interface WebRtcSessionView {
+  sessionId: string;
+  entityType: WebRtcEntityType;
+  entityId: string;
+  initiatorId: string;
+  participants: WebRtcSessionParticipant[];
+  status: WebRtcSessionStatus;
+  createdAt: string;
+  expiresAt: string;
+  closedAt?: string;
+}
+
+/** Le payload est exposé uniquement à l'autre participant, pendant la session. */
+export interface WebRtcSignalingMessage {
+  messageId: string;
+  sessionId: string;
+  sequence: number;
+  participantId: string;
+  receiverId: string;
+  timestamp: string;
+  type: WebRtcSignalingMessageType;
+  payload: Record<string, unknown>;
+}
+
+/** Credential opaque, de portée session/participant et limité à cinq minutes. */
+export interface WebRtcSessionCredential {
+  credential: string;
+  sessionId: string;
+  participantId: string;
+  expiresAt: string;
+  transport: 'REST_POLLING';
+  endpoint: string;
 }
 
 export interface DocumentMetadata {

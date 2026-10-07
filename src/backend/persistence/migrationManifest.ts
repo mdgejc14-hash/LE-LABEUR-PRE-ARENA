@@ -49,6 +49,9 @@ export const EXPECTED_MIGRATION_IDS: readonly string[] = [
   // `RUNNING`. Aucune table nouvelle : ni deuxième queue, ni deuxième
   // ordonnanceur.
   '0017_cron_queue',
+  // P0-WEBRTC : appels temporaires REST-polling liés aux parties réelles du
+  // contrat, avec payloads éphémères, credentials hachés et aucune donnée média.
+  '0018_webrtc_sessions',
 ];
 
 export const SCHEMA_MIGRATIONS_TABLE = 'schema_migrations';

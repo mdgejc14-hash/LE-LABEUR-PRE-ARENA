@@ -845,8 +845,85 @@ async function main(): Promise<void> {
         return { contractId: contract.id, offerId: offer.id, applicationId: application.id };
       };
 
-      // 1. Cycle nominal : DRAFT → SIGNATURE → ACTIVE → COMPLETED.
+      // 1. P0-WEBRTC, dans un vrai Worker/workerd et une base PostgreSQL locale:
+      // session dérivée du contrat ACTIVE, invitation/join, signaling REST,
+      // credentials temporaires, ICE honnête et effacement à la clôture.
       const completed = await buildActiveContract('completed-001');
+      await check('P0-WEBRTC workerd → PostgreSQL : session contractuelle, signaling, credentials, ICE, fermeture et redaction', async () => {
+        const webRtcCreated = await fetch(`${base}/api/v1/webrtc-sessions`, {
+          method: 'POST',
+          headers: ownerHeaders('p0webrtc-workerd-create-001'),
+          body: JSON.stringify({ entityType: 'CONTRACT', entityId: completed.contractId }),
+        });
+        assert(webRtcCreated.status === 201, `création session WebRTC workerd : 201 attendu, reçu ${webRtcCreated.status}`);
+        const webRtcSession = await webRtcCreated.json() as { sessionId: string; status: string; participants: Array<{ userId: string; role: string }> };
+        assert(webRtcSession.status === 'CREATED' && webRtcSession.participants.length === 2, 'participants réellement dérivés du contrat');
+
+        const webRtcJoin = await fetch(`${base}/api/v1/webrtc-sessions/${webRtcSession.sessionId}/join`, {
+          method: 'POST', headers: workerHeaders('p0webrtc-workerd-join-001'), body: '{}',
+        });
+        assert(webRtcJoin.status === 200 && ((await webRtcJoin.json()) as { status: string }).status === 'CONNECTING', 'join candidat workerd et passage CONNECTING');
+        const employerCredentialResponse = await fetch(`${base}/api/v1/webrtc-sessions/${webRtcSession.sessionId}/credentials`, {
+          method: 'POST', headers: ownerHeaders('p0webrtc-workerd-employer-credential'), body: '{}',
+        });
+        const candidateCredentialResponse = await fetch(`${base}/api/v1/webrtc-sessions/${webRtcSession.sessionId}/credentials`, {
+          method: 'POST', headers: workerHeaders('p0webrtc-workerd-candidate-credential'), body: '{}',
+        });
+        assert(employerCredentialResponse.status === 201 && candidateCredentialResponse.status === 201, 'credentials temporaires émis aux deux parties');
+        const employerCallCredential = (await employerCredentialResponse.json() as { credential: string }).credential;
+        const candidateCallCredential = (await candidateCredentialResponse.json() as { credential: string }).credential;
+
+        const offer = await fetch(`${base}/api/v1/webrtc-sessions/${webRtcSession.sessionId}/signaling`, {
+          method: 'POST', headers: { ...ownerHeaders('p0webrtc-workerd-offer-001'), 'X-WebRTC-Credential': employerCallCredential },
+          body: JSON.stringify({ type: 'OFFER', payload: { sdp: 'v=0\\r\\no=- workerd-offer' } }),
+        });
+        assert(offer.status === 201, `offer workerd : 201 attendu, reçu ${offer.status}`);
+        const answer = await fetch(`${base}/api/v1/webrtc-sessions/${webRtcSession.sessionId}/signaling`, {
+          method: 'POST', headers: { ...workerHeaders('p0webrtc-workerd-answer-001'), 'X-WebRTC-Credential': candidateCallCredential },
+          body: JSON.stringify({ type: 'ANSWER', payload: { sdp: 'v=0\\r\\no=- workerd-answer' } }),
+        });
+        assert(answer.status === 201, `answer workerd : 201 attendu, reçu ${answer.status}`);
+        const iceCandidate = await fetch(`${base}/api/v1/webrtc-sessions/${webRtcSession.sessionId}/signaling`, {
+          method: 'POST', headers: { ...ownerHeaders('p0webrtc-workerd-ice-candidate-001'), 'X-WebRTC-Credential': employerCallCredential },
+          body: JSON.stringify({ type: 'ICE_CANDIDATE', payload: { candidate: 'candidate:1 1 UDP 2122260223 192.0.2.1 54400 typ host', sdpMid: '0', sdpMLineIndex: 0 } }),
+        });
+        assert(iceCandidate.status === 201, `candidat ICE workerd : 201 attendu, reçu ${iceCandidate.status}`);
+        const candidatePoll = await fetch(`${base}/api/v1/webrtc-sessions/${webRtcSession.sessionId}/signaling?afterSequence=0`, {
+          headers: { cookie: `${SESSION_COOKIE_NAME}=${sessionCookie}`, 'X-WebRTC-Credential': candidateCallCredential },
+        });
+        assert(candidatePoll.status === 200, `poll candidat workerd : 200 attendu, reçu ${candidatePoll.status}`);
+        const polled = await candidatePoll.json() as { messages: Array<{ type: string; receiverId: string }> };
+        assert(polled.messages.some(message => message.type === 'OFFER'), 'poll renvoie l’offre à son destinataire réel');
+        assert(polled.messages.some(message => message.type === 'ICE_CANDIDATE'), 'poll renvoie les candidats ICE au destinataire réel');
+        assert(polled.messages.every(message => message.receiverId === userId), 'réponses limitées aux messages du candidat authentifié');
+
+        const iceStatus = await fetch(`${base}/api/v1/webrtc-sessions/${webRtcSession.sessionId}/ice-configuration`, {
+          method: 'POST', headers: ownerHeaders('p0webrtc-workerd-ice-001'), body: '{}',
+        });
+        assert(iceStatus.status === 200, `état ICE workerd : 200 attendu, reçu ${iceStatus.status}`);
+        const ice = await iceStatus.json() as { state: string; iceServers: unknown[]; expiresAt: string | null };
+        assert(ice.state === 'NOT_CONFIGURED' && ice.iceServers.length === 0 && ice.expiresAt === null, 'aucun TURN/STUN externe inventé');
+
+        const connectedCandidate = await fetch(`${base}/api/v1/webrtc-sessions/${webRtcSession.sessionId}/connected`, {
+          method: 'POST', headers: { ...workerHeaders('p0webrtc-workerd-connected-candidate'), 'X-WebRTC-Credential': candidateCallCredential }, body: '{}',
+        });
+        assert(connectedCandidate.status === 200 && ((await connectedCandidate.json()) as { status: string }).status === 'CONNECTING', 'un seul rapport client ne marque pas la session ACTIVE');
+        const connectedEmployer = await fetch(`${base}/api/v1/webrtc-sessions/${webRtcSession.sessionId}/connected`, {
+          method: 'POST', headers: { ...ownerHeaders('p0webrtc-workerd-connected-employer'), 'X-WebRTC-Credential': employerCallCredential }, body: '{}',
+        });
+        assert(connectedEmployer.status === 200 && ((await connectedEmployer.json()) as { status: string }).status === 'ACTIVE', 'ACTIVE après les deux rapports client authentifiés');
+        const webRtcClosed = await fetch(`${base}/api/v1/webrtc-sessions/${webRtcSession.sessionId}/close`, {
+          method: 'POST', headers: workerHeaders('p0webrtc-workerd-close-001'), body: '{}',
+        });
+        assert(webRtcClosed.status === 200 && ((await webRtcClosed.json()) as { status: string }).status === 'CLOSED', 'close workerd persistant');
+        const redactedMessages = await pool.query<{ message_type: string; payload: unknown; payload_redacted_at: unknown }>(
+          'SELECT message_type, payload, payload_redacted_at FROM webrtc_signaling_messages WHERE session_id = $1',
+          [webRtcSession.sessionId],
+        );
+        assert(redactedMessages.rows.some(row => row.message_type === 'OFFER' && row.payload_redacted_at && JSON.stringify(row.payload) === '{}'), 'SDP redacted à la clôture');
+      });
+
+      // 2. Cycle nominal : DRAFT → SIGNATURE → ACTIVE → COMPLETED.
       const storedDraft = await pool.query<{
         status: string; proposal_id: string | null; application_id: string | null;
         employer_signed: boolean; employee_signed: boolean;

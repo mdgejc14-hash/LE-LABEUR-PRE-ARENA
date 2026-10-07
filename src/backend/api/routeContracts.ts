@@ -149,6 +149,19 @@ export const API_ROUTE_CONTRACTS = [
   { key: 'notifications.read', method: 'POST', path: '/api/v1/notifications/:notificationId/read', authentication: 'required', scope: 'self', idempotency: true, auditOnMutation: true },
   { key: 'notifications.read-all', method: 'POST', path: '/api/v1/my/notifications/read-all', authentication: 'required', scope: 'self', idempotency: true, auditOnMutation: true },
 
+  // P0-WEBRTC — appel temporaire REST-polling, exclusivement entre les parties
+  // réelles d'un contrat ACTIVE. Aucun ADMIN override, aucun stockage média.
+  { key: 'webrtc.sessions.mine.list', method: 'GET', path: '/api/v1/my/webrtc-sessions', authentication: 'required', scope: 'self', collection: true, roles: ['EMPLOYER', 'CANDIDATE'] },
+  { key: 'webrtc.sessions.create', method: 'POST', path: '/api/v1/webrtc-sessions', authentication: 'required', scope: 'participant', roles: ['EMPLOYER', 'CANDIDATE'], idempotency: true, auditOnMutation: true },
+  { key: 'webrtc.sessions.read', method: 'GET', path: '/api/v1/webrtc-sessions/:sessionId', authentication: 'required', scope: 'participant', roles: ['EMPLOYER', 'CANDIDATE'] },
+  { key: 'webrtc.sessions.join', method: 'POST', path: '/api/v1/webrtc-sessions/:sessionId/join', authentication: 'required', scope: 'participant', roles: ['EMPLOYER', 'CANDIDATE'], auditOnMutation: true },
+  { key: 'webrtc.sessions.credentials.create', method: 'POST', path: '/api/v1/webrtc-sessions/:sessionId/credentials', authentication: 'required', scope: 'participant', roles: ['EMPLOYER', 'CANDIDATE'] },
+  { key: 'webrtc.sessions.ice-configuration', method: 'POST', path: '/api/v1/webrtc-sessions/:sessionId/ice-configuration', authentication: 'required', scope: 'participant', roles: ['EMPLOYER', 'CANDIDATE'] },
+  { key: 'webrtc.sessions.signaling.send', method: 'POST', path: '/api/v1/webrtc-sessions/:sessionId/signaling', authentication: 'required', scope: 'participant', roles: ['EMPLOYER', 'CANDIDATE'], idempotency: true, auditOnMutation: true },
+  { key: 'webrtc.sessions.signaling.poll', method: 'GET', path: '/api/v1/webrtc-sessions/:sessionId/signaling', authentication: 'required', scope: 'participant', roles: ['EMPLOYER', 'CANDIDATE'] },
+  { key: 'webrtc.sessions.transport-connected', method: 'POST', path: '/api/v1/webrtc-sessions/:sessionId/connected', authentication: 'required', scope: 'participant', roles: ['EMPLOYER', 'CANDIDATE'], idempotency: true, auditOnMutation: true },
+  { key: 'webrtc.sessions.close', method: 'POST', path: '/api/v1/webrtc-sessions/:sessionId/close', authentication: 'required', scope: 'participant', roles: ['EMPLOYER', 'CANDIDATE'], idempotency: true, auditOnMutation: true },
+
   { key: 'calls.mine.list', method: 'GET', path: '/api/v1/my/calls', authentication: 'required', scope: 'self', collection: true },
   { key: 'calls.create', method: 'POST', path: '/api/v1/calls', authentication: 'required', scope: 'self', idempotency: true, auditOnMutation: true },
   { key: 'calls.accept', method: 'POST', path: '/api/v1/calls/:callId/accept', authentication: 'required', scope: 'participant', idempotency: true, auditOnMutation: true },
