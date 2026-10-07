@@ -17,7 +17,9 @@
     "verify:cloudflare": "tsx scripts/preflight-cloudflare.ts",
     "preflight:cloudflare": "tsx scripts/preflight-cloudflare.ts --require-production --no-bundle",
     "deploy:worker": "tsx scripts/preflight-cloudflare.ts --require-production && wrangler deploy --env production",
-    "verify:workerd": "tsx scripts/verify-workerd-local.ts"
+    "verify:workerd": "tsx scripts/verify-workerd-local.ts",
+    "test:load": "tsx scripts/run-load-tests.ts",
+    "test:load:smoke": "tsx scripts/run-load-tests.ts --smoke"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
