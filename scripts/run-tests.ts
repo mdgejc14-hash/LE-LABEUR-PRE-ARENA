@@ -39,6 +39,7 @@ import { runReputationTests } from '../src/backend/api/reputation.test';
 import { runDocumentDomainTests } from '../src/backend/api/documents.test';
 import { runWebRtcTests } from '../src/backend/webrtc/webrtc.test';
 import { runSecurityAntiFraudTests } from '../src/backend/api/securityAntiFraud.test';
+import { runLoadMetricsTests } from './loadtests/loadMetrics.test';
 
 interface TestCase {
   name: string;
@@ -88,6 +89,7 @@ async function main(): Promise<void> {
   const documents = await runDocumentDomainTests();
   const webrtc = await runWebRtcTests();
   const securityAntiFraud = await runSecurityAntiFraudTests();
+  const loadMetrics = await runLoadMetricsTests();
 
   const suites: Array<{ name: string; cases: TestCase[] }> = [
     { name: 'Domain deterministic', cases: deterministic.results.map(result => ({ name: result.name, success: result.success, detail: result.details })) },
@@ -128,6 +130,7 @@ async function main(): Promise<void> {
     { name: 'P0-REPUTATION — ledger d’événements documentés (faits réels, règles versionnées, explications, idempotence, concurrence, neutralité des litiges ouverts, corrections ADMIN auditées, permissions, non-régression P0-MATCHING/PAIEMENT/REPLACEMENT)', cases: reputation },
     { name: 'P0-R2 — DOCUMENTS & PREUVES (upload, métadonnées, hash SHA-256, versionnement append-only, récupération exacte, ownership/permissions/anti-IDOR, audit existant, liens version↔entité/acceptation, intégrité, révocation, rétention sans durée inventée, idempotence, concurrence, garde-fous juridiques/financiers, non-régression)', cases: documents },
     { name: 'P0-WEBRTC — contrat actif, participants réels, invitation Outbox, signaling REST/offer-answer-ICE, credentials courts, replay, expiration, révocation, fermeture, purge, statut ICE/TURN et absence d’enregistrement/biométrie', cases: webrtc },
+    { name: 'P0-LOAD-TESTS — primitives de mesure (quantiles nearest-rank, comptage des erreurs/timeouts/retries, agrégation, concurrence bornée)', cases: loadMetrics },
     { name: 'P0-SECURITY-ANTI-FRAUD — couche transversale finale de sécurité et anti-fraude (40 scénarios : identité, RBAC, IDOR tous domaines, webhooks HMAC/replay/mismatch, DECLARED≠VERIFIED≠PAID, OTP salaire, R2 intégrité/révocation/object_key, WebRTC, idempotence, concurrence, routes internes, rate-limit, anti-falsification, audit ADMIN, masquage erreurs, APDP)', cases: securityAntiFraud },
     { name: 'P0-AUTO-2 — CONTRACT_ACTIVATED réel (Outbox → Queue → Worker → AutomationEngine → échéancier salarial, échéancier de commission, échéances, rappels; PostgreSQL, idempotence, concurrence, retry, dead-letter, rollback, audit, séparation DEMO/API)', cases: contractAutomation },
     { name: 'P0-CRON-QUEUE — déclenchement périodique sur la queue EXISTANTE (Cron scheduled() réel → worker : jobs échus/futurs, double déclenchement, deux workers, retry, dead-letter, crash après réservation, idempotence métier, audit du tick, échéances paiement/claim/salaire, notification workflow existant, réputation planifiable, sécurité, non-régression R2/REPUTATION/MATCHING/REPLACEMENT/PAIEMENT/NOTIFICATIONS; PostgreSQL PGlite, aucun Cloudflare réel)', cases: cronQueue },
