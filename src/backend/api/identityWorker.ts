@@ -16,6 +16,7 @@ import { isSelfAssignableRole } from '../identity/permissions';
 import type { IdentityStores } from '../identity/stores';
 import { ApiError, apiJsonResponse } from './errors';
 import type { ApiRouteKey } from './routeContracts';
+import type { RateLimitPolicyConfig, SecurityAuditSink, SecurityRateLimiter } from './security';
 import { createApiWorker, type ApiHealthReporter, type ApiRouteContext, type ApiRouteHandler } from './worker';
 
 export interface IdentityWorkerOptions {
@@ -30,6 +31,11 @@ export interface IdentityWorkerOptions {
   handlers?: Partial<Record<ApiRouteKey, ApiRouteHandler>>;
   /** Rapport de santé réel de la persistance (P0-C); absent = frontière nue. */
   health?: ApiHealthReporter;
+  /** Limiteur de débit déterministe minimal sur les routes à haut risque. */
+  rateLimiter?: SecurityRateLimiter;
+  rateLimitPolicy?: RateLimitPolicyConfig;
+  /** Journalisation forensique transversale dans `automation_audit_ledger`. */
+  onSecurityAudit?: SecurityAuditSink;
 }
 
 async function readJsonBody(request: Request): Promise<Record<string, unknown>> {
@@ -119,6 +125,10 @@ export function createIdentityApiWorker(options: IdentityWorkerOptions): { fetch
     authenticate: async request => (await sessions.getAuthenticatedActor(request))?.actor ?? null,
     createRequestId: options.createRequestId,
     health: options.health,
+    rateLimiter: options.rateLimiter,
+    rateLimitPolicy: options.rateLimitPolicy,
+    onSecurityAudit: options.onSecurityAudit,
+    now,
     handlers: {
       'auth.google': googleLogin,
       'auth.google.credential': googleLogin,

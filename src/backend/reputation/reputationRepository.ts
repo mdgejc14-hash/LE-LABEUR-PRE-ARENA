@@ -520,7 +520,13 @@ function readJsonObject(value: string): Record<string, unknown> {
 
 function strictFields(value: Record<string, unknown>, allowed: readonly string[]): void {
   const extra = Object.keys(value).filter(key => !allowed.includes(key));
-  if (extra.length > 0) throw new ApiError('VALIDATION_ERROR', `Champ non autorisé : ${extra.join(', ')}.`);
+  if (extra.length > 0) {
+    throw new ApiError(
+      'VALIDATION_ERROR',
+      `Champ non autorisé : ${extra.join(', ')}.`,
+      { fields: ['PARAMETER_FORGERY_REJECTED', ...extra] },
+    );
+  }
 }
 
 export function createReputationApiHandlers(
@@ -535,8 +541,11 @@ export function createReputationApiHandlers(
     'reputation.mine.read': async context => repository.getMine(context.actor!, windowFromUrl(context.url)),
     'reputation.mine.entries.list': async context =>
       repository.listMine(context.actor!, context.page ?? { cursor: null, limit: 25 }, windowFromUrl(context.url)),
-    'reputation.mine.reconcile': async context =>
-      repository.reconcileMine(context.actor!, context.command!),
+    'reputation.mine.reconcile': async context => {
+      const body = readJsonObject(await context.request.text());
+      strictFields(body, []);
+      return repository.reconcileMine(context.actor!, context.command!);
+    },
     'admin.reputation.entries.list': async context => {
       const subjectUserId = context.url.searchParams.get('subjectUserId') ?? undefined;
       const rawStatus = context.url.searchParams.get('status');

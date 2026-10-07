@@ -914,7 +914,28 @@ export function createDocumentRepository(dependencies: DocumentRepositoryDepende
       }
       const actualHash = await sha256Hex(object.body);
       if (checked.version.cryptographicHash && actualHash !== checked.version.cryptographicHash) {
-        throw conflict('Intégrité du contenu non conforme à l’empreinte enregistrée : diffusion refusée.');
+        const mismatchAt = clock().toISOString();
+        await runInTransaction(async current => {
+          await audit(current, {
+            entityId: checked.document.documentId,
+            actorId: actor.id,
+            at: mismatchAt,
+            action: 'DOCUMENT_INTEGRITY_MISMATCH',
+            afterState: {
+              versionId: checked.version.versionId,
+              versionNumber: checked.version.versionNumber,
+              expectedHash: checked.version.cryptographicHash,
+              actualHash,
+              reason: 'INTEGRITY_MISMATCH',
+            },
+          });
+        });
+        throw new ApiError(
+          'BUSINESS_RULE_VIOLATION',
+          'Intégrité du contenu non conforme à l’empreinte enregistrée : diffusion refusée.',
+          { reason: ['INTEGRITY_MISMATCH'] },
+          409,
+        );
       }
 
       const at = clock().toISOString();
@@ -984,6 +1005,7 @@ export function createDocumentRepository(dependencies: DocumentRepositoryDepende
             actualHash,
             objectPresent: report.objectPresent,
             match: report.match,
+            ...(report.match ? {} : { reason: 'INTEGRITY_MISMATCH' }),
           },
         });
         await complete(current, actor, command, report);

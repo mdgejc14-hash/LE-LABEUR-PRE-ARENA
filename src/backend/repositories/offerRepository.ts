@@ -168,9 +168,21 @@ export function createOfferRepository(dependencies: OfferRepositoryDependencies)
       }
 
       // Contrôle d'ownership strict : l'employeur ne peut créer d'offre que pour son propre compte
-      const candidateEmployerId = (data as { employerId?: string }).employerId;
-      if (candidateEmployerId && candidateEmployerId !== actor.id) {
-        throw new ApiError('FORBIDDEN', 'Action non autorisée : un employeur ne peut créer une offre que pour son propre compte.');
+      const rawData = data as unknown as Record<string, unknown>;
+      for (const ownerField of ['employerId', 'ownerId', 'actorId', 'userId']) {
+        const candidateOwner = rawData[ownerField];
+        if (candidateOwner !== undefined && candidateOwner !== actor.id) {
+          throw new ApiError('FORBIDDEN', 'Action non autorisée : un employeur ne peut créer une offre que pour son propre compte.');
+        }
+      }
+      for (const reservedField of ['role', 'permissions', 'source', 'status', 'id']) {
+        if (rawData[reservedField] !== undefined) {
+          throw new ApiError(
+            'VALIDATION_ERROR',
+            `Champ « ${reservedField} » falsifié : ce paramètre est réservé au serveur.`,
+            { [reservedField]: ['PARAMETER_FORGERY_REJECTED'] },
+          );
+        }
       }
 
       const idempotencyKey = command?.idempotencyKey?.trim();

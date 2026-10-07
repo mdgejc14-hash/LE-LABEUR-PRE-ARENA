@@ -4,7 +4,21 @@ import { ApiError, apiErrorResponse, apiJsonResponse } from './errors';
 import { healthStatusCode, type BoundaryHealthResponse } from './health';
 import { parsePageRequest } from './pagination';
 import { API_ROUTE_CONTRACTS, findApiPath, findApiRoute, routePathMatches, type ApiRouteContract, type ApiRouteKey } from './routeContracts';
-import { requireAdmin, requireAuth, requirePermission } from './security';
+import {
+  classifySecurityForensicAction,
+  createSecurityRateLimiter,
+  isInternalOrDebugPath,
+  rejectForgedSelfQueryParams,
+  requireAdmin,
+  requireAuth,
+  requirePermission,
+  resolveRateLimitSubject,
+  routeRateLimitBucket,
+  sanitizeForensicReason,
+  type RateLimitPolicyConfig,
+  type SecurityAuditSink,
+  type SecurityRateLimiter,
+} from './security';
 
 export type { BoundaryHealthResponse, HealthRuntimeDescriptor, MigrationState, PersistenceHealthReport } from './health';
 
@@ -36,6 +50,12 @@ export interface ApiWorkerDependencies {
    * annoncée tant qu'elle n'est pas réellement sondée.
    */
   health?: ApiHealthReporter;
+  /** Limiteur de débit déterministe minimal sur les routes à haut risque. */
+  rateLimiter?: SecurityRateLimiter;
+  rateLimitPolicy?: RateLimitPolicyConfig;
+  /** Journalisation forensique transversale dans `automation_audit_ledger`. */
+  onSecurityAudit?: SecurityAuditSink;
+  now?: () => Date;
 }
 
 const boundaryOnlyHealth: BoundaryHealthResponse = {
@@ -84,6 +104,9 @@ function validateRouteAccess(route: ApiRouteContract, actor: AuthenticatedActor 
 }
 
 export function createApiWorker(dependencies: ApiWorkerDependencies): { fetch(request: Request): Promise<Response> } {
+  const now = dependencies.now ?? (() => new Date());
+  const rateLimiter = dependencies.rateLimiter ?? createSecurityRateLimiter(dependencies.rateLimitPolicy, now);
+
   return {
     async fetch(request: Request): Promise<Response> {
       const requestId = dependencies.createRequestId?.() ?? newRequestId();
@@ -115,7 +138,15 @@ export function createApiWorker(dependencies: ApiWorkerDependencies): { fetch(re
         return apiJsonResponse(body, healthStatusCode(body), requestId);
       }
 
+      let matchedRoute: ApiRouteContract | undefined;
+      let resolvedActor: AuthenticatedActor | null = null;
+      let resolvedParams: Record<string, string> = {};
+
       try {
+        if (isInternalOrDebugPath(url.pathname)) {
+          throw new ApiError('NOT_FOUND', 'Ressource introuvable.');
+        }
+
         const route = findApiRoute(request.method, url.pathname);
         if (!route) {
           if (findApiPath(url.pathname)) {
@@ -128,6 +159,8 @@ export function createApiWorker(dependencies: ApiWorkerDependencies): { fetch(re
           }
           throw new ApiError('NOT_FOUND', 'Ressource introuvable.');
         }
+        matchedRoute = route;
+        resolvedParams = routeParams(route.path, url.pathname);
 
         let actor: AuthenticatedActor | null = null;
         if (route.authentication === 'required') {
@@ -135,7 +168,23 @@ export function createApiWorker(dependencies: ApiWorkerDependencies): { fetch(re
         } else {
           actor = await dependencies.authenticate(request).catch(() => null);
         }
+        resolvedActor = actor;
+
+        const bucket = routeRateLimitBucket(route.key);
+        if (bucket === 'auth' || bucket === 'webhook') {
+          rateLimiter.enforce(bucket, resolveRateLimitSubject(request, actor), now().getTime(), route.key);
+        }
+
         actor = validateRouteAccess(route, actor);
+        resolvedActor = actor;
+
+        if (bucket && bucket !== 'auth' && bucket !== 'webhook') {
+          rateLimiter.enforce(bucket, resolveRateLimitSubject(request, actor), now().getTime(), route.key);
+        }
+
+        if (route.scope !== 'admin') {
+          rejectForgedSelfQueryParams(url.searchParams, route.key);
+        }
 
         const page = route.collection ? parsePageRequest(url.searchParams) : undefined;
         const idempotencyKey = route.idempotency ? requireIdempotencyKey(request.headers) : undefined;
@@ -152,7 +201,7 @@ export function createApiWorker(dependencies: ApiWorkerDependencies): { fetch(re
           url,
           requestId,
           route,
-          params: routeParams(route.path, url.pathname),
+          params: resolvedParams,
           actor,
           page,
           command,
@@ -165,6 +214,29 @@ export function createApiWorker(dependencies: ApiWorkerDependencies): { fetch(re
         }
         return apiJsonResponse(result, 200, requestId);
       } catch (error) {
+        if (error instanceof ApiError && dependencies.onSecurityAudit) {
+          const forensicAction = classifySecurityForensicAction(error, url.pathname);
+          if (forensicAction) {
+            const firstParam = Object.values(resolvedParams)[0] ?? null;
+            try {
+              await dependencies.onSecurityAudit({
+                action: forensicAction,
+                routeKey: matchedRoute?.key ?? 'unmatched',
+                method: request.method.toUpperCase(),
+                path: url.pathname,
+                requestId,
+                actorId: resolvedActor?.id ?? null,
+                actorRole: resolvedActor?.role ?? null,
+                targetEntityId: firstParam,
+                status: error.status,
+                errorCode: error.code,
+                reason: sanitizeForensicReason(error.message),
+              });
+            } catch {
+              // Ne jamais masquer l'erreur HTTP d'origine en cas d'échec du sink d'audit.
+            }
+          }
+        }
         return apiErrorResponse(error, requestId);
       }
     },

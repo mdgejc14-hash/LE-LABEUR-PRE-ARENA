@@ -37,6 +37,28 @@ function readStateFilter(searchParams: URLSearchParams): 'READ' | 'UNREAD' | nul
   throw new ApiError('VALIDATION_ERROR', 'Le filtre d’état doit valoir READ ou UNREAD.');
 }
 
+async function rejectForgedBodyFields(request: Request): Promise<void> {
+  const raw = await request.text();
+  if (!raw.trim()) return;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new ApiError('VALIDATION_ERROR', 'Corps JSON invalide.');
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new ApiError('VALIDATION_ERROR', 'Corps JSON attendu sous forme d’objet.');
+  }
+  const extra = Object.keys(parsed as Record<string, unknown>);
+  if (extra.length > 0) {
+    throw new ApiError(
+      'VALIDATION_ERROR',
+      `Champ non autorisé : ${extra.join(', ')}.`,
+      { fields: ['PARAMETER_FORGERY_REJECTED', ...extra] },
+    );
+  }
+}
+
 export function createNotificationApiHandlers(
   service: OpenNotificationService,
 ): Partial<Record<ApiRouteKey, ApiRouteHandler>> {
@@ -52,12 +74,14 @@ export function createNotificationApiHandlers(
 
     'notifications.read': async context => {
       const { actor, command } = requireActorAndCommand(context);
+      await rejectForgedBodyFields(context.request);
       const result = await service.markRead(actor, context.params.notificationId, command);
       return apiJsonResponse(result, 200, context.requestId);
     },
 
     'notifications.read-all': async context => {
       const { actor, command } = requireActorAndCommand(context);
+      await rejectForgedBodyFields(context.request);
       const result = await service.markAllRead(actor, command);
       return apiJsonResponse(result, 200, context.requestId);
     },
