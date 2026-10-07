@@ -1,5 +1,15 @@
 # LE LABEUR — Worker Cloudflare + PostgreSQL (P0-C)
 
+> **Continuité — P0-CLOUDFLARE-PRODUCTION (2026-10-07).** Cette page décrit la
+> tranche P0-C (état au 2026-10-05). Depuis, le profil `production` déclare son
+> Cron Trigger, le binding R2 de développement est branché, et la préparation de
+> production est encadrée par une porte de déploiement. **La référence
+> d'exploitation est désormais `docs/P0-CLOUDFLARE_PRODUCTION.md`** ; les lignes
+> « hors périmètre P0-C » de cette page (R2, Queues, Cron) sont historiques et
+> n'engagent plus l'état courant. Aucun Hyperdrive, aucun bucket R2 et aucun
+> compte Cloudflare n'existe toujours : le déploiement reste
+> `BLOCKED_EXTERNAL_ACCESS`.
+
 **État au 2026-10-05.** P0-C branche la fondation PostgreSQL de P0-A/P0-B sur une
 chaîne d'exécution Worker → Hyperdrive → PostgreSQL **réellement exécutée en
 local**, et prépare la configuration Cloudflare réelle sans jamais la revendiquer.

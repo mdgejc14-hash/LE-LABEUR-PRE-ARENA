@@ -13,7 +13,10 @@
     "migrate": "tsx scripts/migrate.ts",
     "verify:postgres": "tsx scripts/verify-postgres-e2e.ts",
     "dev:worker": "wrangler dev",
-    "deploy:worker": "wrangler deploy --env production",
+    "dev:worker:scheduled": "wrangler dev --test-scheduled",
+    "verify:cloudflare": "tsx scripts/preflight-cloudflare.ts",
+    "preflight:cloudflare": "tsx scripts/preflight-cloudflare.ts --require-production --no-bundle",
+    "deploy:worker": "tsx scripts/preflight-cloudflare.ts --require-production && wrangler deploy --env production",
     "verify:workerd": "tsx scripts/verify-workerd-local.ts"
   },
   "dependencies": {

@@ -17,6 +17,11 @@
  *
  * ⚠️ Cette entrée n'est PAS déployée : aucun compte Cloudflare, aucun ID
  * Hyperdrive et aucune base distante ne sont disponibles dans cette session.
+ * P0-CLOUDFLARE-PRODUCTION : le profil `production` de `wrangler.toml` déclare
+ * désormais le Cron Trigger (voir `[env.production.triggers]`) ; les bindings
+ * Hyperdrive et R2 de production restent absents tant que les ressources
+ * n'existent pas (fail-closed documenté, vérifié par
+ * `npm run verify:cloudflare`).
  */
 
 import { composeWorker, type WorkerEnvironment } from '../api/entry';
@@ -60,11 +65,15 @@ export interface CloudflareWorkerRuntime {
    * les workers/services déjà autorisés (handlers déclarés, idempotence,
    * ownership, permissions).
    *
-   * Aucune planification de production n'est installée dans cette tranche :
-   * aucun bloc `[triggers]`/`crons` ACTIF dans `wrangler.toml` (le bloc est
-   * préparé et documenté), aucun timer applicatif, aucun `setInterval`.
-   * Déployer ce handler sans activer le cron ne déclenche donc rien —
-   * l'activation est la décision CLOUDFLARE PRODUCTION.
+   * P0-CLOUDFLARE-PRODUCTION — le déclencheur est désormais DÉCLARÉ dans le
+   * profil `production` de `wrangler.toml` (`[env.production.triggers]`,
+   * cadence d'exploitation documentée sur place) : le Cron Trigger Cloudflare
+   * appelle CE handler, et rien d'autre. Aucun second ordonnanceur, aucun
+   * timer applicatif, aucun `setInterval`, aucune logique métier ici.
+   *
+   * Sans cible de persistance résolue (aucun binding Hyperdrive, aucun secret
+   * de repli), le tick est un NO-OP tracé (`cron_tick_skipped`) : activer le
+   * Cron avant la base ne provoque aucune erreur et aucune écriture.
    */
   scheduled?(event: CloudflareScheduledEvent, env: CloudflareWorkerEnvironment, ctx?: CloudflareWorkerExecutionContext): Promise<void>;
   /** Compatibilité/arrêt local : aucun pool n'est conservé entre requêtes. */
@@ -92,6 +101,32 @@ function rawPersistenceMode(env: WorkerEnvironment): string {
  * drain ne doit donc voyager hors de ce fichier.
  */
 const SCHEDULED_DRAIN_LIMIT = 25;
+
+/**
+ * Ligne de journal STRUCTURÉE d'un tick de Cron : uniquement des compteurs et
+ * des motifs d'état, jamais un identifiant métier, un payload, une chaîne de
+ * connexion ou un secret. Volontairement sans dépendance (aucun import de la
+ * couche observabilité métier) pour rester dans le chemin d'un déclenchement.
+ */
+function logTick(
+  event: 'cron_tick_executed' | 'cron_tick_skipped' | 'cron_tick_unavailable' | 'cron_tick_failed',
+  cron: string,
+  startedAt: number,
+  counters: Record<string, number | string>,
+): void {
+  try {
+    console.log(JSON.stringify({
+      source: 'automation:P0-CRON-QUEUE',
+      event,
+      cron,
+      handler: 'scheduled',
+      durationMs: Math.max(0, Date.now() - startedAt),
+      ...counters,
+    }));
+  } catch {
+    // Un log ne doit jamais faire échouer un tick.
+  }
+}
 
 export function createCloudflareWorker(options: CloudflareWorkerOptions = {}): CloudflareWorkerRuntime {
   const createClient = options.createClient ?? createWorkerPostgresClient;
@@ -162,36 +197,69 @@ export function createCloudflareWorker(options: CloudflareWorkerOptions = {}): C
      * QUE le worker d'automatisation existant — aucune autre méthode, aucune
      * action métier directe. Aucune route HTTP n'existe pour ce parcours et
      * aucune erreur n'est exposée.
+     *
+     * OBSERVABILITÉ (P0-CLOUDFLARE-PRODUCTION) — chaque tick produit UNE ligne
+     * structurée compacte, composée uniquement de compteurs (jamais un
+     * identifiant métier, un payload, une chaîne de connexion ou un secret) :
+     *   * `cron_tick_executed`    : tick terminé (compteurs réels du drain) ;
+     *   * `cron_tick_skipped`     : tick sans cible de persistance (no-op
+     *                               explicite, jamais silencieux) ;
+     *   * `cron_tick_unavailable` : client impossible à construire ;
+     *   * `cron_tick_failed`      : échec — détail gardé dans l'audit durable
+     *                               (`CRON_TICK_FAILED`), jamais dans le log.
+     * La trace durable de référence reste le ledger d'audit
+     * (`CRON_TICK_EXECUTED`, acteur SYSTEM) : le log n'est qu'un signal
+     * d'exploitation.
      */
     async scheduled(
       event: CloudflareScheduledEvent,
       env: CloudflareWorkerEnvironment,
       ctx?: CloudflareWorkerExecutionContext,
     ): Promise<void> {
-      void event;
+      const cron = typeof event?.cron === 'string' ? event.cron : 'unknown';
       const run = async (): Promise<void> => {
         let created: WorkerPostgresClient | null = null;
+        const startedAt = Date.now();
         try {
           const target = runtimeTarget(env);
-          if (!target) return;
+          if (!target) {
+            logTick('cron_tick_skipped', cron, startedAt, { reason: 'persistence-not-configured' });
+            return;
+          }
           try {
             created = createClient(target);
           } catch {
+            logTick('cron_tick_unavailable', cron, startedAt, { reason: 'client-not-constructed' });
             return;
           }
           const composition = composeWorker(env, created?.client, {
             ...(options.now ? { now: options.now } : {}),
           });
-          await composition.automationWorker?.runScheduledCycle({
+          const report = await composition.automationWorker?.runScheduledCycle({
             limit: SCHEDULED_DRAIN_LIMIT,
             trigger: 'scheduled',
           });
+          if (report) {
+            logTick('cron_tick_executed', cron, startedAt, {
+              eventsClaimed: report.events.claimed,
+              eventsCompleted: report.events.completed,
+              eventsRetried: report.events.retried,
+              eventsDeadLettered: report.events.deadLettered,
+              paymentsApplied: report.payments.applied,
+              jobsClaimed: report.jobs.claimed,
+              jobsCompleted: report.jobs.completed,
+              jobsRetried: report.jobs.retried,
+              jobsFailed: report.jobs.failed,
+              staleRecovered: report.recovered.eventsRecovered + report.recovered.jobsRecovered,
+            });
+          }
           if (created) await created.end();
           created = null;
         } catch {
           // Un déclenchement planifié ne propage jamais un détail interne
           // (la trace `CRON_TICK_FAILED` reste dans l'audit si elle a pu
           // être écrite).
+          logTick('cron_tick_failed', cron, startedAt, { reason: 'unhandled' });
         } finally {
           if (created) await created.end().catch(() => undefined);
         }
