@@ -281,7 +281,7 @@ async function main(): Promise<void> {
     });
 
     let migrationResult: Awaited<ReturnType<typeof applyMigrations>> | null = null;
-    await check('Migrations 0001→0013 appliquées sur le moteur réel', async () => {
+    await check('Migrations 0001→0014 appliquées sur le moteur réel', async () => {
       migrationResult = await applyMigrations(client, migrations, {
         statementTimeoutMs: 15000,
         onProgress: message => console.log(`     ${message}`),
@@ -309,6 +309,8 @@ async function main(): Promise<void> {
         'payments', 'payment_declarations', 'payment_reconciliation_batches',
         'payment_reconciliation_batch_items', 'payment_external_settlements',
         'payment_reconciliation_reviews', 'payment_reconciliation_correction_attempts',
+        // P0-MATCHING : qualification missionnelle, profils minimes et runs explicables.
+        'candidate_matching_profiles', 'mission_qualifications', 'matching_runs',
       ];
       const tables = await database.query<{ table_name: string }>(
         `SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'`,

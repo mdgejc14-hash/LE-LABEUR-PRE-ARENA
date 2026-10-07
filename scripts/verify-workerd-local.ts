@@ -1,5 +1,5 @@
 /**
- * LE LABEUR — P0-C / P0-E3 / P0-E4 / P0-E5 / P0-DISPUTE-1 — vérification du Worker dans le runtime workerd
+ * LE LABEUR — P0-C / P0-E3 / P0-E4 / P0-E5 / P0-MATCHING / P0-DISPUTE-1 — vérification du Worker dans le runtime workerd
  * avec un binding Hyperdrive local.
  *
  *   Requête HTTP → workerd → binding HYPERDRIVE → PostgreSQL réel → réponse
@@ -165,7 +165,7 @@ async function main(): Promise<void> {
   mkdirSync(WORK_DIR, { recursive: true });
 
   console.log('============================================================');
-  console.log(' LE LABEUR — P0-C / P0-E3→E5 / P0-F / P0-AUTO-2 / P0-DISPUTE-1 — runtime workerd + binding Hyperdrive local');
+  console.log(' LE LABEUR — P0-C / P0-E3→E5 / P0-F / P0-AUTO-2 / P0-MATCHING / P0-DISPUTE-1 — runtime workerd + binding Hyperdrive local');
   console.log('============================================================');
   console.log('Runtime          : workerd (wrangler dev --local) — PAS un déploiement Cloudflare');
   console.log('Base             : PostgreSQL 17.10 RÉEL local (binaire embarqué, TEST/LOCAL)');
@@ -337,7 +337,7 @@ async function main(): Promise<void> {
       assert(sessions.rows[0]?.token_hash === await hashSessionToken(sessionCookie), 'session hashée écrite par le Worker');
     });
 
-    await check('P0-E3 workerd → PostgreSQL : soumission candidature et lecture par le propriétaire', async () => {
+    await check('P0-E3 + P0-MATCHING workerd → PostgreSQL : qualification, résultats sans affectation et candidature existante', async () => {
       const employerLogin = await fetch(`${base}/api/v1/auth/google/credential`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -365,7 +365,7 @@ async function main(): Promise<void> {
         },
         body: JSON.stringify({
           title: 'Offre workerd P0-E3',
-          contractType: 'CDI',
+          contractType: 'Prestation',
           remuneration: 180000,
           currency: 'FCFA',
           location: 'Cotonou',
@@ -375,6 +375,77 @@ async function main(): Promise<void> {
       assert(createOffer.status === 201, `création offre 201 attendue, reçue ${createOffer.status}`);
       const offer = await createOffer.json() as { id: string; employerId: string };
       assert(offer.employerId === employerId, 'offre rattachée à l’employeur connecté');
+
+      // P0-MATCHING : questionnaire indépendant, profil candidat minimal et
+      // résultats PostgreSQL/workerd. Aucun dossier de candidature n'est créé.
+      const matchingProfile = await fetch(`${base}/api/v1/my/matching-profile`, {
+        method: 'PATCH',
+        headers: {
+          cookie: `${SESSION_COOKIE_NAME}=${sessionCookie}`,
+          'content-type': 'application/json',
+          'Idempotency-Key': 'p0matching-workerd-profile-001',
+        },
+        body: JSON.stringify({ skills: ['Conception visuelle'], availability: 'AVAILABLE' }),
+      });
+      assert(matchingProfile.status === 200, `profil matching candidat 200 attendu, reçu ${matchingProfile.status}`);
+      const qualified = await fetch(`${base}/api/v1/offers/${offer.id}/qualification`, {
+        method: 'POST',
+        headers: {
+          cookie: `${SESSION_COOKIE_NAME}=${employerCookie}`,
+          'content-type': 'application/json',
+          'Idempotency-Key': 'p0matching-workerd-qualification-001',
+        },
+        body: JSON.stringify({ answers: {
+          serviceNature: 'AUTONOMOUS_DELIVERABLE',
+          deliverableDescription: 'Livrables graphiques convenus.',
+          acceptanceCriteria: 'Fichiers remis au format et au nombre convenus.',
+          acceptanceCriteriaObjective: true,
+          compensationBasis: 'RESULT_OR_SERVICE',
+          providerChoosesMethods: true,
+          providerOrganizesTime: true,
+          mayServeOtherClients: true,
+          mayDeclineWithoutPenalty: true,
+          professionalRisk: true,
+          disciplinaryPower: false,
+          continuousShift: false,
+          dailyHierarchicalOrders: false,
+          permanentIntegratedPosition: false,
+          exclusivityRequired: false,
+          exclusivityJustified: null,
+          timePlaceConstraint: 'NONE',
+          candidateFacingConstraintSummary: '',
+          formalities: {
+            majorityCheckPlanned: true,
+            professionalStatusRequirementsIdentified: true,
+            professionalAuthorizationRequired: false,
+            professionalAuthorizationCheckPlanned: null,
+            taxInvoicingRequirementsIdentified: true,
+            insuranceRequired: false,
+            insuranceRequirementsIdentified: null,
+          },
+        } }),
+      });
+      assert(qualified.status === 200, `qualification P0-MATCHING 200 attendue, reçue ${qualified.status}`);
+      const qualification = await qualified.json() as { decision: string; ruleVersion: string };
+      assert(qualification.decision === 'ELIGIBLE_FOR_INDEPENDENT', 'qualification produit attendue');
+      assert(qualification.ruleVersion === 'P0-MATCHING-QUALIFICATION-1', 'version de règle persistée');
+      const matching = await fetch(`${base}/api/v1/offers/${offer.id}/matching-runs`, {
+        method: 'POST',
+        headers: {
+          cookie: `${SESSION_COOKIE_NAME}=${employerCookie}`,
+          'content-type': 'application/json',
+          'Idempotency-Key': 'p0matching-workerd-run-001',
+        },
+        body: JSON.stringify({ sortBy: 'score', sortDirection: 'DESC' }),
+      });
+      assert(matching.status === 200, `résultats P0-MATCHING 200 attendus, reçus ${matching.status}`);
+      const run = await matching.json() as { runId: string; results: Array<{ candidateId: string }>; criteria: { automaticAssignment: boolean } };
+      assert(run.results.length === 1 && run.results[0].candidateId === userId, 'résultat limité au candidat avec profil autorisé');
+      assert(run.criteria.automaticAssignment === false, 'aucune affectation automatique');
+      const noAutoApplication = await pool.query<{ count: string }>('SELECT count(*)::text AS count FROM applications WHERE offer_id = $1', [offer.id]);
+      assert(noAutoApplication.rows[0]?.count === '0', 'le matching ne crée pas de candidature');
+      const publicConstraints = await fetch(`${base}/api/v1/offers/${offer.id}/qualification-summary`);
+      assert(publicConstraints.status === 200, 'le candidat peut consulter le résumé des contraintes');
 
       const submission = await fetch(`${base}/api/v1/offers/${offer.id}/applications`, {
         method: 'POST',

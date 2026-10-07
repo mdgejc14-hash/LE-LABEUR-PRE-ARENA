@@ -23,9 +23,10 @@ import { createSalaryConfirmationHandlers } from '../payments/salaryConfirmation
  * de rappel ; P0-CONTRACT-POST ajoute la cascade d'embauche explicite
  * `finalize-hiring` sur contrat ACTIF (offre `FILLED`, candidature retenue
  * `HIRED → CONTRACTED`, autres candidatures `CLOSED_OFFER_FILLED`) — sans
- * modifier l'activation P0-F ni l'automatisation P0-AUTO-2 ; les autres
- * opérations métier — plaintes, remplacements, notifications générales —
- * restent fermées. Le mode DEMO demeure séparé, inchangé et par défaut, et
+ * modifier l'activation P0-F ni l'automatisation P0-AUTO-2 ; P0-DISPUTE-1,
+ * P0-REPLACEMENT, P0-NOTIFICATIONS et P0-MATCHING ajoutent chacun leurs seuls
+ * handlers versionnés et persistants. Les autres opérations restent fermées.
+ * Le mode DEMO demeure séparé, inchangé et par défaut, et
  * n'est JAMAIS connecté à PostgreSQL.
  */
 
@@ -108,6 +109,8 @@ import { createAutomationWorker, type AutomationWorker } from '../automation/wor
 import type { AutomationStores } from '../automation/records';
 import { createSqlClaimStore } from '../persistence/sqlClaimStores';
 import { createSqlReplacementStore } from '../persistence/sqlReplacementStores';
+import { createSqlMatchingStores } from '../persistence/sqlMatchingStores';
+import { createMatchingRepository, createMatchingApiHandlers, type OpenMatchingRepository, type MatchingRepositoryStores } from '../matching/matchingRepository';
 import { createClaimRepository, createClaimApiHandlers, type ClaimRepositoryStores, type OpenClaimRepository } from '../disputes/claimRepository';
 import { createReplacementRepository, createReplacementApiHandlers, type OpenReplacementRepository, type ReplacementRepositoryStores } from '../replacements/replacementRepository';
 import { createClaimAutomation } from '../disputes/claimAutomation';
@@ -181,6 +184,8 @@ export interface WorkerComposition {
   claims?: OpenClaimRepository;
   /** P0-REPLACEMENT : dossier persistant, candidature/proposition/consentement/contrat réutilisés. */
   replacements?: OpenReplacementRepository;
+  /** P0-MATCHING : qualification versionnée + résultats persistés, uniquement en PostgreSQL durable. */
+  matching?: OpenMatchingRepository;
   claimDeadlineConfiguration?: ReturnType<typeof resolveClaimEvidenceDeadline>;
   /**
    * P0-AUTO-2 : automatisation contractuelle (handler `CONTRACT_ACTIVATED` et
@@ -617,6 +622,30 @@ export function composeWorker(
     ? createReplacementApiHandlers(replacementRepository)
     : {};
 
+  // P0-MATCHING — transaction durable obligatoire pour qualification, audit,
+  // idempotence et snapshots. Aucun fallback mémoire ni lien avec DEMO.
+  const matchingCycleAvailable = Boolean(persistence.database && persistence.core);
+  const buildMatchingStores = (tx: Parameters<typeof createSqlMatchingStores>[0]): MatchingRepositoryStores => ({
+    offers: createSqlOfferStore(tx),
+    users: createSqlUserStore(tx),
+    matching: createSqlMatchingStores(tx),
+    automation: createAutomationStores(tx),
+  });
+  const runMatchingInTransaction = matchingCycleAvailable && persistence.database
+    ? async <T>(operation: (matchingStores: MatchingRepositoryStores) => Promise<T>): Promise<T> =>
+        persistence.database!.run(async tx => operation(buildMatchingStores(tx)))
+    : undefined;
+  const matchingRepository = matchingCycleAvailable && persistence.database
+    ? createMatchingRepository({
+        stores: buildMatchingStores(persistence.database),
+        runInTransaction: runMatchingInTransaction!,
+        ...(overrides.now ? { now: overrides.now } : {}),
+      })
+    : undefined;
+  const matchingHandlers = matchingRepository
+    ? createMatchingApiHandlers(matchingRepository)
+    : {};
+
   const paymentProviderRegistry = createPaymentProviderRegistry(
     overrides.paymentProviderAdapter ? [overrides.paymentProviderAdapter] : [],
   );
@@ -807,6 +836,8 @@ export function composeWorker(
     // P0-REPLACEMENT — lectures et publication d'offre; sélection et contrat
     // passent par les repositories Application/Proposal/Contract existants.
     ...replacementHandlers,
+    // P0-MATCHING — qualification, revue humaine et résultats explicables.
+    ...matchingHandlers,
     // P0-PAY-1 — cycle Payment existant.
     ...paymentHandlers,
     ...(persistence.database && mode === 'postgres' ? createSalaryConfirmationHandlers(persistence.database, overrides.salaryTestOtpSink, createSqlAutomationStores) : {}),
@@ -828,6 +859,7 @@ export function composeWorker(
     contracts: contractRepository,
     claims: claimRepository,
     replacements: replacementRepository,
+    matching: matchingRepository,
     claimDeadlineConfiguration,
     payments: paymentRepository,
     paymentReconciliation,

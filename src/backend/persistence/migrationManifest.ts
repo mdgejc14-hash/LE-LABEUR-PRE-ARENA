@@ -34,6 +34,8 @@ export const EXPECTED_MIGRATION_IDS: readonly string[] = [
   // P0-REPLACEMENT : dossier traçable relié au Claim, au contrat source, à
   // l'offre, à la candidature, à la proposition et au contrat successeur.
   '0013_replacements',
+  // P0-MATCHING : qualification d'offre, profils minimaux et snapshots explicables.
+  '0014_matching',
 ];
 
 export const SCHEMA_MIGRATIONS_TABLE = 'schema_migrations';

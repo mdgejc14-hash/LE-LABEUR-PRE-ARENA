@@ -127,7 +127,7 @@ export async function runMigrationRunnerTests(): Promise<MigrationRunnerTestResu
   const migrations = loadMigrations(MIGRATIONS_DIR);
 
   try {
-    await check('P0-C migrations: application réelle 0001→0005 puis idempotence', async () => {
+    await check('P0-C migrations: application réelle 0001→0014 puis idempotence', async () => {
       const first = await applyMigrations(client, migrations);
       assert(first.applied.length === migrations.length, `toutes les migrations doivent être appliquées (reçu ${first.applied.length})`);
       assert(first.skipped.length === 0, 'aucune migration déjà appliquée au premier passage');
