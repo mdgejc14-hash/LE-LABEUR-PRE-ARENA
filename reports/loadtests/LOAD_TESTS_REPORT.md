@@ -1,0 +1,733 @@
+# P0-LOAD-TESTS — rapport de charge réelle
+
+Généré le 2026-10-07T18:00:23.421Z.
+
+## Environnement (mesuré, aucune ressource Cloudflare réelle)
+
+- PostgreSQL : PostgreSQL 17.10 RÉEL local (binaire embarqué, TEST/LOCAL) — cible `127.0.0.1:55532/lelabeur`
+- Pool `pg` : 40 connexions (le Worker de production est plafonné à 5 par `MAX_WORKER_DB_CONNECTIONS`)
+- Serveur HTTP local : http://127.0.0.1:45257 (requêtes TCP réelles)
+- Node v22.22.3 — linux/x64 — 2 vCPU — 3940 Mo
+
+> RESOURCE_LIMITATION — l’environnement est un hôte de test unique : PostgreSQL 17.10 local + serveur HTTP local. Aucune mise à l’échelle horizontale (plusieurs Workers, Hyperdrive, base managée) n’est disponible.
+> BLOCKED_EXTERNAL_ACCESS — Hyperdrive, workerd déployé, R2 réel et TURN réel sont indisponibles : aucun chiffre Cloudflare n’est produit ni estimé.
+> Le stockage objet du domaine DOCUMENTS est un adaptateur mémoire injecté (le domaine est fail-closed sans lui).
+> WebRTC : session, signaling, concurrence et expiration sont mesurés ; la configuration ICE/TURN reste `NOT_CONFIGURED`, faute de TURN réel.
+
+## Niveaux réellement exécutés
+
+| Utilisateurs | Concurrence | Durée (s) | Requêtes | rps | p50 (ms) | p95 (ms) | p99 (ms) | Erreurs (%) | Timeouts | Retries |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 100 | 64 | 19.79 | 4715 | 238.22 | 145 | 282 | 597 | 0.02 | 0 | 0 |
+| 1000 | 64 | 209.24 | 47907 | 228.96 | 154 | 301 | 459 | 0.01 | 0 | 0 |
+| 2000 | 64 | 437.1 | 95629 | 218.78 | 161 | 309 | 468 | 0.01 | 0 | 0 |
+| 10000 | 64 | 2321.05 | 479407 | 206.55 | 170 | 330 | 515 | 0 | 0 | 0 |
+
+### 100 utilisateurs
+
+- Parcours : **99/100** terminés, 1 interrompus, 400 comptes authentifiés créés.
+- Latence HTTP : p50 145 ms / p95 282 ms / p99 597 ms (min 2, max 1651, moyenne 148.01).
+- PostgreSQL : 122160 requêtes SQL, p50 3 ms / p95 13 ms / p99 36 ms ; attente de connexion p95 45 ms (12654 acquisitions), 4 erreurs SQL.
+- Saturation : CPU 77.59% (user 12949 ms, sys 2408 ms), boucle d'événements p95 16.25 ms (max 36.08 ms), RSS crête 222.15 Mo, loadavg(1) 2.55/2, RAM libre 3170/3940 Mo.
+- Connexions PostgreSQL : 3/100 à la fin du niveau.
+- Moteur : 4 deadlock(s) détecté(s) pendant le niveau (cumul 4) ; pic de 40 connexions et 29 verrou(s) non accordé(s) sur 39 relevés.
+- File : outbox {"PENDING":24,"PROCESSED":3547}, jobs {"COMPLETED":1470}, dead-letter 0, clés d'idempotence 3664, ticks Cron tracés 150.
+- Remplacement : 100/100 dossiers complets en 3824 ms (418.41 rps, p95 230 ms, 0 erreurs).
+- Concurrence métier : 150/150 vérifications OK.
+- Cron/Queue : 103 passées bornées, 3 échecs de passée, latence p50 4004 ms / p95 7605 ms / p99 8524 ms.
+- Bassin candidats P0-MATCHING : 100 profils actifs pour un plafond de 200 — 0 classement(s) refusé(s) (409, aucune donnée partielle).
+- Échecs par étape :
+  - `CRON runScheduledCycle` (500) × 5 — deadlock detected
+  - `payments.close-mission` (500) × 1 — constat des paiements attendus: 500 {"error":{"code":"INTERNAL_ERROR","message":"Une erreur interne est survenue.","requestId":"c4364a51-27ca-40df-ad68-02218c624c94"}}
+
+### 1000 utilisateurs
+
+- Parcours : **996/1000** terminés, 4 interrompus, 2200 comptes authentifiés créés.
+- Latence HTTP : p50 154 ms / p95 301 ms / p99 459 ms (min 2, max 4420, moyenne 167.24).
+- PostgreSQL : 1616931 requêtes SQL, p50 4 ms / p95 14 ms / p99 34 ms ; attente de connexion p95 43 ms (170785 acquisitions), 41 erreurs SQL.
+- Saturation : CPU 71.22% (user 122752 ms, sys 26263 ms), boucle d'événements p95 15.65 ms (max 45.74 ms), RSS crête 345.49 Mo, loadavg(1) 3.39/2, RAM libre 2852/3940 Mo.
+- Connexions PostgreSQL : 3/100 à la fin du niveau.
+- Moteur : 37 deadlock(s) détecté(s) pendant le niveau (cumul 41) ; pic de 41 connexions et 35 verrou(s) non accordé(s) sur 416 relevés.
+- File : outbox {"PROCESSED":27495,"PENDING":24}, jobs {"COMPLETED":15568}, dead-letter 0, clés d'idempotence 33443, ticks Cron tracés 1200.
+- Remplacement : 100/100 dossiers complets en 4535 ms (352.81 rps, p95 295 ms, 0 erreurs).
+- Concurrence métier : 150/150 vérifications OK.
+- Cron/Queue : 1033 passées bornées, 33 échecs de passée, latence p50 4998 ms / p95 7207 ms / p99 8272 ms.
+- Bassin candidats P0-MATCHING : 1100 profils actifs pour un plafond de 200 — 904 classement(s) refusé(s) (409, aucune donnée partielle).
+- Échecs par étape :
+  - `CRON runScheduledCycle` (500) × 65 — deadlock detected
+  - `payments.close-mission` (500) × 4 — constat des paiements attendus: 500 {"error":{"code":"INTERNAL_ERROR","message":"Une erreur interne est survenue.","requestId":"95e83a95-e25f-426e-b9ea-25bac0bddf02"}}
+
+### 2000 utilisateurs
+
+- Parcours : **1995/2000** terminés, 5 interrompus, 4200 comptes authentifiés créés.
+- Latence HTTP : p50 161 ms / p95 309 ms / p99 468 ms (min 3, max 3540, moyenne 174.33).
+- PostgreSQL : 4528021 requêtes SQL, p50 4 ms / p95 14 ms / p99 35 ms ; attente de connexion p95 46 ms (477139 acquisitions), 71 erreurs SQL.
+- Saturation : CPU 69.09% (user 250611 ms, sys 51396 ms), boucle d'événements p95 16.03 ms (max 84.15 ms), RSS crête 564.13 Mo, loadavg(1) 5.3/2, RAM libre 2647/3940 Mo.
+- Connexions PostgreSQL : 3/100 à la fin du niveau.
+- Moteur : 30 deadlock(s) détecté(s) pendant le niveau (cumul 71) ; pic de 41 connexions et 36 verrou(s) non accordé(s) sur 870 relevés.
+- File : outbox {"PROCESSED":72564,"PENDING":24}, jobs {"COMPLETED":42882}, dead-letter 0, clés d'idempotence 91007, ticks Cron tracés 3250.
+- Remplacement : 100/100 dossiers complets en 4631 ms (345.5 rps, p95 261 ms, 0 erreurs).
+- Concurrence métier : 150/150 vérifications OK.
+- Cron/Queue : 2025 passées bornées, 25 échecs de passée, latence p50 5591 ms / p95 7888 ms / p99 8809 ms.
+- Bassin candidats P0-MATCHING : 3100 profils actifs pour un plafond de 200 — 2000 classement(s) refusé(s) (409, aucune donnée partielle).
+- Échecs par étape :
+  - `CRON runScheduledCycle` (500) × 50 — deadlock detected
+  - `payments.close-mission` (500) × 5 — constat des paiements attendus: 500 {"error":{"code":"INTERNAL_ERROR","message":"Une erreur interne est survenue.","requestId":"9d257190-5590-4316-a8df-14548ea40e3b"}}
+
+### 10000 utilisateurs
+
+- Parcours : **9993/10000** terminés, 7 interrompus, 20200 comptes authentifiés créés.
+- Latence HTTP : p50 170 ms / p95 330 ms / p99 515 ms (min 3, max 3452, moyenne 184.49).
+- PostgreSQL : 18998725 requêtes SQL, p50 4 ms / p95 16 ms / p99 37 ms ; attente de connexion p95 50 ms (1988509 acquisitions), 138 erreurs SQL.
+- Saturation : CPU 67.23% (user 1301400 ms, sys 259107 ms), boucle d'événements p95 16.7 ms (max 551.03 ms), RSS crête 1464.86 Mo, loadavg(1) 4.06/2, RAM libre 1708/3940 Mo.
+- Connexions PostgreSQL : 3/100 à la fin du niveau.
+- Moteur : 67 deadlock(s) détecté(s) pendant le niveau (cumul 138) ; pic de 41 connexions et 38 verrou(s) non accordé(s) sur 4615 relevés.
+- File : outbox {"PENDING":24,"PROCESSED":297206}, jobs {"COMPLETED":181496}, dead-letter 0, clés d'idempotence 379597, ticks Cron tracés 13300.
+- Remplacement : 100/100 dossiers complets en 5560 ms (287.77 rps, p95 354 ms, 0 erreurs).
+- Concurrence métier : 150/150 vérifications OK.
+- Cron/Queue : 10059 passées bornées, 59 échecs de passée, latence p50 6020 ms / p95 8183 ms / p99 9272 ms.
+- Bassin candidats P0-MATCHING : 13100 profils actifs pour un plafond de 200 — 10000 classement(s) refusé(s) (409, aucune donnée partielle).
+- Échecs par étape :
+  - `CRON runScheduledCycle` (500) × 118 — deadlock detected
+  - `payments.close-mission` (500) × 7 — constat des paiements attendus: 500 {"error":{"code":"INTERNAL_ERROR","message":"Une erreur interne est survenue.","requestId":"9f0d706b-b55f-40f5-a91b-49734c7fd54b"}}
+
+## Concurrence métier (doubles appels, aucun double effet)
+
+### 100 utilisateurs
+
+- OK — candidature : double appel idempotent = une seule candidature — ids distincts 1, lignes 1
+- OK — décision : double examine + double shortlist = une seule transition chacune — entrées d'historique 3 (3 attendues)
+- OK — confirmation : double signature = un seul drapeau posé, statut unique — employee_signed=true, status=SIGNATURE
+- OK — Cron/Queue : deux ticks et deux workers simultanés = un seul échéancier, aucun double paiement — événements 1, échéances 7, lignes de paiement 7, doublons 0, cycles 50/50, matérialisé en 6640 ms (14 drains d'attente)
+- OK — WebRTC : double signaling idempotent = un seul message persisté — messages OFFER 1
+- OK — paiement : double déclaration = une seule tentative persistée — déclarations 1, statuts 201/201, paiement PENDING_VERIFICATION/CC-SAL-0, exemple {"paymentId":"pay_salary_ctr_h2zfyz9smy0gwk08dxbx6g9h48_M1","contractId":"ctr_h2zfyz9smy0gwk08dxbx6g9h48","employerId":"usr_hyxbny40yqskkap6149x0cgasf","candida, matérialisation préalable true
+- OK — candidature : double appel idempotent = une seule candidature — ids distincts 1, lignes 1
+- OK — décision : double examine + double shortlist = une seule transition chacune — entrées d'historique 3 (3 attendues)
+- OK — confirmation : double signature = un seul drapeau posé, statut unique — employee_signed=true, status=SIGNATURE
+- OK — Cron/Queue : deux ticks et deux workers simultanés = un seul échéancier, aucun double paiement — événements 1, échéances 7, lignes de paiement 7, doublons 0, cycles 5/50, matérialisé en 1 ms (0 drains d'attente)
+- OK — WebRTC : double signaling idempotent = un seul message persisté — messages OFFER 1
+- OK — paiement : double déclaration = une seule tentative persistée — déclarations 1, statuts 201/201, paiement PENDING_VERIFICATION/CC-SAL-1, exemple {"paymentId":"pay_salary_ctr_yqmtp295xbx3njadxf0m60pytk_M1","contractId":"ctr_yqmtp295xbx3njadxf0m60pytk","employerId":"usr_4rc5cx8558mtgy60jpdn9hj6sv","candida, matérialisation préalable true
+- OK — candidature : double appel idempotent = une seule candidature — ids distincts 1, lignes 1
+- OK — décision : double examine + double shortlist = une seule transition chacune — entrées d'historique 3 (3 attendues)
+- OK — confirmation : double signature = un seul drapeau posé, statut unique — employee_signed=true, status=SIGNATURE
+- OK — Cron/Queue : deux ticks et deux workers simultanés = un seul échéancier, aucun double paiement — événements 1, échéances 7, lignes de paiement 7, doublons 0, cycles 0/41, matérialisé en 1 ms (0 drains d'attente)
+- OK — WebRTC : double signaling idempotent = un seul message persisté — messages OFFER 1
+- OK — paiement : double déclaration = une seule tentative persistée — déclarations 1, statuts 201/201, paiement PENDING_VERIFICATION/CC-SAL-2, exemple {"paymentId":"pay_salary_ctr_je3r8d54yz7wy7j6cx40m2q6ex_M1","contractId":"ctr_je3r8d54yz7wy7j6cx40m2q6ex","employerId":"usr_kamtfn95vbh20wwbn64mrvs32w","candida, matérialisation préalable true
+- OK — candidature : double appel idempotent = une seule candidature — ids distincts 1, lignes 1
+- OK — décision : double examine + double shortlist = une seule transition chacune — entrées d'historique 3 (3 attendues)
+- OK — confirmation : double signature = un seul drapeau posé, statut unique — employee_signed=true, status=SIGNATURE
+- OK — Cron/Queue : deux ticks et deux workers simultanés = un seul échéancier, aucun double paiement — événements 1, échéances 7, lignes de paiement 7, doublons 0, cycles 0/29, matérialisé en 1 ms (0 drains d'attente)
+- OK — WebRTC : double signaling idempotent = un seul message persisté — messages OFFER 1
+- OK — paiement : double déclaration = une seule tentative persistée — déclarations 1, statuts 201/201, paiement PENDING_VERIFICATION/CC-SAL-3, exemple {"paymentId":"pay_salary_ctr_1c4g3rb1zktfahdswzddd96mtk_M1","contractId":"ctr_1c4g3rb1zktfahdswzddd96mtk","employerId":"usr_xbrq6mzb243450jykprqqawvbd","candida, matérialisation préalable true
+- OK — candidature : double appel idempotent = une seule candidature — ids distincts 1, lignes 1
+- OK — décision : double examine + double shortlist = une seule transition chacune — entrées d'historique 3 (3 attendues)
+- OK — confirmation : double signature = un seul drapeau posé, statut unique — employee_signed=true, status=SIGNATURE
+- OK — Cron/Queue : deux ticks et deux workers simultanés = un seul échéancier, aucun double paiement — événements 1, échéances 7, lignes de paiement 7, doublons 0, cycles 29/0, matérialisé en 1 ms (0 drains d'attente)
+- OK — WebRTC : double signaling idempotent = un seul message persisté — messages OFFER 1
+- OK — paiement : double déclaration = une seule tentative persistée — déclarations 1, statuts 201/201, paiement PENDING_VERIFICATION/CC-SAL-4, exemple {"paymentId":"pay_salary_ctr_99rv14tfwkmp8xyzptsqkp8x40_M1","contractId":"ctr_99rv14tfwkmp8xyzptsqkp8x40","employerId":"usr_sfj238qp48pjbhsktktktftvbh","candida, matérialisation préalable true
+- OK — candidature : double appel idempotent = une seule candidature — ids distincts 1, lignes 1
+- OK — décision : double examine + double shortlist = une seule transition chacune — entrées d'historique 3 (3 attendues)
+- OK — confirmation : double signature = un seul drapeau posé, statut unique — employee_signed=true, status=SIGNATURE
+- OK — Cron/Queue : deux ticks et deux workers simultanés = un seul échéancier, aucun double paiement — événements 1, échéances 7, lignes de paiement 7, doublons 0, cycles 0/29, matérialisé en 0 ms (0 drains d'attente)
+- OK — WebRTC : double signaling idempotent = un seul message persisté — messages OFFER 1
+- OK — paiement : double déclaration = une seule tentative persistée — déclarations 1, statuts 201/201, paiement PENDING_VERIFICATION/CC-SAL-5, exemple {"paymentId":"pay_salary_ctr_tb0mtbzk7rtzvb7450hy687rqp_M1","contractId":"ctr_tb0mtbzk7rtzvb7450hy687rqp","employerId":"usr_a9ktmjzbf1njwb2myf91vb6wja","candida, matérialisation préalable true
+- OK — candidature : double appel idempotent = une seule candidature — ids distincts 1, lignes 1
+- OK — décision : double examine + double shortlist = une seule transition chacune — entrées d'historique 3 (3 attendues)
+- OK — confirmation : double signature = un seul drapeau posé, statut unique — employee_signed=true, status=SIGNATURE
+- OK — Cron/Queue : deux ticks et deux workers simultanés = un seul échéancier, aucun double paiement — événements 1, échéances 7, lignes de paiement 7, doublons 0, cycles 29/0, matérialisé en 1 ms (0 drains d'attente)
+- OK — WebRTC : double signaling idempotent = un seul message persisté — messages OFFER 1
+- OK — paiement : double déclaration = une seule tentative persistée — déclarations 1, statuts 201/201, paiement PENDING_VERIFICATION/CC-SAL-6, exemple {"paymentId":"pay_salary_ctr_dnz7dhcses607w70a97wqt3mj2_M1","contractId":"ctr_dnz7dhcses607w70a97wqt3mj2","employerId":"usr_0wx38dzfqesfh6ge342gy700pp","candida, matérialisation préalable true
+- OK — candidature : double appel idempotent = une seule candidature — ids distincts 1, lignes 1
+- OK — décision : double examine + double shortlist = une seule transition chacune — entrées d'historique 3 (3 attendues)
+- OK — confirmation : double signature = un seul drapeau posé, statut unique — employee_signed=true, status=SIGNATURE
+- OK — Cron/Queue : deux ticks et deux workers simultanés = un seul échéancier, aucun double paiement — événements 1, échéances 7, lignes de paiement 7, doublons 0, cycles 0/29, matérialisé en 1 ms (0 drains d'attente)
+- OK — WebRTC : double signaling idempotent = un seul message persisté — messages OFFER 1
+- OK — paiement : double déclaration = une seule tentative persistée — déclarations 1, statuts 201/201, paiement PENDING_VERIFICATION/CC-SAL-7, exemple {"paymentId":"pay_salary_ctr_rbgtbs04rvkajyyfqtpantsfv3_M1","contractId":"ctr_rbgtbs04rvkajyyfqtpantsfv3","employerId":"usr_skvkhtjpkyfswfwfc9v7pt7c91","candida, matérialisation préalable true
+- OK — candidature : double appel idempotent = une seule candidature — ids distincts 1, lignes 1
+- OK — décision : double examine + double shortlist = une seule transition chacune — entrées d'historique 3 (3 attendues)
+- OK — confirmation : double signature = un seul drapeau posé, statut unique — employee_signed=true, status=SIGNATURE
+- OK — Cron/Queue : deux ticks et deux workers simultanés = un seul échéancier, aucun double paiement — événements 1, échéances 7, lignes de paiement 7, doublons 0, cycles 29/0, matérialisé en 1 ms (0 drains d'attente)
+- OK — WebRTC : double signaling idempotent = un seul message persisté — messages OFFER 1
+- OK — paiement : double déclaration = une seule tentative persistée — déclarations 1, statuts 201/201, paiement PENDING_VERIFICATION/CC-SAL-8, exemple {"paymentId":"pay_salary_ctr_0w8nds3cmp4rdxsk3rf9fh9dj6_M1","contractId":"ctr_0w8nds3cmp4rdxsk3rf9fh9dj6","employerId":"usr_506rfnvzm2ed7w6w607r4c859h","candida, matérialisation préalable true
+- OK — candidature : double appel idempotent = une seule candidature — ids distincts 1, lignes 1
+- OK — décision : double examine + double shortlist = une seule transition chacune — entrées d'historique 3 (3 attendues)
+- OK — confirmation : double signature = un seul drapeau posé, statut unique — employee_signed=true, status=SIGNATURE
+- OK — Cron/Queue : deux ticks et deux workers simultanés = un seul échéancier, aucun double paiement — événements 1, échéances 7, lignes de paiement 7, doublons 0, cycles 29/0, matérialisé en 0 ms (0 drains d'attente)
+- OK — WebRTC : double signaling idempotent = un seul message persisté — messages OFFER 1
+- OK — paiement : double déclaration = une seule tentative persistée — déclarations 1, statuts 201/201, paiement PENDING_VERIFICATION/CC-SAL-9, exemple {"paymentId":"pay_salary_ctr_mjfxhtpt7g3m9dkphjv30gb1xb_M1","contractId":"ctr_mjfxhtpt7g3m9dkphjv30gb1xb","employerId":"usr_682c2rehhj3wds0wme2wah8d4r","candida, matérialisation préalable true
+- OK — candidature : double appel idempotent = une seule candidature — ids distincts 1, lignes 1
+- OK — décision : double examine + double shortlist = une seule transition chacune — entrées d'historique 3 (3 attendues)
+- OK — confirmation : double signature = un seul drapeau posé, statut unique — employee_signed=true, status=SIGNATURE
+- OK — Cron/Queue : deux ticks et deux workers simultanés = un seul échéancier, aucun double paiement — événements 1, échéances 7, lignes de paiement 7, doublons 0, cycles 0/29, matérialisé en 2 ms (0 drains d'attente)
+- OK — WebRTC : double signaling idempotent = un seul message persisté — messages OFFER 1
+- OK — paiement : double déclaration = une seule tentative persistée — déclarations 1, statuts 201/201, paiement PENDING_VERIFICATION/CC-SAL-10, exemple {"paymentId":"pay_salary_ctr_fhe1a904cxn2my2rc1cnw7z3jt_M1","contractId":"ctr_fhe1a904cxn2my2rc1cnw7z3jt","employerId":"usr_edke3gsq28kj4ckpehsz54t738","candida, matérialisation préalable true
+- OK — candidature : double appel idempotent = une seule candidature — ids distincts 1, lignes 1
+- OK — décision : double examine + double shortlist = une seule transition chacune — entrées d'historique 3 (3 attendues)
+- OK — confirmation : double signature = un seul drapeau posé, statut unique — employee_signed=true, status=SIGNATURE
+- OK — Cron/Queue : deux ticks et deux workers simultanés = un seul échéancier, aucun double paiement — événements 1, échéances 7, lignes de paiement 7, doublons 0, cycles 0/29, matérialisé en 1 ms (0 drains d'attente)
+- OK — WebRTC : double signaling idempotent = un seul message persisté — messages OFFER 1
+- OK — paiement : double déclaration = une seule tentative persistée — déclarations 1, statuts 201/201, paiement PENDING_VERIFICATION/CC-SAL-11, exemple {"paymentId":"pay_salary_ctr_dhc1781wgyny7m4rpj6mga1gvf_M1","contractId":"ctr_dhc1781wgyny7m4rpj6mga1gvf","employerId":"usr_ja4cha54es9s38fss7yvv3jpch","candida, matérialisation préalable true
+- OK — candidature : double appel idempotent = une seule candidature — ids distincts 1, lignes 1
+- OK — décision : double examine + double shortlist = une seule transition chacune — entrées d'historique 3 (3 attendues)
+- OK — confirmation : double signature = un seul drapeau posé, statut unique — employee_signed=true, status=SIGNATURE
+- OK — Cron/Queue : deux ticks et deux workers simultanés = un seul échéancier, aucun double paiement — événements 1, échéances 7, lignes de paiement 7, doublons 0, cycles 0/29, matérialisé en 1 ms (0 drains d'attente)
+- OK — WebRTC : double signaling idempotent = un seul message persisté — messages OFFER 1
+- OK — paiement : double déclaration = une seule tentative persistée — déclarations 1, statuts 201/201, paiement PENDING_VERIFICATION/CC-SAL-12, exemple {"paymentId":"pay_salary_ctr_vzash2s7wq8h6gpym29d896gan_M1","contractId":"ctr_vzash2s7wq8h6gpym29d896gan","employerId":"usr_28v31c0w644cenbsx7kevqyk7w","candida, matérialisation préalable true
+- OK — candidature : double appel idempotent = une seule candidature — ids distincts 1, lignes 1
+- OK — décision : double examine + double shortlist = une seule transition chacune — entrées d'historique 3 (3 attendues)
+- OK — confirmation : double signature = un seul drapeau posé, statut unique — employee_signed=true, status=SIGNATURE
+- OK — Cron/Queue : deux ticks et deux workers simultanés = un seul échéancier, aucun double paiement — événements 1, échéances 7, lignes de paiement 7, doublons 0, cycles 29/0, matérialisé en 1 ms (0 drains d'attente)
+- OK — WebRTC : double signaling idempotent = un seul message persisté — messages OFFER 1
+- OK — paiement : double déclaration = une seule tentative persistée — déclarations 1, statuts 201/201, paiement PENDING_VERIFICATION/CC-SAL-13, exemple {"paymentId":"pay_salary_ctr_rktbd53mvkk24mw7wkt3mjwzb9_M1","contractId":"ctr_rktbd53mvkk24mw7wkt3mjwzb9","employerId":"usr_9hdh9ntqvk5g3gna4g91bs1wz3","candida, matérialisation préalable true
+- OK — candidature : double appel idempotent = une seule candidature — ids distincts 1, lignes 1
+- OK — décision : double examine + double shortlist = une seule transition chacune — entrées d'historique 3 (3 attendues)
+- OK — confirmation : double signature = un seul drapeau posé, statut unique — employee_signed=true, status=SIGNATURE
+- OK — Cron/Queue : deux ticks et deux workers simultanés = un seul échéancier, aucun double paiement — événements 1, échéances 7, lignes de paiement 7, doublons 0, cycles 0/29, matérialisé en 0 ms (0 drains d'attente)
+- OK — WebRTC : double signaling idempotent = un seul message persisté — messages OFFER 1
+- OK — paiement : double déclaration = une seule tentative persistée — déclarations 1, statuts 201/201, paiement PENDING_VERIFICATION/CC-SAL-14, exemple {"paymentId":"pay_salary_ctr_z79dt3cs7rmjsk302cp2f5ptge_M1","contractId":"ctr_z79dt3cs7rmjsk302cp2f5ptge","employerId":"usr_7gvkvvwv4848ky9h3mszvz8dad","candida, matérialisation préalable true
+- OK — candidature : double appel idempotent = une seule candidature — ids distincts 1, lignes 1
+- OK — décision : double examine + double shortlist = une seule transition chacune — entrées d'historique 3 (3 attendues)
+- OK — confirmation : double signature = un seul drapeau posé, statut unique — employee_signed=true, status=SIGNATURE
+- OK — Cron/Queue : deux ticks et deux workers simultanés = un seul échéancier, aucun double paiement — événements 1, échéances 7, lignes de paiement 7, doublons 0, cycles 29/0, matérialisé en 1 ms (0 drains d'attente)
+- OK — WebRTC : double signaling idempotent = un seul message persisté — messages OFFER 1
+- OK — paiement : double déclaration = une seule tentative persistée — déclarations 1, statuts 201/201, paiement PENDING_VERIFICATION/CC-SAL-15, exemple {"paymentId":"pay_salary_ctr_sff50m1gy3edyb3m3cbd00rksq_M1","contractId":"ctr_sff50m1gy3edyb3m3cbd00rksq","employerId":"usr_qaz7sfad0w1wrv14c5qttzb9q6","candida, matérialisation préalable true
+- OK — candidature : double appel idempotent = une seule candidature — ids distincts 1, lignes 1
+- OK — décision : double examine + double shortlist = une seule transition chacune — entrées d'historique 3 (3 attendues)
+- OK — confirmation : double signature = un seul drapeau posé, statut unique — employee_signed=true, status=SIGNATURE
+- OK — Cron/Queue : deux ticks et deux workers simultanés = un seul échéancier, aucun double paiement — événements 1, échéances 7, lignes de paiement 7, doublons 0, cycles 29/0, matérialisé en 0 ms (0 drains d'attente)
+- OK — WebRTC : double signaling idempotent = un seul message persisté — messages OFFER 1
+- OK — paiement : double déclaration = une seule tentative persistée — déclarations 1, statuts 201/201, paiement PENDING_VERIFICATION/CC-SAL-16, exemple {"paymentId":"pay_salary_ctr_d9y364ykb5f5v7vb14vq5rb5rf_M1","contractId":"ctr_d9y364ykb5f5v7vb14vq5rb5rf","employerId":"usr_wk2wdnrvr3mpddrvs3skadgpt3","candida, matérialisation préalable true
+- OK — candidature : double appel idempotent = une seule candidature — ids distincts 1, lignes 1
+- OK — décision : double examine + double shortlist = une seule transition chacune — entrées d'historique 3 (3 attendues)
+- OK — confirmation : double signature = un seul drapeau posé, statut unique — employee_signed=true, status=SIGNATURE
+- OK — Cron/Queue : deux ticks et deux workers simultanés = un seul échéancier, aucun double paiement — événements 1, échéances 7, lignes de paiement 7, doublons 0, cycles 0/29, matérialisé en 1 ms (0 drains d'attente)
+- OK — WebRTC : double signaling idempotent = un seul message persisté — messages OFFER 1
+- OK — paiement : double déclaration = une seule tentative persistée — déclarations 1, statuts 201/201, paiement PENDING_VERIFICATION/CC-SAL-17, exemple {"paymentId":"pay_salary_ctr_kj5rx3306wfdky5m7myfvk0m89_M1","contractId":"ctr_kj5rx3306wfdky5m7myfvk0m89","employerId":"usr_2w5cvk4wentqfn0wzkzvbxg21w","candida, matérialisation préalable true
+- OK — candidature : double appel idempotent = une seule candidature — ids distincts 1, lignes 1
+- OK — décision : double examine + double shortlist = une seule transition chacune — entrées d'historique 3 (3 attendues)
+- OK — confirmation : double signature = un seul drapeau posé, statut unique — employee_signed=true, status=SIGNATURE
+- OK — Cron/Queue : deux ticks et deux workers simultanés = un seul échéancier, aucun double paiement — événements 1, échéances 7, lignes de paiement 7, doublons 0, cycles 0/29, matérialisé en 1 ms (0 drains d'attente)
+- OK — WebRTC : double signaling idempotent = un seul message persisté — messages OFFER 1
+- OK — paiement : double déclaration = une seule tentative persistée — déclarations 1, statuts 201/201, paiement PENDING_VERIFICATION/CC-SAL-18, exemple {"paymentId":"pay_salary_ctr_8xm6njmjvfc1wf00d5t75c74cd_M1","contractId":"ctr_8xm6njmjvfc1wf00d5t75c74cd","employerId":"usr_pjmayv74k64whpchsf1m0w04m6","candida, matérialisation préalable true
+- OK — candidature : double appel idempotent = une seule candidature — ids distincts 1, lignes 1
+- OK — décision : double examine + double shortlist = une seule transition chacune — entrées d'historique 3 (3 attendues)
+- OK — confirmation : double signature = un seul drapeau posé, statut unique — employee_signed=true, status=SIGNATURE
+- OK — Cron/Queue : deux ticks et deux workers simultanés = un seul échéancier, aucun double paiement — événements 1, échéances 7, lignes de paiement 7, doublons 0, cycles 0/29, matérialisé en 0 ms (0 drains d'attente)
+- OK — WebRTC : double signaling idempotent = un seul message persisté — messages OFFER 1
+- OK — paiement : double déclaration = une seule tentative persistée — déclarations 1, statuts 201/201, paiement PENDING_VERIFICATION/CC-SAL-19, exemple {"paymentId":"pay_salary_ctr_en186gyfh2masv348xkj30f58x_M1","contractId":"ctr_en186gyfh2masv348xkj30f58x","employerId":"usr_pjzzwksvmanyvqj68s4r0cvfq6","candida, matérialisation préalable true
+- OK — candidature : double appel idempotent = une seule candidature — ids distincts 1, lignes 1
+- OK — décision : double examine + double shortlist = une seule transition chacune — entrées d'historique 3 (3 attendues)
+- OK — confirmation : double signature = un seul drapeau posé, statut unique — employee_signed=true, status=SIGNATURE
+- OK — Cron/Queue : deux ticks et deux workers simultanés = un seul échéancier, aucun double paiement — événements 1, échéances 7, lignes de paiement 7, doublons 0, cycles 0/29, matérialisé en 0 ms (0 drains d'attente)
+- OK — WebRTC : double signaling idempotent = un seul message persisté — messages OFFER 1
+- OK — paiement : double déclaration = une seule tentative persistée — déclarations 1, statuts 201/201, paiement PENDING_VERIFICATION/CC-SAL-20, exemple {"paymentId":"pay_salary_ctr_3c9d540c189dd1hy2ct3qa38r7_M1","contractId":"ctr_3c9d540c189dd1hy2ct3qa38r7","employerId":"usr_c5kyfdexzvw748ad8xa9ad385m","candida, matérialisation préalable true
+- OK — candidature : double appel idempotent = une seule candidature — ids distincts 1, lignes 1
+- OK — décision : double examine + double shortlist = une seule transition chacune — entrées d'historique 3 (3 attendues)
+- OK — confirmation : double signature = un seul drapeau posé, statut unique — employee_signed=true, status=SIGNATURE
+- OK — Cron/Queue : deux ticks et deux workers simultanés = un seul échéancier, aucun double paiement — événements 1, échéances 7, lignes de paiement 7, doublons 0, cycles 0/29, matérialisé en 0 ms (0 drains d'attente)
+- OK — WebRTC : double signaling idempotent = un seul message persisté — messages OFFER 1
+- OK — paiement : double déclaration = une seule tentative persistée — déclarations 1, statuts 201/201, paiement PENDING_VERIFICATION/CC-SAL-21, exemple {"paymentId":"pay_salary_ctr_08r7wkqprbs7yvv7tq08rbqpvq_M1","contractId":"ctr_08r7wkqprbs7yvv7tq08rbqpvq","employerId":"usr_1gb10grkgt2rq624y3n6cdc5bd","candida, matérialisation préalable true
+- OK — candidature : double appel idempotent = une seule candidature — ids distincts 1, lignes 1
+- OK — décision : double examine + double shortlist = une seule transition chacune — entrées d'historique 3 (3 attendues)
+- OK — confirmation : double signature = un seul drapeau posé, statut unique — employee_signed=true, status=SIGNATURE
+- OK — Cron/Queue : deux ticks et deux workers simultanés = un seul échéancier, aucun double paiement — événements 1, échéances 7, lignes de paiement 7, doublons 0, cycles 29/0, matérialisé en 0 ms (0 drains d'attente)
+- OK — WebRTC : double signaling idempotent = un seul message persisté — messages OFFER 1
+- OK — paiement : double déclaration = une seule tentative persistée — déclarations 1, statuts 201/201, paiement PENDING_VERIFICATION/CC-SAL-22, exemple {"paymentId":"pay_salary_ctr_np7wwk6c9h14gat7fhxby3y7ne_M1","contractId":"ctr_np7wwk6c9h14gat7fhxby3y7ne","employerId":"usr_04x3he4gjpr7zb1c6mbx64c52m","candida, matérialisation préalable true
+- OK — candidature : double appel idempotent = une seule candidature — ids distincts 1, lignes 1
+- OK — décision : double examine + double shortlist = une seule transition chacune — entrées d'historique 3 (3 attendues)
+- OK — confirmation : double signature = un seul drapeau posé, statut unique — employee_signed=true, status=SIGNATURE
+- OK — Cron/Queue : deux ticks et deux workers simultanés = un seul échéancier, aucun double paiement — événements 1, échéances 7, lignes de paiement 7, doublons 0, cycles 0/29, matérialisé en 1 ms (0 drains d'attente)
+- OK — WebRTC : double signaling idempotent = un seul message persisté — messages OFFER 1
+- OK — paiement : double déclaration = une seule tentative persistée — déclarations 1, statuts 201/201, paiement PENDING_VERIFICATION/CC-SAL-23, exemple {"paymentId":"pay_salary_ctr_r37rw7ad4rk6gjc59df9wzp6na_M1","contractId":"ctr_r37rw7ad4rk6gjc59df9wzp6na","employerId":"usr_6mdhj2yfcshpykg2nym6xq7mmt","candida, matérialisation préalable true
+- OK — candidature : double appel idempotent = une seule candidature — ids distincts 1, lignes 1
+- OK — décision : double examine + double shortlist = une seule transition chacune — entrées d'historique 3 (3 attendues)
+- OK — confirmation : double signature = un seul drapeau posé, statut unique — employee_signed=true, status=SIGNATURE
+- OK — Cron/Queue : deux ticks et deux workers simultanés = un seul échéancier, aucun double paiement — événements 1, échéances 7, lignes de paiement 7, doublons 0, cycles 29/0, matérialisé en 1 ms (0 drains d'attente)
+- OK — WebRTC : double signaling idempotent = un seul message persisté — messages OFFER 1
+- OK — paiement : double déclaration = une seule tentative persistée — déclarations 1, statuts 201/201, paiement PENDING_VERIFICATION/CC-SAL-24, exemple {"paymentId":"pay_salary_ctr_yk7r95b9cxexwzfsmynjjpn6ny_M1","contractId":"ctr_yk7r95b9cxexwzfsmynjjpn6ny","employerId":"usr_yzmaykqebxqysqyfsfq6gyntbh","candida, matérialisation préalable true
+
+### 1000 utilisateurs
+
+- OK — candidature : double appel idempotent = une seule candidature — ids distincts 1, lignes 1
+- OK — décision : double examine + double shortlist = une seule transition chacune — entrées d'historique 3 (3 attendues)
+- OK — confirmation : double signature = un seul drapeau posé, statut unique — employee_signed=true, status=SIGNATURE
+- OK — Cron/Queue : deux ticks et deux workers simultanés = un seul échéancier, aucun double paiement — événements 1, échéances 7, lignes de paiement 7, doublons 0, cycles 50/50, matérialisé en 8588 ms (17 drains d'attente)
+- OK — WebRTC : double signaling idempotent = un seul message persisté — messages OFFER 1
+- OK — paiement : double déclaration = une seule tentative persistée — déclarations 1, statuts 201/201, paiement PENDING_VERIFICATION/CC-SAL-0, exemple {"paymentId":"pay_salary_ctr_gyjtz7qj0m44kedhwfches6ws7_M1","contractId":"ctr_gyjtz7qj0m44kedhwfches6ws7","employerId":"usr_9xnp28wqvv1cpymtg2rz5r3c6w","candida, matérialisation préalable true
+- OK — candidature : double appel idempotent = une seule candidature — ids distincts 1, lignes 1
+- OK — décision : double examine + double shortlist = une seule transition chacune — entrées d'historique 3 (3 attendues)
+- OK — confirmation : double signature = un seul drapeau posé, statut unique — employee_signed=true, status=SIGNATURE
+- OK — Cron/Queue : deux ticks et deux workers simultanés = un seul échéancier, aucun double paiement — événements 1, échéances 7, lignes de paiement 7, doublons 0, cycles 0/15, matérialisé en 1 ms (0 drains d'attente)
+- OK — WebRTC : double signaling idempotent = un seul message persisté — messages OFFER 1
+- OK — paiement : double déclaration = une seule tentative persistée — déclarations 1, statuts 201/201, paiement PENDING_VERIFICATION/CC-SAL-1, exemple {"paymentId":"pay_salary_ctr_csf59hvky3xv7rv3mjma7g38es_M1","contractId":"ctr_csf59hvky3xv7rv3mjma7g38es","employerId":"usr_t31gvf9s0ccdqabne5as64tvyf","candida, matérialisation préalable true
+- OK — candidature : double appel idempotent = une seule candidature — ids distincts 1, lignes 1
+- OK — décision : double examine + double shortlist = une seule transition chacune — entrées d'historique 3 (3 attendues)
+- OK — confirmation : double signature = un seul drapeau posé, statut unique — employee_signed=true, status=SIGNATURE
+- OK — Cron/Queue : deux ticks et deux workers simultanés = un seul échéancier, aucun double paiement — événements 1, échéances 7, lignes de paiement 7, doublons 0, cycles 41/0, matérialisé en 2 ms (0 drains d'attente)
+- OK — WebRTC : double signaling idempotent = un seul message persisté — messages OFFER 1
+- OK — paiement : double déclaration = une seule tentative persistée — déclarations 1, statuts 201/201, paiement PENDING_VERIFICATION/CC-SAL-2, exemple {"paymentId":"pay_salary_ctr_v7d9sk0r0wb1sksfntexr3vf60_M1","contractId":"ctr_v7d9sk0r0wb1sksfntexr3vf60","employerId":"usr_n61cf9axwk5gg61m3gbx00wkvf","candida, matérialisation préalable true
+- OK — candidature : double appel idempotent = une seule candidature — ids distincts 1, lignes 1
+- OK — décision : double examine + double shortlist = une seule transition chacune — entrées d'historique 3 (3 attendues)
+- OK — confirmation : double signature = un seul drapeau posé, statut unique — employee_signed=true, status=SIGNATURE
+- OK — Cron/Queue : deux ticks et deux workers simultanés = un seul échéancier, aucun double paiement — événements 1, échéances 7, lignes de paiement 7, doublons 0, cycles 29/0, matérialisé en 2 ms (0 drains d'attente)
+- OK — WebRTC : double signaling idempotent = un seul message persisté — messages OFFER 1
+- OK — paiement : double déclaration = une seule tentative persistée — déclarations 1, statuts 201/201, paiement PENDING_VERIFICATION/CC-SAL-3, exemple {"paymentId":"pay_salary_ctr_100cha6wvbn2c96r7m9dykb9pt_M1","contractId":"ctr_100cha6wvbn2c96r7m9dykb9pt","employerId":"usr_0gmp3mkyv3wvanjy0mbxxzf9sb","candida, matérialisation préalable true
+- OK — candidature : double appel idempotent = une seule candidature — ids distincts 1, lignes 1
+- OK — décision : double examine + double shortlist = une seule transition chacune — entrées d'historique 3 (3 attendues)
+- OK — confirmation : double signature = un seul drapeau posé, statut unique — employee_signed=true, status=SIGNATURE
+- OK — Cron/Queue : deux ticks et deux workers simultanés = un seul échéancier, aucun double paiement — événements 1, échéances 7, lignes de paiement 7, doublons 0, cycles 29/0, matérialisé en 1 ms (0 drains d'attente)
+- OK — WebRTC : double signaling idempotent = un seul message persisté — messages OFFER 1
+- OK — paiement : double déclaration = une seule tentative persistée — déclarations 1, statuts 201/201, paiement PENDING_VERIFICATION/CC-SAL-4, exemple {"paymentId":"pay_salary_ctr_v70wt3v3qya97420pj281w8nbs_M1","contractId":"ctr_v70wt3v3qya97420pj281w8nbs","employerId":"usr_08jyc1yfe118qewknthpgtjth2","candida, matérialisation préalable true
+- OK — candidature : double appel idempotent = une seule candidature — ids distincts 1, lignes 1
+- OK — décision : double examine + double shortlist = une seule transition chacune — entrées d'historique 3 (3 attendues)
+- OK — confirmation : double signature = un seul drapeau posé, statut unique — employee_signed=true, status=SIGNATURE
+- OK — Cron/Queue : deux ticks et deux workers simultanés = un seul échéancier, aucun double paiement — événements 1, échéances 7, lignes de paiement 7, doublons 0, cycles 29/0, matérialisé en 2 ms (0 drains d'attente)
+- OK — WebRTC : double signaling idempotent = un seul message persisté — messages OFFER 1
+- OK — paiement : double déclaration = une seule tentative persistée — déclarations 1, statuts 201/201, paiement PENDING_VERIFICATION/CC-SAL-5, exemple {"paymentId":"pay_salary_ctr_d55rf9b900t79swzrfrb8djyas_M1","contractId":"ctr_d55rf9b900t79swzrfrb8djyas","employerId":"usr_xv5r04fn1gv30rr3mpg2y3x7dh","candida, matérialisation préalable true
+- OK — candidature : double appel idempotent = une seule candidature — ids distincts 1, lignes 1
+- OK — décision : double examine + double shortlist = une seule transition chacune — entrées d'historique 3 (3 attendues)
+- OK — confirmation : double signature = un seul drapeau posé, statut unique — employee_signed=true, status=SIGNATURE
+- OK — Cron/Queue : deux ticks et deux workers simultanés = un seul échéancier, aucun double paiement — événements 1, échéances 7, lignes de paiement 7, doublons 0, cycles 0/29, matérialisé en 1 ms (0 drains d'attente)
+- OK — WebRTC : double signaling idempotent = un seul message persisté — messages OFFER 1
+- OK — paiement : double déclaration = une seule tentative persistée — déclarations 1, statuts 201/201, paiement PENDING_VERIFICATION/CC-SAL-6, exemple {"paymentId":"pay_salary_ctr_64m2np78h2hyzfad7cjthy5wq2_M1","contractId":"ctr_64m2np78h2hyzfad7cjthy5wq2","employerId":"usr_bs4g1wvb5c68myd5f5rf8dsqxk","candida, matérialisation préalable true
+- OK — candidature : double appel idempotent = une seule candidature — ids distincts 1, lignes 1
+- OK — décision : double examine + double shortlist = une seule transition chacune — entrées d'historique 3 (3 attendues)
+- OK — confirmation : double signature = un seul drapeau posé, statut unique — employee_signed=true, status=SIGNATURE
+- OK — Cron/Queue : deux ticks et deux workers simultanés = un seul échéancier, aucun double paiement — événements 1, échéances 7, lignes de paiement 7, doublons 0, cycles 0/29, matérialisé en 2 ms (0 drains d'attente)
+- OK — WebRTC : double signaling idempotent = un seul message persisté — messages OFFER 1
+- OK — paiement : double déclaration = une seule tentative persistée — déclarations 1, statuts 201/201, paiement PENDING_VERIFICATION/CC-SAL-7, exemple {"paymentId":"pay_salary_ctr_as5ces5rmpf1c1qa0genzve5yq_M1","contractId":"ctr_as5ces5rmpf1c1qa0genzve5yq","employerId":"usr_2r58zzzf141mf1jj38fsen6wr7","candida, matérialisation préalable true
+- OK — candidature : double appel idempotent = une seule candidature — ids distincts 1, lignes 1
+- OK — décision : double examine + double shortlist = une seule transition chacune — entrées d'historique 3 (3 attendues)
+- OK — confirmation : double signature = un seul drapeau posé, statut unique — employee_signed=true, status=SIGNATURE
+- OK — Cron/Queue : deux ticks et deux workers simultanés = un seul échéancier, aucun double paiement — événements 1, échéances 7, lignes de paiement 7, doublons 0, cycles 22/7, matérialisé en 2 ms (0 drains d'attente)
+- OK — WebRTC : double signaling idempotent = un seul message persisté — messages OFFER 1
+- OK — paiement : double déclaration = une seule tentative persistée — déclarations 1, statuts 201/201, paiement PENDING_VERIFICATION/CC-SAL-8, exemple {"paymentId":"pay_salary_ctr_6gw79hp2yqxv2wax9xv7t7fnvv_M1","contractId":"ctr_6gw79hp2yqxv2wax9xv7t7fnvv","employerId":"usr_95y7hyxkxvmej2wq3csb60tbc1","candida, matérialisation préalable true
+- OK — candidature : double appel idempotent = une seule candidature — ids distincts 1, lignes 1
+- OK — décision : double examine + double shortlist = une seule transition chacune — entrées d'historique 3 (3 attendues)
+- OK — confirmation : double signature = un seul drapeau posé, statut unique — employee_signed=true, status=SIGNATURE
+- OK — Cron/Queue : deux ticks et deux workers simultanés = un seul échéancier, aucun double paiement — événements 1, échéances 7, lignes de paiement 7, doublons 0, cycles 0/29, matérialisé en 1 ms (0 drains d'attente)
+- OK — WebRTC : double signaling idempotent = un seul message persisté — messages OFFER 1
+- OK — paiement : double déclaration = une seule tentative persistée — déclarations 1, statuts 201/201, paiement PENDING_VERIFICATION/CC-SAL-9, exemple {"paymentId":"pay_salary_ctr_4mnj00zqa978neybjtrktvjepj_M1","contractId":"ctr_4mnj00zqa978neybjtrktvjepj","employerId":"usr_7wdsqegpdng2b9szs7ntyqvqqt","candida, matérialisation préalable true
+- OK — candidature : double appel idempotent = une seule candidature — ids distincts 1, lignes 1
+- OK — décision : double examine + double shortlist = une seule transition chacune — entrées d'historique 3 (3 attendues)
+- OK — confirmation : double signature = un seul drapeau posé, statut unique — employee_signed=true, status=SIGNATURE
+- OK — Cron/Queue : deux ticks et deux workers simultanés = un seul échéancier, aucun double paiement — événements 1, échéances 7, lignes de paiement 7, doublons 0, cycles 0/29, matérialisé en 2 ms (0 drains d'attente)
+- OK — WebRTC : double signaling idempotent = un seul message persisté — messages OFFER 1
+- OK — paiement : double déclaration = une seule tentative persistée — déclarations 1, statuts 201/201, paiement PENDING_VERIFICATION/CC-SAL-10, exemple {"paymentId":"pay_salary_ctr_gjh240wz3wmy89fn5rrk3ghegj_M1","contractId":"ctr_gjh240wz3wmy89fn5rrk3ghegj","employerId":"usr_jyjyw3tb18gttk6c4c3cmpfxdd","candida, matérialisation préalable true
+- OK — candidature : double appel idempotent = une seule candidature — ids distincts 1, lignes 1
+- OK — décision : double examine + double shortlist = une seule transition chacune — entrées d'historique 3 (3 attendues)
+- OK — confirmation : double signature = un seul drapeau posé, statut unique — employee_signed=true, status=SIGNATURE
+- OK — Cron/Queue : deux ticks et deux workers simultanés = un seul échéancier, aucun double paiement — événements 1, échéances 7, lignes de paiement 7, doublons 0, cycles 0/29, matérialisé en 2 ms (0 drains d'attente)
+- OK — WebRTC : double signaling idempotent = un seul message persisté — messages OFFER 1
+- OK — paiement : double déclaration = une seule tentative persistée — déclarations 1, statuts 201/201, paiement PENDING_VERIFICATION/CC-SAL-11, exemple {"paymentId":"pay_salary_ctr_ed3r8hyb448xg6e964yb2454vk_M1","contractId":"ctr_ed3r8hyb448xg6e964yb2454vk","employerId":"usr_fsxkcn9skak2tkhyrb1cq2zkwf","candida, matérialisation préalable true
+- OK — candidature : double appel idempotent = une seule candidature — ids distincts 1, lignes 1
+- OK — décision : double examine + double shortlist = une seule transition chacune — entrées d'historique 3 (3 attendues)
+- OK — confirmation : double signature = un seul drapeau posé, statut unique — employee_signed=true, status=SIGNATURE
+- OK — Cron/Queue : deux ticks et deux workers simultanés = un seul échéancier, aucun double paiement — événements 1, échéances 7, lignes de paiement 7, doublons 0, cycles 0/29, matérialisé en 1 ms (0 drains d'attente)
+- OK — WebRTC : double signaling idempotent = un seul message persisté — messages OFFER 1
+- OK — paiement : double déclaration = une seule tentative persistée — déclarations 1, statuts 201/201, paiement PENDING_VERIFICATION/CC-SAL-12, exemple {"paymentId":"pay_salary_ctr_tzddwf40ykassbesgaz7bh303c_M1","contractId":"ctr_tzddwf40ykassbesgaz7bh303c","employerId":"usr_d1n6n6ashjx7neenjpc9r7y3kj","candida, matérialisation préalable true
+- OK — candidature : double appel idempotent = une seule candidature — ids distincts 1, lignes 1
+- OK — décision : double examine + double shortlist = une seule transition chacune — entrées d'historique 3 (3 attendues)
+- OK — confirmation : double signature = un seul drapeau posé, statut unique — employee_signed=true, status=SIGNATURE
+- OK — Cron/Queue : deux ticks et deux workers simultanés = un seul échéancier, aucun double paiement — événements 1, échéances 7, lignes de paiement 7, doublons 0, cycles 29/0, matérialisé en 1 ms (0 drains d'attente)
+- OK — WebRTC : double signaling idempotent = un seul message persisté — messages OFFER 1
+- OK — paiement : double déclaration = une seule tentative persistée — déclarations 1, statuts 201/201, paiement PENDING_VERIFICATION/CC-SAL-13, exemple {"paymentId":"pay_salary_ctr_mtqp401rjyahmyhj1rha38vzrv_M1","contractId":"ctr_mtqp401rjyahmyhj1rha38vzrv","employerId":"usr_e9cxf1w360f50mzv2rm6zb00zk","candida, matérialisation préalable true
+- OK — candidature : double appel idempotent = une seule candidature — ids distincts 1, lignes 1
+- OK — décision : double examine + double shortlist = une seule transition chacune — entrées d'historique 3 (3 attendues)
+- OK — confirmation : double signature = un seul drapeau posé, statut unique — employee_signed=true, status=SIGNATURE
+- OK — Cron/Queue : deux ticks et deux workers simultanés = un seul échéancier, aucun double paiement — événements 1, échéances 7, lignes de paiement 7, doublons 0, cycles 29/0, matérialisé en 2 ms (0 drains d'attente)
+- OK — WebRTC : double signaling idempotent = un seul message persisté — messages OFFER 1
+- OK — paiement : double déclaration = une seule tentative persistée — déclarations 1, statuts 201/201, paiement PENDING_VERIFICATION/CC-SAL-14, exemple {"paymentId":"pay_salary_ctr_8hpywb68ddax6wq64wche5xq8d_M1","contractId":"ctr_8hpywb68ddax6wq64wche5xq8d","employerId":"usr_ktnpzv2cfh34s3q2ahdsr3c1ch","candida, matérialisation préalable true
+- OK — candidature : double appel idempotent = une seule candidature — ids distincts 1, lignes 1
+- OK — décision : double examine + double shortlist = une seule transition chacune — entrées d'historique 3 (3 attendues)
+- OK — confirmation : double signature = un seul drapeau posé, statut unique — employee_signed=true, status=SIGNATURE
+- OK — Cron/Queue : deux ticks et deux workers simultanés = un seul échéancier, aucun double paiement — événements 1, échéances 7, lignes de paiement 7, doublons 0, cycles 29/0, matérialisé en 2 ms (0 drains d'attente)
+- OK — WebRTC : double signaling idempotent = un seul message persisté — messages OFFER 1
+- OK — paiement : double déclaration = une seule tentative persistée — déclarations 1, statuts 201/201, paiement PENDING_VERIFICATION/CC-SAL-15, exemple {"paymentId":"pay_salary_ctr_gtma85h2jaddhyg2bhqjm6sq1w_M1","contractId":"ctr_gtma85h2jaddhyg2bhqjm6sq1w","employerId":"usr_vbbhkezzangakpf1hewf5c7w78","candida, matérialisation préalable true
+- OK — candidature : double appel idempotent = une seule candidature — ids distincts 1, lignes 1
+- OK — décision : double examine + double shortlist = une seule transition chacune — entrées d'historique 3 (3 attendues)
+- OK — confirmation : double signature = un seul drapeau posé, statut unique — employee_signed=true, status=SIGNATURE
+- OK — Cron/Queue : deux ticks et deux workers simultanés = un seul échéancier, aucun double paiement — événements 1, échéances 7, lignes de paiement 7, doublons 0, cycles 29/0, matérialisé en 2 ms (0 drains d'attente)
+- OK — WebRTC : double signaling idempotent = un seul message persisté — messages OFFER 1
+- OK — paiement : double déclaration = une seule tentative persistée — déclarations 1, statuts 201/201, paiement PENDING_VERIFICATION/CC-SAL-16, exemple {"paymentId":"pay_salary_ctr_5m0rb52m30180wqa2gg6c15885_M1","contractId":"ctr_5m0rb52m30180wqa2gg6c15885","employerId":"usr_2m1gq2jp0g7resnez7d1yf850c","candida, matérialisation préalable true
+- OK — candidature : double appel idempotent = une seule candidature — ids distincts 1, lignes 1
+- OK — décision : double examine + double shortlist = une seule transition chacune — entrées d'historique 3 (3 attendues)
+- OK — confirmation : double signature = un seul drapeau posé, statut unique — employee_signed=true, status=SIGNATURE
+- OK — Cron/Queue : deux ticks et deux workers simultanés = un seul échéancier, aucun double paiement — événements 1, échéances 7, lignes de paiement 7, doublons 0, cycles 29/0, matérialisé en 2 ms (0 drains d'attente)
+- OK — WebRTC : double signaling idempotent = un seul message persisté — messages OFFER 1
+- OK — paiement : double déclaration = une seule tentative persistée — déclarations 1, statuts 201/201, paiement PENDING_VERIFICATION/CC-SAL-17, exemple {"paymentId":"pay_salary_ctr_99j2h6wk4g2wkj1rax2w6gtq9d_M1","contractId":"ctr_99j2h6wk4g2wkj1rax2w6gtq9d","employerId":"usr_h650adybjayv99npnys7zb91rz","candida, matérialisation préalable true
+- OK — candidature : double appel idempotent = une seule candidature — ids distincts 1, lignes 1
+- OK — décision : double examine + double shortlist = une seule transition chacune — entrées d'historique 3 (3 attendues)
+- OK — confirmation : double signature = un seul drapeau posé, statut unique — employee_signed=true, status=SIGNATURE
+- OK — Cron/Queue : deux ticks et deux workers simultanés = un seul échéancier, aucun double paiement — événements 1, échéances 7, lignes de paiement 7, doublons 0, cycles 29/0, matérialisé en 2 ms (0 drains d'attente)
+- OK — WebRTC : double signaling idempotent = un seul message persisté — messages OFFER 1
+- OK — paiement : double déclaration = une seule tentative persistée — déclarations 1, statuts 201/201, paiement PENDING_VERIFICATION/CC-SAL-18, exemple {"paymentId":"pay_salary_ctr_zv8xpja5tv9n7cgysz6g64tkdd_M1","contractId":"ctr_zv8xpja5tv9n7cgysz6g64tkdd","employerId":"usr_8s60np91hj4wrf0r1mrfzf4000","candida, matérialisation préalable true
+- OK — candidature : double appel idempotent = une seule candidature — ids distincts 1, lignes 1
+- OK — décision : double examine + double shortlist = une seule transition chacune — entrées d'historique 3 (3 attendues)
+- OK — confirmation : double signature = un seul drapeau posé, statut unique — employee_signed=true, status=SIGNATURE
+- OK — Cron/Queue : deux ticks et deux workers simultanés = un seul échéancier, aucun double paiement — événements 1, échéances 7, lignes de paiement 7, doublons 0, cycles 0/29, matérialisé en 2 ms (0 drains d'attente)
+- OK — WebRTC : double signaling idempotent = un seul message persisté — messages OFFER 1
+- OK — paiement : double déclaration = une seule tentative persistée — déclarations 1, statuts 201/201, paiement PENDING_VERIFICATION/CC-SAL-19, exemple {"paymentId":"pay_salary_ctr_6mmthpzbszwqp2e93gwkwk1rfx_M1","contractId":"ctr_6mmthpzbszwqp2e93gwkwk1rfx","employerId":"usr_30qa4m00jagpw3bxjaxvan8dny","candida, matérialisation préalable true
+- OK — candidature : double appel idempotent = une seule candidature — ids distincts 1, lignes 1
+- OK — décision : double examine + double shortlist = une seule transition chacune — entrées d'historique 3 (3 attendues)
+- OK — confirmation : double signature = un seul drapeau posé, statut unique — employee_signed=true, status=SIGNATURE
+- OK — Cron/Queue : deux ticks et deux workers simultanés = un seul échéancier, aucun double paiement — événements 1, échéances 7, lignes de paiement 7, doublons 0, cycles 0/29, matérialisé en 2 ms (0 drains d'attente)
+- OK — WebRTC : double signaling idempotent = un seul message persisté — messages OFFER 1
+- OK — paiement : double déclaration = une seule tentative persistée — déclarations 1, statuts 201/201, paiement PENDING_VERIFICATION/CC-SAL-20, exemple {"paymentId":"pay_salary_ctr_jtmp0gqamppt1cjj3grk4mdxje_M1","contractId":"ctr_jtmp0gqamppt1cjj3grk4mdxje","employerId":"usr_m25wnypymyd9sqd9j6axnpm2hy","candida, matérialisation préalable true
+- OK — candidature : double appel idempotent = une seule candidature — ids distincts 1, lignes 1
+- OK — décision : double examine + double shortlist = une seule transition chacune — entrées d'historique 3 (3 attendues)
+- OK — confirmation : double signature = un seul drapeau posé, statut unique — employee_signed=true, status=SIGNATURE
+- OK — Cron/Queue : deux ticks et deux workers simultanés = un seul échéancier, aucun double paiement — événements 1, échéances 7, lignes de paiement 7, doublons 0, cycles 29/0, matérialisé en 3 ms (0 drains d'attente)
+- OK — WebRTC : double signaling idempotent = un seul message persisté — messages OFFER 1
+- OK — paiement : double déclaration = une seule tentative persistée — déclarations 1, statuts 201/201, paiement PENDING_VERIFICATION/CC-SAL-21, exemple {"paymentId":"pay_salary_ctr_m6sbpygekarqtqe5zqszpjah4c_M1","contractId":"ctr_m6sbpygekarqtqe5zqszpjah4c","employerId":"usr_28fx10w7svx7hjr3wzskgysbrz","candida, matérialisation préalable true
+- OK — candidature : double appel idempotent = une seule candidature — ids distincts 1, lignes 1
+- OK — décision : double examine + double shortlist = une seule transition chacune — entrées d'historique 3 (3 attendues)
+- OK — confirmation : double signature = un seul drapeau posé, statut unique — employee_signed=true, status=SIGNATURE
+- OK — Cron/Queue : deux ticks et deux workers simultanés = un seul échéancier, aucun double paiement — événements 1, échéances 7, lignes de paiement 7, doublons 0, cycles 0/29, matérialisé en 2 ms (0 drains d'attente)
+- OK — WebRTC : double signaling idempotent = un seul message persisté — messages OFFER 1
+- OK — paiement : double déclaration = une seule tentative persistée — déclarations 1, statuts 201/201, paiement PENDING_VERIFICATION/CC-SAL-22, exemple {"paymentId":"pay_salary_ctr_b1zqcs9sjtax40ykx7bdasmp8s_M1","contractId":"ctr_b1zqcs9sjtax40ykx7bdasmp8s","employerId":"usr_wv5czqqe9nnyqawv4m3m9xjt3w","candida, matérialisation préalable true
+- OK — candidature : double appel idempotent = une seule candidature — ids distincts 1, lignes 1
+- OK — décision : double examine + double shortlist = une seule transition chacune — entrées d'historique 3 (3 attendues)
+- OK — confirmation : double signature = un seul drapeau posé, statut unique — employee_signed=true, status=SIGNATURE
+- OK — Cron/Queue : deux ticks et deux workers simultanés = un seul échéancier, aucun double paiement — événements 1, échéances 7, lignes de paiement 7, doublons 0, cycles 0/29, matérialisé en 1 ms (0 drains d'attente)
+- OK — WebRTC : double signaling idempotent = un seul message persisté — messages OFFER 1
+- OK — paiement : double déclaration = une seule tentative persistée — déclarations 1, statuts 201/201, paiement PENDING_VERIFICATION/CC-SAL-23, exemple {"paymentId":"pay_salary_ctr_cx1g85wzwzrk0cc9w3781mqy0g_M1","contractId":"ctr_cx1g85wzwzrk0cc9w3781mqy0g","employerId":"usr_2g5wd5an9s5wrfqezv28zqkes7","candida, matérialisation préalable true
+- OK — candidature : double appel idempotent = une seule candidature — ids distincts 1, lignes 1
+- OK — décision : double examine + double shortlist = une seule transition chacune — entrées d'historique 3 (3 attendues)
+- OK — confirmation : double signature = un seul drapeau posé, statut unique — employee_signed=true, status=SIGNATURE
+- OK — Cron/Queue : deux ticks et deux workers simultanés = un seul échéancier, aucun double paiement — événements 1, échéances 7, lignes de paiement 7, doublons 0, cycles 0/29, matérialisé en 2 ms (0 drains d'attente)
+- OK — WebRTC : double signaling idempotent = un seul message persisté — messages OFFER 1
+- OK — paiement : double déclaration = une seule tentative persistée — déclarations 1, statuts 201/201, paiement PENDING_VERIFICATION/CC-SAL-24, exemple {"paymentId":"pay_salary_ctr_cd3414wqrkch2gd968j289yffx_M1","contractId":"ctr_cd3414wqrkch2gd968j289yffx","employerId":"usr_bx7gwzzqt30gf9z7dscdr7mjgj","candida, matérialisation préalable true
+
+### 2000 utilisateurs
+
+- OK — candidature : double appel idempotent = une seule candidature — ids distincts 1, lignes 1
+- OK — décision : double examine + double shortlist = une seule transition chacune — entrées d'historique 3 (3 attendues)
+- OK — confirmation : double signature = un seul drapeau posé, statut unique — employee_signed=true, status=SIGNATURE
+- OK — Cron/Queue : deux ticks et deux workers simultanés = un seul échéancier, aucun double paiement — événements 1, échéances 7, lignes de paiement 7, doublons 0, cycles 50/50, matérialisé en 6187 ms (12 drains d'attente)
+- OK — WebRTC : double signaling idempotent = un seul message persisté — messages OFFER 1
+- OK — paiement : double déclaration = une seule tentative persistée — déclarations 1, statuts 201/201, paiement PENDING_VERIFICATION/CC-SAL-0, exemple {"paymentId":"pay_salary_ctr_tfnj2grbja7ryfkaddrbsqjt5m_M1","contractId":"ctr_tfnj2grbja7ryfkaddrbsqjt5m","employerId":"usr_1gb10gs74c3c28zbjpsqn2vv2c","candida, matérialisation préalable true
+- OK — candidature : double appel idempotent = une seule candidature — ids distincts 1, lignes 1
+- OK — décision : double examine + double shortlist = une seule transition chacune — entrées d'historique 3 (3 attendues)
+- OK — confirmation : double signature = un seul drapeau posé, statut unique — employee_signed=true, status=SIGNATURE
+- OK — Cron/Queue : deux ticks et deux workers simultanés = un seul échéancier, aucun double paiement — événements 1, échéances 7, lignes de paiement 7, doublons 0, cycles 15/0, matérialisé en 3 ms (0 drains d'attente)
+- OK — WebRTC : double signaling idempotent = un seul message persisté — messages OFFER 1
+- OK — paiement : double déclaration = une seule tentative persistée — déclarations 1, statuts 201/201, paiement PENDING_VERIFICATION/CC-SAL-1, exemple {"paymentId":"pay_salary_ctr_544m99b950384ce59d9np6c1an_M1","contractId":"ctr_544m99b950384ce59d9np6c1an","employerId":"usr_e5hesbppx3p2t3cnyqx399ppwb","candida, matérialisation préalable true
+- OK — candidature : double appel idempotent = une seule candidature — ids distincts 1, lignes 1
+- OK — décision : double examine + double shortlist = une seule transition chacune — entrées d'historique 3 (3 attendues)
+- OK — confirmation : double signature = un seul drapeau posé, statut unique — employee_signed=true, status=SIGNATURE
+- OK — Cron/Queue : deux ticks et deux workers simultanés = un seul échéancier, aucun double paiement — événements 1, échéances 7, lignes de paiement 7, doublons 0, cycles 41/0, matérialisé en 2 ms (0 drains d'attente)
+- OK — WebRTC : double signaling idempotent = un seul message persisté — messages OFFER 1
+- OK — paiement : double déclaration = une seule tentative persistée — déclarations 1, statuts 201/201, paiement PENDING_VERIFICATION/CC-SAL-2, exemple {"paymentId":"pay_salary_ctr_9x24w3ehrv3gwk9dbdyv9d3rc5_M1","contractId":"ctr_9x24w3ehrv3gwk9dbdyv9d3rc5","employerId":"usr_xb68994064tbybxv1c6mvv60n6","candida, matérialisation préalable true
+- OK — candidature : double appel idempotent = une seule candidature — ids distincts 1, lignes 1
+- OK — décision : double examine + double shortlist = une seule transition chacune — entrées d'historique 3 (3 attendues)
+- OK — confirmation : double signature = un seul drapeau posé, statut unique — employee_signed=true, status=SIGNATURE
+- OK — Cron/Queue : deux ticks et deux workers simultanés = un seul échéancier, aucun double paiement — événements 1, échéances 7, lignes de paiement 7, doublons 0, cycles 0/29, matérialisé en 3 ms (0 drains d'attente)
+- OK — WebRTC : double signaling idempotent = un seul message persisté — messages OFFER 1
+- OK — paiement : double déclaration = une seule tentative persistée — déclarations 1, statuts 201/201, paiement PENDING_VERIFICATION/CC-SAL-3, exemple {"paymentId":"pay_salary_ctr_wvzfbn38anma2mcn5c1gktxzrv_M1","contractId":"ctr_wvzfbn38anma2mcn5c1gktxzrv","employerId":"usr_qpkec55c4mbnjpmpe9j2dse1c1","candida, matérialisation préalable true
+- OK — candidature : double appel idempotent = une seule candidature — ids distincts 1, lignes 1
+- OK — décision : double examine + double shortlist = une seule transition chacune — entrées d'historique 3 (3 attendues)
+- OK — confirmation : double signature = un seul drapeau posé, statut unique — employee_signed=true, status=SIGNATURE
+- OK — Cron/Queue : deux ticks et deux workers simultanés = un seul échéancier, aucun double paiement — événements 1, échéances 7, lignes de paiement 7, doublons 0, cycles 0/29, matérialisé en 3 ms (0 drains d'attente)
+- OK — WebRTC : double signaling idempotent = un seul message persisté — messages OFFER 1
+- OK — paiement : double déclaration = une seule tentative persistée — déclarations 1, statuts 201/201, paiement PENDING_VERIFICATION/CC-SAL-4, exemple {"paymentId":"pay_salary_ctr_pab9j6gtntybma3c608hrv9534_M1","contractId":"ctr_pab9j6gtntybma3c608hrv9534","employerId":"usr_rzcxfd4rm62cbdd5mpxqn6htzv","candida, matérialisation préalable true
+- OK — candidature : double appel idempotent = une seule candidature — ids distincts 1, lignes 1
+- OK — décision : double examine + double shortlist = une seule transition chacune — entrées d'historique 3 (3 attendues)
+- OK — confirmation : double signature = un seul drapeau posé, statut unique — employee_signed=true, status=SIGNATURE
+- OK — Cron/Queue : deux ticks et deux workers simultanés = un seul échéancier, aucun double paiement — événements 1, échéances 7, lignes de paiement 7, doublons 0, cycles 0/29, matérialisé en 2 ms (0 drains d'attente)
+- OK — WebRTC : double signaling idempotent = un seul message persisté — messages OFFER 1
+- OK — paiement : double déclaration = une seule tentative persistée — déclarations 1, statuts 201/201, paiement PENDING_VERIFICATION/CC-SAL-5, exemple {"paymentId":"pay_salary_ctr_e53ryk30pacxhp9n44s3engaxk_M1","contractId":"ctr_e53ryk30pacxhp9n44s3engaxk","employerId":"usr_jtzv1gjyvzhaqjy39ne90rexna","candida, matérialisation préalable true
+- OK — candidature : double appel idempotent = une seule candidature — ids distincts 1, lignes 1
+- OK — décision : double examine + double shortlist = une seule transition chacune — entrées d'historique 3 (3 attendues)
+- OK — confirmation : double signature = un seul drapeau posé, statut unique — employee_signed=true, status=SIGNATURE
+- OK — Cron/Queue : deux ticks et deux workers simultanés = un seul échéancier, aucun double paiement — événements 1, échéances 7, lignes de paiement 7, doublons 0, cycles 29/0, matérialisé en 3 ms (0 drains d'attente)
+- OK — WebRTC : double signaling idempotent = un seul message persisté — messages OFFER 1
+- OK — paiement : double déclaration = une seule tentative persistée — déclarations 1, statuts 201/201, paiement PENDING_VERIFICATION/CC-SAL-6, exemple {"paymentId":"pay_salary_ctr_rz9nhpcxhetq2wxf0cendhvky7_M1","contractId":"ctr_rz9nhpcxhetq2wxf0cendhvky7","employerId":"usr_he50es7rma9smp1w78jee9kjzz","candida, matérialisation préalable true
+- OK — candidature : double appel idempotent = une seule candidature — ids distincts 1, lignes 1
+- OK — décision : double examine + double shortlist = une seule transition chacune — entrées d'historique 3 (3 attendues)
+- OK — confirmation : double signature = un seul drapeau posé, statut unique — employee_signed=true, status=SIGNATURE
+- OK — Cron/Queue : deux ticks et deux workers simultanés = un seul échéancier, aucun double paiement — événements 1, échéances 7, lignes de paiement 7, doublons 0, cycles 29/0, matérialisé en 3 ms (0 drains d'attente)
+- OK — WebRTC : double signaling idempotent = un seul message persisté — messages OFFER 1
+- OK — paiement : double déclaration = une seule tentative persistée — déclarations 1, statuts 201/201, paiement PENDING_VERIFICATION/CC-SAL-7, exemple {"paymentId":"pay_salary_ctr_9hjeg6pj9x2m0rgyhe0rr3memy_M1","contractId":"ctr_9hjeg6pj9x2m0rgyhe0rr3memy","employerId":"usr_2w5078vvas6810q6rbzzsqk2c9","candida, matérialisation préalable true
+- OK — candidature : double appel idempotent = une seule candidature — ids distincts 1, lignes 1
+- OK — décision : double examine + double shortlist = une seule transition chacune — entrées d'historique 3 (3 attendues)
+- OK — confirmation : double signature = un seul drapeau posé, statut unique — employee_signed=true, status=SIGNATURE
+- OK — Cron/Queue : deux ticks et deux workers simultanés = un seul échéancier, aucun double paiement — événements 1, échéances 7, lignes de paiement 7, doublons 0, cycles 0/29, matérialisé en 3 ms (0 drains d'attente)
+- OK — WebRTC : double signaling idempotent = un seul message persisté — messages OFFER 1
+- OK — paiement : double déclaration = une seule tentative persistée — déclarations 1, statuts 201/201, paiement PENDING_VERIFICATION/CC-SAL-8, exemple {"paymentId":"pay_salary_ctr_6cbsw3asw3xvd9gpa9mj2g3rjp_M1","contractId":"ctr_6cbsw3asw3xvd9gpa9mj2g3rjp","employerId":"usr_zv3cgjgadhgjhjktf9m6adyf74","candida, matérialisation préalable true
+- OK — candidature : double appel idempotent = une seule candidature — ids distincts 1, lignes 1
+- OK — décision : double examine + double shortlist = une seule transition chacune — entrées d'historique 3 (3 attendues)
+- OK — confirmation : double signature = un seul drapeau posé, statut unique — employee_signed=true, status=SIGNATURE
+- OK — Cron/Queue : deux ticks et deux workers simultanés = un seul échéancier, aucun double paiement — événements 1, échéances 7, lignes de paiement 7, doublons 0, cycles 0/29, matérialisé en 3 ms (0 drains d'attente)
+- OK — WebRTC : double signaling idempotent = un seul message persisté — messages OFFER 1
+- OK — paiement : double déclaration = une seule tentative persistée — déclarations 1, statuts 201/201, paiement PENDING_VERIFICATION/CC-SAL-9, exemple {"paymentId":"pay_salary_ctr_dxke4gxb54ch952gwvr3h6sk30_M1","contractId":"ctr_dxke4gxb54ch952gwvr3h6sk30","employerId":"usr_hybx2mdd7r60zb2m4wtvwkax20","candida, matérialisation préalable true
+- OK — candidature : double appel idempotent = une seule candidature — ids distincts 1, lignes 1
+- OK — décision : double examine + double shortlist = une seule transition chacune — entrées d'historique 3 (3 attendues)
+- OK — confirmation : double signature = un seul drapeau posé, statut unique — employee_signed=true, status=SIGNATURE
+- OK — Cron/Queue : deux ticks et deux workers simultanés = un seul échéancier, aucun double paiement — événements 1, échéances 7, lignes de paiement 7, doublons 0, cycles 0/29, matérialisé en 3 ms (0 drains d'attente)
+- OK — WebRTC : double signaling idempotent = un seul message persisté — messages OFFER 1
+- OK — paiement : double déclaration = une seule tentative persistée — déclarations 1, statuts 201/201, paiement PENDING_VERIFICATION/CC-SAL-10, exemple {"paymentId":"pay_salary_ctr_and1kjwvybt7jymerke1d5xb7m_M1","contractId":"ctr_and1kjwvybt7jymerke1d5xb7m","employerId":"usr_2mj69xkt99fdvks381g6hjtk7g","candida, matérialisation préalable true
+- OK — candidature : double appel idempotent = une seule candidature — ids distincts 1, lignes 1
+- OK — décision : double examine + double shortlist = une seule transition chacune — entrées d'historique 3 (3 attendues)
+- OK — confirmation : double signature = un seul drapeau posé, statut unique — employee_signed=true, status=SIGNATURE
+- OK — Cron/Queue : deux ticks et deux workers simultanés = un seul échéancier, aucun double paiement — événements 1, échéances 7, lignes de paiement 7, doublons 0, cycles 29/0, matérialisé en 3 ms (0 drains d'attente)
+- OK — WebRTC : double signaling idempotent = un seul message persisté — messages OFFER 1
+- OK — paiement : double déclaration = une seule tentative persistée — déclarations 1, statuts 201/201, paiement PENDING_VERIFICATION/CC-SAL-11, exemple {"paymentId":"pay_salary_ctr_2mtbanzq30p6y3tvr7f95ryf4c_M1","contractId":"ctr_2mtbanzq30p6y3tvr7f95ryf4c","employerId":"usr_44naga99f9rq50mehjk6pyn6wv","candida, matérialisation préalable true
+- OK — candidature : double appel idempotent = une seule candidature — ids distincts 1, lignes 1
+- OK — décision : double examine + double shortlist = une seule transition chacune — entrées d'historique 3 (3 attendues)
+- OK — confirmation : double signature = un seul drapeau posé, statut unique — employee_signed=true, status=SIGNATURE
+- OK — Cron/Queue : deux ticks et deux workers simultanés = un seul échéancier, aucun double paiement — événements 1, échéances 7, lignes de paiement 7, doublons 0, cycles 15/0, matérialisé en 3 ms (0 drains d'attente)
+- OK — WebRTC : double signaling idempotent = un seul message persisté — messages OFFER 1
+- OK — paiement : double déclaration = une seule tentative persistée — déclarations 1, statuts 201/201, paiement PENDING_VERIFICATION/CC-SAL-12, exemple {"paymentId":"pay_salary_ctr_zkxqqpnjgpddkee9q2912mc9zv_M1","contractId":"ctr_zkxqqpnjgpddkee9q2912mc9zv","employerId":"usr_48tk4cd5dshyyv4895189d9hkt","candida, matérialisation préalable true
+- OK — candidature : double appel idempotent = une seule candidature — ids distincts 1, lignes 1
+- OK — décision : double examine + double shortlist = une seule transition chacune — entrées d'historique 3 (3 attendues)
+- OK — confirmation : double signature = un seul drapeau posé, statut unique — employee_signed=true, status=SIGNATURE
+- OK — Cron/Queue : deux ticks et deux workers simultanés = un seul échéancier, aucun double paiement — événements 1, échéances 7, lignes de paiement 7, doublons 0, cycles 29/0, matérialisé en 2 ms (0 drains d'attente)
+- OK — WebRTC : double signaling idempotent = un seul message persisté — messages OFFER 1
+- OK — paiement : double déclaration = une seule tentative persistée — déclarations 1, statuts 201/201, paiement PENDING_VERIFICATION/CC-SAL-13, exemple {"paymentId":"pay_salary_ctr_e1rzds08asga04wfpea9hpxb8n_M1","contractId":"ctr_e1rzds08asga04wfpea9hpxb8n","employerId":"usr_4c7m3w1g24c1rz28rqmthjdn08","candida, matérialisation préalable true
+- OK — candidature : double appel idempotent = une seule candidature — ids distincts 1, lignes 1
+- OK — décision : double examine + double shortlist = une seule transition chacune — entrées d'historique 3 (3 attendues)
+- OK — confirmation : double signature = un seul drapeau posé, statut unique — employee_signed=true, status=SIGNATURE
+- OK — Cron/Queue : deux ticks et deux workers simultanés = un seul échéancier, aucun double paiement — événements 1, échéances 7, lignes de paiement 7, doublons 0, cycles 0/29, matérialisé en 3 ms (0 drains d'attente)
+- OK — WebRTC : double signaling idempotent = un seul message persisté — messages OFFER 1
+- OK — paiement : double déclaration = une seule tentative persistée — déclarations 1, statuts 201/201, paiement PENDING_VERIFICATION/CC-SAL-14, exemple {"paymentId":"pay_salary_ctr_ennta94wqty3mey3ge7cqj1wjy_M1","contractId":"ctr_ennta94wqty3mey3ge7cqj1wjy","employerId":"usr_hpmeja2891jpqtna8nm2ke14nt","candida, matérialisation préalable true
+- OK — candidature : double appel idempotent = une seule candidature — ids distincts 1, lignes 1
+- OK — décision : double examine + double shortlist = une seule transition chacune — entrées d'historique 3 (3 attendues)
+- OK — confirmation : double signature = un seul drapeau posé, statut unique — employee_signed=true, status=SIGNATURE
+- OK — Cron/Queue : deux ticks et deux workers simultanés = un seul échéancier, aucun double paiement — événements 1, échéances 7, lignes de paiement 7, doublons 0, cycles 0/29, matérialisé en 3 ms (0 drains d'attente)
+- OK — WebRTC : double signaling idempotent = un seul message persisté — messages OFFER 1
+- OK — paiement : double déclaration = une seule tentative persistée — déclarations 1, statuts 201/201, paiement PENDING_VERIFICATION/CC-SAL-15, exemple {"paymentId":"pay_salary_ctr_7r0g78m2z7xv0mc5fdwzhakthy_M1","contractId":"ctr_7r0g78m2z7xv0mc5fdwzhakthy","employerId":"usr_bd6rp691qa3gq6qac1605c50ch","candida, matérialisation préalable true
+- OK — candidature : double appel idempotent = une seule candidature — ids distincts 1, lignes 1
+- OK — décision : double examine + double shortlist = une seule transition chacune — entrées d'historique 3 (3 attendues)
+- OK — confirmation : double signature = un seul drapeau posé, statut unique — employee_signed=true, status=SIGNATURE
+- OK — Cron/Queue : deux ticks et deux workers simultanés = un seul échéancier, aucun double paiement — événements 1, échéances 7, lignes de paiement 7, doublons 0, cycles 29/0, matérialisé en 7 ms (0 drains d'attente)
+- OK — WebRTC : double signaling idempotent = un seul message persisté — messages OFFER 1
+- OK — paiement : double déclaration = une seule tentative persistée — déclarations 1, statuts 201/201, paiement PENDING_VERIFICATION/CC-SAL-16, exemple {"paymentId":"pay_salary_ctr_6wbscsc1hycd508xxve99ndn64_M1","contractId":"ctr_6wbscsc1hycd508xxve99ndn64","employerId":"usr_rf5wqjqphjs724gtjj3mwbqew3","candida, matérialisation préalable true
+- OK — candidature : double appel idempotent = une seule candidature — ids distincts 1, lignes 1
+- OK — décision : double examine + double shortlist = une seule transition chacune — entrées d'historique 3 (3 attendues)
+- OK — confirmation : double signature = un seul drapeau posé, statut unique — employee_signed=true, status=SIGNATURE
+- OK — Cron/Queue : deux ticks et deux workers simultanés = un seul échéancier, aucun double paiement — événements 1, échéances 7, lignes de paiement 7, doublons 0, cycles 29/0, matérialisé en 10 ms (0 drains d'attente)
+- OK — WebRTC : double signaling idempotent = un seul message persisté — messages OFFER 1
+- OK — paiement : double déclaration = une seule tentative persistée — déclarations 1, statuts 201/201, paiement PENDING_VERIFICATION/CC-SAL-17, exemple {"paymentId":"pay_salary_ctr_habd30pe0c340r8s9sny85e9es_M1","contractId":"ctr_habd30pe0c340r8s9sny85e9es","employerId":"usr_1w28gay30wehtk0wf5an8nr38s","candida, matérialisation préalable true
+- OK — candidature : double appel idempotent = une seule candidature — ids distincts 1, lignes 1
+- OK — décision : double examine + double shortlist = une seule transition chacune — entrées d'historique 3 (3 attendues)
+- OK — confirmation : double signature = un seul drapeau posé, statut unique — employee_signed=true, status=SIGNATURE
+- OK — Cron/Queue : deux ticks et deux workers simultanés = un seul échéancier, aucun double paiement — événements 1, échéances 7, lignes de paiement 7, doublons 0, cycles 0/29, matérialisé en 3 ms (0 drains d'attente)
+- OK — WebRTC : double signaling idempotent = un seul message persisté — messages OFFER 1
+- OK — paiement : double déclaration = une seule tentative persistée — déclarations 1, statuts 201/201, paiement PENDING_VERIFICATION/CC-SAL-18, exemple {"paymentId":"pay_salary_ctr_sfcdmy34fxsv9n3wykan5r8hdd_M1","contractId":"ctr_sfcdmy34fxsv9n3wykan5r8hdd","employerId":"usr_nae9c1fs9xa59np2esmaxvpetz","candida, matérialisation préalable true
+- OK — candidature : double appel idempotent = une seule candidature — ids distincts 1, lignes 1
+- OK — décision : double examine + double shortlist = une seule transition chacune — entrées d'historique 3 (3 attendues)
+- OK — confirmation : double signature = un seul drapeau posé, statut unique — employee_signed=true, status=SIGNATURE
+- OK — Cron/Queue : deux ticks et deux workers simultanés = un seul échéancier, aucun double paiement — événements 1, échéances 7, lignes de paiement 7, doublons 0, cycles 0/29, matérialisé en 3 ms (0 drains d'attente)
+- OK — WebRTC : double signaling idempotent = un seul message persisté — messages OFFER 1
+- OK — paiement : double déclaration = une seule tentative persistée — déclarations 1, statuts 201/201, paiement PENDING_VERIFICATION/CC-SAL-19, exemple {"paymentId":"pay_salary_ctr_pa44kef9k66w6c81ehc5pavkvf_M1","contractId":"ctr_pa44kef9k66w6c81ehc5pavkvf","employerId":"usr_z3kjds64sv1c1cbsntb5tbt7b5","candida, matérialisation préalable true
+- OK — candidature : double appel idempotent = une seule candidature — ids distincts 1, lignes 1
+- OK — décision : double examine + double shortlist = une seule transition chacune — entrées d'historique 3 (3 attendues)
+- OK — confirmation : double signature = un seul drapeau posé, statut unique — employee_signed=true, status=SIGNATURE
+- OK — Cron/Queue : deux ticks et deux workers simultanés = un seul échéancier, aucun double paiement — événements 1, échéances 7, lignes de paiement 7, doublons 0, cycles 0/29, matérialisé en 3 ms (0 drains d'attente)
+- OK — WebRTC : double signaling idempotent = un seul message persisté — messages OFFER 1
+- OK — paiement : double déclaration = une seule tentative persistée — déclarations 1, statuts 201/201, paiement PENDING_VERIFICATION/CC-SAL-20, exemple {"paymentId":"pay_salary_ctr_1rv7s7pj5wtf1wfhs3w7rqt3cd_M1","contractId":"ctr_1rv7s7pj5wtf1wfhs3w7rqt3cd","employerId":"usr_qy9hf94gm6d58n8h8dkyvbnemy","candida, matérialisation préalable true
+- OK — candidature : double appel idempotent = une seule candidature — ids distincts 1, lignes 1
+- OK — décision : double examine + double shortlist = une seule transition chacune — entrées d'historique 3 (3 attendues)
+- OK — confirmation : double signature = un seul drapeau posé, statut unique — employee_signed=true, status=SIGNATURE
+- OK — Cron/Queue : deux ticks et deux workers simultanés = un seul échéancier, aucun double paiement — événements 1, échéances 7, lignes de paiement 7, doublons 0, cycles 29/0, matérialisé en 3 ms (0 drains d'attente)
+- OK — WebRTC : double signaling idempotent = un seul message persisté — messages OFFER 1
+- OK — paiement : double déclaration = une seule tentative persistée — déclarations 1, statuts 201/201, paiement PENDING_VERIFICATION/CC-SAL-21, exemple {"paymentId":"pay_salary_ctr_cnfd1m101me53m20kpqy5ma1zb_M1","contractId":"ctr_cnfd1m101me53m20kpqy5ma1zb","employerId":"usr_m65r24v3pjkj3wxfz3c92w0gb9","candida, matérialisation préalable true
+- OK — candidature : double appel idempotent = une seule candidature — ids distincts 1, lignes 1
+- OK — décision : double examine + double shortlist = une seule transition chacune — entrées d'historique 3 (3 attendues)
+- OK — confirmation : double signature = un seul drapeau posé, statut unique — employee_signed=true, status=SIGNATURE
+- OK — Cron/Queue : deux ticks et deux workers simultanés = un seul échéancier, aucun double paiement — événements 1, échéances 7, lignes de paiement 7, doublons 0, cycles 0/29, matérialisé en 3 ms (0 drains d'attente)
+- OK — WebRTC : double signaling idempotent = un seul message persisté — messages OFFER 1
+- OK — paiement : double déclaration = une seule tentative persistée — déclarations 1, statuts 201/201, paiement PENDING_VERIFICATION/CC-SAL-22, exemple {"paymentId":"pay_salary_ctr_hafn4g68cd70fx70bx0w0mja7c_M1","contractId":"ctr_hafn4g68cd70fx70bx0w0mja7c","employerId":"usr_kjjt006mpeedc5a9nah2asgtah","candida, matérialisation préalable true
+- OK — candidature : double appel idempotent = une seule candidature — ids distincts 1, lignes 1
+- OK — décision : double examine + double shortlist = une seule transition chacune — entrées d'historique 3 (3 attendues)
+- OK — confirmation : double signature = un seul drapeau posé, statut unique — employee_signed=true, status=SIGNATURE
+- OK — Cron/Queue : deux ticks et deux workers simultanés = un seul échéancier, aucun double paiement — événements 1, échéances 7, lignes de paiement 7, doublons 0, cycles 29/0, matérialisé en 3 ms (0 drains d'attente)
+- OK — WebRTC : double signaling idempotent = un seul message persisté — messages OFFER 1
+- OK — paiement : double déclaration = une seule tentative persistée — déclarations 1, statuts 201/201, paiement PENDING_VERIFICATION/CC-SAL-23, exemple {"paymentId":"pay_salary_ctr_enybe1a1vzcd30t3xv3gsk60e5_M1","contractId":"ctr_enybe1a1vzcd30t3xv3gsk60e5","employerId":"usr_5g8srv20sfb5r3ancs68bdr78x","candida, matérialisation préalable true
+- OK — candidature : double appel idempotent = une seule candidature — ids distincts 1, lignes 1
+- OK — décision : double examine + double shortlist = une seule transition chacune — entrées d'historique 3 (3 attendues)
+- OK — confirmation : double signature = un seul drapeau posé, statut unique — employee_signed=true, status=SIGNATURE
+- OK — Cron/Queue : deux ticks et deux workers simultanés = un seul échéancier, aucun double paiement — événements 1, échéances 7, lignes de paiement 7, doublons 0, cycles 0/29, matérialisé en 3 ms (0 drains d'attente)
+- OK — WebRTC : double signaling idempotent = un seul message persisté — messages OFFER 1
+- OK — paiement : double déclaration = une seule tentative persistée — déclarations 1, statuts 201/201, paiement PENDING_VERIFICATION/CC-SAL-24, exemple {"paymentId":"pay_salary_ctr_xkcsexk2ppr7dn7r1g44cs4gy3_M1","contractId":"ctr_xkcsexk2ppr7dn7r1g44cs4gy3","employerId":"usr_f1b99d0gsz58mjjedh0r603mnt","candida, matérialisation préalable true
+
+### 10000 utilisateurs
+
+- OK — candidature : double appel idempotent = une seule candidature — ids distincts 1, lignes 1
+- OK — décision : double examine + double shortlist = une seule transition chacune — entrées d'historique 3 (3 attendues)
+- OK — confirmation : double signature = un seul drapeau posé, statut unique — employee_signed=true, status=SIGNATURE
+- OK — Cron/Queue : deux ticks et deux workers simultanés = un seul échéancier, aucun double paiement — événements 1, échéances 7, lignes de paiement 7, doublons 0, cycles 50/50, matérialisé en 7612 ms (13 drains d'attente)
+- OK — WebRTC : double signaling idempotent = un seul message persisté — messages OFFER 1
+- OK — paiement : double déclaration = une seule tentative persistée — déclarations 1, statuts 201/201, paiement PENDING_VERIFICATION/CC-SAL-0, exemple {"paymentId":"pay_salary_ctr_e1zfzf9nk248mj5rvb1mfn74b1_M1","contractId":"ctr_e1zfzf9nk248mj5rvb1mfn74b1","employerId":"usr_t3wfm6kykt6g14mpqt7cwq30t7","candida, matérialisation préalable true
+- OK — candidature : double appel idempotent = une seule candidature — ids distincts 1, lignes 1
+- OK — décision : double examine + double shortlist = une seule transition chacune — entrées d'historique 3 (3 attendues)
+- OK — confirmation : double signature = un seul drapeau posé, statut unique — employee_signed=true, status=SIGNATURE
+- OK — Cron/Queue : deux ticks et deux workers simultanés = un seul échéancier, aucun double paiement — événements 1, échéances 7, lignes de paiement 7, doublons 0, cycles 15/0, matérialisé en 9 ms (0 drains d'attente)
+- OK — WebRTC : double signaling idempotent = un seul message persisté — messages OFFER 1
+- OK — paiement : double déclaration = une seule tentative persistée — déclarations 1, statuts 201/201, paiement PENDING_VERIFICATION/CC-SAL-1, exemple {"paymentId":"pay_salary_ctr_mjhecs20dxn2j6kape6g3mjecd_M1","contractId":"ctr_mjhecs20dxn2j6kape6g3mjecd","employerId":"usr_1mb58x08gyhtxqme4gjtppybxf","candida, matérialisation préalable true
+- OK — candidature : double appel idempotent = une seule candidature — ids distincts 1, lignes 1
+- OK — décision : double examine + double shortlist = une seule transition chacune — entrées d'historique 3 (3 attendues)
+- OK — confirmation : double signature = un seul drapeau posé, statut unique — employee_signed=true, status=SIGNATURE
+- OK — Cron/Queue : deux ticks et deux workers simultanés = un seul échéancier, aucun double paiement — événements 1, échéances 7, lignes de paiement 7, doublons 0, cycles 41/0, matérialisé en 10 ms (0 drains d'attente)
+- OK — WebRTC : double signaling idempotent = un seul message persisté — messages OFFER 1
+- OK — paiement : double déclaration = une seule tentative persistée — déclarations 1, statuts 201/201, paiement PENDING_VERIFICATION/CC-SAL-2, exemple {"paymentId":"pay_salary_ctr_2chtnant9h4mtqfd1myz28rz4c_M1","contractId":"ctr_2chtnant9h4mtqfd1myz28rz4c","employerId":"usr_qy2gpyn6w7gtktvbsvwbm6yvky","candida, matérialisation préalable true
+- OK — candidature : double appel idempotent = une seule candidature — ids distincts 1, lignes 1
+- OK — décision : double examine + double shortlist = une seule transition chacune — entrées d'historique 3 (3 attendues)
+- OK — confirmation : double signature = un seul drapeau posé, statut unique — employee_signed=true, status=SIGNATURE
+- OK — Cron/Queue : deux ticks et deux workers simultanés = un seul échéancier, aucun double paiement — événements 1, échéances 7, lignes de paiement 7, doublons 0, cycles 1/14, matérialisé en 8 ms (0 drains d'attente)
+- OK — WebRTC : double signaling idempotent = un seul message persisté — messages OFFER 1
+- OK — paiement : double déclaration = une seule tentative persistée — déclarations 1, statuts 201/201, paiement PENDING_VERIFICATION/CC-SAL-3, exemple {"paymentId":"pay_salary_ctr_4raszqcdz7yqy36r4whj0rmawz_M1","contractId":"ctr_4raszqcdz7yqy36r4whj0rmawz","employerId":"usr_18hawbw3bsb5tqvb8x40q2289n","candida, matérialisation préalable true
+- OK — candidature : double appel idempotent = une seule candidature — ids distincts 1, lignes 1
+- OK — décision : double examine + double shortlist = une seule transition chacune — entrées d'historique 3 (3 attendues)
+- OK — confirmation : double signature = un seul drapeau posé, statut unique — employee_signed=true, status=SIGNATURE
+- OK — Cron/Queue : deux ticks et deux workers simultanés = un seul échéancier, aucun double paiement — événements 1, échéances 7, lignes de paiement 7, doublons 0, cycles 29/0, matérialisé en 8 ms (0 drains d'attente)
+- OK — WebRTC : double signaling idempotent = un seul message persisté — messages OFFER 1
+- OK — paiement : double déclaration = une seule tentative persistée — déclarations 1, statuts 201/201, paiement PENDING_VERIFICATION/CC-SAL-4, exemple {"paymentId":"pay_salary_ctr_341c30d1jy703850tqyk1gyq44_M1","contractId":"ctr_341c30d1jy703850tqyk1gyq44","employerId":"usr_yfd960an74089h3rtkq2p2esbh","candida, matérialisation préalable true
+- OK — candidature : double appel idempotent = une seule candidature — ids distincts 1, lignes 1
+- OK — décision : double examine + double shortlist = une seule transition chacune — entrées d'historique 3 (3 attendues)
+- OK — confirmation : double signature = un seul drapeau posé, statut unique — employee_signed=true, status=SIGNATURE
+- OK — Cron/Queue : deux ticks et deux workers simultanés = un seul échéancier, aucun double paiement — événements 1, échéances 7, lignes de paiement 7, doublons 0, cycles 18/11, matérialisé en 27 ms (0 drains d'attente)
+- OK — WebRTC : double signaling idempotent = un seul message persisté — messages OFFER 1
+- OK — paiement : double déclaration = une seule tentative persistée — déclarations 1, statuts 201/201, paiement PENDING_VERIFICATION/CC-SAL-5, exemple {"paymentId":"pay_salary_ctr_ht3gptqtf1pe8x9dp2exahwqvv_M1","contractId":"ctr_ht3gptqtf1pe8x9dp2exahwqvv","employerId":"usr_sfh2njh2tf0rw7mj95rk4mhads","candida, matérialisation préalable true
+- OK — candidature : double appel idempotent = une seule candidature — ids distincts 1, lignes 1
+- OK — décision : double examine + double shortlist = une seule transition chacune — entrées d'historique 3 (3 attendues)
+- OK — confirmation : double signature = un seul drapeau posé, statut unique — employee_signed=true, status=SIGNATURE
+- OK — Cron/Queue : deux ticks et deux workers simultanés = un seul échéancier, aucun double paiement — événements 1, échéances 7, lignes de paiement 7, doublons 0, cycles 29/0, matérialisé en 11 ms (0 drains d'attente)
+- OK — WebRTC : double signaling idempotent = un seul message persisté — messages OFFER 1
+- OK — paiement : double déclaration = une seule tentative persistée — déclarations 1, statuts 201/201, paiement PENDING_VERIFICATION/CC-SAL-6, exemple {"paymentId":"pay_salary_ctr_30vqmae1jps7z76r183r99sbp2_M1","contractId":"ctr_30vqmae1jps7z76r183r99sbp2","employerId":"usr_7g6gj2d5ppdd5828ch68s79nm2","candida, matérialisation préalable true
+- OK — candidature : double appel idempotent = une seule candidature — ids distincts 1, lignes 1
+- OK — décision : double examine + double shortlist = une seule transition chacune — entrées d'historique 3 (3 attendues)
+- OK — confirmation : double signature = un seul drapeau posé, statut unique — employee_signed=true, status=SIGNATURE
+- OK — Cron/Queue : deux ticks et deux workers simultanés = un seul échéancier, aucun double paiement — événements 1, échéances 7, lignes de paiement 7, doublons 0, cycles 0/29, matérialisé en 8 ms (0 drains d'attente)
+- OK — WebRTC : double signaling idempotent = un seul message persisté — messages OFFER 1
+- OK — paiement : double déclaration = une seule tentative persistée — déclarations 1, statuts 201/201, paiement PENDING_VERIFICATION/CC-SAL-7, exemple {"paymentId":"pay_salary_ctr_ge34ch00854gcxfn6wx3tv9hwb_M1","contractId":"ctr_ge34ch00854gcxfn6wx3tv9hwb","employerId":"usr_8scxenjyxk4g5gkyyfq2np74m6","candida, matérialisation préalable true
+- OK — candidature : double appel idempotent = une seule candidature — ids distincts 1, lignes 1
+- OK — décision : double examine + double shortlist = une seule transition chacune — entrées d'historique 3 (3 attendues)
+- OK — confirmation : double signature = un seul drapeau posé, statut unique — employee_signed=true, status=SIGNATURE
+- OK — Cron/Queue : deux ticks et deux workers simultanés = un seul échéancier, aucun double paiement — événements 1, échéances 7, lignes de paiement 7, doublons 0, cycles 0/29, matérialisé en 9 ms (0 drains d'attente)
+- OK — WebRTC : double signaling idempotent = un seul message persisté — messages OFFER 1
+- OK — paiement : double déclaration = une seule tentative persistée — déclarations 1, statuts 201/201, paiement PENDING_VERIFICATION/CC-SAL-8, exemple {"paymentId":"pay_salary_ctr_my1cxzm6d9nj5r0w2m6mmtm6z7_M1","contractId":"ctr_my1cxzm6d9nj5r0w2m6mmtm6z7","employerId":"usr_10ktcngp9d647r1wme1rsked40","candida, matérialisation préalable true
+- OK — candidature : double appel idempotent = une seule candidature — ids distincts 1, lignes 1
+- OK — décision : double examine + double shortlist = une seule transition chacune — entrées d'historique 3 (3 attendues)
+- OK — confirmation : double signature = un seul drapeau posé, statut unique — employee_signed=true, status=SIGNATURE
+- OK — Cron/Queue : deux ticks et deux workers simultanés = un seul échéancier, aucun double paiement — événements 1, échéances 7, lignes de paiement 7, doublons 0, cycles 29/0, matérialisé en 9 ms (0 drains d'attente)
+- OK — WebRTC : double signaling idempotent = un seul message persisté — messages OFFER 1
+- OK — paiement : double déclaration = une seule tentative persistée — déclarations 1, statuts 201/201, paiement PENDING_VERIFICATION/CC-SAL-9, exemple {"paymentId":"pay_salary_ctr_rvq25cwbc5mpr334vq4418je8n_M1","contractId":"ctr_rvq25cwbc5mpr334vq4418je8n","employerId":"usr_cnc1htdxa170t3kjskbnpj28ex","candida, matérialisation préalable true
+- OK — candidature : double appel idempotent = une seule candidature — ids distincts 1, lignes 1
+- OK — décision : double examine + double shortlist = une seule transition chacune — entrées d'historique 3 (3 attendues)
+- OK — confirmation : double signature = un seul drapeau posé, statut unique — employee_signed=true, status=SIGNATURE
+- OK — Cron/Queue : deux ticks et deux workers simultanés = un seul échéancier, aucun double paiement — événements 1, échéances 7, lignes de paiement 7, doublons 0, cycles 29/0, matérialisé en 9 ms (0 drains d'attente)
+- OK — WebRTC : double signaling idempotent = un seul message persisté — messages OFFER 1
+- OK — paiement : double déclaration = une seule tentative persistée — déclarations 1, statuts 201/201, paiement PENDING_VERIFICATION/CC-SAL-10, exemple {"paymentId":"pay_salary_ctr_jesq2we5hes3vkge68wzsqasja_M1","contractId":"ctr_jesq2we5hes3vkge68wzsqasja","employerId":"usr_0mc1rbq2kjvzszpp540rc91rxv","candida, matérialisation préalable true
+- OK — candidature : double appel idempotent = une seule candidature — ids distincts 1, lignes 1
+- OK — décision : double examine + double shortlist = une seule transition chacune — entrées d'historique 3 (3 attendues)
+- OK — confirmation : double signature = un seul drapeau posé, statut unique — employee_signed=true, status=SIGNATURE
+- OK — Cron/Queue : deux ticks et deux workers simultanés = un seul échéancier, aucun double paiement — événements 1, échéances 7, lignes de paiement 7, doublons 0, cycles 29/0, matérialisé en 8 ms (0 drains d'attente)
+- OK — WebRTC : double signaling idempotent = un seul message persisté — messages OFFER 1
+- OK — paiement : double déclaration = une seule tentative persistée — déclarations 1, statuts 201/201, paiement PENDING_VERIFICATION/CC-SAL-11, exemple {"paymentId":"pay_salary_ctr_10wqkjkp4mddrf0w7458d9ktg6_M1","contractId":"ctr_10wqkjkp4mddrf0w7458d9ktg6","employerId":"usr_50gtkajp3wtv50hty75c991rxf","candida, matérialisation préalable true
+- OK — candidature : double appel idempotent = une seule candidature — ids distincts 1, lignes 1
+- OK — décision : double examine + double shortlist = une seule transition chacune — entrées d'historique 3 (3 attendues)
+- OK — confirmation : double signature = un seul drapeau posé, statut unique — employee_signed=true, status=SIGNATURE
+- OK — Cron/Queue : deux ticks et deux workers simultanés = un seul échéancier, aucun double paiement — événements 1, échéances 7, lignes de paiement 7, doublons 0, cycles 0/29, matérialisé en 8 ms (0 drains d'attente)
+- OK — WebRTC : double signaling idempotent = un seul message persisté — messages OFFER 1
+- OK — paiement : double déclaration = une seule tentative persistée — déclarations 1, statuts 201/201, paiement PENDING_VERIFICATION/CC-SAL-12, exemple {"paymentId":"pay_salary_ctr_4me5sqvbadfd5wx3dnja7cq2nt_M1","contractId":"ctr_4me5sqvbadfd5wx3dnja7cq2nt","employerId":"usr_j2jag6s338cx04z3gtjp7m1mpt","candida, matérialisation préalable true
+- OK — candidature : double appel idempotent = une seule candidature — ids distincts 1, lignes 1
+- OK — décision : double examine + double shortlist = une seule transition chacune — entrées d'historique 3 (3 attendues)
+- OK — confirmation : double signature = un seul drapeau posé, statut unique — employee_signed=true, status=SIGNATURE
+- OK — Cron/Queue : deux ticks et deux workers simultanés = un seul échéancier, aucun double paiement — événements 1, échéances 7, lignes de paiement 7, doublons 0, cycles 28/1, matérialisé en 9 ms (0 drains d'attente)
+- OK — WebRTC : double signaling idempotent = un seul message persisté — messages OFFER 1
+- OK — paiement : double déclaration = une seule tentative persistée — déclarations 1, statuts 201/201, paiement PENDING_VERIFICATION/CC-SAL-13, exemple {"paymentId":"pay_salary_ctr_1w0rntb1ktvvxk4824yzjtvz48_M1","contractId":"ctr_1w0rntb1ktvvxk4824yzjtvz48","employerId":"usr_j2fx1rpejeh2dnd53m44wfma24","candida, matérialisation préalable true
+- OK — candidature : double appel idempotent = une seule candidature — ids distincts 1, lignes 1
+- OK — décision : double examine + double shortlist = une seule transition chacune — entrées d'historique 3 (3 attendues)
+- OK — confirmation : double signature = un seul drapeau posé, statut unique — employee_signed=true, status=SIGNATURE
+- OK — Cron/Queue : deux ticks et deux workers simultanés = un seul échéancier, aucun double paiement — événements 1, échéances 7, lignes de paiement 7, doublons 0, cycles 29/0, matérialisé en 8 ms (0 drains d'attente)
+- OK — WebRTC : double signaling idempotent = un seul message persisté — messages OFFER 1
+- OK — paiement : double déclaration = une seule tentative persistée — déclarations 1, statuts 201/201, paiement PENDING_VERIFICATION/CC-SAL-14, exemple {"paymentId":"pay_salary_ctr_5r1cchybq2sfxfwvcdqy3gxvs3_M1","contractId":"ctr_5r1cchybq2sfxfwvcdqy3gxvs3","employerId":"usr_g2qewvzkxqbxxzxv08fxt34weh","candida, matérialisation préalable true
+- OK — candidature : double appel idempotent = une seule candidature — ids distincts 1, lignes 1
+- OK — décision : double examine + double shortlist = une seule transition chacune — entrées d'historique 3 (3 attendues)
+- OK — confirmation : double signature = un seul drapeau posé, statut unique — employee_signed=true, status=SIGNATURE
+- OK — Cron/Queue : deux ticks et deux workers simultanés = un seul échéancier, aucun double paiement — événements 1, échéances 7, lignes de paiement 7, doublons 0, cycles 0/29, matérialisé en 11 ms (0 drains d'attente)
+- OK — WebRTC : double signaling idempotent = un seul message persisté — messages OFFER 1
+- OK — paiement : double déclaration = une seule tentative persistée — déclarations 1, statuts 201/201, paiement PENDING_VERIFICATION/CC-SAL-15, exemple {"paymentId":"pay_salary_ctr_tfcs1rvz04vf8s24y760qthta9_M1","contractId":"ctr_tfcs1rvz04vf8s24y760qthta9","employerId":"usr_n2mpaxy3ykcd8xjjxk60enesje","candida, matérialisation préalable true
+- OK — candidature : double appel idempotent = une seule candidature — ids distincts 1, lignes 1
+- OK — décision : double examine + double shortlist = une seule transition chacune — entrées d'historique 3 (3 attendues)
+- OK — confirmation : double signature = un seul drapeau posé, statut unique — employee_signed=true, status=SIGNATURE
+- OK — Cron/Queue : deux ticks et deux workers simultanés = un seul échéancier, aucun double paiement — événements 1, échéances 7, lignes de paiement 7, doublons 0, cycles 0/29, matérialisé en 7 ms (0 drains d'attente)
+- OK — WebRTC : double signaling idempotent = un seul message persisté — messages OFFER 1
+- OK — paiement : double déclaration = une seule tentative persistée — déclarations 1, statuts 201/201, paiement PENDING_VERIFICATION/CC-SAL-16, exemple {"paymentId":"pay_salary_ctr_8dv3z76g64bnqt44f5r310fx6r_M1","contractId":"ctr_8dv3z76g64bnqt44f5r310fx6r","employerId":"usr_6g6rqeyzy3r36g4wzvjt4rsbny","candida, matérialisation préalable true
+- OK — candidature : double appel idempotent = une seule candidature — ids distincts 1, lignes 1
+- OK — décision : double examine + double shortlist = une seule transition chacune — entrées d'historique 3 (3 attendues)
+- OK — confirmation : double signature = un seul drapeau posé, statut unique — employee_signed=true, status=SIGNATURE
+- OK — Cron/Queue : deux ticks et deux workers simultanés = un seul échéancier, aucun double paiement — événements 1, échéances 7, lignes de paiement 7, doublons 0, cycles 0/29, matérialisé en 8 ms (0 drains d'attente)
+- OK — WebRTC : double signaling idempotent = un seul message persisté — messages OFFER 1
+- OK — paiement : double déclaration = une seule tentative persistée — déclarations 1, statuts 201/201, paiement PENDING_VERIFICATION/CC-SAL-17, exemple {"paymentId":"pay_salary_ctr_jtv3wvbdhy5rvqy3kafh8hdh9x_M1","contractId":"ctr_jtv3wvbdhy5rvqy3kafh8hdh9x","employerId":"usr_9hm254fd9dwvg2an7wxb58ptwv","candida, matérialisation préalable true
+- OK — candidature : double appel idempotent = une seule candidature — ids distincts 1, lignes 1
+- OK — décision : double examine + double shortlist = une seule transition chacune — entrées d'historique 3 (3 attendues)
+- OK — confirmation : double signature = un seul drapeau posé, statut unique — employee_signed=true, status=SIGNATURE
+- OK — Cron/Queue : deux ticks et deux workers simultanés = un seul échéancier, aucun double paiement — événements 1, échéances 7, lignes de paiement 7, doublons 0, cycles 29/0, matérialisé en 8 ms (0 drains d'attente)
+- OK — WebRTC : double signaling idempotent = un seul message persisté — messages OFFER 1
+- OK — paiement : double déclaration = une seule tentative persistée — déclarations 1, statuts 201/201, paiement PENDING_VERIFICATION/CC-SAL-18, exemple {"paymentId":"pay_salary_ctr_70zzg6gjcs91sz9xdh5814qak2_M1","contractId":"ctr_70zzg6gjcs91sz9xdh5814qak2","employerId":"usr_7454qj40a1bhsqhtfhy37004xk","candida, matérialisation préalable true
+- OK — candidature : double appel idempotent = une seule candidature — ids distincts 1, lignes 1
+- OK — décision : double examine + double shortlist = une seule transition chacune — entrées d'historique 3 (3 attendues)
+- OK — confirmation : double signature = un seul drapeau posé, statut unique — employee_signed=true, status=SIGNATURE
+- OK — Cron/Queue : deux ticks et deux workers simultanés = un seul échéancier, aucun double paiement — événements 1, échéances 7, lignes de paiement 7, doublons 0, cycles 0/29, matérialisé en 9 ms (0 drains d'attente)
+- OK — WebRTC : double signaling idempotent = un seul message persisté — messages OFFER 1
+- OK — paiement : double déclaration = une seule tentative persistée — déclarations 1, statuts 201/201, paiement PENDING_VERIFICATION/CC-SAL-19, exemple {"paymentId":"pay_salary_ctr_cx3mntcst7cdf94cwkq2d5qez3_M1","contractId":"ctr_cx3mntcst7cdf94cwkq2d5qez3","employerId":"usr_k2n2z75070rqkjkttk1c6c7418","candida, matérialisation préalable true
+- OK — candidature : double appel idempotent = une seule candidature — ids distincts 1, lignes 1
+- OK — décision : double examine + double shortlist = une seule transition chacune — entrées d'historique 3 (3 attendues)
+- OK — confirmation : double signature = un seul drapeau posé, statut unique — employee_signed=true, status=SIGNATURE
+- OK — Cron/Queue : deux ticks et deux workers simultanés = un seul échéancier, aucun double paiement — événements 1, échéances 7, lignes de paiement 7, doublons 0, cycles 29/0, matérialisé en 8 ms (0 drains d'attente)
+- OK — WebRTC : double signaling idempotent = un seul message persisté — messages OFFER 1
+- OK — paiement : double déclaration = une seule tentative persistée — déclarations 1, statuts 201/201, paiement PENDING_VERIFICATION/CC-SAL-20, exemple {"paymentId":"pay_salary_ctr_exyb4m0wch7rd5kt818x85rfw7_M1","contractId":"ctr_exyb4m0wch7rd5kt818x85rfw7","employerId":"usr_rq1mfsnjrktzbhd51cjttf30nj","candida, matérialisation préalable true
+- OK — candidature : double appel idempotent = une seule candidature — ids distincts 1, lignes 1
+- OK — décision : double examine + double shortlist = une seule transition chacune — entrées d'historique 3 (3 attendues)
+- OK — confirmation : double signature = un seul drapeau posé, statut unique — employee_signed=true, status=SIGNATURE
+- OK — Cron/Queue : deux ticks et deux workers simultanés = un seul échéancier, aucun double paiement — événements 1, échéances 7, lignes de paiement 7, doublons 0, cycles 29/0, matérialisé en 9 ms (0 drains d'attente)
+- OK — WebRTC : double signaling idempotent = un seul message persisté — messages OFFER 1
+- OK — paiement : double déclaration = une seule tentative persistée — déclarations 1, statuts 201/201, paiement PENDING_VERIFICATION/CC-SAL-21, exemple {"paymentId":"pay_salary_ctr_vz4rfd2mp2qpgjzb54z7c1m2c9_M1","contractId":"ctr_vz4rfd2mp2qpgjzb54z7c1m2c9","employerId":"usr_s7d1njzfz3sqhy5wnp0rehfde9","candida, matérialisation préalable true
+- OK — candidature : double appel idempotent = une seule candidature — ids distincts 1, lignes 1
+- OK — décision : double examine + double shortlist = une seule transition chacune — entrées d'historique 3 (3 attendues)
+- OK — confirmation : double signature = un seul drapeau posé, statut unique — employee_signed=true, status=SIGNATURE
+- OK — Cron/Queue : deux ticks et deux workers simultanés = un seul échéancier, aucun double paiement — événements 1, échéances 7, lignes de paiement 7, doublons 0, cycles 0/29, matérialisé en 9 ms (0 drains d'attente)
+- OK — WebRTC : double signaling idempotent = un seul message persisté — messages OFFER 1
+- OK — paiement : double déclaration = une seule tentative persistée — déclarations 1, statuts 201/201, paiement PENDING_VERIFICATION/CC-SAL-22, exemple {"paymentId":"pay_salary_ctr_6wzb990w99zktqvzd9009dzf1r_M1","contractId":"ctr_6wzb990w99zktqvzd9009dzf1r","employerId":"usr_4csfjth2vb8dg6tvsbq25rxf1r","candida, matérialisation préalable true
+- OK — candidature : double appel idempotent = une seule candidature — ids distincts 1, lignes 1
+- OK — décision : double examine + double shortlist = une seule transition chacune — entrées d'historique 3 (3 attendues)
+- OK — confirmation : double signature = un seul drapeau posé, statut unique — employee_signed=true, status=SIGNATURE
+- OK — Cron/Queue : deux ticks et deux workers simultanés = un seul échéancier, aucun double paiement — événements 1, échéances 7, lignes de paiement 7, doublons 0, cycles 0/29, matérialisé en 9 ms (0 drains d'attente)
+- OK — WebRTC : double signaling idempotent = un seul message persisté — messages OFFER 1
+- OK — paiement : double déclaration = une seule tentative persistée — déclarations 1, statuts 201/201, paiement PENDING_VERIFICATION/CC-SAL-23, exemple {"paymentId":"pay_salary_ctr_c1x3mpsz5c9ntvs7ktfd4wbhr7_M1","contractId":"ctr_c1x3mpsz5c9ntvs7ktfd4wbhr7","employerId":"usr_wzaxcn0c9x8sj2zkgjppjaxz2g","candida, matérialisation préalable true
+- OK — candidature : double appel idempotent = une seule candidature — ids distincts 1, lignes 1
+- OK — décision : double examine + double shortlist = une seule transition chacune — entrées d'historique 3 (3 attendues)
+- OK — confirmation : double signature = un seul drapeau posé, statut unique — employee_signed=true, status=SIGNATURE
+- OK — Cron/Queue : deux ticks et deux workers simultanés = un seul échéancier, aucun double paiement — événements 1, échéances 7, lignes de paiement 7, doublons 0, cycles 0/29, matérialisé en 8 ms (0 drains d'attente)
+- OK — WebRTC : double signaling idempotent = un seul message persisté — messages OFFER 1
+- OK — paiement : double déclaration = une seule tentative persistée — déclarations 1, statuts 201/201, paiement PENDING_VERIFICATION/CC-SAL-24, exemple {"paymentId":"pay_salary_ctr_0cf5bsy3wkzzhjd11wybds385m_M1","contractId":"ctr_0cf5bsy3wkzzhjd11wybds385m","employerId":"usr_njvfx3dnrz44qtedma99y7x3je","candida, matérialisation préalable true
+
+## Résilience
+
+- OK — timeout : un timeout client de 1 ms interrompt réellement la requête — 40/40 requêtes interrompues
+- OK — timeout : le serveur continue de répondre après une salve de timeouts — statut 200
+- OK — retry : les nouvelles tentatives sont exécutées et COMPTÉES — 3 tentative(s), statut final 0
+- OK — crash/reprise : les claims orphelins sont récupérés (aucun job perdu en silence) — 24 orphelins semés, 24 récupérés, 0 en dead-letter
+- OK — dead-letter : un message qui échoue durablement est isolé (jamais rejoué en boucle) — issue du drain « dead-letter », statut DEAD_LETTER, tentatives 6, erreur « Contrat ctr_loadtest_absent introuvable. », total dead-letter 1
+- OK — dead-letter : un claim orphelin épuisé est isolé au lieu d’être rejoué indéfiniment — 0 orphelins épuisés, 0 isolés par la récupération
+- OK — backlog : la file se vide par passes bornées, sans croissance silencieuse — PENDING 0 → 0, 15 traités en 2 passes
+- OK — idempotence : les clés d’idempotence sont durablement mémorisées — 379597 clés, 106630 traces d'audit des commandes de charge
+
+- Timeouts : 40/40 observés (timeout client 1 ms).
+- Retries : 3 nouvelles tentatives réellement exécutées.
+- Orphelins : 24 semés, 24 récupérés, 1 en dead-letter (8 ms).
+- Backlog : 15 messages traités en 2 passes (141 ms, 106.38 msg/s), PENDING restant 0.
+- Idempotence : 379597 clés mémorisées, 106630 traces de commandes.
+
+## Sécurité sous charge
+
+- OK — sécurité : le limiteur de débit refuse réellement au-delà de la borne (429) — 40/120 requêtes limitées
+- OK — sécurité : une route interne/cron n’est jamais joignable par HTTP — statut 404
+- OK — sécurité : un paramètre d’identité falsifié sur une route « personnelle » est rejeté — statut 400
+- OK — sécurité : une route protégée reste 401 sans session — statut 401
+- OK — sécurité : les refus sont tracés dans le registre forensique existant — 43 événements forensiques
+
+- Statuts observés pendant la sonde : {"201":81,"400":1,"401":1,"404":1,"429":40}
