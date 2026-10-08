@@ -13,6 +13,7 @@ import { SystemFeedback } from '../../public/SystemFeedback';
 
 import '../theme/theme.css';
 import '../../employer/employer.css';
+import '../../prestataire/prestataire.css';
 import { useEffect, useRef, type ReactNode } from 'react';
 import { PRODUCTION_UNITS, UNIT_COUNTS_BY_FAMILY, type ProductionUnit } from '../generated/productionUnits';
 import { FAMILY_LABELS } from '../generated/chrome';
@@ -21,10 +22,15 @@ import { ROUTE_NAMESPACES, type NamespaceId } from '../../routing/routes';
 import { resolveRoute, type ShellRouteResolution } from '../../routing/resolveRoute';
 import { resolveEmployerScreen } from '../../employer/screenMap';
 import { EmployerRouteFallback } from '../../employer/RouteFallback';
+import { resolvePrestataireScreen } from '../../prestataire/screenMap';
+import { PrestataireRouteFallback } from '../../prestataire/RouteFallback';
 import { Suspense, lazy } from 'react';
 
 /** Écrans EMP chargés uniquement quand une route /client/* livrée est atteinte. */
 const EmployerScreen = lazy(() => import('../../employer/registry').then((module) => ({ default: module.EmployerScreen })));
+
+/** Écrans PRE chargés uniquement quand une route /prestataire/* livrée est atteinte. */
+const PrestataireScreen = lazy(() => import('../../prestataire/registry').then((module) => ({ default: module.PrestataireScreen })));
 import { Link, navigate } from '../../routing/navigation';
 import { integrationStatus } from '../../routing/integration';
 import { SquircleCard } from '../components/SquircleCard';
@@ -176,6 +182,29 @@ function Content({ route }: { route: ShellRouteResolution }) {
    */
   if (route.namespace === 'client' && route.unitId) {
     return <EmployerRouteFallback unitId={route.unitId} pathname={route.pathname} />;
+  }
+
+  /**
+   * Espace candidat livré (P3-DESIGN-PRESTATAIRE) : une route de fiche PRE rend
+   * son écran. Un chemin rattaché à une unité mais sans fiche livrée garde la
+   * réponse de la fondation (écran non intégré) — aucune page métier n'est
+   * inventée.
+   */
+  if (route.namespace === 'prestataire' && route.unitId && resolvePrestataireScreen(route.pathname)) {
+    return (
+      <Suspense fallback={<LoadingRoute />}>
+        <PrestataireScreen unitId={route.unitId} pathname={route.pathname} segments={route.segments} />
+      </Suspense>
+    );
+  }
+
+  /**
+   * Chemin candidat rattaché à une unité PRE mais absent du design (ex.
+   * `/prestataire/contrats`) : l'écran le dit — aucune fiche n'est inventée — au
+   * lieu de retomber sur la notice « non intégré » de la fondation.
+   */
+  if (route.namespace === 'prestataire' && route.unitId) {
+    return <PrestataireRouteFallback unitId={route.unitId} pathname={route.pathname} />;
   }
 
   if (route.isIndex) return <FamilyIndex family={family} index={index} />;

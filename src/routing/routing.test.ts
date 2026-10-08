@@ -80,16 +80,19 @@ export function runRoutingTests(): RoutingTestResult[] {
     return '4 cas';
   });
 
-  check('index : /client (fiche EMP-01 livrée en P2), /prestataire, /admin, /appels, /etat, /fondation', () => {
+  check('index : /client (EMP-01, P2) et /prestataire (PRE-01, P3) sont des tableaux de bord réels ; /admin, /appels, /etat, /fondation = index de fondation', () => {
     // P2-DESIGN-EMPLOYER : la fiche EMP-01 du Master Design a pour route « /client » ;
     // l'index employeur est donc le tableau de bord réel, plus la page de fondation.
     const emp = shellOf('/client');
     assert(emp.isIndex && !emp.notFound && emp.unitId === 'EMP-01', `fiche EMP-01 attendue sur /client, obtenu ${emp.unitId}`);
-    for (const path of ['/prestataire', '/admin', '/appels', '/etat', '/fondation']) {
+    // P3-DESIGN-PRESTATAIRE : idem côté candidat, la fiche PRE-01 a pour route « /prestataire ».
+    const pre = shellOf('/prestataire');
+    assert(pre.isIndex && !pre.notFound && pre.unitId === 'PRE-01', `fiche PRE-01 attendue sur /prestataire, obtenu ${pre.unitId}`);
+    for (const path of ['/admin', '/appels', '/etat', '/fondation']) {
       const route = shellOf(path);
       assert(route.isIndex && !route.notFound && route.unitId === null, `index attendu pour ${path}`);
     }
-    return '1 fiche EMP livrée + 5 index de fondation';
+    return '2 fiches livrées (EMP-01, PRE-01) + 4 index de fondation';
   });
 
   check('unités : toute route de fiche des namespaces est résolue vers une unité (ou un état)', () => {
@@ -167,9 +170,9 @@ export function runRoutingTests(): RoutingTestResult[] {
     return '15 entrées de dock ancrées dans les fiches';
   });
 
-  check('intégration : 0 / 120 intégrée ; PARTIEL = PUB + SYS + les 32 unités EMP (P2) ; PRE/ADM/FIN/RTC non intégrées', () => {
+  check('intégration : 0 / 120 intégrée ; PARTIEL = PUB + SYS + les 32 unités EMP (P2) + les 26 unités PRE (P3) ; ADM/FIN/RTC non intégrées', () => {
     assertEqual(INTEGRATED_UNIT_IDS.length, 0, 'unités intégrées');
-    const partialFamilies = ['PUB', 'SYS', 'EMP'];
+    const partialFamilies = ['PUB', 'SYS', 'EMP', 'PRE'];
     assert(
       PRODUCTION_UNITS.every((unit) => integrationStatus(unit.id) === (partialFamilies.includes(unit.family) ? 'PARTIEL' : 'NON_INTEGRE')),
       'statut inattendu',
@@ -177,7 +180,7 @@ export function runRoutingTests(): RoutingTestResult[] {
     const summary = integrationSummary();
     assertEqual([summary.integrees, summary.total], [0, 120], 'synthèse');
     assertEqual(summary.parFamille, UNIT_COUNTS_BY_FAMILY, 'répartition');
-    return '0 / 120 intégrées ; PARTIEL = PUB (10) + SYS (10) + EMP (32)';
+    return '0 / 120 intégrées ; PARTIEL = PUB (10) + SYS (10) + EMP (32) + PRE (26)';
   });
 
   return results;

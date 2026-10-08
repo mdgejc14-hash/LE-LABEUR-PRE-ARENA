@@ -296,17 +296,20 @@ export async function runEmployerTests(): Promise<{ name: string; success: boole
     }
   });
 
-  check('EMP — intégration : 32 unités EMP PARTIEL, PRE/ADM/FIN/RTC inchangés', () => {
+  check('EMP — intégration : 32 unités EMP PARTIEL, ADM/FIN/RTC inchangés (PRE livré en P3)', () => {
     assert.equal(EMPLOYER_UNIT_IDS.length, 32);
     for (const unitId of EMPLOYER_UNIT_IDS) {
       assert.equal(integrationStatus(unitId), 'PARTIEL', `${unitId} doit être PARTIEL`);
       assert.ok(isEmployerUnit(unitId), `${unitId} doit être reconnue comme unité EMP`);
     }
     for (const unit of PRODUCTION_UNITS) {
-      if (unit.family === 'EMP' || unit.family === 'PUB' || unit.family === 'SYS') continue;
+      // P3-DESIGN-PRESTATAIRE a livré les 26 unités PRE depuis cette tranche EMP :
+      // elles sont PARTIEL, comme PUB/SYS/EMP. Seules ADM/FIN/RTC restent non intégrées.
+      if (unit.family === 'EMP' || unit.family === 'PUB' || unit.family === 'SYS' || unit.family === 'PRE') continue;
       assert.equal(integrationStatus(unit.id), 'NON_INTEGRE', `${unit.id} ne doit pas être touchée par cette tranche`);
     }
     assert.equal(isEmployerUnit('PRE-01'), false);
+    assert.equal(integrationStatus('PRE-01'), 'PARTIEL', 'PRE-01 est livrée par P3-DESIGN-PRESTATAIRE');
   });
 
   check('EMP — erreurs : projection en états StateGuard, corrélation sûre uniquement', () => {

@@ -4,12 +4,19 @@
  * P2-DESIGN-EMPLOYER : les 32 unités EMP sont livrées (écran réel, routes du
  * routeur P0, API existantes) et portent chacune au moins une capacité absente
  * déclarée (`src/employer/gaps.ts`) → statut PARTIEL, jamais INTEGRE tant qu'une
- * donnée de la fiche reste indisponible. Aucune unité PRE/ADM/FIN n'est touchée.
+ * donnée de la fiche reste indisponible.
+ *
+ * P3-DESIGN-PRESTATAIRE : les 26 unités PRE sont livrées (écran réel, routes du
+ * routeur P0, API existantes) et portent chacune au moins une capacité absente
+ * déclarée (`src/prestataire/gaps.ts`) → statut PARTIEL. Aucune unité ADM/FIN/RTC
+ * n'est touchée.
  */
 
 import { PRODUCTION_UNITS, TOTAL_UNITS, UNIT_COUNTS_BY_FAMILY, type ProductionUnit } from '../design-system/generated/productionUnits';
 import { EMPLOYER_DESIGN_UNITS } from '../employer/catalog';
 import { EMPLOYER_UNIT_GAPS } from '../employer/gaps';
+import { PRESTATAIRE_DESIGN_UNITS } from '../prestataire/catalog';
+import { PRESTATAIRE_UNIT_GAPS } from '../prestataire/gaps';
 
 export type IntegrationStatus = 'NON_INTEGRE' | 'PARTIEL' | 'INTEGRE';
 
@@ -28,6 +35,12 @@ const PARTIAL_PUBLIC_AND_SYSTEM: readonly string[] = PRODUCTION_UNITS.filter((un
  */
 export const EMPLOYER_UNIT_IDS: readonly string[] = EMPLOYER_DESIGN_UNITS.map((unit) => unit.id);
 
+/**
+ * Unités PRE livrées par P3-DESIGN-PRESTATAIRE (26 unités, 52 fiches). Même
+ * règle : PARTIEL dès qu'une fiche déclare une capacité absente.
+ */
+export const PRESTATAIRE_UNIT_IDS: readonly string[] = PRESTATAIRE_DESIGN_UNITS.map((unit) => unit.id);
+
 export const PARTIAL_UNIT_IDS: readonly string[] = [
   ...PARTIAL_PUBLIC_AND_SYSTEM,
   ...EMPLOYER_UNIT_IDS.filter((unitId) =>
@@ -35,10 +48,19 @@ export const PARTIAL_UNIT_IDS: readonly string[] = [
       (screenCode) => (EMPLOYER_UNIT_GAPS[screenCode] ?? []).length > 0,
     ),
   ),
+  ...PRESTATAIRE_UNIT_IDS.filter((unitId) =>
+    (PRESTATAIRE_DESIGN_UNITS.find((unit) => unit.id === unitId)?.screenCodes ?? []).some(
+      (screenCode) => (PRESTATAIRE_UNIT_GAPS[screenCode] ?? []).length > 0,
+    ),
+  ),
 ];
 
 export function isEmployerUnit(unitId: string | null): boolean {
   return unitId !== null && EMPLOYER_UNIT_IDS.includes(unitId);
+}
+
+export function isPrestataireUnit(unitId: string | null): boolean {
+  return unitId !== null && PRESTATAIRE_UNIT_IDS.includes(unitId);
 }
 
 export function integrationStatus(unitId: string): IntegrationStatus {
