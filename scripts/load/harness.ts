@@ -31,6 +31,16 @@
  *        vérifié par P0-SECURITY-ANTI-FRAUD, hors mesure de capacité) ;
  *   4. client HTTP in-process (Request → worker.fetch) avec mesure par requête.
  *
+ * P0-LOAD-TESTS-2 (PARTIE 2 — additions strictement additives, la PARTIE 1 est
+ * inchangée dans son comportement) :
+ *   - exposition du port `database` et du worker d'automatisation EXISTANT
+ *     (`automationWorker`, P0-CRON-QUEUE) composé par le même `composeWorker` ;
+ *   - `composePeerAutomationWorker()` : second worker sur la MÊME base pour les
+ *     tests « deux workers simultanés » (même discipline que cronQueue.test.ts) ;
+ *   - horloge métier mutable (`clock`) — les campagnes ne l'avancent jamais ;
+ *   - sonde de latence SQL (`dbProbe`) : chaque requête du moteur embarqué est
+ *     mesurée sans modifier aucun comportement (métriques DB de la PARTIE 2).
+ *
  * DONNÉES : 100 % synthétiques (emails en .invalid, noms préfixés LOADTEST).
  * AUCUN PSP, AUCUN email/SMS réel, AUCUNE cible de production.
  */
@@ -40,7 +50,9 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { composeWorker } from '../../src/backend/api/entry';
+import { composeWorker, type WorkerComposition } from '../../src/backend/api/entry';
+import type { AutomationWorker } from '../../src/backend/automation/worker';
+import type { PostgreSqlDatabase } from '../../src/backend/services/database';
 import { SESSION_COOKIE_NAME } from '../../src/backend/identity/cookies';
 import { base64UrlEncode } from '../../src/backend/identity/ids';
 import { createGoogleCredentialVerifier } from '../../src/backend/identity/googleVerifier';
@@ -91,6 +103,35 @@ export interface UserPair {
 export interface LoadHarness {
   pg: PGlite;
   worker: { fetch(request: Request): Promise<Response> };
+  /** Composition complète du worker (repositories, webrtc, payments…) — lecture seule. */
+  composition: WorkerComposition;
+  /** Port PostgreSQL réel (requêtes + transactions) — mêmes frontières que la production. */
+  database: PostgreSqlDatabase;
+  /**
+   * P0-LOAD-TESTS-2 — worker d'automatisation P0-CRON-QUEUE composé par le MÊME
+   * `composeWorker` (aucun second moteur) : claim verrouillé, retry, dead-letter,
+   * récupération d'orphelins, `runScheduledCycle`. Réutilisé tel quel par les
+   * suites résilience/queue de la PARTIE 2.
+   */
+  automationWorker: AutomationWorker;
+  /**
+   * Compose un SECOND worker d'automatisation sur la MÊME base (même discipline
+   * que `freshAutomationWorker` de cronQueue.test.ts) pour les tests « deux
+   * workers simultanés ». Aucun état partagé en mémoire : seule la base est commune.
+   */
+  composePeerAutomationWorker(): AutomationWorker;
+  /**
+   * Horloge métier MUTABLE, initialisée à l'horloge fixe de campagne. Les
+   * campagnes ne l'avancent JAMAIS (déterminisme identique à la PARTIE 1) ;
+   * les suites résilience l'avancent explicitement (retry, expiration).
+   */
+  clock: { value: Date };
+  /**
+   * P0-LOAD-TESTS-2 — sonde de latence SQL : chaque requête exécutée par le
+   * moteur PostgreSQL embarqué est horodatée (latence + intervalle), sans
+   * modifier aucun comportement. Agrégation dans `metrics.ts`.
+   */
+  dbProbe: DbLatencyProbe;
   employers: SyntheticUser[];
   candidates: SyntheticUser[];
   pairs: UserPair[];
@@ -99,6 +140,19 @@ export interface LoadHarness {
   businessClockIso: string;
   bootstrapMs: number;
   close: () => Promise<void>;
+}
+
+/**
+ * Sonde de latence SQL brute (enregistrement uniquement, aucune interprétation).
+ * `intervals` conserve [début, fin) en ms `performance.now()` pour calculer la
+ * fraction occupée du moteur (fusion des intervalles — voir `aggregateDbLatency`).
+ */
+export interface DbLatencyProbe {
+  latencies: number[];
+  intervals: Array<[number, number]>;
+  transactions: { begun: number; committed: number; rolledBack: number };
+  /** Horodatage `performance.now()` du démarrage du harness (repère des fenêtres). */
+  startedAtMs: number;
 }
 
 /** Politique neutralisée : mesure de capacité brute, explicitement déclarée au rapport. */
@@ -112,14 +166,31 @@ const NEUTRALIZED_RATE_LIMIT: Record<string, RateLimitRule> = {
   'reconciliation-sensitive': { maxRequests: 2_147_483_647, windowMs: 60_000 },
 };
 
-/** Pilote DriverPoolLike sur PGlite — même forme que les tests d'intégration. */
-function createPGliteDriver(database: PGlite): DriverPoolLike {
+/** Pilote DriverPoolLike sur PGlite — même forme que les tests d'intégration.
+ * P0-LOAD-TESTS-2 : chaque requête est mesurée (latence + intervalle) par la
+ * sonde — AUCUN comportement n'est modifié. */
+function createPGliteDriver(database: PGlite, probe: DbLatencyProbe | null): DriverPoolLike {
   const query = async <Row = Record<string, unknown>>(
     sql: string,
     values: readonly unknown[] = [],
   ): Promise<DriverQueryResult<Row>> => {
-    const result = await database.query<Row>(sql, [...values]);
-    return { rows: result.rows, rowCount: result.rowCount };
+    if (!probe) {
+      const direct = await database.query<Row>(sql, [...values]);
+      return { rows: direct.rows, rowCount: direct.rowCount };
+    }
+    const startedAt = performance.now();
+    try {
+      const result = await database.query<Row>(sql, [...values]);
+      return { rows: result.rows, rowCount: result.rowCount };
+    } finally {
+      const endedAt = performance.now();
+      probe.latencies.push(endedAt - startedAt);
+      probe.intervals.push([startedAt, endedAt]);
+      const head = sql.trimStart().slice(0, 7).toUpperCase();
+      if (head.startsWith('BEGIN')) probe.transactions.begun += 1;
+      else if (head.startsWith('COMMIT')) probe.transactions.committed += 1;
+      else if (head.startsWith('ROLLBACK')) probe.transactions.rolledBack += 1;
+    }
   };
   return {
     query,
@@ -236,7 +307,7 @@ export interface CreateLoadHarnessOptions {
 export async function createLoadHarness(options: CreateLoadHarnessOptions): Promise<LoadHarness> {
   const startedAt = performance.now();
   const { employers, candidates } = buildSyntheticUsers(options.userCount);
-  const businessClock = new Date(LOAD_BUSINESS_CLOCK_ISO);
+  const clock = { value: new Date(LOAD_BUSINESS_CLOCK_ISO) };
 
   offerIdempotencyCache.clear();
   const pg = new PGlite();
@@ -245,23 +316,36 @@ export async function createLoadHarness(options: CreateLoadHarnessOptions): Prom
     await pg.exec(readFileSync(resolve(MIGRATIONS_DIR, file), 'utf8'));
   }
 
-  const database = createPostgresDatabase(toPostgresClientPort(createPGliteDriver(pg)));
-  const google = await buildSyntheticCredentials([...employers, ...candidates], businessClock);
+  const dbProbe: DbLatencyProbe = {
+    latencies: [],
+    intervals: [],
+    transactions: { begun: 0, committed: 0, rolledBack: 0 },
+    startedAtMs: startedAt,
+  };
+  const database = createPostgresDatabase(toPostgresClientPort(createPGliteDriver(pg, dbProbe)));
+  const google = await buildSyntheticCredentials([...employers, ...candidates], clock.value);
 
-  const composition = composeWorker(
-    {
-      GOOGLE_CLIENT_ID: LOAD_AUDIENCE,
-      PERSISTENCE: 'postgres',
-      SESSION_TTL_SECONDS: '7200',
-      WORKER_ENV: 'load-tests-p0-load-tests-1',
-    },
-    database,
-    {
-      googleVerifier: google.verifier,
-      now: () => businessClock,
-      rateLimitPolicy: NEUTRALIZED_RATE_LIMIT,
-    },
-  );
+  const compose = (): WorkerComposition =>
+    composeWorker(
+      {
+        GOOGLE_CLIENT_ID: LOAD_AUDIENCE,
+        PERSISTENCE: 'postgres',
+        SESSION_TTL_SECONDS: '7200',
+        WORKER_ENV: 'load-tests-p0-load-tests-1',
+      },
+      database,
+      {
+        googleVerifier: google.verifier,
+        now: () => clock.value,
+        rateLimitPolicy: NEUTRALIZED_RATE_LIMIT,
+      },
+    );
+
+  const composition = compose();
+  if (!composition.automationWorker) {
+    await pg.close();
+    throw new Error('worker d’automatisation attendu dans la composition PostgreSQL durable');
+  }
 
   const maxMatchingProfiles = options.maxMatchingProfiles ?? 200;
   const pairs: UserPair[] = employers.map((employer, index) => ({
@@ -276,6 +360,18 @@ export async function createLoadHarness(options: CreateLoadHarnessOptions): Prom
   return {
     pg,
     worker: composition.worker,
+    composition,
+    database,
+    automationWorker: composition.automationWorker,
+    composePeerAutomationWorker: () => {
+      const peer = compose();
+      if (!peer.automationWorker) {
+        throw new Error('worker d’automatisation attendu dans la composition peer');
+      }
+      return peer.automationWorker;
+    },
+    clock,
+    dbProbe,
     employers,
     candidates,
     pairs,
