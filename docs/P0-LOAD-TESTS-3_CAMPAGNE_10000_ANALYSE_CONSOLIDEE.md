@@ -1,7 +1,8 @@
 # LE LABEUR — P0-LOAD-TESTS-3 — Campagne 10 000 utilisateurs et analyse consolidée (PARTIE 3)
 
 Date d'exécution : 2026-10-08 (Africa/Lagos)
-Branche : `arena/06180368-le-labeur-pre-arena` (nouvelle branche depuis le checkpoint `bdef22e` de `arena/d1db5184-le-labeur-pre-arena`)
+Branche d'origine de la campagne : `arena/06180368-le-labeur-pre-arena` (PR #45, head) — checkpoint `bdef22e` de `arena/d1db5184-le-labeur-pre-arena`.
+Branche de la finalisation : `arena/8b9a140c-le-labeur-pre-arena` (session Arena, même snapshot `c17f880`).
 Mission : P0-LOAD-TESTS-3 — dernière tranche de load tests : 10 000 utilisateurs simulés + analyse finale de charge + consolidation 100 / 1 000 / 2 000 / 10 000.
 
 **Périmètre respecté** : harness et campagnes P0-LOAD-TESTS-1/2 réutilisés intégralement (additions strictement additives). Les campagnes 100 / 1 000 / 2 000 n'ont PAS été rejouées (un seul run de vérification technique à 2 000, hors rapports officiels, pour la mesure mémoire PGlite). Pas de refonte du harness, pas de nouvelle suite de concurrence, pas de reprise de P0-CRON-QUEUE, aucune modification métier. DESIGN FINAL et AUDIT FINAL non commencés.
@@ -66,7 +67,7 @@ Surveillées comme demandé : `matching.run.create` (3ᵉ, 1 142 ms moy.), `appl
 
 La suite de concurrence P0-LOAD-TESTS-2 n'a PAS été recréée : seuls des contrôles d'invariants en base ont été exécutés après la campagne (module `scripts/load/integrity.ts`).
 
-**Résultat tel qu'exécuté : 3/7 contrôles PASS.** Analyse honnête des 4 FAIL — il s'agit de **bugs d'outillage de mesure, corrigés dans le code après exécution, et non de défaillances du système** (la campagne n'a pas été re-jouée, conformément à la directive de finalisation) :
+**Résultat tel qu'exécuté : 3/7 contrôles PASS** (rapport JSON inchangé ; les messages et clés qu'il contient proviennent de la version PRÉ-correction des contrôles). **Revalidation après correction : voir §12.** Analyse honnête des 4 FAIL — il s'agit de **bugs d'outillage de mesure, corrigés dans le code après exécution, et non de défaillances du système** (la campagne n'a pas été re-jouée, conformément à la directive de finalisation) :
 
 | Contrôle | Résultat exécuté | Analyse |
 |---|---|---|
@@ -167,10 +168,13 @@ Voir le rapport final de la tranche (chaque validation : PASS/FAIL/BLOCKED/NOT R
 
 ## 9. Points restant ouverts (tranches suivantes — NON commencés)
 
+_Mis à jour lors de la finalisation : le rejeu I2/I3/I4/I7 est fait à 200 utilisateurs sur PostgreSQL serveur réel (§12) ; le rejeu sur la base 10 000 reste impossible (base non conservée)._
+
 - DESIGN FINAL et AUDIT FINAL (interdits dans cette tranche).
 - Campagne 10 000 sur PGlite (si une machine > 8 Go est disponible) pour la courbe complète PGlite.
 - Mesure du Worker Cloudflare réel + Hyperdrive + TURN (nécessite un compte Cloudflare).
-- Rejeu des contrôles d'intégrité corrigés (I2/I3/I4) sur une campagne 10 000 si une suite de mesure est autorisée.
+- Rejeu des contrôles I2/I3/I4/I7 sur la base 10 000 : impossible sans relancer la campagne (base de données éphémère, supprimée à l'arrêt) — la revalidation est faite à 200 utilisateurs (§12).
+- I6 (idempotence) : dépend de la convergence du drain ; à rendre conditionnel à la convergence si le drain est borné (§12.4).
 - Optimisations de performance (§4.5) — à trancher par le DESIGN FINAL.
 
 ## 10. Reproductibilité
@@ -199,3 +203,54 @@ Rapport brut (échantillons complets, recalculable) : `load-reports/P0-LOAD-TEST
 - `scripts/run-load-tests.ts` : `--suite part3`, `--persistence pglite|postgres-server`, borne 10 000 (mission P0-LOAD-TESTS-3), pool par défaut 250 voies à 10 000, drain dimensionné, budget 2 400 s à 10 000.
 
 Aucune modification du métier, du routeur, des règles de sécurité, du moteur de file ou des migrations.
+
+---
+
+## 12. FINALISATION P0-LOAD-TESTS-3 — revalidation des contrôles I2, I3, I4, I7
+
+### 12.1 Périmètre et règles respectées
+
+- Campagne 10 000 **NON relancée** ; rapports existants **NON supprimés ni modifiés** (`load-reports/P0-LOAD-TESTS-3_users-10000_postgres-server.json` intact).
+- Moteur métier, P0-CRON-QUEUE, P0-NOTIFICATIONS, paiements, matching, réputation, WebRTC, R2 : **aucune modification**. Seuls les contrôles/outils de mesure (`scripts/load/integrity.ts`, appel dans `scripts/run-load-tests.ts`) et un script de revalidation ciblée sont touchés.
+- Revalidation : `npx tsx scripts/load/revalidate-controls.ts --users 200` — PostgreSQL 17.10 serveur réel, 100 parcours complets réels (worker composé réel), **ce n'est pas une campagne** (rapport `load-reports/P0-LOAD-TESTS-3_revalidation_I2-I3-I4-I7.json`, marqué `notOfficialCampaign: true`).
+- Pourquoi 200 utilisateurs : la base de la campagne 10 000 n'a pas été conservée (serveur embarqué éphémère, données supprimées à l'arrêt). Aucune mesure 10 000 n'est donc re-calculée ici ; les métriques historiques restent celles du rapport JSON d'origine.
+
+### 12.2 Diagnostic des 4 contrôles (cause réelle, vérifiée dans le code et les données)
+
+| Contrôle | Défaut d'outillage constaté | Correction appliquée | Preuve |
+|---|---|---|---|
+| **I2** | Le contrôle lisait `contracts.history->>'action'` ; le champ réel est `event`. Corrigé en amont, mais la règle « aucun événement répété » était elle-même trop large : `PAYMENT_DUE` est répété légitimement (une échéance par période et par nature : « Mois 01 commission », « Mois 01 salaire », « Mois 02 salaire »). | (a) événements de cycle de vie (`CONTRACT_CREATED`, `EMPLOYER_SIGNED`, `EMPLOYEE_SIGNED`, `CONTRACT_ACTIVATED_BILATERAL`) au plus une fois par contrat ; (b) aucune paire identique `(event, description)` répétée — capte un double effet réel quel que soit le type d'événement. | Revalidation 200 : PASS sur données réelles ; **sensibilité** : après injection contrôlée de doublons, FAIL (1 contrat cycle de vie, 2 contrats entrée identique). Contrôle négatif : l'ancienne clé `action` produit 100 faux positifs sur les mêmes données. |
+| **I3** | Statut attendu `ACTIVATED` au lieu de `ACTIVE` (matrice P0-F) ; clé de mesure `contractsActivated` mal nommée (valeur stockée `0`, non significative). | Statut `ACTIVE` ; clé `contractsActive` ; assertion « exactement 1 événement `CONTRACT_ACTIVATED_BILATERAL` » conservée. | Revalidation 200 : 100/100 contrats `ACTIVE`, 100/100 activations uniques. Contrôle négatif : `status='ACTIVATED'` = 0 contrat sur les mêmes données. |
+| **I4** | Assertion 1:1 événement↔notification fausse (≈30 types d'événements projettent des notifications). | Garantie retenue : **absence de doublon** selon `(recipient_id, dedupe_key)` uniquement ; le ratio est une mesure informative, plus une assertion. | Revalidation 200 : 1 400 notifications, 300 événements `NOTIFICATION_REQUIRED`, 7 types d'événements outbox ; 0 doublon. |
+| **I7** | Contrôle unique « 0 résidu » : confondait backlog non drainé, jobs futurs normaux, anomalies et échec de convergence. Le rapport d'origine indique une borne de 200 passes atteinte. | Classification explicite (`classifyQueueResidue`, fonction pure) : `NONE`, `FUTURE_PENDING`, `BACKLOG_NON_DRAINE`, `ANOMALIE` (RETRYABLE/DEAD_LETTER/FAILED/RUNNING → FAIL), `ECHEC_CONVERGENCE` (drain déclaré convergé avec résidu **échu**, ou convergence non prouvée → FAIL). La comparaison au temps est celle du worker (`due_at <= horloge`, `available_at <= horloge`). | Tests unitaires des 6 cas : OK. Revalidation : drain borné → `BACKLOG_NON_DRAINE` (390 événements échus, non convergé) ; drain complet → `FUTURE_PENDING` (800 jobs à échéance future). |
+
+**Point de vigilance (I7, honnêteté)** : un I7 PASS signifie « aucune anomalie et aucun échec de convergence ». Il **ne revendique pas la convergence** lorsque le drain a atteint une borne (`BACKLOG_NON_DRAINE` est affiché comme tel dans le détail).
+
+### 12.3 Relecture du rapport 10 000 (sans recalcul, sans modification)
+
+Déductions possibles uniquement à partir des compteurs **stockés** dans le rapport JSON d'origine :
+
+- **Anomalies file = 0** : `queue.depthAfter.outboxByStatus` = {PROCESSED 40 000, PENDING 25 000} (aucun RETRYABLE / DEAD_LETTER) ; `queue.depthAfter.jobsByStatus` = {PENDING 40 000, COMPLETED 30 000} (aucun FAILED / RETRYABLE / RUNNING). Le champ `integrity.measurements.jobsFailed = 40 000` est le **nombre de jobs PENDING**, mal étiqueté par l'ancienne requête — il ne mesure pas des échecs.
+- **Drain** : `converged: false`, `stoppedReason: max-passes`, 200 passes → classification **BACKLOG_NON_DRAINE** (25 000 événements outbox PENDING) et jobs PENDING à échéance future. Cette classification est **déduite** des compteurs stockés, non recalculée en base (la base n'existe plus).
+- **I4 (10 000)** : le check a échoué uniquement sur l'assertion 1:1 retirée ; le détail stocké ne mentionne aucun doublon sur `(recipient_id, dedupe_key)`.
+- **I3 (10 000)** : le détail stocké `contrats ACTIVE: undefined/5000` provient de la clé mal nommée ; le nombre de contrats `ACTIVE` n'a donc **jamais été mesuré** dans le rapport 10 000. Preuves indirectes stockées : 5 000 événements `CONTRACT_ACTIVATED`, 5 000 commandes d'idempotence `automation.CONTRACT_ACTIVATED`.
+- **I2 (10 000)** : la partie `applications` a passé (5 000) ; la partie `contracts` était fausse (clé `action`). **Le contrôle corrigé n'a pas été exécuté à 10 000.**
+
+**Statut I2/I3/I4/I7 à 10 000** : `NON RE-MESURÉ` (base éphémère). Les conclusions ci-dessus sont des déductions documentées, pas des mesures corrigées à cette échelle.
+
+### 12.4 Résultats de la revalidation (200 utilisateurs, PostgreSQL 17.10 serveur réel)
+
+| Phase | I2 | I3 | I4 | I7 | Notes |
+|---|---|---|---|---|---|
+| Drain **borné** (2 passes × 5 événements) | PASS | PASS | PASS | **PASS — BACKLOG_NON_DRAINE** | 390 événements PENDING échus ; 0 RETRYABLE / DEAD_LETTER / FAILED |
+| Drain **complet** (8 passes, convergé) | PASS | PASS | PASS | **PASS — FUTURE_PENDING** | 800 jobs PENDING à échéance future (normal sous horloge fixe) ; 0 résidu échu |
+
+Chiffres réels du drain complet : 1 300 événements outbox PROCESSED, 600 jobs COMPLETED, 800 jobs PENDING futurs, 0 retry, 0 dead-letter, 0 FAILED.
+
+**I6 (hors périmètre, signalé)** : FAIL sur le drain borné (`attendu 100, reçu 0` commandes d'idempotence `CONTRACT_ACTIVATED`) car ces commandes sont écrites par le handler du drain ; PASS après drain complet. Ce contrôle dépend donc de la convergence et doit être rendu conditionnel dans une tranche ultérieure. Non modifié ici (non demandé).
+
+### 12.5 Limites
+
+- Rejeu à 200 utilisateurs, pas à 10 000 : la mise à l'échelle des contrôles est démontrée par la logique et les données (même code, mêmes requêtes), pas par une nouvelle mesure 10 000.
+- Le rapport 10 000 d'origine reste daté de la version pré-correction (queue `limitPerPass 200 / maxPasses 200`). Le code actuel prévoit 500 / 1 500 à 10 000 ; **cette configuration n'a pas été exécutée**. La phrase du §4.5 « bornes dimensionnées après exécution » doit être lue comme une configuration future.
+- Cloudflare, Hyperdrive, TURN : non mesurés (inchangé, §6-7).

@@ -269,6 +269,10 @@ async function runCampaignCli(cli: CliOptions, users: number): Promise<number> {
         users,
         pairs,
         label: `${label} — intégrité`,
+        businessClockIso: harness.businessClockIso,
+        drain: queue
+          ? { converged: queue.converged, stoppedReason: queue.stoppedReason, passCount: queue.passCount }
+          : undefined,
       });
       console.log(`[load] intégrité : ${integrity.summary.passed}/${integrity.summary.checks} contrôles PASS`);
     }
