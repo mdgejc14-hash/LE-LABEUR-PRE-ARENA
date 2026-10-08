@@ -47,14 +47,14 @@ export interface JourneyOutcome {
   skippedSteps: number;
 }
 
-interface StepMeta {
+export interface StepMeta {
   step: string;
   routeKey: string | null;
   method: string;
   template: string;
 }
 
-interface StepResult {
+export interface StepResult {
   status: number;
   json: Record<string, unknown> | null;
   /** En-tête set-cookie brut de la réponse (capture du token de session au login). */
@@ -123,7 +123,7 @@ const QUALIFICATION_ANSWERS = {
  * timeout (latence > seuil, requête non interrompue — mesurée telle quelle),
  * erreur (statut inattendu ou exception). Jamais de résultat simulé.
  */
-async function executeStep(
+export async function executeStep(
   runtime: JourneyRuntime,
   journeyId: string,
   meta: StepMeta,
@@ -178,13 +178,13 @@ async function executeStep(
   return { status, json, setCookie };
 }
 
-function jsonPost(body: unknown, idempotencyKey?: string): RequestInit {
+export function jsonPost(body: unknown, idempotencyKey?: string): RequestInit {
   const headers: Record<string, string> = { 'content-type': 'application/json' };
   if (idempotencyKey) headers['Idempotency-Key'] = idempotencyKey;
   return { method: 'POST', headers, body: JSON.stringify(body) };
 }
 
-function jsonPatch(body: unknown, idempotencyKey: string): RequestInit {
+export function jsonPatch(body: unknown, idempotencyKey: string): RequestInit {
   return {
     method: 'PATCH',
     headers: { 'content-type': 'application/json', 'Idempotency-Key': idempotencyKey },
@@ -192,12 +192,12 @@ function jsonPatch(body: unknown, idempotencyKey: string): RequestInit {
   };
 }
 
-function asId(json: Record<string, unknown> | null, field: string): string | null {
+export function asId(json: Record<string, unknown> | null, field: string): string | null {
   const value = json?.[field];
   return typeof value === 'string' && value.length > 0 ? value : null;
 }
 
-function sessionTokenFrom(result: StepResult): string {
+export function sessionTokenFrom(result: StepResult): string {
   const header = result.setCookie ?? '';
   const match = new RegExp(`${SESSION_COOKIE_NAME}=([^;]+)`).exec(header);
   if (!match || !match[1]) throw new Error('cookie de session absent de la réponse d’authentification');

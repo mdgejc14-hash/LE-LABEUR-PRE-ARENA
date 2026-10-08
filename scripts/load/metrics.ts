@@ -1,5 +1,9 @@
 /**
  * LE LABEUR — P0-LOAD-TESTS-1 — métriques de charge (PARTIE 1 : 100 / 1 000).
+ * P0-LOAD-TESTS-2 — additions : latence SQL (sonde du harness), file
+ * d'automatisation (queue/backlog/drain) et rapports des suites PARTIE 2.
+ * Toutes partagent les MÊMES conventions : nearest-rank, arrondi 2 décimales,
+ * aucun chiffre synthétisé.
  *
  * Collecte les échantillons RÉELS de chaque requête exécutée par le harness
  * (latence mesurée avec `performance.now()` autour de l'appel complet
@@ -113,6 +117,195 @@ export interface CampaignReport {
   steps: StepAggregate[];
   errorsBreakdown: ErrorBreakdownEntry[];
   /** Échantillons bruts de TOUTES les requêtes exécutées (auditabilité totale). */
+  samples: RequestSample[];
+  /**
+   * P0-LOAD-TESTS-2 — latences SQL réelles du moteur embarqué (mesurées par la
+   * sonde du harness pendant la fenêtre de charge). Optionnel : absent des
+   * rapports de la PARTIE 1 (conventions inchangées).
+   */
+  dbLatency?: DbLatencyStats;
+  /**
+   * P0-LOAD-TESTS-2 — file d'automatisation après charge : profondeur réelle,
+   * passes de drain mesurées (queue/backlog/retries/dead-letter). Optionnel.
+   */
+  queue?: QueueDrainReport;
+}
+
+/* ------------------------------------------------------------------ */
+/* P0-LOAD-TESTS-2 — latence SQL du moteur embarqué                    */
+/* ------------------------------------------------------------------ */
+
+/** Agrégats de latence SQL (mêmes conventions que les latences HTTP). */
+export interface DbLatencyStats {
+  queryCount: number;
+  /** Somme des latences individuelles (ms) — peut chevaucher si requêtes concurrentes. */
+  totalMs: number;
+  /** Union des intervalles d'exécution (ms) — fraction réellement occupée du moteur. */
+  busyMs: number;
+  minMs: number;
+  maxMs: number;
+  meanMs: number;
+  p50Ms: number;
+  p95Ms: number;
+  p99Ms: number;
+  transactions: { begun: number; committed: number; rolledBack: number };
+}
+
+/** Forme minimale attendue de la sonde du harness (découplée de harness.ts). */
+export interface DbLatencyProbeLike {
+  latencies: number[];
+  intervals: Array<[number, number]>;
+  transactions: { begun: number; committed: number; rolledBack: number };
+}
+
+/** Fusionne les intervalles [début, fin) chevauchants → temps occupé réel. */
+function mergeIntervals(intervals: ReadonlyArray<[number, number]>): number {
+  if (intervals.length === 0) return 0;
+  const sorted = [...intervals].sort((left, right) => left[0] - right[0]);
+  let busy = 0;
+  let currentStart = sorted[0][0];
+  let currentEnd = sorted[0][1];
+  for (let index = 1; index < sorted.length; index += 1) {
+    const [start, end] = sorted[index];
+    if (start <= currentEnd) {
+      currentEnd = Math.max(currentEnd, end);
+      continue;
+    }
+    busy += currentEnd - currentStart;
+    currentStart = start;
+    currentEnd = end;
+  }
+  busy += currentEnd - currentStart;
+  return busy;
+}
+
+/**
+ * Agrège la sonde SQL sur une fenêtre `performance.now()` (optionnelle) :
+ * compte, percentiles nearest-rank, union des intervalles occupés.
+ */
+export function aggregateDbLatency(
+  probe: DbLatencyProbeLike,
+  window?: { fromMs: number; toMs?: number },
+): DbLatencyStats {
+  const to = window?.toMs ?? Number.POSITIVE_INFINITY;
+  const indices = probe.intervals
+    .map((interval, index) => ({ interval, index }))
+    .filter(({ interval }) => interval[0] >= (window?.fromMs ?? 0) && interval[0] < to);
+  const latencies = indices.map(({ index }) => probe.latencies[index]).sort((a, b) => a - b);
+  if (latencies.length === 0) {
+    return {
+      queryCount: 0, totalMs: 0, busyMs: 0, minMs: 0, maxMs: 0, meanMs: 0,
+      p50Ms: 0, p95Ms: 0, p99Ms: 0,
+      transactions: { begun: 0, committed: 0, rolledBack: 0 },
+    };
+  }
+  const total = latencies.reduce((sum, value) => sum + value, 0);
+  return {
+    queryCount: latencies.length,
+    totalMs: round2(total),
+    busyMs: round2(mergeIntervals(indices.map(({ interval }) => interval))),
+    minMs: round2(latencies[0]),
+    maxMs: round2(latencies[latencies.length - 1]),
+    meanMs: round2(total / latencies.length),
+    p50Ms: round2(nearestRankPercentile(latencies, 50)),
+    p95Ms: round2(nearestRankPercentile(latencies, 95)),
+    p99Ms: round2(nearestRankPercentile(latencies, 99)),
+    transactions: {
+      begun: probe.transactions.begun,
+      committed: probe.transactions.committed,
+      rolledBack: probe.transactions.rolledBack,
+    },
+  };
+}
+
+/* ------------------------------------------------------------------ */
+/* P0-LOAD-TESTS-2 — file d'automatisation (queue / backlog)           */
+/* ------------------------------------------------------------------ */
+
+/** Profondeur réelle de la file, par statut (lecture SQL, jamais estimée). */
+export interface QueueDepthSnapshot {
+  outboxByStatus: Record<string, number>;
+  jobsByStatus: Record<string, number>;
+  totalOutbox: number;
+  totalJobs: number;
+}
+
+/** UNE passe de drain mesurée (claim → handlers → ack), compteurs réels. */
+export interface QueueDrainPass {
+  pass: number;
+  durationMs: number;
+  eventsClaimed: number;
+  eventsCompleted: number;
+  eventsDuplicates: number;
+  eventsRetried: number;
+  eventsDeadLettered: number;
+  jobsClaimed: number;
+  jobsCompleted: number;
+  jobsRetried: number;
+  jobsFailed: number;
+  paymentsSwept: number;
+}
+
+export interface QueueDrainReport {
+  /** Stratégie réelle appliquée : passes bornées du worker P0-CRON-QUEUE existant. */
+  strategy: string;
+  limitPerPass: number;
+  maxPasses: number;
+  budgetMs: number;
+  passCount: number;
+  durationMs: number;
+  /** true = une passe n'a plus rien réclamé (file vide des éléments échus). */
+  converged: boolean;
+  /** Raison honnête si convergence non atteinte (budget, backoff de retry…). */
+  stoppedReason: 'empty-pass' | 'budget' | 'max-passes' | 'retry-backoff-pending';
+  depthBefore: QueueDepthSnapshot;
+  depthAfter: QueueDepthSnapshot;
+  totals: {
+    eventsClaimed: number;
+    eventsCompleted: number;
+    eventsDuplicates: number;
+    eventsRetried: number;
+    eventsDeadLettered: number;
+    jobsClaimed: number;
+    jobsCompleted: number;
+    jobsRetried: number;
+    jobsFailed: number;
+    paymentsSwept: number;
+  };
+  passes: QueueDrainPass[];
+}
+
+/* ------------------------------------------------------------------ */
+/* P0-LOAD-TESTS-2 — rapports des suites (concurrence / résilience)    */
+/* ------------------------------------------------------------------ */
+
+export interface SuiteCheckResult {
+  name: string;
+  success: boolean;
+  detail: string;
+  durationMs: number;
+}
+
+/**
+ * Rapport d'une suite PARTIE 2 — mêmes conventions d'auditabilité que les
+ * campagnes : horodatage, environnement, échelle, résultats nommés et
+ * mesures structurées (jamais de chiffre inventé).
+ */
+export interface SuiteReport {
+  suite: 'concurrency' | 'resilience';
+  mission: string;
+  label: string;
+  startedAtIso: string;
+  nodeVersion: string;
+  platform: string;
+  businessClockIso: string;
+  /** Échelle réelle de la suite (utilisateurs synthétiques, paires, etc.). */
+  scale: Record<string, number | string>;
+  summary: { checks: number; passed: number; failed: number };
+  results: SuiteCheckResult[];
+  /** Mesures structurées propres à la suite (compteurs SQL réels, courses, etc.). */
+  measurements: Record<string, unknown>;
+  /** Échantillons HTTP mesurés pendant la suite (requêtes des parcours/étapes). */
   samples: RequestSample[];
 }
 

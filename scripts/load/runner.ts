@@ -21,6 +21,13 @@ export interface CampaignRunOptions {
   /** Seuil de timeout déclaré (ms) : mesure déclarative — la requête n'est pas interrompue. */
   timeoutMs: number;
   onProgress?: (completed: number, total: number) => void;
+  /**
+   * P0-LOAD-TESTS-2 — sous-ensemble de parcours à exécuter (défaut : TOUS les
+   * parcours du harness, comportement PARTIE 1 inchangé). Utilisé par la suite
+   * concurrence pour générer une charge de fond sur une partie des paires
+   * pendant que les courses de concurrence utilisent les autres.
+   */
+  pairs?: readonly UserPair[];
 }
 
 export interface CampaignRunResult {
@@ -37,7 +44,7 @@ export async function runCampaign(
   const samples: RequestSample[] = [];
   const outcomes: JourneyOutcome[] = [];
   const runtime: JourneyRuntime = { harness, samples, timeoutMs: options.timeoutMs };
-  const pairs: readonly UserPair[] = harness.pairs;
+  const pairs: readonly UserPair[] = options.pairs ?? harness.pairs;
   const effectiveConcurrency = Math.max(1, Math.min(options.concurrency, pairs.length));
 
   let nextIndex = 0;
