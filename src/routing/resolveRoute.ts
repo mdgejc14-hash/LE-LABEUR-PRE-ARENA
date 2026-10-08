@@ -8,6 +8,7 @@ import { PUBLIC_SCREENS } from '../public/catalog';
 
 import { PRODUCTION_UNITS } from '../design-system/generated/productionUnits';
 import { resolveEmployerScreen } from '../employer/screenMap';
+import { resolvePrestataireScreen } from '../prestataire/screenMap';
 import { STATE_GUARD_CATALOG, type StateGuardKey } from '../design-system/generated/stateGuardCatalog';
 import { FOUNDATION_DEMO_PAGES, namespaceFor, type NamespaceId, type ShellId } from './routes';
 
@@ -94,6 +95,17 @@ export function resolveRoute(pathname: string): ResolvedRoute {
    */
   if (definition.id === 'client') {
     const screen = resolveEmployerScreen(match.pathname);
+    const unitId = screen ? screen.unitId : matchProductionUnit(match.pathname);
+    if (unitId !== null) return { ...base, unitId, state: null, notFound: false };
+  }
+
+  /**
+   * Espace candidat livré (P3-DESIGN-PRESTATAIRE) : les fiches PRE livrées
+   * portent leur unité (`PRE-xx`) et l'index `/prestataire` est le tableau de
+   * bord PRE-01. Aucune autre famille n'est résolue ici.
+   */
+  if (definition.id === 'prestataire') {
+    const screen = resolvePrestataireScreen(match.pathname);
     const unitId = screen ? screen.unitId : matchProductionUnit(match.pathname);
     if (unitId !== null) return { ...base, unitId, state: null, notFound: false };
   }
