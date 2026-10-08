@@ -1,0 +1,957 @@
+/*
+ * P0-DESIGN-FOUNDATION — thème Web du Master « Basalte & Dorure ».
+ *
+ * Toutes les valeurs proviennent des variables générées (generated/tokens.css, issues de
+ * design/llab/tokens.py). Aucune couleur brute n'est écrite ici, sauf les valeurs dérivées
+ * explicitement documentées (halo de focus = or 500 à α 0.24, grain SVG).
+ * Le thème n'est appliqué qu'au sein de .lbm-theme : l'application legacy n'est pas affectée.
+ */
+
+/* ───────────────────────── Racine du thème ───────────────────────── */
+
+:root:has(.lbm-theme) {
+  background-color: var(--surface-0);
+}
+
+.lbm-theme {
+  --page-margin: var(--grid-mobile-margin);
+  --page-gutter: var(--grid-mobile-gutter);
+  --page-columns: var(--grid-mobile-columns);
+  color: var(--text-hi);
+  background-color: var(--surface-0);
+  font-family: var(--family-text), system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  font-size: var(--body-size);
+  line-height: var(--body-line-height);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  font-synthesis: none;
+}
+
+.lbm-theme *,
+.lbm-theme *::before,
+.lbm-theme *::after {
+  box-sizing: border-box;
+}
+
+/* Grille (tokens.py SPACING.grille) — seuils provisoires, voir src/design-system/tokens.ts. */
+@media (min-width: 768px) {
+  .lbm-theme {
+    --page-margin: var(--grid-tablet-margin);
+    --page-gutter: var(--grid-tablet-gutter);
+    --page-columns: var(--grid-tablet-columns);
+  }
+}
+
+@media (min-width: 1024px) {
+  .lbm-theme {
+    --page-margin: var(--grid-desktop-margin);
+    --page-gutter: var(--grid-desktop-gutter);
+    --page-columns: var(--grid-desktop-columns);
+  }
+}
+
+/* ───────────────────────── Focus visible (tous les contrôles) ───────────────────────── */
+
+.lbm-theme :focus-visible {
+  outline: var(--focus-ring-width) solid var(--gold-500);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 var(--focus-halo-width) rgba(255, 184, 0, var(--focus-halo-alpha));
+}
+
+.lbm-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.lbm-skip-link {
+  position: absolute;
+  top: var(--space-8);
+  left: var(--space-8);
+  z-index: 100;
+  padding: var(--space-8) var(--space-16);
+  border-radius: var(--r-4);
+  background: var(--surface-3);
+  color: var(--text-hi);
+  transform: translateY(-200%);
+}
+
+.lbm-skip-link:focus-visible {
+  transform: none;
+}
+
+/* ───────────────────────── Typographie ───────────────────────── */
+
+.lbm-theme h1,
+.lbm-theme h2,
+.lbm-theme h3 {
+  margin: 0;
+  font-family: var(--family-display), var(--family-text), system-ui, sans-serif;
+  color: var(--text-hi);
+}
+
+.lbm-title {
+  font-size: var(--title-1-size);
+  font-weight: var(--title-1-weight);
+  line-height: var(--title-1-line-height);
+  letter-spacing: var(--title-1-tracking);
+}
+
+.lbm-title-2 {
+  font-size: var(--title-2-size);
+  font-weight: var(--title-2-weight);
+  line-height: var(--title-2-line-height);
+  letter-spacing: var(--title-2-tracking);
+}
+
+.lbm-title-3 {
+  font-size: var(--title-3-size);
+  font-weight: var(--title-3-weight);
+  line-height: var(--title-3-line-height);
+  letter-spacing: var(--title-3-tracking);
+}
+
+.lbm-lede {
+  margin: var(--space-8) 0 0;
+  font-size: var(--headline-size);
+  font-weight: var(--headline-weight);
+  line-height: var(--headline-line-height);
+  color: var(--text-mid);
+}
+
+.lbm-body {
+  margin: 0;
+  font-size: var(--body-size);
+  line-height: var(--body-line-height);
+}
+
+.lbm-caption {
+  margin: 0;
+  font-size: var(--caption-size);
+  font-weight: var(--caption-weight);
+  line-height: var(--caption-line-height);
+  letter-spacing: var(--caption-tracking);
+}
+
+.lbm-kicker {
+  margin: 0 0 var(--space-8);
+  font-size: var(--caps-size);
+  font-weight: var(--caps-weight);
+  line-height: var(--caps-line-height);
+  letter-spacing: var(--caps-tracking);
+  text-transform: uppercase;
+  color: var(--text-mid);
+}
+
+/* Texte secondaire : --text-mid (8.8:1). --text-lo (4.07:1 mesuré) n'est pas utilisé pour du texte essentiel. */
+.lbm-muted {
+  color: var(--text-mid);
+}
+
+.lbm-mono {
+  font-family: var(--family-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-weight: 400;
+  letter-spacing: 0.01em;
+}
+
+/* ───────────────────────── Verre (C-01) ───────────────────────── */
+
+.lbm-glass {
+  position: relative;
+  isolation: isolate;
+  border-radius: var(--r-6);
+  background-color: var(--glass-1-tint);
+  -webkit-backdrop-filter: blur(var(--glass-1-blur)) saturate(var(--glass-1-saturate));
+  backdrop-filter: blur(var(--glass-1-blur)) saturate(var(--glass-1-saturate));
+}
+
+.lbm-glass--l2 {
+  background-color: var(--glass-2-tint);
+  -webkit-backdrop-filter: blur(var(--glass-2-blur)) saturate(var(--glass-2-saturate));
+  backdrop-filter: blur(var(--glass-2-blur)) saturate(var(--glass-2-saturate));
+}
+
+.lbm-glass--l3 {
+  background-color: var(--glass-3-tint);
+  -webkit-backdrop-filter: blur(var(--glass-3-blur)) saturate(var(--glass-3-saturate));
+  backdrop-filter: blur(var(--glass-3-blur)) saturate(var(--glass-3-saturate));
+}
+
+.lbm-glass--l4 {
+  background-color: var(--glass-4-tint);
+  -webkit-backdrop-filter: blur(var(--glass-4-blur)) saturate(var(--glass-4-saturate));
+  backdrop-filter: blur(var(--glass-4-blur)) saturate(var(--glass-4-saturate));
+}
+
+/* Repli opaque : budget de verre profond dépassé, appareil < 4 Go, ou navigateur sans backdrop-filter. */
+.lbm-glass--opaque,
+.lbm-glass[data-glass-mode='opaque-lowmem'],
+.lbm-glass[data-glass-mode='opaque-budget'] {
+  background-color: var(--surface-2);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .lbm-glass {
+    background-color: var(--surface-2);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
+.lbm-elev-1 {
+  box-shadow: var(--elevation-1);
+}
+
+.lbm-elev-2 {
+  box-shadow: var(--elevation-2);
+}
+
+.lbm-elev-3 {
+  box-shadow: var(--elevation-3);
+}
+
+.lbm-elev-4 {
+  box-shadow: var(--elevation-4);
+}
+
+/* Grain : bruit fractal SVG (feTurbulence baseFrequency 0.8), opacité 3 %, blend overlay. Décoratif. */
+.lbm-grain {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: var(--grain-opacity);
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.8' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+}
+
+/* Rim-light : arête haute 1 px, intensité selon l'élévation (0.06 → 0.18). Décoratif. */
+.lbm-rim {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: -1;
+  height: 1px;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, var(--rim-alpha, 0)) 18%, rgba(255, 255, 255, var(--rim-alpha, 0)) 82%, transparent);
+}
+
+/* ───────────────────────── Squircle (C-02) ───────────────────────── */
+
+.lbm-squircle {
+  position: relative;
+  isolation: isolate;
+  background-color: var(--surface-2);
+  border-radius: var(--squircle-22);
+}
+
+.lbm-squircle--active {
+  background-color: var(--surface-3);
+}
+
+.lbm-squircle--shaped {
+  background-color: transparent;
+}
+
+.lbm-squircle__shape {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: -1;
+  overflow: visible;
+  pointer-events: none;
+  filter: drop-shadow(var(--sq-shadow, 0 0 0 transparent));
+}
+
+.lbm-squircle__fill {
+  fill: var(--surface-2);
+  stroke: rgba(255, 255, 255, var(--rim-alpha, 0.06));
+  stroke-width: 1px;
+  vector-effect: non-scaling-stroke;
+}
+
+.lbm-squircle--active .lbm-squircle__fill {
+  fill: var(--surface-3);
+}
+
+.lbm-squircle__content {
+  position: relative;
+  padding: var(--space-20);
+}
+
+/* ───────────────────────── Bouton neumorphique (C-03) ───────────────────────── */
+
+.lbm-neo {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-8);
+  min-height: var(--touch-target-mobile);
+  min-width: var(--touch-target-mobile);
+  padding: var(--space-8) var(--space-20);
+  border: 1px solid transparent;
+  border-radius: var(--r-5);
+  background-color: transparent;
+  color: var(--text-hi);
+  font-family: var(--family-text), system-ui, sans-serif;
+  font-size: var(--callout-size);
+  font-weight: 600;
+  line-height: var(--callout-line-height);
+  letter-spacing: 0;
+  text-align: center;
+  cursor: pointer;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    background-color var(--duration-base) var(--ease-labeur-out),
+    border-color var(--duration-base) var(--ease-labeur-out),
+    color var(--duration-base) var(--ease-labeur-out);
+}
+
+.lbm-neo--primary {
+  background-color: var(--gold-500);
+  color: var(--surface-0);
+  box-shadow: var(--elevation-1);
+}
+
+.lbm-neo--ghost {
+  border-color: var(--text-mid);
+  color: var(--text-hi);
+}
+
+.lbm-neo--text {
+  padding-inline: var(--space-8);
+  color: var(--text-gold);
+}
+
+.lbm-neo--full {
+  width: 100%;
+}
+
+@media (hover: hover) {
+  .lbm-neo--primary:hover:not(:disabled):not([aria-disabled='true']) {
+    background-color: var(--gold-400);
+  }
+  .lbm-neo--ghost:hover:not(:disabled):not([aria-disabled='true']) {
+    background-color: var(--surface-3);
+  }
+  .lbm-neo--text:hover:not(:disabled):not([aria-disabled='true']) {
+    text-decoration: underline;
+  }
+}
+
+/* Enfoncement : ombre interne (E1 retournée), pilotée par motion (ressort snap). */
+.lbm-neo__press {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.4);
+  opacity: 0;
+}
+
+.lbm-neo__label,
+.lbm-neo__icon {
+  position: relative;
+}
+
+.lbm-neo:disabled,
+.lbm-neo[aria-disabled='true'] {
+  color: var(--slate-500);
+  background-color: var(--surface-1);
+  border-color: var(--surface-3);
+  box-shadow: none;
+  cursor: not-allowed;
+}
+
+.lbm-neo[aria-busy='true'] {
+  cursor: progress;
+}
+
+/* ───────────────────────── Sceau de statut (C-04) ───────────────────────── */
+
+.lbm-seal {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-8);
+  color: var(--text-hi);
+  font-family: var(--family-text), system-ui, sans-serif;
+  font-size: var(--caption-size);
+  font-weight: 600;
+  line-height: var(--caption-line-height);
+}
+
+.lbm-seal--sm {
+  font-size: var(--micro-size);
+  line-height: var(--micro-line-height);
+  letter-spacing: var(--micro-tracking);
+}
+
+.lbm-seal__mark {
+  position: relative;
+  display: inline-block;
+  flex: none;
+  width: 32px;
+  height: 32px;
+}
+
+.lbm-seal--sm .lbm-seal__mark {
+  width: 22px;
+  height: 22px;
+}
+
+.lbm-seal__ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: conic-gradient(from 200deg, var(--seal-color), transparent 42%, var(--seal-color));
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2px));
+}
+
+.lbm-seal__glyph {
+  position: absolute;
+  inset: 25%;
+  display: flex;
+  color: var(--seal-color);
+}
+
+.lbm-seal__glyph svg {
+  width: 100%;
+  height: 100%;
+  fill: currentColor;
+  fill-opacity: 0.12;
+  stroke: currentColor;
+  stroke-width: 1.5;
+}
+
+/* Halo : seul élément animé en boucle (un par écran). Alpha ≤ 0.20 (or 0.16, émeraude 0.14). */
+.lbm-seal__halo {
+  position: absolute;
+  inset: -8px;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, var(--gold-aura), transparent);
+  animation: lbm-breathe var(--duration-halo-pulse) ease-in-out infinite;
+}
+
+.lbm-seal[data-tone='emerald'] .lbm-seal__halo {
+  background: radial-gradient(closest-side, var(--emerald-aura), transparent);
+}
+
+@keyframes lbm-breathe {
+  0%,
+  100% {
+    opacity: 0.4;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* ───────────────────────── Squelette (SYS-01 : pas de spinner nu) ───────────────────────── */
+
+.lbm-skeleton {
+  display: block;
+  height: 14px;
+  margin-block: var(--space-8);
+  border-radius: var(--r-3);
+  background-image: linear-gradient(90deg, rgba(255, 255, 255, 0.03) 0%, rgba(255, 255, 255, 0.06) 50%, rgba(255, 255, 255, 0.03) 100%);
+  background-size: 200% 100%;
+  /* Balayage 1 600 ms (fiche SYS-01 : « balayage 1 600 ms, opacité 0.03 → 0.06 »). */
+  animation: lbm-shimmer 1600ms linear infinite;
+}
+
+.lbm-skeleton--wide {
+  width: 70%;
+  height: 22px;
+}
+
+.lbm-skeleton--short {
+  width: 40%;
+}
+
+@keyframes lbm-shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -100% 0;
+  }
+}
+
+/* ───────────────────────── StateGuard (C-19) ───────────────────────── */
+
+.lbm-state {
+  width: 100%;
+  max-width: 560px;
+  margin-inline: auto;
+}
+
+.lbm-state__card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+}
+
+.lbm-state__card > .lbm-squircle__content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+  padding: var(--space-24);
+}
+
+.lbm-state__hero {
+  display: flex;
+  align-items: center;
+  gap: var(--space-16);
+}
+
+.lbm-state__title {
+  font-size: var(--title-1-size);
+  font-weight: var(--title-1-weight);
+  line-height: var(--title-1-line-height);
+  letter-spacing: var(--title-1-tracking);
+}
+
+.lbm-state__explanation,
+.lbm-state__guarantees li {
+  margin: 0;
+  font-size: var(--body-size);
+  line-height: var(--body-line-height);
+  color: var(--text-hi);
+}
+
+.lbm-state__guarantees ul {
+  margin: var(--space-8) 0 0;
+  padding-left: var(--space-20);
+  color: var(--text-mid);
+}
+
+.lbm-state__kicker {
+  margin: 0;
+  font-size: var(--caps-size);
+  font-weight: var(--caps-weight);
+  line-height: var(--caps-line-height);
+  letter-spacing: var(--caps-tracking);
+  text-transform: uppercase;
+  color: var(--text-mid);
+}
+
+.lbm-state__correlation {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-8) var(--space-12);
+}
+
+.lbm-state__code {
+  font-family: var(--family-mono), ui-monospace, monospace;
+  font-size: var(--caption-size);
+  color: var(--text-hi);
+  overflow-wrap: anywhere;
+}
+
+.lbm-state__copy-icon {
+  display: inline-flex;
+}
+
+.lbm-state__actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+@media (min-width: 768px) {
+  .lbm-state__actions {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+}
+
+/* ───────────────────────── Appbar, chrome minimal, dock (C-20) ───────────────────────── */
+
+.lbm-shell {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  min-height: 100dvh;
+  background-color: var(--surface-0);
+  color: var(--text-hi);
+}
+
+.lbm-appbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: var(--space-12);
+  min-height: var(--touch-target-mobile);
+  padding: var(--space-8) var(--page-margin);
+  border-bottom: 1px solid var(--stroke-sub);
+  background-color: var(--surface-1);
+}
+
+.lbm-appbar__glyph {
+  color: var(--text-gold);
+  font-size: var(--title-3-size);
+  line-height: 1;
+}
+
+.lbm-appbar__title {
+  font-family: var(--family-display), var(--family-text), sans-serif;
+  font-size: var(--title-3-size);
+  font-weight: var(--title-3-weight);
+  line-height: var(--title-3-line-height);
+  letter-spacing: 0.04em;
+  color: var(--text-hi);
+}
+
+.lbm-chrome-minimal {
+  display: flex;
+  justify-content: center;
+  padding: var(--space-16) var(--page-margin) 0;
+  color: var(--text-mid);
+}
+
+.lbm-chrome-minimal__glyph {
+  font-size: var(--title-2-size);
+  line-height: 1;
+}
+
+.lbm-main {
+  flex: 1;
+  width: 100%;
+  min-width: 0;
+  max-width: var(--grid-max-width);
+  margin-inline: auto;
+  padding: var(--space-24) var(--page-margin) var(--space-32);
+}
+
+/* Le conteneur reçoit le focus au changement de page (ShellRoute) : pas de contour de conteneur. */
+.lbm-main:focus,
+.lbm-main:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
+.lbm-dock {
+  position: sticky;
+  bottom: 0;
+  z-index: 20;
+  margin: 0 var(--page-margin) var(--space-12);
+  border-radius: var(--squircle-34);
+  border: 1px solid var(--stroke-sub);
+}
+
+.lbm-dock--solid {
+  background-color: var(--surface-3);
+  border-radius: var(--squircle-34);
+}
+
+.lbm-dock__list {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: var(--space-4);
+  margin: 0;
+  padding: var(--space-8);
+  list-style: none;
+}
+
+.lbm-dock__cell {
+  display: flex;
+  min-width: 0;
+}
+
+.lbm-dock__item {
+  position: relative;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-4);
+  min-height: var(--touch-target-mobile);
+  min-width: var(--touch-target-mobile);
+  padding: var(--space-8) var(--space-4);
+  border-radius: var(--r-6);
+  color: var(--text-mid);
+  text-decoration: none;
+  text-align: center;
+}
+
+.lbm-dock__item--active {
+  color: var(--text-gold);
+}
+
+/* Indicateur actif : forme de surface-4 (« éléments sélectionnés »), morphing motion. */
+.lbm-dock__indicator {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background-color: var(--surface-4);
+}
+
+.lbm-dock__icon {
+  flex: none;
+}
+
+.lbm-dock__label {
+  font-family: var(--family-text), system-ui, sans-serif;
+  font-size: var(--micro-size);
+  font-weight: 600;
+  line-height: var(--micro-line-height);
+  letter-spacing: var(--micro-tracking);
+}
+
+/* ───────────────────────── Pages de démonstration et index ───────────────────────── */
+
+.lbm-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+  width: 100%;
+}
+
+.lbm-page--wide {
+  gap: var(--space-40);
+}
+
+.lbm-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+}
+
+.lbm-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12);
+}
+
+.lbm-grid {
+  display: grid;
+  grid-template-columns: repeat(var(--grid-mobile-columns), minmax(0, 1fr));
+  gap: var(--grid-mobile-gutter);
+}
+
+.lbm-cell {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+
+@media (min-width: 768px) {
+  .lbm-grid {
+    grid-template-columns: repeat(var(--grid-tablet-columns), minmax(0, 1fr));
+    gap: var(--grid-tablet-gutter);
+  }
+  .lbm-cell--half {
+    grid-column: span 4;
+  }
+}
+
+@media (min-width: 1024px) {
+  .lbm-grid {
+    grid-template-columns: repeat(var(--grid-desktop-columns), minmax(0, 1fr));
+    gap: var(--grid-desktop-gutter);
+  }
+  .lbm-cell--half {
+    grid-column: span 6;
+  }
+  .lbm-cell--third {
+    grid-column: span 4;
+  }
+}
+
+.lbm-sample {
+  padding: var(--space-16);
+  min-height: var(--touch-target-mobile);
+}
+
+.lbm-sample--glass {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-16);
+}
+
+.lbm-button-row,
+.lbm-seal-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-12);
+}
+
+.lbm-dock-samples {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+}
+
+.lbm-dock-samples .lbm-dock {
+  position: relative;
+  margin: 0;
+  bottom: auto;
+}
+
+.lbm-link-grid,
+.lbm-unit-list,
+.lbm-state-index,
+.lbm-swatch-list,
+.lbm-type-list,
+.lbm-facts-list {
+  display: grid;
+  gap: var(--space-8);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.lbm-link-grid {
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+}
+
+.lbm-link-card > :first-child,
+.lbm-state-index__link > :first-child {
+  flex: none;
+  white-space: nowrap;
+}
+
+.lbm-link-card,
+.lbm-state-index__link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-12);
+  min-height: var(--touch-target-mobile);
+  padding: var(--space-8) var(--space-16);
+  border: 1px solid var(--stroke-mid);
+  border-radius: var(--r-5);
+  background-color: var(--surface-2);
+  color: var(--text-hi);
+  text-decoration: none;
+}
+
+.lbm-unit-list__item {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: var(--space-12);
+  padding: var(--space-8) 0;
+  border-bottom: 1px solid var(--stroke-sub);
+}
+
+.lbm-unit-list__id {
+  color: var(--text-mid);
+  font-size: var(--caption-size);
+}
+
+.lbm-unit-list__label {
+  font-size: var(--callout-size);
+}
+
+.lbm-state-index__link {
+  justify-content: flex-start;
+}
+
+.lbm-swatches {
+  display: grid;
+  gap: var(--space-24);
+}
+
+.lbm-swatch-list {
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: var(--space-12);
+}
+
+.lbm-swatch {
+  display: flex;
+  gap: var(--space-12);
+  align-items: center;
+}
+
+.lbm-swatch__chip {
+  flex: none;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--r-4);
+  border: 1px solid var(--stroke-mid);
+}
+
+.lbm-swatch__meta {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  font-size: var(--caption-size);
+  overflow-wrap: anywhere;
+}
+
+.lbm-type-sample {
+  color: var(--text-hi);
+}
+
+.lbm-facts dl {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: var(--space-8) var(--space-16);
+  margin: 0;
+}
+
+.lbm-facts dt {
+  color: var(--text-mid);
+  font-size: var(--caption-size);
+}
+
+.lbm-facts dd {
+  margin: 0;
+}
+
+.lbm-route-fallback {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  min-height: 100vh;
+  min-height: 100dvh;
+  padding: var(--space-24) var(--grid-mobile-margin);
+  background-color: var(--surface-0);
+}
+
+/* ───────────────────────── Réduction de mouvement (prefers-reduced-motion) ───────────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  /* Springs remplacés par un fondu de 120 ms ; aucun déplacement ; halos figés à 40 %. */
+  .lbm-theme *,
+  .lbm-theme *::before,
+  .lbm-theme *::after {
+    animation: none !important;
+    scroll-behavior: auto !important;
+    transition-property: opacity, color, background-color, border-color, text-decoration-color !important;
+    transition-duration: var(--duration-micro) !important;
+    transition-timing-function: var(--ease-labeur-out) !important;
+  }
+
+  .lbm-seal__halo {
+    opacity: 0.4;
+  }
+
+  .lbm-skeleton {
+    background-image: none;
+    background-color: rgba(255, 255, 255, 0.03);
+  }
+}
