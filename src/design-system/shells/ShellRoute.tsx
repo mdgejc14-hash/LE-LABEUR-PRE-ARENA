@@ -12,12 +12,19 @@ import { SystemFeedback } from '../../public/SystemFeedback';
  */
 
 import '../theme/theme.css';
+import '../../employer/employer.css';
 import { useEffect, useRef, type ReactNode } from 'react';
 import { PRODUCTION_UNITS, UNIT_COUNTS_BY_FAMILY, type ProductionUnit } from '../generated/productionUnits';
 import { FAMILY_LABELS } from '../generated/chrome';
 import { STATE_GUARD_CATALOG, type StateGuardKey } from '../generated/stateGuardCatalog';
 import { ROUTE_NAMESPACES, type NamespaceId } from '../../routing/routes';
 import { resolveRoute, type ShellRouteResolution } from '../../routing/resolveRoute';
+import { resolveEmployerScreen } from '../../employer/screenMap';
+import { EmployerRouteFallback } from '../../employer/RouteFallback';
+import { Suspense, lazy } from 'react';
+
+/** Écrans EMP chargés uniquement quand une route /client/* livrée est atteinte. */
+const EmployerScreen = lazy(() => import('../../employer/registry').then((module) => ({ default: module.EmployerScreen })));
 import { Link, navigate } from '../../routing/navigation';
 import { integrationStatus } from '../../routing/integration';
 import { SquircleCard } from '../components/SquircleCard';
@@ -74,6 +81,16 @@ function FamilyIndex({ family, index }: { family: FamilyCode; index: string }) {
           </li>
         ))}
       </ol>
+    </div>
+  );
+}
+
+function LoadingRoute(): ReactNode {
+  return (
+    <div className="lbm-page" role="status" aria-live="polite">
+      <span className="lbm-sr-only">Chargement de l’espace employeur</span>
+      <span className="lbm-skeleton lbm-skeleton--wide" aria-hidden="true" />
+      <span className="lbm-skeleton" aria-hidden="true" />
     </div>
   );
 }
@@ -136,6 +153,29 @@ function Content({ route }: { route: ShellRouteResolution }) {
   if (route.namespace === 'etat') {
     if (route.isIndex) return <StateIndex />;
     return <SystemState state={route.state ?? '404'} exitHref="/accueil" />;
+  }
+
+  /**
+   * Espace employeur livré (P2-DESIGN-EMPLOYER) : une route de fiche EMP rend son
+   * écran. Un chemin rattaché à une unité mais sans fiche livrée garde la réponse
+   * de la fondation (écran non intégré) — aucune page métier n'est inventée.
+   */
+  if (route.namespace === 'client' && route.unitId && resolveEmployerScreen(route.pathname)) {
+    return (
+      <Suspense fallback={<LoadingRoute />}>
+        <EmployerScreen unitId={route.unitId} pathname={route.pathname} segments={route.segments} />
+      </Suspense>
+    );
+  }
+
+  /**
+   * Chemin employeur rattaché à une unité EMP mais absent du design (ex.
+   * `/client/contrats`) : l'écran le dit — aucune fiche n'est inventée — au lieu
+   * de retomber sur la notice « non intégré » de la fondation, qui ne décrit
+   * plus l'état réel de la famille.
+   */
+  if (route.namespace === 'client' && route.unitId) {
+    return <EmployerRouteFallback unitId={route.unitId} pathname={route.pathname} />;
   }
 
   if (route.isIndex) return <FamilyIndex family={family} index={index} />;

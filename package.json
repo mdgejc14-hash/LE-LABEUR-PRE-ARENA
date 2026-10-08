@@ -22,7 +22,10 @@
     "design:tokens": "python3 scripts/design/generate-frontend-tokens.py",
     "design:tokens:check": "python3 scripts/design/generate-frontend-tokens.py --check",
     "verify:public-ui": "tsx scripts/verify-public-ui.ts",
-    "design:public:check": "python3 scripts/design/generate-public-catalog.py --check"
+    "design:public:check": "python3 scripts/design/generate-public-catalog.py --check",
+    "design:employer": "python3 scripts/design/generate-employer-catalog.py",
+    "design:employer:check": "python3 scripts/design/generate-employer-catalog.py --check",
+    "verify:employer-ui": "tsx scripts/verify-employer-ui.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

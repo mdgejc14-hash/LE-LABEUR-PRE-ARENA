@@ -7,6 +7,7 @@ import { PUBLIC_SCREENS } from '../public/catalog';
  */
 
 import { PRODUCTION_UNITS } from '../design-system/generated/productionUnits';
+import { resolveEmployerScreen } from '../employer/screenMap';
 import { STATE_GUARD_CATALOG, type StateGuardKey } from '../design-system/generated/stateGuardCatalog';
 import { FOUNDATION_DEMO_PAGES, namespaceFor, type NamespaceId, type ShellId } from './routes';
 
@@ -84,6 +85,17 @@ export function resolveRoute(pathname: string): ResolvedRoute {
     if (isIndex) return { ...base, unitId: null, state: null, notFound: false };
     const state = stateKeyForPath(match.pathname);
     return { ...base, unitId: null, state: state ?? '404', notFound: state === null };
+  }
+
+  /**
+   * Espace employeur (P2-DESIGN-EMPLOYER) : les fiches EMP livrées portent leur unité
+   * (`EMP-xx`) et l'index `/client` est le tableau de bord EMP-01. Aucune autre
+   * famille n'est résolue ici.
+   */
+  if (definition.id === 'client') {
+    const screen = resolveEmployerScreen(match.pathname);
+    const unitId = screen ? screen.unitId : matchProductionUnit(match.pathname);
+    if (unitId !== null) return { ...base, unitId, state: null, notFound: false };
   }
 
   if (definition.demo) {
