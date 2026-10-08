@@ -111,6 +111,11 @@ export interface CampaignReport {
     persistence: string;
     runtime: string;
     percentileMethod: string;
+    /**
+     * P0-LOAD-TESTS-3 — stratégie de population/concurrence documentée
+     * (10 000 utilisateurs synthétiques ≠ 10 000 requêtes simultanées).
+     */
+    populationStrategy?: string;
   };
   totals: CampaignTotals;
   latency: AggregateStats;
@@ -129,6 +134,16 @@ export interface CampaignReport {
    * passes de drain mesurées (queue/backlog/retries/dead-letter). Optionnel.
    */
   queue?: QueueDrainReport;
+  /**
+   * P0-LOAD-TESTS-3 — ressources du processus de charge (échantillons réels :
+   * RSS, heap, CPU, loadavg). Optionnel.
+   */
+  resources?: import('./resources').ResourceReport;
+  /**
+   * P0-LOAD-TESTS-3 — contrôles d'intégrité post-campagne à l'échelle
+   * (aucune double transition / aucun double effet / aucune duplication).
+   */
+  integrity?: import('./integrity').IntegrityReport;
 }
 
 /* ------------------------------------------------------------------ */
