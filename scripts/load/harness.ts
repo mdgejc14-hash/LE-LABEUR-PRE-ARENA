@@ -41,14 +41,24 @@
  *   - sonde de latence SQL (`dbProbe`) : chaque requête du moteur embarqué est
  *     mesurée sans modifier aucun comportement (métriques DB de la PARTIE 2).
  *
+ * P0-LOAD-TESTS-3 (PARTIE 3 — addition strictement additive) :
+ *   - persistance optionnelle `postgres-server` : VRAI serveur PostgreSQL 17.10
+ *     local (binaires natifs `embedded-postgres`, aucun téléchargement) pour
+ *     mesurer l'écart PGlite / PostgreSQL serveur à 10 000 utilisateurs ;
+ *   - la sonde mesure aussi chaque requête du pool serveur et des connexions
+ *     dédiées (transactions) — mêmes métriques, même méthode.
+ *
  * DONNÉES : 100 % synthétiques (emails en .invalid, noms préfixés LOADTEST).
  * AUCUN PSP, AUCUN email/SMS réel, AUCUNE cible de production.
  */
 
 import { PGlite } from '@electric-sql/pglite';
-import { readFileSync, readdirSync } from 'node:fs';
+import EmbeddedPostgres from 'embedded-postgres';
+import { randomBytes } from 'node:crypto';
+import { mkdirSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { Pool, type PoolClient, type QueryResult } from 'pg';
 
 import { composeWorker, type WorkerComposition } from '../../src/backend/api/entry';
 import type { AutomationWorker } from '../../src/backend/automation/worker';
@@ -101,7 +111,14 @@ export interface UserPair {
 }
 
 export interface LoadHarness {
-  pg: PGlite;
+  /**
+   * P0-LOAD-TESTS-3 — instance PGlite quand `persistence === 'pglite'`,
+   * `null` quand `persistence === 'postgres-server'` (moteur PostgreSQL 17.10
+   * RÉEL embarqué localement, binaires natifs `embedded-postgres`).
+   */
+  pg: PGlite | null;
+  /** Persistance réellement utilisée par la campagne (traçable dans le rapport). */
+  persistence: 'pglite' | 'postgres-server';
   worker: { fetch(request: Request): Promise<Response> };
   /** Composition complète du worker (repositories, webrtc, payments…) — lecture seule. */
   composition: WorkerComposition;
@@ -174,28 +191,161 @@ function createPGliteDriver(database: PGlite, probe: DbLatencyProbe | null): Dri
     sql: string,
     values: readonly unknown[] = [],
   ): Promise<DriverQueryResult<Row>> => {
-    if (!probe) {
-      const direct = await database.query<Row>(sql, [...values]);
-      return { rows: direct.rows, rowCount: direct.rowCount };
-    }
-    const startedAt = performance.now();
+    const startedAt = probeStart(probe);
     try {
       const result = await database.query<Row>(sql, [...values]);
       return { rows: result.rows, rowCount: result.rowCount };
     } finally {
-      const endedAt = performance.now();
-      probe.latencies.push(endedAt - startedAt);
-      probe.intervals.push([startedAt, endedAt]);
-      const head = sql.trimStart().slice(0, 7).toUpperCase();
-      if (head.startsWith('BEGIN')) probe.transactions.begun += 1;
-      else if (head.startsWith('COMMIT')) probe.transactions.committed += 1;
-      else if (head.startsWith('ROLLBACK')) probe.transactions.rolledBack += 1;
+      probeEnd(probe, sql, startedAt);
     }
   };
   return {
     query,
     async connect() {
       return { query, release() {} };
+    },
+  };
+}
+
+/* ------------------------------------------------------------------ */
+/* P0-LOAD-TESTS-3 — persistance PostgreSQL SERVEUR réelle (optionnel)  */
+/* ------------------------------------------------------------------ */
+
+/** Horodatage de début de sonde (null si sonde absente). */
+function probeStart(probe: DbLatencyProbe | null): number | null {
+  return probe ? performance.now() : null;
+}
+
+/** Enregistrement de fin de sonde : latence + intervalle + compteurs de transactions. */
+function probeEnd(probe: DbLatencyProbe | null, sql: string, startedAt: number | null): void {
+  if (!probe || startedAt === null) return;
+  const endedAt = performance.now();
+  probe.latencies.push(endedAt - startedAt);
+  probe.intervals.push([startedAt, endedAt]);
+  const head = sql.trimStart().slice(0, 7).toUpperCase();
+  if (head.startsWith('BEGIN')) probe.transactions.begun += 1;
+  else if (head.startsWith('COMMIT')) probe.transactions.committed += 1;
+  else if (head.startsWith('ROLLBACK')) probe.transactions.rolledBack += 1;
+}
+
+/** Conversion résultat node-postgres (Result ou Result[] multi-instructions) → DriverQueryResult. */
+function toDriverQueryResult(result: QueryResult<any> | QueryResult<any>[]): DriverQueryResult<any> | Array<DriverQueryResult<any>> {
+  if (Array.isArray(result)) {
+    return result.map(part => ({ rows: part.rows, rowCount: part.rowCount ?? part.rows.length }));
+  }
+  return { rows: result.rows, rowCount: result.rowCount ?? result.rows.length };
+}
+
+export interface PostgresServerDriver {
+  driver: DriverPoolLike;
+  /** Arrêt propre du pool (le serveur embarqué est arrêté par le harness). */
+  stop: () => Promise<void>;
+}
+
+/**
+ * P0-LOAD-TESTS-3 — pilote DriverPoolLike sur un VRAI serveur PostgreSQL
+ * (binaires natifs `embedded-postgres`, PostgreSQL 17.10 local). Mêmes
+ * frontières que la production : pool de connexions réel, transactions sur
+ * connexion dédiée. La sonde mesure chaque requête (pool + connexions dédiées),
+ * sans modifier aucun comportement.
+ */
+function createPostgresServerDriver(
+  connectionString: string,
+  probe: DbLatencyProbe | null,
+  maxConnections: number,
+): PostgresServerDriver {
+  const pool = new Pool({
+    connectionString,
+    max: maxConnections,
+    application_name: 'lelabeur-load-tests-p0-load-tests-3',
+    allowExitOnIdle: true,
+  });
+  // Une connexion inactive coupée ne doit jamais faire tomber le processus.
+  pool.on('error', () => undefined);
+
+  const query = async <Row = Record<string, unknown>>(
+    sql: string,
+    values: readonly unknown[] = [],
+  ): Promise<DriverQueryResult<Row> | Array<DriverQueryResult<Row>>> => {
+    const startedAt = probeStart(probe);
+    try {
+      const result = await pool.query(sql, [...values]);
+      return toDriverQueryResult(result) as DriverQueryResult<Row> | Array<DriverQueryResult<Row>>;
+    } finally {
+      probeEnd(probe, sql, startedAt);
+    }
+  };
+
+  const driver: DriverPoolLike = {
+    query,
+    async connect() {
+      const client: PoolClient = await pool.connect();
+      const clientQuery = async <Row = Record<string, unknown>>(
+        sql: string,
+        values: readonly unknown[] = [],
+      ): Promise<DriverQueryResult<Row>> => {
+        const startedAt = probeStart(probe);
+        try {
+          const result = await client.query(sql, [...values]);
+          const converted = toDriverQueryResult(result);
+          if (Array.isArray(converted)) {
+            // Transaction = instructions simples ; agrégation défensive comme `normalizeResult`.
+            return {
+              rows: converted.flatMap(part => part.rows),
+              rowCount: converted.reduce((total, part) => total + (part.rowCount ?? part.rows.length), 0),
+            } as DriverQueryResult<Row>;
+          }
+          return converted as DriverQueryResult<Row>;
+        } finally {
+          probeEnd(probe, sql, startedAt);
+        }
+      };
+      return { query: clientQuery, release() { client.release(); } };
+    },
+    async end() {
+      await pool.end();
+    },
+  };
+  return { driver, stop: async () => { await pool.end().catch(() => undefined); } };
+}
+
+/** Handle interne du serveur PostgreSQL embarqué (le mot de passe n'est jamais exposé dans les rapports). */
+interface EmbeddedPostgresHandle {
+  connectionString: string;
+  dataDir: string;
+  stop: () => Promise<void>;
+}
+
+/**
+ * Démarre un VRAI serveur PostgreSQL 17.10 local (binaires natifs embarqués,
+ * aucun téléchargement : `@embedded-postgres/linux-x64` est installé).
+ * TEST/LOCAL uniquement — ni Cloudflare, ni base managée, ni production.
+ */
+async function startEmbeddedPostgresServer(tag: string): Promise<EmbeddedPostgresHandle> {
+  const port = Number(process.env.LOAD_PG_PORT ?? 55433);
+  const dataDir = resolve(REPO_ROOT, '.tmp', 'load-postgres-server', `${tag}-${port}`);
+  mkdirSync(resolve(REPO_ROOT, '.tmp', 'load-postgres-server'), { recursive: true });
+  rmSync(dataDir, { recursive: true, force: true });
+  const password = randomBytes(18).toString('hex');
+  const postgres = new EmbeddedPostgres({
+    databaseDir: dataDir,
+    port,
+    user: 'lelabeur',
+    password,
+    persistent: false,
+    initdbFlags: ['--encoding=UTF8', '--locale=C'],
+    onLog: () => undefined,
+    onError: () => undefined,
+  });
+  await postgres.initialise();
+  await postgres.start();
+  await postgres.createDatabase('lelabeur');
+  return {
+    connectionString: `postgresql://lelabeur:${password}@127.0.0.1:${port}/lelabeur?sslmode=disable`,
+    dataDir,
+    stop: async () => {
+      await postgres.stop().catch(() => undefined);
+      rmSync(dataDir, { recursive: true, force: true });
     },
   };
 }
@@ -302,19 +452,26 @@ export interface CreateLoadHarnessOptions {
   userCount: number;
   /** Garde-fou métier P0-MATCHING : bassin plafonné à 200 profils candidats. */
   maxMatchingProfiles?: number;
+  /**
+   * P0-LOAD-TESTS-3 — persistance de la campagne :
+   *   - 'pglite' (défaut, comportement historique P0-LOAD-TESTS-1/2) : PostgreSQL
+   *     WASM embarqué mono-session (saturation mesurée ~148 req/s) ;
+   *   - 'postgres-server' : VRAI serveur PostgreSQL 17.10 local (binaires
+   *     natifs `embedded-postgres`), pour mesurer l'écart PGlite / PostgreSQL.
+   */
+  persistence?: 'pglite' | 'postgres-server';
+  /** P0-LOAD-TESTS-3 — 'postgres-server' : taille du pool de connexions (défaut 10). */
+  postgresServerMaxConnections?: number;
 }
 
 export async function createLoadHarness(options: CreateLoadHarnessOptions): Promise<LoadHarness> {
   const startedAt = performance.now();
+  const persistence = options.persistence ?? 'pglite';
   const { employers, candidates } = buildSyntheticUsers(options.userCount);
   const clock = { value: new Date(LOAD_BUSINESS_CLOCK_ISO) };
 
   offerIdempotencyCache.clear();
-  const pg = new PGlite();
   const migrationFiles = readdirSync(MIGRATIONS_DIR).filter(file => file.endsWith('.sql')).sort();
-  for (const file of migrationFiles) {
-    await pg.exec(readFileSync(resolve(MIGRATIONS_DIR, file), 'utf8'));
-  }
 
   const dbProbe: DbLatencyProbe = {
     latencies: [],
@@ -322,7 +479,31 @@ export async function createLoadHarness(options: CreateLoadHarnessOptions): Prom
     transactions: { begun: 0, committed: 0, rolledBack: 0 },
     startedAtMs: startedAt,
   };
-  const database = createPostgresDatabase(toPostgresClientPort(createPGliteDriver(pg, dbProbe)));
+
+  // Deux persistances réelles, même composition de worker au-dessus.
+  let pg: PGlite | null = null;
+  let serverDriver: PostgresServerDriver | null = null;
+  let embeddedServer: EmbeddedPostgresHandle | null = null;
+  let driver: DriverPoolLike;
+  if (persistence === 'postgres-server') {
+    embeddedServer = await startEmbeddedPostgresServer(`users-${options.userCount}`);
+    serverDriver = createPostgresServerDriver(
+      embeddedServer.connectionString,
+      dbProbe,
+      options.postgresServerMaxConnections ?? 10,
+    );
+    driver = serverDriver.driver;
+    for (const file of migrationFiles) {
+      await driver.query(readFileSync(resolve(MIGRATIONS_DIR, file), 'utf8'));
+    }
+  } else {
+    pg = new PGlite();
+    for (const file of migrationFiles) {
+      await pg.exec(readFileSync(resolve(MIGRATIONS_DIR, file), 'utf8'));
+    }
+    driver = createPGliteDriver(pg, dbProbe);
+  }
+  const database = createPostgresDatabase(toPostgresClientPort(driver));
   const google = await buildSyntheticCredentials([...employers, ...candidates], clock.value);
 
   const compose = (): WorkerComposition =>
@@ -343,7 +524,9 @@ export async function createLoadHarness(options: CreateLoadHarnessOptions): Prom
 
   const composition = compose();
   if (!composition.automationWorker) {
-    await pg.close();
+    if (pg) await pg.close();
+    if (serverDriver) await serverDriver.stop();
+    if (embeddedServer) await embeddedServer.stop();
     throw new Error('worker d’automatisation attendu dans la composition PostgreSQL durable');
   }
 
@@ -359,6 +542,7 @@ export async function createLoadHarness(options: CreateLoadHarnessOptions): Prom
 
   return {
     pg,
+    persistence,
     worker: composition.worker,
     composition,
     database,
@@ -379,7 +563,9 @@ export async function createLoadHarness(options: CreateLoadHarnessOptions): Prom
     businessClockIso: LOAD_BUSINESS_CLOCK_ISO,
     bootstrapMs,
     close: async () => {
-      await pg.close();
+      if (pg) await pg.close();
+      if (serverDriver) await serverDriver.stop();
+      if (embeddedServer) await embeddedServer.stop();
       offerIdempotencyCache.clear();
     },
   };
