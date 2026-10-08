@@ -39,6 +39,8 @@ import { runReputationTests } from '../src/backend/api/reputation.test';
 import { runDocumentDomainTests } from '../src/backend/api/documents.test';
 import { runWebRtcTests } from '../src/backend/webrtc/webrtc.test';
 import { runSecurityAntiFraudTests } from '../src/backend/api/securityAntiFraud.test';
+import { runDesignFoundationTests } from '../src/design-system/foundation.test';
+import { runRoutingTests } from '../src/routing/routing.test';
 
 interface TestCase {
   name: string;
@@ -88,6 +90,8 @@ async function main(): Promise<void> {
   const documents = await runDocumentDomainTests();
   const webrtc = await runWebRtcTests();
   const securityAntiFraud = await runSecurityAntiFraudTests();
+  const designFoundation = runDesignFoundationTests();
+  const routing = runRoutingTests();
 
   const suites: Array<{ name: string; cases: TestCase[] }> = [
     { name: 'Domain deterministic', cases: deterministic.results.map(result => ({ name: result.name, success: result.success, detail: result.details })) },
@@ -131,6 +135,8 @@ async function main(): Promise<void> {
     { name: 'P0-SECURITY-ANTI-FRAUD — couche transversale finale de sécurité et anti-fraude (40 scénarios : identité, RBAC, IDOR tous domaines, webhooks HMAC/replay/mismatch, DECLARED≠VERIFIED≠PAID, OTP salaire, R2 intégrité/révocation/object_key, WebRTC, idempotence, concurrence, routes internes, rate-limit, anti-falsification, audit ADMIN, masquage erreurs, APDP)', cases: securityAntiFraud },
     { name: 'P0-AUTO-2 — CONTRACT_ACTIVATED réel (Outbox → Queue → Worker → AutomationEngine → échéancier salarial, échéancier de commission, échéances, rappels; PostgreSQL, idempotence, concurrence, retry, dead-letter, rollback, audit, séparation DEMO/API)', cases: contractAutomation },
     { name: 'P0-CRON-QUEUE — déclenchement périodique sur la queue EXISTANTE (Cron scheduled() réel → worker : jobs échus/futurs, double déclenchement, deux workers, retry, dead-letter, crash après réservation, idempotence métier, audit du tick, échéances paiement/claim/salaire, notification workflow existant, réputation planifiable, sécurité, non-régression R2/REPUTATION/MATCHING/REPLACEMENT/PAIEMENT/NOTIFICATIONS; PostgreSQL PGlite, aucun Cloudflare réel)', cases: cronQueue },
+    { name: 'P0-DESIGN-FOUNDATION — tokens (parité avec design/llab/tokens.py), verre, squircle, mouvement, StateGuard (sys.py), shells, responsive 360/1440, reduced-motion, accessibilité', cases: designFoundation },
+    { name: 'P0-DESIGN-FOUNDATION — routage progressif (namespaces, legacy /, unités de production, états SYS, dock ancré dans les fiches)', cases: routing },
   ];
 
   let total = 0;
