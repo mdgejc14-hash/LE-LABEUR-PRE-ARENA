@@ -18,7 +18,9 @@
     "preflight:cloudflare": "tsx scripts/preflight-cloudflare.ts --require-production --no-bundle",
     "deploy:worker": "tsx scripts/preflight-cloudflare.ts --require-production && wrangler deploy --env production",
     "verify:workerd": "tsx scripts/verify-workerd-local.ts",
-    "test:load": "tsx scripts/run-load-tests.ts"
+    "test:load": "tsx scripts/run-load-tests.ts",
+    "design:tokens": "python3 scripts/design/generate-frontend-tokens.py",
+    "design:tokens:check": "python3 scripts/design/generate-frontend-tokens.py --check"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
