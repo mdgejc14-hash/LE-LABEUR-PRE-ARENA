@@ -1,3 +1,5 @@
+import { PUBLIC_SCREENS } from '../public/catalog';
+
 /**
  * LE LABEUR — Namespaces de routes (P0-DESIGN-FOUNDATION).
  *
@@ -12,7 +14,7 @@
 
 export type ShellId = 'PUBLIC' | 'CLIENT' | 'PRESTATAIRE' | 'ADMIN' | 'RTC' | 'SYSTEM';
 
-export type NamespaceId = 'client' | 'prestataire' | 'admin' | 'appel' | 'etat' | 'fondation';
+export type NamespaceId = 'public' | 'client' | 'prestataire' | 'admin' | 'appel' | 'etat' | 'fondation';
 
 export interface NamespaceDefinition {
   readonly id: NamespaceId;
@@ -57,6 +59,11 @@ export interface NamespaceMatch {
 /** Namespace du chemin, ou `null` pour le legacy (« / » inclus). Aucune donnée requise. */
 export function namespaceFor(pathname: string): NamespaceMatch | null {
   const path = normalizePathname(pathname);
+  // Exact opt-in routes only: '/' and unrelated legacy URLs are not captured.
+  if (PUBLIC_SCREENS.some((screen) => screen.route === path)) {
+    return { definition: { id: 'public', prefixes: [], shell: 'PUBLIC', index: '/accueil', demo: false },
+      pathname: path, segments: path.slice(1).split('/'), isIndex: path === '/accueil' };
+  }
   for (const definition of ROUTE_NAMESPACES) {
     for (const prefix of definition.prefixes) {
       if (path === prefix || path.startsWith(prefix + '/')) {

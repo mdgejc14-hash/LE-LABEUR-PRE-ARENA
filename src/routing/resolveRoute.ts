@@ -1,3 +1,4 @@
+import { PUBLIC_SCREENS } from '../public/catalog';
 /**
  * LE LABEUR — Résolution détaillée des routes de namespace (P0-DESIGN-FOUNDATION).
  *
@@ -73,6 +74,11 @@ export function resolveRoute(pathname: string): ResolvedRoute {
     segments,
     isIndex,
   };
+
+  if (definition.id === 'public') {
+    const screen = PUBLIC_SCREENS.find((item) => item.route === match.pathname)!;
+    return { ...base, unitId: screen.code, state: null, notFound: false };
+  }
 
   if (definition.id === 'etat') {
     if (isIndex) return { ...base, unitId: null, state: null, notFound: false };

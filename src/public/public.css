@@ -1,0 +1,29 @@
+/* Page composition only; all visual primitives, typography and motion come from P0. */
+.lbm-public { width: 100%; max-width: var(--grid-max-width); margin-inline: auto; display: grid; gap: var(--space-24); overflow-wrap: anywhere; }
+.lbm-public__grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-16); }
+.lbm-public__subtitle { font: inherit; font-weight: 600; color: var(--text-hi); }
+.lbm-public__notice { padding: var(--space-16); color: var(--text-mid); border-radius: var(--squircle-14); }
+.lbm-public__notice p { margin: 0; }
+.lbm-public__actions, .lbm-public__links { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-16); }
+.lbm-public__links { border-top: 1px solid var(--stroke-mid); padding-top: var(--space-24); }
+.lbm-public a { display: inline-flex; align-items: center; min-height: var(--touch-target-mobile); color: var(--text-gold); text-decoration: underline; text-underline-offset: 4px; }
+.lbm-public__stack { display: grid; gap: var(--space-20); }
+.lbm-public__roles { border: 0; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-16); min-width: 0; }
+.lbm-public__roles legend { padding-block: var(--space-12); }
+.lbm-public__role { display: grid; gap: var(--space-16); padding: var(--space-24); border: 2px solid var(--stroke-mid); border-radius: var(--squircle-28); background: var(--surface-2); cursor: pointer; }
+.lbm-public__role:has(:checked) { border-color: var(--gold-500); }
+.lbm-public__role:has(:focus-visible) { outline: 2px solid var(--gold-500); outline-offset: 4px; }
+.lbm-public__role input { width: 24px; height: 24px; accent-color: var(--gold-500); }
+.lbm-public__price { margin: 0; font-variant-numeric: tabular-nums; }
+.lbm-public__price > div { display: flex; justify-content: space-between; gap: var(--space-16); padding-block: var(--space-12); }
+.lbm-public__price > div:last-child { border-top: 1px dashed var(--gold-500); }
+.lbm-public__price dd { margin: 0; white-space: nowrap; }
+.lbm-public__splash { min-height: 65vh; display: grid; place-content: center; gap: var(--space-24); }
+.lbm-public__skip:not(:focus-visible) { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); }
+@media (max-width: 600px) {
+  .lbm-public__grid, .lbm-public__roles { grid-template-columns: minmax(0, 1fr); }
+  .lbm-public__role { padding: var(--space-16); }
+  .lbm-public__actions { align-items: stretch; flex-direction: column; }
+}
+
+.lbm-public .lbm-glass.lbm-panel { padding: var(--space-20); border-radius: var(--squircle-22); }

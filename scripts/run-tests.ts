@@ -1,3 +1,4 @@
+import { runPublicTests } from '../src/public/public.test';
 import { runAllDeterministicTests } from '../src/domain/businessRules.test';
 import { runFinalStabilizationTests } from '../src/domain/finalStabilization.test';
 import { runMassiveQaScenarios } from '../src/domain/qaMassive.test';
@@ -92,8 +93,10 @@ async function main(): Promise<void> {
   const securityAntiFraud = await runSecurityAntiFraudTests();
   const designFoundation = runDesignFoundationTests();
   const routing = runRoutingTests();
+  const publicAuth = await runPublicTests();
 
   const suites: Array<{ name: string; cases: TestCase[] }> = [
+    { name: 'P1 — Public / Auth / System integration', cases: publicAuth },
     { name: 'Domain deterministic', cases: deterministic.results.map(result => ({ name: result.name, success: result.success, detail: result.details })) },
     { name: 'Final stabilization', cases: stabilization.map(result => ({ name: result.name, success: result.success, detail: result.details })) },
     { name: 'Repository QA 800', cases: massive.results.map(result => ({ name: result.label, success: result.success, detail: result.detail })) },

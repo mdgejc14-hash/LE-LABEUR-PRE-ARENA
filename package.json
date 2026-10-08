@@ -20,7 +20,9 @@
     "verify:workerd": "tsx scripts/verify-workerd-local.ts",
     "test:load": "tsx scripts/run-load-tests.ts",
     "design:tokens": "python3 scripts/design/generate-frontend-tokens.py",
-    "design:tokens:check": "python3 scripts/design/generate-frontend-tokens.py --check"
+    "design:tokens:check": "python3 scripts/design/generate-frontend-tokens.py --check",
+    "verify:public-ui": "tsx scripts/verify-public-ui.ts",
+    "design:public:check": "python3 scripts/design/generate-public-catalog.py --check"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
@@ -37,6 +39,7 @@
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.8",
+    "@sparticuz/chromium": "^153.0.0",
     "@types/express": "^4.17.21",
     "@types/node": "^22.14.0",
     "@types/pg": "^8.23.1",
@@ -45,6 +48,7 @@
     "autoprefixer": "^10.4.21",
     "embedded-postgres": "^17.10.0-beta.17",
     "esbuild": "^0.25.0",
+    "playwright-core": "^1.64.0",
     "tailwindcss": "^4.3.3",
     "tsx": "^4.21.0",
     "typescript": "^7.0.2",

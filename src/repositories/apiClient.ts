@@ -39,7 +39,8 @@ export class HttpApiClient {
       throw new Error('API basePath must be a same-origin path.');
     }
     this.basePath = basePath.replace(/\/$/, '');
-    this.fetcher = options.fetcher ?? fetch;
+    // Native browser fetch requires its Window receiver when called as a class member.
+    this.fetcher = options.fetcher ?? globalThis.fetch.bind(globalThis);
   }
 
   async request<T>(path: string, options: ApiRequestOptions = {}): Promise<T> {

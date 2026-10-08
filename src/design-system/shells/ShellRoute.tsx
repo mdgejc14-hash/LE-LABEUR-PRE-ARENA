@@ -1,3 +1,5 @@
+import { PublicPage } from '../../public/PublicPage';
+import { SystemFeedback } from '../../public/SystemFeedback';
 /**
  * Rendu des routes de namespace (P0-DESIGN-FOUNDATION). Chargé à la demande (lazy) :
  * le chemin legacy « / » n'embarque ni motion ni les shells.
@@ -19,13 +21,13 @@ import { resolveRoute, type ShellRouteResolution } from '../../routing/resolveRo
 import { Link, navigate } from '../../routing/navigation';
 import { integrationStatus } from '../../routing/integration';
 import { SquircleCard } from '../components/SquircleCard';
-import { StateGuard } from '../components/StateGuard';
 import { StatusSeal } from '../components/StatusSeal';
 import { SHELL_COMPONENTS } from './shells';
 import { FoundationPublicPage, FoundationIndexPage } from '../demo/FoundationPages';
 import type { FamilyCode } from './shellNavigation';
 
 const NAMESPACE_FAMILY: Record<NamespaceId, FamilyCode> = {
+  public: 'PUB',
   client: 'EMP',
   prestataire: 'PRE',
   admin: 'ADM',
@@ -68,7 +70,7 @@ function FamilyIndex({ family, index }: { family: FamilyCode; index: string }) {
           <li key={unit.id} className="lbm-unit-list__item">
             <span className="lbm-unit-list__id lbm-mono">{unit.id}</span>
             <span className="lbm-unit-list__label">{unit.label}</span>
-            <StatusSeal tone="slate" label={integrationStatus(unit.id) === 'INTEGRE' ? 'Intégré' : 'Non intégré'} size="sm" />
+            <StatusSeal tone="slate" label={integrationStatus(unit.id) === 'INTEGRE' ? 'Intégré' : integrationStatus(unit.id) === 'PARTIEL' ? 'Partiel' : 'Non intégré'} size="sm" />
           </li>
         ))}
       </ol>
@@ -117,10 +119,11 @@ function StateIndex() {
  * Aucune donnée n'est simulée dans la fondation : la corrélation est donc absente sur ces pages.
  */
 function SystemState({ state, exitHref }: { state: StateGuardKey; exitHref: string }) {
-  return <StateGuard state={state} exitHref={exitHref} onExitAction={() => navigate(exitHref)} />;
+  return <SystemFeedback state={state} back={() => navigate(exitHref)} />;
 }
 
 function Content({ route }: { route: ShellRouteResolution }) {
+  if (route.namespace === 'public') return <PublicPage key={route.pathname} pathname={route.pathname} />;
   const family = NAMESPACE_FAMILY[route.namespace];
   const index = namespaceIndex(route.namespace);
 
@@ -132,7 +135,7 @@ function Content({ route }: { route: ShellRouteResolution }) {
 
   if (route.namespace === 'etat') {
     if (route.isIndex) return <StateIndex />;
-    return <SystemState state={route.state ?? '404'} exitHref="/fondation" />;
+    return <SystemState state={route.state ?? '404'} exitHref="/accueil" />;
   }
 
   if (route.isIndex) return <FamilyIndex family={family} index={index} />;

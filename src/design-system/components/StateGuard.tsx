@@ -72,7 +72,15 @@ export interface ExitActionEvent {
   readonly variant: NeoVariant;
 }
 
+export interface StateGuardAction {
+  label: string;
+  variant?: NeoVariant;
+  onClick: () => void;
+}
+
 export interface StateGuardProps {
+  /** Production: only actions backed by available capabilities. Omitted keeps P0 demos. */
+  actions?: readonly StateGuardAction[];
   state: StateGuardKey;
   /** Code de corrélation fourni par le serveur. Affiché seulement s'il est sûr. */
   correlationId?: unknown;
@@ -109,7 +117,8 @@ function CorrelationLine({ id }: { id: string }) {
   const [copied, setCopied] = useState(false);
   const copy = async () => {
     try {
-      await navigator.clipboard?.writeText(id);
+      if (!navigator.clipboard) return;
+      await navigator.clipboard.writeText(id);
       setCopied(true);
     } catch {
       setCopied(false);
@@ -131,6 +140,7 @@ function CorrelationLine({ id }: { id: string }) {
 
 export function StateGuard({
   state,
+  actions: availableActions,
   correlationId,
   guarantees = [],
   resumeAt,
@@ -147,11 +157,17 @@ export function StateGuard({
   const isLoading = state === 'loading';
   const explanation = explanationFor(entry, resumeAt);
   const safeCorrelation = sanitizeCorrelationId(correlationId);
-  const actions = entry.exitActions.length > 0
+  const actions = availableActions !== undefined
+    ? availableActions.map((action) => ({ label: action.label, variant: action.variant ?? 'primary' }))
+    : entry.exitActions.length > 0
     ? entry.exitActions.map((action) => ({ label: action.label, variant: action.variant as NeoVariant }))
     : [{ label: FALLBACK_EXIT_LABEL, variant: 'text' as NeoVariant }];
 
   const runExit = (index: number, label: string, variant: NeoVariant) => {
+    if (availableActions) {
+      availableActions[index]?.onClick();
+      return;
+    }
     if (onExitAction) {
       onExitAction({ index, label, variant });
       return;

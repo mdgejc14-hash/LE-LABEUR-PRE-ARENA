@@ -51,12 +51,12 @@ export function runRoutingTests(): RoutingTestResult[] {
     }
   };
 
-  check('legacy : « / » et les routes PUB existantes restent sur l’application legacy', () => {
-    for (const path of ['/', '/accueil', '/connexion', '/inscription', '/maintenance', '/chemin/inconnu']) {
+  check('legacy : « / » et les chemins hors migration restent inchangés', () => {
+    for (const path of ['/', '/chemin/inconnu', '/connexion/legacy', '/accueil/inconnu']) {
       assertEqual(namespaceFor(path), null, `namespace de ${path}`);
       assertEqual(resolveRoute(path).kind, 'legacy', `résolution de ${path}`);
     }
-    return '« / » + 5 chemins hors namespaces → legacy';
+    return '« / » + chemins non migrés → legacy';
   });
 
   check('namespaces : les six espaces du Master sont déclarés avec leur shell', () => {
@@ -165,7 +165,7 @@ export function runRoutingTests(): RoutingTestResult[] {
 
   check('intégration : aucune unité intégrée par la fondation ; 0 / 120', () => {
     assertEqual(INTEGRATED_UNIT_IDS.length, 0, 'unités intégrées');
-    assert(PRODUCTION_UNITS.every((unit) => integrationStatus(unit.id) === 'NON_INTEGRE'), 'statut inattendu');
+    assert(PRODUCTION_UNITS.every((unit) => integrationStatus(unit.id) === (['PUB', 'SYS'].includes(unit.family) ? 'PARTIEL' : 'NON_INTEGRE')), 'statut inattendu');
     const summary = integrationSummary();
     assertEqual([summary.integrees, summary.total], [0, 120], 'synthèse');
     assertEqual(summary.parFamille, UNIT_COUNTS_BY_FAMILY, 'répartition');

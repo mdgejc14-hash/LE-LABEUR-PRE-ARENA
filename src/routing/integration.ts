@@ -8,13 +8,17 @@
 
 import { PRODUCTION_UNITS, TOTAL_UNITS, UNIT_COUNTS_BY_FAMILY, type ProductionUnit } from '../design-system/generated/productionUnits';
 
-export type IntegrationStatus = 'NON_INTEGRE' | 'INTEGRE';
+export type IntegrationStatus = 'NON_INTEGRE' | 'PARTIEL' | 'INTEGRE';
 
 /** Unités intégrées. Vide dans la fondation : aucun écran métier n'est livré par cette mission. */
 export const INTEGRATED_UNIT_IDS: readonly string[] = [];
 
+/** P1 shells/routes delivered; missing backend capabilities explicitly prevent full integration. */
+export const PARTIAL_UNIT_IDS: readonly string[] = PRODUCTION_UNITS
+  .filter((unit) => unit.family === 'PUB' || unit.family === 'SYS').map((unit) => unit.id);
+
 export function integrationStatus(unitId: string): IntegrationStatus {
-  return INTEGRATED_UNIT_IDS.includes(unitId) ? 'INTEGRE' : 'NON_INTEGRE';
+  return INTEGRATED_UNIT_IDS.includes(unitId) ? 'INTEGRE' : PARTIAL_UNIT_IDS.includes(unitId) ? 'PARTIEL' : 'NON_INTEGRE';
 }
 
 export function integrationSummary(): { integrees: number; total: number; parFamille: Record<string, number> } {
