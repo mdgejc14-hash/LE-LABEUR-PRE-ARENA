@@ -80,12 +80,16 @@ export function runRoutingTests(): RoutingTestResult[] {
     return '4 cas';
   });
 
-  check('index : /client, /prestataire, /admin, /appels, /etat, /fondation', () => {
-    for (const path of ['/client', '/prestataire', '/admin', '/appels', '/etat', '/fondation']) {
+  check('index : /client (fiche EMP-01 livrée en P2), /prestataire, /admin, /appels, /etat, /fondation', () => {
+    // P2-DESIGN-EMPLOYER : la fiche EMP-01 du Master Design a pour route « /client » ;
+    // l'index employeur est donc le tableau de bord réel, plus la page de fondation.
+    const emp = shellOf('/client');
+    assert(emp.isIndex && !emp.notFound && emp.unitId === 'EMP-01', `fiche EMP-01 attendue sur /client, obtenu ${emp.unitId}`);
+    for (const path of ['/prestataire', '/admin', '/appels', '/etat', '/fondation']) {
       const route = shellOf(path);
       assert(route.isIndex && !route.notFound && route.unitId === null, `index attendu pour ${path}`);
     }
-    return '6 index';
+    return '1 fiche EMP livrée + 5 index de fondation';
   });
 
   check('unités : toute route de fiche des namespaces est résolue vers une unité (ou un état)', () => {
@@ -163,13 +167,17 @@ export function runRoutingTests(): RoutingTestResult[] {
     return '15 entrées de dock ancrées dans les fiches';
   });
 
-  check('intégration : aucune unité intégrée par la fondation ; 0 / 120', () => {
+  check('intégration : 0 / 120 intégrée ; PARTIEL = PUB + SYS + les 32 unités EMP (P2) ; PRE/ADM/FIN/RTC non intégrées', () => {
     assertEqual(INTEGRATED_UNIT_IDS.length, 0, 'unités intégrées');
-    assert(PRODUCTION_UNITS.every((unit) => integrationStatus(unit.id) === (['PUB', 'SYS'].includes(unit.family) ? 'PARTIEL' : 'NON_INTEGRE')), 'statut inattendu');
+    const partialFamilies = ['PUB', 'SYS', 'EMP'];
+    assert(
+      PRODUCTION_UNITS.every((unit) => integrationStatus(unit.id) === (partialFamilies.includes(unit.family) ? 'PARTIEL' : 'NON_INTEGRE')),
+      'statut inattendu',
+    );
     const summary = integrationSummary();
     assertEqual([summary.integrees, summary.total], [0, 120], 'synthèse');
     assertEqual(summary.parFamille, UNIT_COUNTS_BY_FAMILY, 'répartition');
-    return '0 / 120 intégrées';
+    return '0 / 120 intégrées ; PARTIEL = PUB (10) + SYS (10) + EMP (32)';
   });
 
   return results;
