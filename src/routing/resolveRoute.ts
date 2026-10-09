@@ -9,6 +9,7 @@ import { PUBLIC_SCREENS } from '../public/catalog';
 import { PRODUCTION_UNITS } from '../design-system/generated/productionUnits';
 import { resolveEmployerScreen } from '../employer/screenMap';
 import { resolvePrestataireScreen } from '../prestataire/screenMap';
+import { resolveAdminScreen } from '../admin/screenMap';
 import { STATE_GUARD_CATALOG, type StateGuardKey } from '../design-system/generated/stateGuardCatalog';
 import { FOUNDATION_DEMO_PAGES, namespaceFor, type NamespaceId, type ShellId } from './routes';
 
@@ -106,6 +107,18 @@ export function resolveRoute(pathname: string): ResolvedRoute {
    */
   if (definition.id === 'prestataire') {
     const screen = resolvePrestataireScreen(match.pathname);
+    const unitId = screen ? screen.unitId : matchProductionUnit(match.pathname);
+    if (unitId !== null) return { ...base, unitId, state: null, notFound: false };
+  }
+
+  /**
+   * Espace supervision livré (P4A-DESIGN-ADMIN-CORE) : les fiches ADM de la
+   * tranche portent leur unité (`ADM-xx`) et l'index `/admin` est le tableau de
+   * bord ADM-01. Les autres unités ADM (tranches suivantes) gardent la réponse
+   * de la fondation (écran non intégré).
+   */
+  if (definition.id === 'admin') {
+    const screen = resolveAdminScreen(match.pathname);
     const unitId = screen ? screen.unitId : matchProductionUnit(match.pathname);
     if (unitId !== null) return { ...base, unitId, state: null, notFound: false };
   }

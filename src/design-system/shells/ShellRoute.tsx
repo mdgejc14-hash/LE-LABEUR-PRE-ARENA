@@ -14,6 +14,7 @@ import { SystemFeedback } from '../../public/SystemFeedback';
 import '../theme/theme.css';
 import '../../employer/employer.css';
 import '../../prestataire/prestataire.css';
+import '../../admin/admin.css';
 import { useEffect, useRef, type ReactNode } from 'react';
 import { PRODUCTION_UNITS, UNIT_COUNTS_BY_FAMILY, type ProductionUnit } from '../generated/productionUnits';
 import { FAMILY_LABELS } from '../generated/chrome';
@@ -24,6 +25,8 @@ import { resolveEmployerScreen } from '../../employer/screenMap';
 import { EmployerRouteFallback } from '../../employer/RouteFallback';
 import { resolvePrestataireScreen } from '../../prestataire/screenMap';
 import { PrestataireRouteFallback } from '../../prestataire/RouteFallback';
+import { resolveAdminScreen } from '../../admin/screenMap';
+import { AdminRouteFallback } from '../../admin/RouteFallback';
 import { Suspense, lazy } from 'react';
 
 /** Écrans EMP chargés uniquement quand une route /client/* livrée est atteinte. */
@@ -31,6 +34,9 @@ const EmployerScreen = lazy(() => import('../../employer/registry').then((module
 
 /** Écrans PRE chargés uniquement quand une route /prestataire/* livrée est atteinte. */
 const PrestataireScreen = lazy(() => import('../../prestataire/registry').then((module) => ({ default: module.PrestataireScreen })));
+
+/** Écrans ADM chargés uniquement quand une route /admin/* livrée est atteinte. */
+const AdminScreen = lazy(() => import('../../admin/registry').then((module) => ({ default: module.AdminScreen })));
 import { Link, navigate } from '../../routing/navigation';
 import { integrationStatus } from '../../routing/integration';
 import { SquircleCard } from '../components/SquircleCard';

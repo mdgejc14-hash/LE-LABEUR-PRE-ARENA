@@ -44,6 +44,7 @@ import { runDesignFoundationTests } from '../src/design-system/foundation.test';
 import { runRoutingTests } from '../src/routing/routing.test';
 import { runEmployerTests } from '../src/employer/employer.test';
 import { runPrestataireTests } from '../src/prestataire/prestataire.test';
+import { runAdminTests } from '../src/admin/admin.test';
 
 interface TestCase {
   name: string;
@@ -98,11 +99,13 @@ async function main(): Promise<void> {
   const publicAuth = await runPublicTests();
   const employer = await runEmployerTests();
   const prestataire = await runPrestataireTests();
+  const admin = await runAdminTests();
 
   const suites: Array<{ name: string; cases: TestCase[] }> = [
     { name: 'P1 — Public / Auth / System integration', cases: publicAuth },
     { name: 'P2 — Espace employeur (32 unités / 60 fiches : routeur P0, API existantes, états, garde-fous vocabulaire et finance)', cases: employer },
     { name: 'P3 — Espace candidat (26 unités / 52 fiches : routeur P0, API existantes, états, garde-fous vocabulaire et finance)', cases: prestataire },
+    { name: 'P4A — Espace supervision (7 unités / 12 fiches : routeur P0, API existantes, blocage, qualification, matching, garde-fous vocabulaire et finance)', cases: admin },
     { name: 'Domain deterministic', cases: deterministic.results.map(result => ({ name: result.name, success: result.success, detail: result.details })) },
     { name: 'Final stabilization', cases: stabilization.map(result => ({ name: result.name, success: result.success, detail: result.details })) },
     { name: 'Repository QA 800', cases: massive.results.map(result => ({ name: result.label, success: result.success, detail: result.detail })) },

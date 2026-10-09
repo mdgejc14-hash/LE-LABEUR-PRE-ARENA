@@ -1,0 +1,435 @@
+/**
+ * P4A-DESIGN-ADMIN-CORE — tests de la tranche supervision (espace ADMIN).
+ *
+ * Couverture :
+ *  1. parité du catalogue généré avec la source de design (Python) ;
+ *  2. résolution de route : chaque fiche ADM de la tranche est atteignable et
+ *     rattachée à son unité (regroupement `units.py`, pas une plage numérique) ;
+ *  3. registre complet (7 unités / 12 fiches) ;
+ *  4. API : chaque chemin appelé existe déjà dans `routeContracts.ts` ;
+ *  5. GARDE-FOU DE VOCABULAIRE : aucun libellé métier du Master Design
+ *     (Mission, Client, Prestataire, Litige) ne peut entrer dans l'interface,
+ *     y compris dans les lignes BACKEND_GAP réellement affichées ;
+ *  6. DÉCISION FINANCE : aucun libellé du triplet financier interdit ;
+ *  7. états d'interface réels (chargement, indisponible, gap, vide) et
+ *     attributs d'inspection (`data-unit`, `data-screen`, `data-zone`,
+ *     `data-backend-gap`) ;
+ *  8. décisions de qualification : parité exacte avec le code serveur
+ *     (QUALIFICATION_DECISIONS) et options de revue réelles ;
+ *  9. garde de session : seul un compte ADMIN actif ouvre l'espace ;
+ * 10. intégration : ADM tranche = PARTIEL, EMP/PRE/PUB/SYS inchangés, autres
+ *     ADM/FIN/RTC non intégrées ;
+ * 11. responsive, accessibilité (table sémantique) et reduced-motion (CSS).
+ */
+
+import React from 'react';
+import assert from 'node:assert/strict';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { execFileSync } from 'node:child_process';
+import { readdirSync, readFileSync } from 'node:fs';
+import { ADMIN_DESIGN_SCREENS, ADMIN_DESIGN_UNITS } from './catalog';
+import { ADMIN_UNIT_GAPS } from './gaps';
+import { adminGapsFor, resolveAdminScreen, unitForScreen } from './screenMap';
+import { ADMIN_SCREEN_COMPONENTS, AdminScreen } from './registry';
+import { AdminRouteFallback } from './RouteFallback';
+import { DataTable } from './components';
+import { DOCK_DEFINITIONS } from '../design-system/shells/shellNavigation';
+import { deliveredScreensForUnit } from './screenMap';
+import { ADMIN_API_PATHS, REVIEW_DECISION_OPTIONS } from './api';
+import { DESIGN_ONLY_TERMS_NOT_RENDERED, PRODUCT_LABELS, QUALIFICATION_DECISION_LABELS, maskEmail } from './vocabulary';
+import { adminError } from './errors';
+import { adminGuard, type AdminSessionState } from './hooks';
+import { API_ROUTE_CONTRACTS } from '../backend/api/routeContracts';
+import { QUALIFICATION_DECISIONS } from '../backend/matching/records';
+import { resolveRoute } from '../routing/resolveRoute';
+import { ADMIN_UNIT_IDS, integrationStatus, isAdminUnit, PARTIAL_UNIT_IDS } from '../routing/integration';
+import { PRODUCTION_UNITS } from '../design-system/generated/productionUnits';
+import { ApiClientError } from '../repositories/apiClient';
+
+const ADMIN_SCREEN_DIR = new URL('./screens/', import.meta.url);
+
+/* ── Utilitaires d'inspection ── */
+
+/** Chemin concret d'un motif de fiche (`:id` → valeur d'exemple). */
+function samplePath(pattern: string): string {
+  return pattern
+    .split('/')
+    .map((segment) => (segment.startsWith(':') ? 'ref-1' : segment))
+    .join('/');
+}
+
+/**
+ * Termes du Master Design qui ne doivent JAMAIS désigner un concept produit dans
+ * l'interface (la documentation et les chemins techniques restent autorisés).
+ */
+const FORBIDDEN_UI_TERMS = ['Mission', 'Missions', 'Client', 'Clients', 'Prestataire', 'Prestataires', 'Prestation', 'Litige', 'Litiges'];
+
+/** Libellés financiers interdits par la décision FINANCE de cette tranche. */
+const FORBIDDEN_FINANCE_LABELS = ['Prix Prestataire', 'Frais SaaS', 'Total Client', 'barème', 'Barème', 'séquestre', 'escrow'];
+
+function stripComments(source: string): string {
+  return source.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|[^:])\/\/[^\n]*/g, '$1 ');
+}
+
+/**
+ * Retire chemins, URL, sélecteurs et identifiants techniques d'un texte :
+ * chemins (`/admin/users/:id`), URL et identifiants SCREAMING_SNAKE du serveur
+ * (`USER_BLOCKED`, `MISSION_QUALIFICATION_REVIEWED` — valeurs réelles du code,
+ * jamais des libellés métier).
+ */
+function stripTechnicalTokens(text: string): string {
+  return text
+    .replace(/[A-Za-z0-9_@?&=%./:[\]{}#-]*\/[A-Za-z0-9_@?&=%./:[\]{}#-]*/g, ' ')
+    .replace(/\b[A-Z][A-Z0-9]+(?:_[A-Z0-9]+)+\b/g, ' ');
+}
+
+/**
+ * Chaînes réellement affichables d'un fichier : le texte JSX (`>texte<`) et les
+ * littéraux des propriétés d'affichage (title, lede, label, placeholder…).
+ */
+const DISPLAY_PROP_NAMES = ['title', 'lede', 'label', 'placeholder', 'aria-label', 'alt', 'empty', 'hint', 'description', 'summary', 'note', 'heading'];
+
+function displayStringsIn(source: string): string[] {
+  const found: string[] = [];
+  for (const match of source.matchAll(/>([^<>{}]+)</g)) found.push(match[1]);
+  const props = new RegExp(`(?:${DISPLAY_PROP_NAMES.join('|')})\\s*[:=]\\s*(['\"\`])([^'\"\`]{1,200})\\1`, 'g');
+  for (const match of source.matchAll(props)) found.push(match[2]);
+  return found;
+}
+
+function forbiddenTermsIn(text: string): string[] {
+  const cleaned = stripTechnicalTokens(text);
+  const found: string[] = [];
+  for (const term of FORBIDDEN_UI_TERMS) {
+    const pattern = new RegExp(`(^|[^\\p{L}])${term}([^\\p{L}]|$)`, 'iu');
+    if (pattern.test(cleaned)) found.push(term);
+  }
+  return found;
+}
+
+export async function runAdminTests(): Promise<{ name: string; success: boolean; detail?: string }[]> {
+  const results: { name: string; success: boolean; detail?: string }[] = [];
+  const check = (name: string, run: () => unknown) => {
+    try {
+      run();
+      results.push({ name, success: true });
+    } catch (error) {
+      results.push({ name, success: false, detail: String(error) });
+    }
+  };
+
+  check('ADM — catalogue généré identique à la source de design (python --check)', () => {
+    execFileSync('python3', ['scripts/design/generate-admin-catalog.py', '--check']);
+  });
+
+  check('ADM — 7 unités / 12 fiches, chaque fiche rattachée à une seule unité', () => {
+    assert.equal(ADMIN_DESIGN_UNITS.length, 7);
+    assert.equal(ADMIN_DESIGN_SCREENS.length, 12);
+    const codes = ADMIN_DESIGN_SCREENS.map((screen) => screen.code);
+    assert.equal(new Set(codes).size, 12);
+    for (const screen of ADMIN_DESIGN_SCREENS) {
+      const unit = unitForScreen(screen.code);
+      assert.ok(unit, `fiche sans unité : ${screen.code}`);
+      const parent = ADMIN_DESIGN_UNITS.find((candidate) => candidate.id === unit);
+      assert.ok((parent?.screenCodes as readonly string[] | undefined)?.includes(screen.code), `fiche ${screen.code} absente des fiches de ${unit}`);
+    }
+    // Regroupement réel du Master (units.py) : pas une plage numérique.
+    assert.deepEqual(ADMIN_DESIGN_UNITS.map((unit) => unit.id), ['ADM-01', 'ADM-02', 'ADM-04', 'ADM-06', 'ADM-08', 'ADM-10', 'ADM-11']);
+    assert.deepEqual(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-02')?.screenCodes, ['ADM-02', 'ADM-03']);
+    assert.deepEqual(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-04')?.screenCodes, ['ADM-04', 'ADM-05']);
+    assert.deepEqual(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-06')?.screenCodes, ['ADM-06', 'ADM-07']);
+    assert.deepEqual(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-08')?.screenCodes, ['ADM-08', 'ADM-09']);
+    assert.deepEqual(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-10')?.screenCodes, ['ADM-10', 'ADM-12']);
+  });
+
+  check('ADM — chaque route de fiche est résolue par le routeur P0 vers son unité', () => {
+    for (const screen of ADMIN_DESIGN_SCREENS) {
+      const path = samplePath(screen.route);
+      const resolved = resolveRoute(path);
+      assert.equal(resolved.kind, 'shell', `route non shell : ${path}`);
+      if (resolved.kind !== 'shell') continue;
+      assert.equal(resolved.notFound, false, `route non résolue : ${path}`);
+      assert.equal(resolved.shell, 'ADMIN', `shell attendu ADMIN : ${path}`);
+      assert.equal(resolved.unitId, unitForScreen(screen.code), `unité inattendue pour ${path}`);
+    }
+    const index = resolveRoute('/admin');
+    assert.equal(index.kind === 'shell' && index.unitId, 'ADM-01', 'l’index /admin doit être le tableau de bord ADM-01');
+  });
+
+  check('ADM — registre complet : les 12 fiches ont un écran, aucun code inconnu', () => {
+    const registered = Object.keys(ADMIN_SCREEN_COMPONENTS).sort();
+    const expected = ADMIN_DESIGN_SCREENS.map((screen) => screen.code).sort();
+    assert.deepEqual(registered, expected);
+  });
+
+  check('ADM — chaque fiche déclare ses capacités absentes (BACKEND_GAP) et la résolution les renvoie', () => {
+    for (const screen of ADMIN_DESIGN_SCREENS) {
+      assert.ok((ADMIN_UNIT_GAPS[screen.code] ?? []).length > 0, `aucun BACKEND_GAP déclaré pour ${screen.code}`);
+    }
+    const gaps = adminGapsFor('ADM-10', '/admin/matching/rulesets');
+    assert.ok(gaps.some((line) => line.includes('ADM-10')), 'les gaps de l’unité doivent être inclus');
+    assert.ok(gaps.some((line) => line.includes('ADM-12')), 'les gaps de la fiche réellement atteinte doivent être inclus');
+  });
+
+  check('ADM — API : tout chemin appelé existe déjà dans routeContracts.ts (aucune route créée)', () => {
+    const normalize = (path: string) => path.replace(/:[A-Za-z]+/g, ':param');
+    const declared = new Set(API_ROUTE_CONTRACTS.map((route) => normalize(route.path)));
+    assert.ok(ADMIN_API_PATHS.length >= 8, `trop peu de chemins vérifiés : ${ADMIN_API_PATHS.length}`);
+    assert.equal(new Set(ADMIN_API_PATHS).size, ADMIN_API_PATHS.length, 'chemins dupliqués');
+    for (const path of ADMIN_API_PATHS) {
+      assert.ok(path.startsWith('/api/v1/'), `chemin hors namespace API : ${path}`);
+      assert.ok(declared.has(normalize(path)), `route inconnue du produit : ${path}`);
+    }
+  });
+
+  check('ADM — GARDE-FOU vocabulaire : aucun terme du Master Design ne désigne un concept produit dans l’interface', () => {
+    const files = [
+      ...readdirSync(ADMIN_SCREEN_DIR).map((name) => new URL(name, ADMIN_SCREEN_DIR)),
+      new URL('./components.tsx', import.meta.url),
+      new URL('./gaps.ts', import.meta.url),
+      new URL('./registry.tsx', import.meta.url),
+      new URL('./UnitBoundary.tsx', import.meta.url),
+      new URL('./RouteFallback.tsx', import.meta.url),
+      new URL('./vocabulary.ts', import.meta.url),
+    ];
+    for (const file of files) {
+      const source = stripComments(readFileSync(file, 'utf8'));
+      const found = forbiddenTermsIn(displayStringsIn(source).join(' | '));
+      assert.deepEqual(found, [], `${file.pathname} affiche des termes interdits : ${found.join(', ')}`);
+    }
+    // Les lignes BACKEND_GAP sont affichées telles quelles : elles sont scannées en brut.
+    const gapLines = Object.values(ADMIN_UNIT_GAPS).flat();
+    assert.ok(gapLines.length >= 12, 'au moins une ligne de gap par fiche');
+    assert.deepEqual(forbiddenTermsIn(stripTechnicalTokens(gapLines.join(' | '))), [], 'gaps.ts : termes interdits dans les lignes affichées');
+    // vocabulary.ts : les termes n'existent que dans le tableau des termes interdits.
+    const vocabulary = readFileSync(new URL('./vocabulary.ts', import.meta.url), 'utf8');
+    const body = stripComments(vocabulary);
+    const listStart = body.indexOf('DESIGN_ONLY_TERMS_NOT_RENDERED');
+    const listEnd = body.indexOf('] as const;', listStart);
+    const outsideList = stripTechnicalTokens(body.slice(0, listStart) + body.slice(listEnd));
+    assert.deepEqual(forbiddenTermsIn(outsideList), [], 'vocabulary.ts : termes interdits hors du tableau de référence');
+    assert.ok(DESIGN_ONLY_TERMS_NOT_RENDERED.includes('Mission' as never) && DESIGN_ONLY_TERMS_NOT_RENDERED.includes('Prestataire' as never), 'le tableau de référence doit lister les termes');
+  });
+
+  check('ADM — décision FINANCE : aucun libellé du triplet financier interdit n’entre dans le code de la tranche', () => {
+    const files = [
+      ...readdirSync(ADMIN_SCREEN_DIR).map((name) => new URL(name, ADMIN_SCREEN_DIR)),
+      new URL('./components.tsx', import.meta.url),
+      new URL('./gaps.ts', import.meta.url),
+      new URL('./vocabulary.ts', import.meta.url),
+    ];
+    for (const file of files) {
+      const source = stripComments(readFileSync(file, 'utf8'));
+      for (const label of FORBIDDEN_FINANCE_LABELS) {
+        assert.ok(!source.includes(label), `${file.pathname} contient « ${label} »`);
+      }
+    }
+  });
+
+  check('ADM — rendu réel : chaque fiche rend son conteneur, son état « source non configurée » et sa structure inspectable', () => {
+    for (const screen of ADMIN_DESIGN_SCREENS) {
+      const path = samplePath(screen.route);
+      const resolved = resolveRoute(path);
+      assert.equal(resolved.kind, 'shell');
+      if (resolved.kind !== 'shell' || !resolved.unitId) continue;
+      const html = renderToStaticMarkup(
+        <>{AdminScreen({ unitId: resolved.unitId, pathname: resolved.pathname, segments: resolved.segments })}</>,
+      );
+      assert.ok(html.includes(`data-unit="${resolved.unitId}"`), `${screen.code} : data-unit absent`);
+      assert.ok(html.includes(`data-screen="${screen.code}"`), `${screen.code} : data-screen absent`);
+      assert.ok(html.includes('data-backend-gap="true"'), `${screen.code} : BACKEND_GAP absent`);
+      assert.ok(html.includes('Source de données non configurée'), `${screen.code} : aucun état honnête sans source de données`);
+      assert.ok(html.includes(`data-sheet-frame="${screen.code}"`), `${screen.code} : structure de fiche non inspectable`);
+      const text = html.replace(/<[^>]*>/g, ' ');
+      assert.deepEqual(forbiddenTermsIn(text), [], `${screen.code} : terme interdit rendu à l’écran`);
+      for (const label of FORBIDDEN_FINANCE_LABELS) {
+        assert.ok(!text.includes(label), `${screen.code} : libellé financier interdit rendu`);
+      }
+    }
+  });
+
+  check('ADM — unités d’inspection : data-zone par genre de zone, aucun genre inventé', () => {
+    const allowedKinds = new Set(ADMIN_DESIGN_SCREENS.flatMap((screen) => screen.zoneKinds as readonly string[]));
+    assert.ok(allowedKinds.has('hero') && allowedKinds.has('table') && allowedKinds.has('verdict'), 'le catalogue doit déclarer les zones de la tranche');
+    for (const screen of ADMIN_DESIGN_SCREENS) {
+      const path = samplePath(screen.route);
+      const resolved = resolveRoute(path);
+      assert.equal(resolved.kind, 'shell', `route non shell : ${path}`);
+      if (resolved.kind !== 'shell' || !resolved.unitId) continue;
+      const html = renderToStaticMarkup(
+        <>{AdminScreen({ unitId: resolved.unitId, pathname: resolved.pathname, segments: resolved.segments })}</>,
+      );
+      const rendered = [...html.matchAll(/data-zone="([^"]+)"/g)].map((match) => match[1]);
+      for (const kind of rendered) {
+        assert.ok(allowedKinds.has(kind), `${screen.code} : genre de zone inventé « ${kind} »`);
+      }
+      for (const kind of screen.zoneKinds as readonly string[]) {
+        assert.ok(rendered.includes(kind), `${screen.code} : zone déclarée « ${kind} » absente du rendu`);
+      }
+    }
+  });
+
+  check('ADM — dock supervision : chaque onglet mène à une fiche livrée ou à une unité rattachée (état honnête)', () => {
+    const dockItems = DOCK_DEFINITIONS.ADM;
+    assert.equal(dockItems.length, 5, 'le dock ADM compte cinq onglets');
+    for (const item of dockItems) {
+      const resolved = resolveRoute(item.href);
+      assert.equal(resolved.kind, 'shell', `onglet non résolu : ${item.href}`);
+      if (resolved.kind !== 'shell') continue;
+      assert.equal(resolved.namespace, 'admin', `onglet hors espace supervision : ${item.href}`);
+      assert.equal(resolved.notFound, false, `onglet 404 : ${item.href}`);
+      const screen = resolveAdminScreen(resolved.pathname);
+      if (screen) {
+        assert.ok(ADMIN_SCREEN_COMPONENTS[screen.code], `onglet sans écran : ${item.href}`);
+        continue;
+      }
+      // Onglet vers une fonction non livrée : l'unité est rattachée, la fondation
+      // affiche l'état « non intégré » (état honnête, jamais une fausse page).
+      assert.ok(resolved.unitId, `onglet sans unité ni fiche : ${item.href}`);
+      assert.equal(integrationStatus(resolved.unitId), 'NON_INTEGRE', `onglet vers une unité livrée sans fiche : ${item.href}`);
+    }
+  });
+
+  check('ADM — chemin sans fiche : page de repli honnête, routes livrées listées, libellé du design jamais rendu', () => {
+    const cases: readonly { unitId: string; pathname: string }[] = [
+      { unitId: 'ADM-11', pathname: '/admin/matching/runs' },
+    ];
+    for (const item of cases) {
+      assert.equal(resolveAdminScreen(item.pathname), null, `${item.pathname} ne doit correspondre à aucune fiche`);
+      const resolved = resolveRoute(item.pathname);
+      assert.equal(resolved.kind === 'shell' ? resolved.unitId : null, item.unitId, `unité inattendue pour ${item.pathname}`);
+      const html = renderToStaticMarkup(<>{AdminRouteFallback({ unitId: item.unitId, pathname: item.pathname })}</>);
+      assert.ok(html.includes('data-route-fallback="true"'), `${item.pathname} : page de repli absente`);
+      assert.ok(html.includes('Aucun écran livré'), `${item.pathname} : absence de fiche non dite`);
+      assert.ok(html.includes(item.unitId), `${item.pathname} : unité non nommée`);
+      assert.ok(html.includes('data-backend-gap="true"'), `${item.pathname} : BACKEND_GAP absent`);
+      const delivered = deliveredScreensForUnit(item.unitId);
+      assert.ok(delivered.length > 0, `${item.unitId} : aucune route livrée`);
+      for (const screen of delivered) {
+        assert.ok(html.includes(screen.route), `${item.pathname} : route livrée absente (${screen.route})`);
+      }
+      const unitLabel = PRODUCTION_UNITS.find((unit) => unit.id === item.unitId)?.label ?? '';
+      assert.ok(unitLabel.length > 0, `${item.unitId} : libellé introuvable`);
+      assert.ok(!html.includes(unitLabel), `${item.pathname} : libellé du Master Design rendu à l’écran`);
+      const text = html.replace(/<[^>]*>/g, ' ');
+      assert.deepEqual(forbiddenTermsIn(text), [], `${item.pathname} : terme interdit rendu`);
+    }
+  });
+
+  check('ADM — intégration : 7 unités ADM PARTIEL, EMP/PRE/PUB/SYS inchangés, autres ADM/FIN/RTC non intégrées', () => {
+    assert.equal(ADMIN_UNIT_IDS.length, 7);
+    for (const unitId of ADMIN_UNIT_IDS) {
+      assert.equal(integrationStatus(unitId), 'PARTIEL', `${unitId} doit être PARTIEL`);
+      assert.ok(isAdminUnit(unitId), `${unitId} doit être reconnue comme unité ADM`);
+      assert.ok(PARTIAL_UNIT_IDS.includes(unitId), `${unitId} doit être dans PARTIAL_UNIT_IDS`);
+    }
+    for (const unit of PRODUCTION_UNITS) {
+      if (unit.family === 'EMP' || unit.family === 'PUB' || unit.family === 'SYS' || unit.family === 'PRE') continue;
+      if (ADMIN_UNIT_IDS.includes(unit.id)) continue;
+      assert.equal(integrationStatus(unit.id), 'NON_INTEGRE', `${unit.id} ne doit pas être touchée par cette tranche`);
+    }
+    assert.equal(isAdminUnit('EMP-01'), false);
+    assert.equal(integrationStatus('EMP-01'), 'PARTIEL', 'EMP-01 est livrée par P2-DESIGN-EMPLOYER');
+    assert.equal(integrationStatus('ADM-13'), 'NON_INTEGRE', 'ADM-13 (contrats) reste hors tranche P4A');
+  });
+
+  check('ADM — erreurs : projection en états StateGuard, corrélation sûre uniquement', () => {
+    assert.equal(adminError(new ApiClientError('refus', 403, 'FORBIDDEN')).state, '403');
+    assert.equal(adminError(new ApiClientError('réseau', 0, 'NETWORK_ERROR')).state, 'offline');
+    assert.equal(adminError(new ApiClientError('inconnu', 1000, 'INVALID_RESPONSE')).state, '500');
+    assert.equal(adminError(new Error('secret')).state, '500');
+    assert.equal(adminError(new ApiClientError('x', 500, 'INVALID_RESPONSE', 'req-abc123-xyz789')).correlationId, 'req-abc123-xyz789');
+    assert.equal(adminError(new ApiClientError('x', 500, 'INVALID_RESPONSE', 'token=secret')).correlationId, undefined);
+  });
+
+  check('ADM — décisions de qualification : parité exacte avec le code serveur réel', () => {
+    // Noms réels vérifiés dans src/backend/matching/records.ts (QUALIFICATION_DECISIONS).
+    assert.deepEqual(QUALIFICATION_DECISIONS, ['ELIGIBLE_FOR_INDEPENDENT', 'HUMAN_REVIEW_REQUIRED', 'BLOCKED']);
+    assert.deepEqual(Object.keys(QUALIFICATION_DECISION_LABELS).sort(), [...QUALIFICATION_DECISIONS].sort(), 'libellés des décisions réelles');
+    // La revue humaine réelle n'accepte que deux conclusions (parseReviewInput serveur).
+    assert.deepEqual([...REVIEW_DECISION_OPTIONS].sort(), ['BLOCKED', 'ELIGIBLE_FOR_INDEPENDENT']);
+    for (const option of REVIEW_DECISION_OPTIONS) {
+      assert.ok((QUALIFICATION_DECISIONS as readonly string[]).includes(option), `décision de revue non réelle : ${option}`);
+    }
+  });
+
+  check('ADM — garde de session : seul un compte ADMIN actif ouvre l’espace supervision', () => {
+    const base: AdminSessionState = { status: 'ready', session: { actor: { id: 'u-1', role: 'ADMIN', status: 'ACTIVE', displayName: 'Admin' }, permissions: ['users:read:any'] }, error: null, reload: () => undefined };
+    assert.equal(adminGuard(base), 'ok');
+    assert.equal(adminGuard({ ...base, session: { ...base.session!, actor: { ...base.session!.actor, role: 'EMPLOYER' } } }), 'forbidden');
+    assert.equal(adminGuard({ ...base, session: { ...base.session!, actor: { ...base.session!.actor, role: 'CANDIDATE' } } }), 'forbidden');
+    assert.equal(adminGuard({ ...base, session: { ...base.session!, actor: { ...base.session!.actor, status: 'BLOCKED' } } }), 'forbidden');
+    assert.equal(adminGuard({ ...base, session: null }), 'forbidden');
+    assert.equal(adminGuard({ ...base, status: 'loading' }), 'loading');
+    assert.equal(adminGuard({ ...base, status: 'unavailable' }), 'unavailable');
+    assert.equal(adminGuard({ ...base, status: 'anonymous' }), 'anonymous');
+    assert.equal(adminGuard({ ...base, status: 'error', error: { state: '500' } }), 'error');
+  });
+
+  check('ADM — e-mail masqué : la donnée réelle est masquée à l’affichage', () => {
+    assert.equal(maskEmail('marie.dupont@example.com'), 'ma***@example.com');
+    assert.equal(maskEmail('a@example.com'), 'a***@example.com');
+    assert.equal(maskEmail(''), null);
+    assert.equal(maskEmail(undefined), null);
+    assert.equal(maskEmail('sans-arobase'), null);
+  });
+
+  check('ADM — vocabulaire produit affiché : Offre, Employeur, Candidat, Claim, Qualification (jamais les mots du Master)', () => {
+    assert.equal(PRODUCT_LABELS.OFFER.singular, 'Offre');
+    assert.equal(PRODUCT_LABELS.EMPLOYER.singular, 'Employeur');
+    assert.equal(PRODUCT_LABELS.CANDIDATE.singular, 'Candidat');
+    assert.equal(PRODUCT_LABELS.CLAIM.singular, 'Claim');
+    assert.equal(PRODUCT_LABELS.ADMIN.singular, 'Admin');
+    assert.equal(PRODUCT_LABELS.QUALIFICATION.singular, 'Qualification');
+    assert.equal(PRODUCT_LABELS.MATCHING.singular, 'Matching');
+  });
+
+  check('ADM — résolution d’écran : motif exact prioritaire, paramètres extraits, variantes regroupées', () => {
+    const sheet = resolveAdminScreen('/admin/utilisateurs/usr-1');
+    assert.equal(sheet?.code, 'ADM-03');
+    assert.equal(sheet?.unitId, 'ADM-02');
+    assert.deepEqual(sheet?.params, { id: 'usr-1' });
+    const block = resolveAdminScreen('/admin/utilisateurs/usr-1/blocage');
+    assert.equal(block?.code, 'ADM-04');
+    assert.equal(block?.unitId, 'ADM-04');
+    assert.deepEqual(block?.params, { id: 'usr-1' });
+    const journal = resolveAdminScreen('/admin/blocages');
+    assert.equal(journal?.code, 'ADM-05');
+    const review = resolveAdminScreen('/admin/qualification/qual-9');
+    assert.equal(review?.code, 'ADM-07');
+    assert.equal(review?.unitId, 'ADM-06');
+    const decision = resolveAdminScreen('/admin/qualification/qual-9/decision');
+    assert.equal(decision?.code, 'ADM-08');
+    assert.equal(decision?.unitId, 'ADM-08');
+    const history = resolveAdminScreen('/admin/qualification/historique');
+    assert.equal(history?.code, 'ADM-09');
+    assert.equal(history?.unitId, 'ADM-08');
+    const runs = resolveAdminScreen('/admin/matching');
+    assert.equal(runs?.code, 'ADM-10');
+    const runDetail = resolveAdminScreen('/admin/matching/runs/mtr-1');
+    assert.equal(runDetail?.code, 'ADM-11');
+    assert.deepEqual(runDetail?.params, { id: 'mtr-1' });
+    const rulesets = resolveAdminScreen('/admin/matching/rulesets');
+    assert.equal(rulesets?.code, 'ADM-12');
+    assert.equal(rulesets?.unitId, 'ADM-10');
+    assert.equal(resolveAdminScreen('/admin/inconnu'), null);
+    assert.equal(resolveAdminScreen('/admin/matching/runs'), null, 'chemin sans fiche : repli honnête attendu');
+  });
+
+  check('ADM — accessibilité & responsive : table sémantique, cibles tactiles, réduction de mouvement', () => {
+    const html = renderToStaticMarkup(
+      <DataTable caption="Registre réel" head={['Identifiant', 'Statut']} rows={[['u-1', 'Actif']]} empty={<p>Aucun</p>} />,
+    );
+    assert.ok(html.includes('<table'), 'table absente');
+    assert.ok(html.includes('<caption'), 'caption absente (libellé du tableau)');
+    assert.ok(html.includes('scope="col"'), 'en-têtes sans scope="col"');
+    assert.ok(html.includes('data-zone="table"'), 'zone table absente');
+    const css = readFileSync(new URL('./admin.css', import.meta.url), 'utf8');
+    assert.ok(css.includes('@media (max-width: 600px)'), 'point de rupture mobile (360 px) absent');
+    assert.ok(css.includes('prefers-reduced-motion'), 'réduction de mouvement absente');
+    assert.ok(css.includes('overflow-x: auto'), 'défilement horizontal de la table non maîtrisé');
+    assert.ok(css.includes('--touch-target-mobile'), 'cible tactile non référencée');
+  });
+
+  return results;
+}

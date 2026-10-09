@@ -6,7 +6,7 @@
 import { PRODUCTION_UNITS, UNIT_COUNTS_BY_FAMILY } from '../design-system/generated/productionUnits';
 import { STATE_GUARD_CATALOG } from '../design-system/generated/stateGuardCatalog';
 import { DOCK_DEFINITIONS } from '../design-system/shells/shellNavigation';
-import { INTEGRATED_UNIT_IDS, integrationStatus, integrationSummary } from './integration';
+import { ADMIN_UNIT_IDS, INTEGRATED_UNIT_IDS, integrationStatus, integrationSummary } from './integration';
 import { namespaceFor, normalizePathname, ROUTE_NAMESPACES } from './routes';
 import { matchProductionUnit, resolveRoute, type ShellRouteResolution } from './resolveRoute';
 
@@ -80,7 +80,7 @@ export function runRoutingTests(): RoutingTestResult[] {
     return '4 cas';
   });
 
-  check('index : /client (EMP-01, P2) et /prestataire (PRE-01, P3) sont des tableaux de bord réels ; /admin, /appels, /etat, /fondation = index de fondation', () => {
+  check('index : /client (EMP-01, P2), /prestataire (PRE-01, P3) et /admin (ADM-01, P4A) sont des tableaux de bord réels ; /appels, /etat, /fondation = index de fondation', () => {
     // P2-DESIGN-EMPLOYER : la fiche EMP-01 du Master Design a pour route « /client » ;
     // l'index employeur est donc le tableau de bord réel, plus la page de fondation.
     const emp = shellOf('/client');
@@ -88,11 +88,14 @@ export function runRoutingTests(): RoutingTestResult[] {
     // P3-DESIGN-PRESTATAIRE : idem côté candidat, la fiche PRE-01 a pour route « /prestataire ».
     const pre = shellOf('/prestataire');
     assert(pre.isIndex && !pre.notFound && pre.unitId === 'PRE-01', `fiche PRE-01 attendue sur /prestataire, obtenu ${pre.unitId}`);
-    for (const path of ['/admin', '/appels', '/etat', '/fondation']) {
+    // P4A-DESIGN-ADMIN-CORE : idem côté supervision, la fiche ADM-01 a pour route « /admin ».
+    const adm = shellOf('/admin');
+    assert(adm.isIndex && !adm.notFound && adm.unitId === 'ADM-01', `fiche ADM-01 attendue sur /admin, obtenu ${adm.unitId}`);
+    for (const path of ['/appels', '/etat', '/fondation']) {
       const route = shellOf(path);
       assert(route.isIndex && !route.notFound && route.unitId === null, `index attendu pour ${path}`);
     }
-    return '2 fiches livrées (EMP-01, PRE-01) + 4 index de fondation';
+    return '3 fiches livrées (EMP-01, PRE-01, ADM-01) + 3 index de fondation';
   });
 
   check('unités : toute route de fiche des namespaces est résolue vers une unité (ou un état)', () => {
@@ -170,17 +173,19 @@ export function runRoutingTests(): RoutingTestResult[] {
     return '15 entrées de dock ancrées dans les fiches';
   });
 
-  check('intégration : 0 / 120 intégrée ; PARTIEL = PUB + SYS + les 32 unités EMP (P2) + les 26 unités PRE (P3) ; ADM/FIN/RTC non intégrées', () => {
+  check('intégration : 0 / 120 intégrée ; PARTIEL = PUB + SYS + les 32 unités EMP (P2) + les 26 unités PRE (P3) + les 7 unités ADM de la tranche P4A ; autres ADM/FIN/RTC non intégrées', () => {
     assertEqual(INTEGRATED_UNIT_IDS.length, 0, 'unités intégrées');
     const partialFamilies = ['PUB', 'SYS', 'EMP', 'PRE'];
     assert(
-      PRODUCTION_UNITS.every((unit) => integrationStatus(unit.id) === (partialFamilies.includes(unit.family) ? 'PARTIEL' : 'NON_INTEGRE')),
+      PRODUCTION_UNITS.every((unit) =>
+        integrationStatus(unit.id) === (partialFamilies.includes(unit.family) || ADMIN_UNIT_IDS.includes(unit.id) ? 'PARTIEL' : 'NON_INTEGRE'),
+      ),
       'statut inattendu',
     );
     const summary = integrationSummary();
     assertEqual([summary.integrees, summary.total], [0, 120], 'synthèse');
     assertEqual(summary.parFamille, UNIT_COUNTS_BY_FAMILY, 'répartition');
-    return '0 / 120 intégrées ; PARTIEL = PUB (10) + SYS (10) + EMP (32) + PRE (26)';
+    return '0 / 120 intégrées ; PARTIEL = PUB (10) + SYS (10) + EMP (32) + PRE (26) + ADM tranche P4A (7)';
   });
 
   return results;
