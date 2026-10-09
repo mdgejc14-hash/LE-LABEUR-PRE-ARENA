@@ -31,9 +31,10 @@
  * restent ceux du produit (`ACTIVE`, `BLOCKED`, `HUMAN_REVIEW_REQUIRED`…).
  */
 
-import type { UserRole } from '../types';
+import type { ContractStatus, UserRole } from '../types';
 import type { ServerUserRecord } from '../backend/identity/stores';
 import type { QualificationDecision, QualificationReasonSeverity } from '../backend/matching/records';
+import type { ClaimStatus, ClaimType } from '../backend/disputes/records';
 
 /** Objets métier canoniques du produit (noms de code stables, jamais traduits en UI). */
 export const PRODUCT_OBJECTS = {
@@ -165,6 +166,117 @@ export function maskEmail(email: string | undefined): string | null {
   return `${visible}***@${domain}`;
 }
 
+/* ── P4B-1 · supervision des contrats ─────────────────────────────────────
+ * Les statuts affichés sont les valeurs RÉELLES du domaine (`ContractStatus`,
+ * src/types/index.ts ; contrainte SQL `contracts_status_domain`). Aucun code
+ * n'est renommé : seuls les libellés officiels, déjà en usage côté EMPLOYER et
+ * CANDIDATE, sont repris tels quels pour l'interface ADMIN.
+ */
+
+export const CONTRACT_STATUS_LABELS: Record<ContractStatus, string> = {
+  DRAFT: 'Brouillon',
+  PENDING_EMPLOYER: 'En attente employeur',
+  PENDING_EMPLOYEE: 'En attente candidat',
+  SIGNATURE: 'En signature',
+  ACTIVE: 'Actif',
+  SUSPENDED: 'Suspendu',
+  INCIDENT: 'Claim en cours',
+  TERMINATED: 'Résilié',
+  COMPLETED: 'Terminé',
+  REPLACED: 'Remplacé',
+};
+
+/** Teintes visuelles des sceaux (aucun statut n'est porté par la couleur seule). */
+export const CONTRACT_STATUS_TONES: Record<ContractStatus, 'gold' | 'emerald' | 'amber' | 'clay' | 'violet' | 'cyan' | 'slate'> = {
+  DRAFT: 'slate',
+  PENDING_EMPLOYER: 'amber',
+  PENDING_EMPLOYEE: 'amber',
+  SIGNATURE: 'violet',
+  ACTIVE: 'emerald',
+  SUSPENDED: 'amber',
+  INCIDENT: 'clay',
+  TERMINATED: 'slate',
+  COMPLETED: 'gold',
+  REPLACED: 'cyan',
+};
+
+/**
+ * Segments du registre (fiche ADM-13) : chaque segment est une sélection sur
+ * des statuts RÉELS de `ContractStatus`. « En signature » groupe les trois
+ * statuts réels d'attente de signature ; jamais un statut inventé.
+ */
+export const CONTRACT_REGISTRY_SEGMENTS: readonly { id: string; label: string; statuses: readonly ContractStatus[] }[] = [
+  { id: 'all', label: 'Tous', statuses: [] },
+  { id: 'signature', label: 'En signature', statuses: ['SIGNATURE', 'PENDING_EMPLOYER', 'PENDING_EMPLOYEE'] },
+  { id: 'active', label: 'Actifs', statuses: ['ACTIVE'] },
+  { id: 'incident', label: 'En incident', statuses: ['INCIDENT', 'SUSPENDED'] },
+  { id: 'completed', label: 'Terminés', statuses: ['COMPLETED'] },
+  { id: 'terminated', label: 'Résiliés', statuses: ['TERMINATED'] },
+  { id: 'replaced', label: 'Remplacés', statuses: ['REPLACED'] },
+];
+
+/**
+ * Types et statuts RÉELS des Claims (`src/backend/disputes/records.ts`,
+ * CLAIM_TYPE_VALUES / CLAIM_STATUS_VALUES — parité vérifiée par test). Le
+ * produit nomme cet objet CLAIM ; le Master Design le nomme « Litige » : le
+ * libellé produit est conservé (règle de vocabulaire absolue).
+ */
+export const CLAIM_TYPE_LABELS: Record<ClaimType, string> = {
+  SALARY_NOT_RECEIVED: 'Salaire non reçu',
+  PAYMENT_DISPUTE: 'Contestation de paiement',
+  CONTRACT_INCIDENT: 'Incident de contrat',
+  OTHER_REVIEW_REQUIRED: 'Autre revue requise',
+};
+
+export const CLAIM_STATUS_LABELS: Record<ClaimStatus, string> = {
+  OPEN: 'Ouvert',
+  EVIDENCE_REQUESTED: 'Justificatif demandé',
+  UNDER_REVIEW: 'En revue',
+  ADMIN_REVIEW: 'Revue ADMIN',
+  RESOLVED: 'Résolu',
+  REJECTED: 'Rejeté',
+  CLOSED: 'Clôturé',
+};
+
+/** Sceaux des Claims : teintes visuelles, le code serveur reste affiché à côté. */
+export const CLAIM_STATUS_TONES: Record<ClaimStatus, 'emerald' | 'amber' | 'clay' | 'violet' | 'slate'> = {
+  OPEN: 'amber',
+  EVIDENCE_REQUESTED: 'violet',
+  UNDER_REVIEW: 'violet',
+  ADMIN_REVIEW: 'clay',
+  RESOLVED: 'emerald',
+  REJECTED: 'slate',
+  CLOSED: 'slate',
+};
+
+/** Réponse réellement stockée sur un jalon d'exécution (oui/non/absent) — affichage seul. */
+export function formatYesNo(value: 'YES' | 'NO' | undefined): string {
+  if (value === 'YES') return 'Oui';
+  if (value === 'NO') return 'Non';
+  return '—';
+}
+
+export function formatBoolean(value: boolean | undefined): string {
+  if (value === true) return 'Oui';
+  if (value === false) return 'Non';
+  return '—';
+}
+
+/**
+ * Affichage d'un montant RÉEL du DTO `Contract` (valeur et devise telles que
+ * produites par le serveur). Aucune conversion, aucun calcul, aucun agrégat :
+ * le modèle financier (et ses écrans) reste hors de cette tranche.
+ */
+export function formatContractAmount(value: number, currency: string): string {
+  if (!Number.isFinite(value)) return '—';
+  if (!currency) return new Intl.NumberFormat('fr-FR').format(value);
+  try {
+    return new Intl.NumberFormat('fr-FR', { style: 'currency', currency, minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(value);
+  } catch {
+    return `${new Intl.NumberFormat('fr-FR').format(value)} ${currency}`;
+  }
+}
+
 export const ADMIN_UI_TERMS = {
   USER_REGISTRY: 'Utilisateurs',
   USER_SHEET: 'Fiche utilisateur',
@@ -177,4 +289,9 @@ export const ADMIN_UI_TERMS = {
   MATCHING_RUNS: `Runs de ${PRODUCT_LABELS.MATCHING.singular.toLowerCase()}`,
   MATCHING_AUDIT: 'Audit de run',
   MATCHING_RULES: 'Règles existantes',
+  CONTRACT_REGISTRY: PRODUCT_LABELS.CONTRACT.plural,
+  CONTRACT_SHEET: `Fiche ${PRODUCT_LABELS.CONTRACT.singular.toLowerCase()}`,
+  CONTRACT_INCIDENTS: PRODUCT_LABELS.CLAIM.plural,
+  CONTRACT_JOURNAL: `Historique du ${PRODUCT_LABELS.CONTRACT.singular.toLowerCase()}`,
+  CONTRACT_FORCED_REVISION: 'Révision forcée',
 } as const;

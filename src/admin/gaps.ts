@@ -80,4 +80,39 @@ export const ADMIN_UNIT_GAPS: Record<string, readonly string[]> = {
     'ADM-12 · les versions de règles affichées sont celles réellement observées dans les données lues (ruleVersion des qualifications en file) ; aucune version n’est inventée.',
     'ADM-12 · édition des poids de facteurs, tests de biais préalables et double validation — absents : aucune modification de règle n’est possible depuis l’interface.',
   ],
+  /* ── P4B-1 · supervision des contrats ── */
+  'ADM-13': [
+    'ADM-13 · fiche : GET /admin/contracts?segment=&cursor= — la route admin.contracts.list existe et répond le registre réel (permission contrats:read:any), mais sans segment serveur : les filtres de la fiche sont appliqués localement sur la page réellement chargée ; le curseur réellement renvoyé (id de contrat) sert au chargement de la page suivante.',
+    'ADM-13 · GET /admin/contracts/summary — absent : aucune synthèse serveur. Les repères affichés sont des comptes sur la page réellement chargée, jamais sur la base entière.',
+    'ADM-13 · POST /admin/contracts/export — absent : aucun export du registre (et donc aucune journalisation d’export). Aucun bouton d’export n’est proposé.',
+    'ADM-13 · détecteur d’inactivité « sans activité depuis 7 jours » — absent : le DTO Contrat n’expose aucune date de dernière activité ; aucune estimation n’est affichée à la place.',
+    'ADM-13 · montants : seule la valeur contractuelle réellement lisible est affichée (salaire mensuel et devise du contrat). Les écrans de paiement et de rapprochement, ainsi que tout agrégat financier, sont hors de cette tranche (P4B-2).',
+    'ADM-13 · sans persistance PostgreSQL durable, la route répond sa frontière de contrôle (collection vide, persistence: « not-configured ») : le registre affiche l’absence réelle de données, jamais un registre simulé.',
+  ],
+  'ADM-14': [
+    'ADM-14 · fiche : GET /admin/contracts/:id — absent : aucune lecture individuelle ADMIN n’existe (la route contracts.read est strictement réservée aux parties du contrat, contrôle serveur). La fiche est composée depuis la page réelle de admin.contracts.list (100 contrats par page) ; un contrat hors de la page chargée affiche un état honnête.',
+    'ADM-14 · GET /admin/contracts/:id/versions — absent : aucune table de versions ni de diff n’est exposée à l’ADMIN. La frise rendue est l’historique réellement émis par les services (champ Contrat.history) ; aucune version n’est inventée.',
+    'ADM-14 · POST /admin/contracts/:id/notes (notes internes) et geste « escalader » — absents : aucune écriture n’est possible depuis cette fiche ; elle est en lecture seule.',
+    'ADM-14 · signature et activation : les routes réelles (contracts.sign, contracts.activate) sont réservées aux parties ; l’ADMIN consulte l’état et les horodatages réels des signatures, il ne signe ni n’active rien depuis l’interface.',
+    'ADM-14 · bandeau de niveau d’accès (lecture / action / financier) par écran : aucune donnée serveur ne le décrit ; seule la liste des permissions dérivées par le serveur pour la session est affichée.',
+    'ADM-14 · pièces liées au contrat (vue ADMIN par contrat) : la route admin.documents.list existe (permission documents:read:any) mais ne filtre pas par contrat ; aucun rattachement fiable n’étant exposé, aucune liste de pièces n’est présentée.',
+  ],
+  'ADM-15': [
+    'ADM-15 · fiche : GET /admin/contracts/:id/incidents — absent : les incidents d’un contrat sont lus via la route ADMIN existante des Claims (admin.claims.list, permission incidents:read:any), filtrée localement sur le champ réel Contrat du Claim, page réellement chargée (100 Claims). Aucun endpoint par contrat n’existe.',
+    'ADM-15 · POST /admin/contracts/:id/incidents (création manuelle motivée) et POST /admin/contracts/:id/preventions (actions préventives) — absents : cette tranche ne crée ni n’appelle aucune écriture ; la décision de Claim est gouvernée par le serveur et relève d’une autre tranche (hors P4B-1).',
+    'ADM-15 · score de risque de Claim — absent : aucun modèle serveur n’est exposé ; aucun score n’est calculé ni affiché dans l’interface.',
+    'ADM-15 · sans persistance PostgreSQL durable, les routes Claim répondent 501 (route fermée) : l’écran affiche l’erreur réelle du serveur, jamais un registre vide présenté comme sain.',
+  ],
+  'ADM-16': [
+    'ADM-16 · fiche entière en BACKEND_GAP : POST /admin/contracts/:id/forced-revision et POST /admin/contracts/:id/forced-revision/countersign — absents du produit. Aucune écriture ADMIN sur un contrat n’existe ni n’est simulée : l’ADMIN ne modifie pas un contrat directement (règle du produit : les modifications passent par les flux métier tracés).',
+    'ADM-16 · génération de version R2 signée par la plateforme, double contre-signature superviseur, notification aux parties et voie de recours — aucune de ces capacités n’a de route serveur dans le référentiel.',
+    'ADM-16 · le contexte affiché (référence, statut, parties) provient uniquement de la page réelle de admin.contracts.list ; aucun formulaire n’est rendu, car aucune commande ne pourrait être exécutée.',
+  ],
+  'ADM-17': [
+    'ADM-17 · fiche : GET /admin/contracts/:id/journal?cursor= — absent : aucun journal d’audit paginé par contrat n’existe. L’historique rendu est le champ réel Contrat.history produit par les services (id, horodatage, événement, description, acteur), lu depuis la page réelle de admin.contracts.list.',
+    'ADM-17 · POST /admin/contracts/:id/journal/verify — absent : aucune vérification de chaîne d’empreintes n’est exposée ; le journal affiché n’est pas un event store chaîné et l’écran le dit. Aucun recalcul n’est simulé dans l’interface (règle de la fiche : la vérification est un fait serveur, jamais une déduction d’affichage).',
+    'ADM-17 · GET /admin/contracts/:id/journal/export — absent : aucun export JSON signé, aucun manifeste d’empreintes.',
+    'ADM-17 · valeurs avant/après (deltas) et horodatages milliseconde : non exposés par le DTO ; seuls les champs réellement produits sont affichés.',
+    'ADM-17 · aucun agent ne peut écrire dans l’historique : le produit écrit ces lignes lors des transitions réelles ; cette tranche n’ajoute aucune route d’écriture.',
+  ],
 };

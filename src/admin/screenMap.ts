@@ -3,7 +3,7 @@
  *
  * Les routes sont celles du routeur P0 (`productionUnits.ts` /
  * `ADMIN_DESIGN_SCREENS`) : aucune route n'est créée, renommée ou réécrite
- * par cette tranche. Ce module ne contient AUCUN composant : il est importable
+ * par ces tranches. Ce module ne contient AUCUN composant : il est importable
  * par la résolution de route sans embarquer l'interface.
  */
 
@@ -11,9 +11,9 @@ import { ADMIN_DESIGN_SCREENS, ADMIN_DESIGN_UNITS } from './catalog';
 import { ADMIN_UNIT_GAPS } from './gaps';
 
 export interface ResolvedAdminScreen {
-  /** Code de fiche (ADM-01 … ADM-12). */
+  /** Code de fiche (ADM-01 … ADM-17, tranches livrées). */
   readonly code: string;
-  /** Unité de production qui contient cette fiche (ADM-01 … ADM-11). */
+  /** Unité de production qui contient cette fiche (regroupement `units.py`). */
   readonly unitId: string;
   /** Motif de route réel dont ce chemin descend. */
   readonly pattern: string;

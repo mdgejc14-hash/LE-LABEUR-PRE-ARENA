@@ -1,5 +1,5 @@
 /**
- * ADM — accès frontend aux routes BACKEND EXISTANTES.
+ * ADM — accès frontend aux routes BACKEND EXISTANTES (tranches P4A et P4B-1).
  *
  * Règles absolues :
  *  - aucun endpoint n'est créé, renommé ou contourné ; chaque chemin appelé ici
@@ -19,9 +19,11 @@ import type {
   QualificationDecision,
 } from '../backend/matching/records';
 import type { QualificationReviewQueueItem } from '../backend/matching/matchingRepository';
+import type { ClaimView } from '../backend/disputes/claimRepository';
+import type { Contract } from '../types';
 import { ApiClientError, HttpApiClient } from '../repositories/apiClient';
 
-export type { AdminUserDto, MissionQualificationRecord, QualificationDecision, QualificationReviewQueueItem };
+export type { AdminUserDto, MissionQualificationRecord, QualificationDecision, QualificationReviewQueueItem, ClaimView, Contract };
 
 /** Session serveur réelle : rôle, statut de compte et permissions dérivées serveur. */
 export interface AdminSession {
@@ -64,6 +66,10 @@ export const ADMIN_API_PATHS: readonly string[] = [
   '/api/v1/admin/stats',
   '/api/v1/admin/audit',
   '/api/v1/admin/incidents',
+  // P4B-1 — supervision des contrats : lecture ADMIN réelle du registre des
+  // contrats et lecture ADMIN des Claims rattachés (incidents d'un contrat).
+  '/api/v1/admin/contracts',
+  '/api/v1/admin/claims',
 ];
 
 /** Clé d'idempotence explicite (jamais réutilisée entre deux commandes). */
@@ -163,6 +169,28 @@ export class AdminApi {
       idempotencyKey: newIdempotencyKey(),
       signal,
     });
+  }
+
+  /* ── Contrats (P4B-1 — supervision des contrats, lecture ADMIN réelle) ── */
+
+  /**
+   * Registre ADMIN réel : `admin.contracts.list` (GET /api/v1/admin/contracts,
+   * permission serveur `contracts:read:any`). Sans persistance PostgreSQL
+   * durable, le serveur répond sa frontière de contrôle (collection vide,
+   * `persistence: 'not-configured'`) : c'est l'état réel, affiché tel quel.
+   */
+  contracts(options: ListOptions = {}): Promise<AdminPage<Contract>> {
+    return this.list<Contract>('/admin/contracts', options);
+  }
+
+  /**
+   * Claims réels rattachés à un contrat : `admin.claims.list`
+   * (GET /api/v1/admin/claims, permission serveur `incidents:read:any`).
+   * Aucun filtre serveur par contrat n'existe : le rattachement est un filtre
+   * local sur la page réellement chargée (état dit, jamais une donnée inventée).
+   */
+  claims(options: ListOptions = {}): Promise<AdminPage<ClaimView>> {
+    return this.list<ClaimView>('/admin/claims', options);
   }
 
   /* ── Frontières de contrôle ADMIN (réponses réelles, sans données métier) ── */

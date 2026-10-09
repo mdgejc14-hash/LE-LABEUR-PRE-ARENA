@@ -15,8 +15,17 @@
  * supervision (ADM-01, ADM-02, ADM-04, ADM-06, ADM-08, ADM-10, ADM-11 — 12
  * fiches) sont livrées (écran réel, routes du routeur P0, API existantes) et
  * portent chacune au moins une capacité absente déclarée
- * (`src/admin/gaps.ts`) → statut PARTIEL. Les autres unités ADM, FIN et RTC
- * restent non intégrées (tranches suivantes de P4).
+ * (`src/admin/gaps.ts`) → statut PARTIEL.
+ *
+ * P4B-1-DESIGN-ADMIN-CONTRACTS : les 3 unités ADM de la supervision des
+ * contrats (ADM-13 registre ; ADM-14 fiche — incidents — journal ; ADM-16
+ * révision forcée — 5 fiches, ADM-13 → ADM-17) sont livrées dans les mêmes
+ * conditions (écran réel, routes du routeur P0, API existantes uniquement :
+ * admin.contracts.list et admin.claims.list) et portent chacune au moins une
+ * capacité absente déclarée → statut PARTIEL. Paiements et rapprochement
+ * (ADM-18 et suivants), litiges, salaires, remplacements, réputation,
+ * documents, notifications, ops, sécurité avancée, infra, FIN et RTC restent
+ * non intégrées (tranches suivantes de P4/P5).
  */
 
 import { PRODUCTION_UNITS, TOTAL_UNITS, UNIT_COUNTS_BY_FAMILY, type ProductionUnit } from '../design-system/generated/productionUnits';
@@ -51,8 +60,9 @@ export const EMPLOYER_UNIT_IDS: readonly string[] = EMPLOYER_DESIGN_UNITS.map((u
 export const PRESTATAIRE_UNIT_IDS: readonly string[] = PRESTATAIRE_DESIGN_UNITS.map((unit) => unit.id);
 
 /**
- * Unités ADM livrées par P4A-DESIGN-ADMIN-CORE (7 unités, 12 fiches). Même
- * règle : PARTIEL dès qu'une fiche déclare une capacité absente.
+ * Unités ADM livrées par P4A-DESIGN-ADMIN-CORE et P4B-1-DESIGN-ADMIN-CONTRACTS
+ * (10 unités, 17 fiches, dérivées du catalogue généré). Même règle : PARTIEL
+ * dès qu'une fiche déclare une capacité absente.
  */
 export const ADMIN_UNIT_IDS: readonly string[] = ADMIN_DESIGN_UNITS.map((unit) => unit.id);
 

@@ -38,7 +38,7 @@ const PrestataireScreen = lazy(() => import('../../prestataire/registry').then((
 /** Écrans ADM chargés uniquement quand une route /admin/* livrée est atteinte. */
 const AdminScreen = lazy(() => import('../../admin/registry').then((module) => ({ default: module.AdminScreen })));
 import { Link, navigate } from '../../routing/navigation';
-import { integrationStatus } from '../../routing/integration';
+import { ADMIN_UNIT_IDS, integrationStatus } from '../../routing/integration';
 import { SquircleCard } from '../components/SquircleCard';
 import { StatusSeal } from '../components/StatusSeal';
 import { SHELL_COMPONENTS } from './shells';
@@ -211,6 +211,32 @@ function Content({ route }: { route: ShellRouteResolution }) {
    */
   if (route.namespace === 'prestataire' && route.unitId) {
     return <PrestataireRouteFallback unitId={route.unitId} pathname={route.pathname} />;
+  }
+
+  /**
+   * Espace supervision livré (P4A-DESIGN-ADMIN-CORE, écrans ADM ;
+   * P4B-1-DESIGN-ADMIN-CONTRACTS ajoute les fiches contrats ADM-13 → ADM-17) :
+   * une route de fiche ADM rend son écran — y compris l'index `/admin` dont la
+   * fiche ADM-01 est le tableau de bord. Un chemin rattaché à une unité ADM
+   * LIVRÉE mais sans fiche pour ce chemin (ex. `/admin/matching/runs`) rend le
+   * repli honnête de la tranche. Un chemin rattaché à une unité ADM NON LIVRÉE
+   * (paiements, litiges, infra, …) garde la réponse de la fondation (« écran
+   * non intégré ») : aucune page métier n'est inventée. Ce branchement
+   * complétait la description P4A du câblage (ShellRoute : « écrans ADM +
+   * repli honnête ») sans être rendu dans `Content` ; il est rétabli ici,
+   * strictement sur le modèle des branches EMP/PRE ci-dessus.
+   */
+  if (route.namespace === 'admin' && route.unitId) {
+    if (resolveAdminScreen(route.pathname)) {
+      return (
+        <Suspense fallback={<LoadingRoute />}>
+          <AdminScreen unitId={route.unitId} pathname={route.pathname} segments={route.segments} />
+        </Suspense>
+      );
+    }
+    if (ADMIN_UNIT_IDS.includes(route.unitId)) {
+      return <AdminRouteFallback unitId={route.unitId} pathname={route.pathname} />;
+    }
   }
 
   if (route.isIndex) return <FamilyIndex family={family} index={index} />;
