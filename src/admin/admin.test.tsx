@@ -1,12 +1,12 @@
 /**
- * P4A-DESIGN-ADMIN-CORE + P4B-1-DESIGN-ADMIN-CONTRACTS — tests de l'espace
- * supervision (écrans ADMIN livrés : base + contrats).
+ * P4A-DESIGN-ADMIN-CORE + P4B-1-DESIGN-ADMIN-CONTRACTS +
+ * P4B-2-DESIGN-ADMIN-PAYMENTS — tests de l'espace supervision livré.
  *
  * Couverture :
  *  1. parité du catalogue généré avec la source de design (Python) ;
  *  2. résolution de route : chaque fiche ADM des tranches est atteignable et
  *     rattachée à son unité (regroupement `units.py`, pas une plage numérique) ;
- *  3. registre complet (10 unités / 17 fiches) ;
+ *  3. registre complet (12 unités / 22 fiches), selon les regroupements canoniques exacts ;
  *  4. API : chaque chemin appelé existe déjà dans `routeContracts.ts` ;
  *  5. GARDE-FOU DE VOCABULAIRE : aucun libellé métier du Master Design
  *     (Mission, Client, Prestataire, Litige) ne peut entrer dans l'interface,
@@ -18,14 +18,17 @@
  *  8. décisions de qualification : parité exacte avec le code serveur
  *     (QUALIFICATION_DECISIONS) et options de revue réelles ;
  *  9. garde de session : seul un compte ADMIN actif ouvre l'espace ;
- * 10. intégration : ADM tranches = PARTIEL, EMP/PRE/PUB/SYS inchangés, autres
- *     ADM (paiements, litiges, …)/FIN/RTC non intégrées ;
+ * 10. intégration : unités ADMIN livrées = PARTIEL, EMP/PRE/PUB/SYS inchangés,
+ *     autres ADM (litiges, …)/FIN/RTC non intégrées ;
  * 11. responsive, accessibilité (table sémantique) et reduced-motion (CSS) ;
  * 12. P4B-1 contrats : routes ADM réelles du registre et des Claims, statuts
  *     et types de Claim en parité exacte avec le serveur, segments du registre
  *     en statuts réels uniquement, aucune donnée simulée, capacités absentes
  *     vérifiées contre le catalogue de routes (aucune route ADMIN individuelle
- *     de contrat n'existe : la fiche est composée depuis la page réelle).
+ *     de contrat n'existe : la fiche est composée depuis la page réelle) ;
+ * 13. P4B-2 paiements : états/natures serveur exacts, séparation Salaire/frais,
+ *     déclarations vs vérification vs PAID, permissions, rapprochement/revue,
+ *     BACKEND_GAPs, idempotence, accessibilité et aucun calcul monétaire.
  */
 
 import React from 'react';
@@ -41,7 +44,7 @@ import { AdminRouteFallback } from './RouteFallback';
 import { DataTable } from './components';
 import { DOCK_DEFINITIONS } from '../design-system/shells/shellNavigation';
 import { deliveredScreensForUnit } from './screenMap';
-import { ADMIN_API_PATHS, REVIEW_DECISION_OPTIONS } from './api';
+import { ADMIN_API_PATHS, REVIEW_DECISION_OPTIONS, type PaymentDeclarationRecord } from './api';
 import {
   CLAIM_STATUS_LABELS,
   CLAIM_TYPE_LABELS,
@@ -51,7 +54,16 @@ import {
   DESIGN_ONLY_TERMS_NOT_RENDERED,
   PRODUCT_LABELS,
   QUALIFICATION_DECISION_LABELS,
+  PAYMENT_STATUS_LABELS,
+  PAYMENT_STATUS_TONES,
+  PAYMENT_TYPE_LABELS,
+  PAYMENT_DECLARATION_OUTCOME_LABELS,
+  PAYMENT_RECONCILIATION_VERDICT_LABELS,
+  PAYMENT_RECONCILIATION_BATCH_STATUS_LABELS,
+  PAYMENT_RECONCILIATION_ITEM_STATUS_LABELS,
+  PAYMENT_RECONCILIATION_REVIEW_DECISION_LABELS,
   formatContractAmount,
+  formatPaymentAmount,
   maskEmail,
 } from './vocabulary';
 import { CLAIM_STATUS_VALUES, CLAIM_TYPE_VALUES } from '../backend/disputes/records';
@@ -59,6 +71,13 @@ import { adminError } from './errors';
 import { adminGuard, type AdminSessionState } from './hooks';
 import { API_ROUTE_CONTRACTS } from '../backend/api/routeContracts';
 import { QUALIFICATION_DECISIONS } from '../backend/matching/records';
+import { PAYMENT_LIFECYCLE_STATUS_VALUES, PAYMENT_TYPE_VALUES } from '../domain/paymentLifecycle';
+import type {
+  PaymentReconciliationBatchStatus,
+  PaymentReconciliationItemStatus,
+  PaymentReconciliationReviewDecision,
+  PaymentReconciliationVerdict,
+} from '../backend/persistence/paymentReconciliationRecords';
 import { resolveRoute } from '../routing/resolveRoute';
 import { ADMIN_UNIT_IDS, integrationStatus, isAdminUnit, PARTIAL_UNIT_IDS } from '../routing/integration';
 import { PRODUCTION_UNITS } from '../design-system/generated/productionUnits';
@@ -140,11 +159,11 @@ export async function runAdminTests(): Promise<{ name: string; success: boolean;
     execFileSync('python3', ['scripts/design/generate-admin-catalog.py', '--check']);
   });
 
-  check('ADM — 10 unités / 17 fiches, chaque fiche rattachée à une seule unité', () => {
-    assert.equal(ADMIN_DESIGN_UNITS.length, 10);
-    assert.equal(ADMIN_DESIGN_SCREENS.length, 17);
+  check('ADM — 12 unités / 22 fiches, chaque fiche rattachée à une seule unité', () => {
+    assert.equal(ADMIN_DESIGN_UNITS.length, 12);
+    assert.equal(ADMIN_DESIGN_SCREENS.length, 22);
     const codes = ADMIN_DESIGN_SCREENS.map((screen) => screen.code);
-    assert.equal(new Set(codes).size, 17);
+    assert.equal(new Set(codes).size, 22);
     for (const screen of ADMIN_DESIGN_SCREENS) {
       const unit = unitForScreen(screen.code);
       assert.ok(unit, `fiche sans unité : ${screen.code}`);
@@ -155,7 +174,7 @@ export async function runAdminTests(): Promise<{ name: string; success: boolean;
     // ajoute ADM-13 (registre, unité propre), ADM-14 = {fiche, incidents,
     // journal} (une seule unité de production) et ADM-16 (révision forcée,
     // unité propre) — exactement les regroupements de `design/llab/units.py`.
-    assert.deepEqual(ADMIN_DESIGN_UNITS.map((unit) => unit.id), ['ADM-01', 'ADM-02', 'ADM-04', 'ADM-06', 'ADM-08', 'ADM-10', 'ADM-11', 'ADM-13', 'ADM-14', 'ADM-16']);
+    assert.deepEqual(ADMIN_DESIGN_UNITS.map((unit) => unit.id), ['ADM-01', 'ADM-02', 'ADM-04', 'ADM-06', 'ADM-08', 'ADM-10', 'ADM-11', 'ADM-13', 'ADM-14', 'ADM-16', 'ADM-18', 'ADM-20']);
     assert.deepEqual(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-02')?.screenCodes, ['ADM-02', 'ADM-03']);
     assert.deepEqual(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-04')?.screenCodes, ['ADM-04', 'ADM-05']);
     assert.deepEqual(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-06')?.screenCodes, ['ADM-06', 'ADM-07']);
@@ -167,6 +186,16 @@ export async function runAdminTests(): Promise<{ name: string; success: boolean;
     assert.equal(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-14')?.canon, 'ADM — contrat (fiche, incidents & journal)');
     assert.equal(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-13')?.canon, 'ADM — contrats (registre)');
     assert.equal(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-16')?.canon, 'ADM — contrat (révision forcée)');
+    assert.deepEqual(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-18')?.screenCodes, ['ADM-18', 'ADM-19']);
+    assert.deepEqual(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-18')?.routes, ['/admin/paiements', '/admin/paiements/reconciliation']);
+    assert.deepEqual(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-20')?.screenCodes, ['ADM-20', 'ADM-21', 'ADM-22']);
+    assert.deepEqual(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-20')?.routes, [
+      '/admin/paiements/anomalies',
+      '/admin/paiements/declarations-externes',
+      '/admin/paiements/incidents/:id',
+    ]);
+    assert.equal(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-18')?.canon, 'ADM — paiements (vue globale & réconciliation)');
+    assert.equal(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-20')?.canon, 'ADM — paiements (anomalies, déclarations & incidents)');
   });
 
   check('ADM — chaque route de fiche est résolue par le routeur P0 vers son unité', () => {
@@ -183,7 +212,7 @@ export async function runAdminTests(): Promise<{ name: string; success: boolean;
     assert.equal(index.kind === 'shell' && index.unitId, 'ADM-01', 'l’index /admin doit être le tableau de bord ADM-01');
   });
 
-  check('ADM — registre complet : les 17 fiches livrées ont un écran, aucun code inconnu', () => {
+  check('ADM — registre complet : les 22 fiches livrées ont un écran, aucun code inconnu', () => {
     const registered = Object.keys(ADMIN_SCREEN_COMPONENTS).sort();
     const expected = ADMIN_DESIGN_SCREENS.map((screen) => screen.code).sort();
     assert.deepEqual(registered, expected);
@@ -343,8 +372,8 @@ export async function runAdminTests(): Promise<{ name: string; success: boolean;
     }
   });
 
-  check('ADM — intégration : 10 unités ADM PARTIEL (P4A + P4B-1), EMP/PRE/PUB/SYS inchangés, autres ADM/FIN/RTC non intégrées', () => {
-    assert.equal(ADMIN_UNIT_IDS.length, 10);
+  check('ADM — intégration : 12 unités ADM PARTIEL (P4A + P4B-1 + P4B-2), EMP/PRE/PUB/SYS inchangés, autres ADM/FIN/RTC non intégrées', () => {
+    assert.equal(ADMIN_UNIT_IDS.length, 12);
     for (const unitId of ADMIN_UNIT_IDS) {
       assert.equal(integrationStatus(unitId), 'PARTIEL', `${unitId} doit être PARTIEL`);
       assert.ok(isAdminUnit(unitId), `${unitId} doit être reconnue comme unité ADM`);
@@ -357,11 +386,12 @@ export async function runAdminTests(): Promise<{ name: string; success: boolean;
     }
     assert.equal(isAdminUnit('EMP-01'), false);
     assert.equal(integrationStatus('EMP-01'), 'PARTIEL', 'EMP-01 est livrée par P2-DESIGN-EMPLOYER');
-    // P4B-1 : les unités contrats sont livrées ; les tranches suivantes ne sont pas entamées.
+    // P4B-1 : unités contrats ; P4B-2 : unités paiements exactes de units.py.
     assert.equal(integrationStatus('ADM-13'), 'PARTIEL', 'ADM-13 (registre des contrats) est livrée par P4B-1');
     assert.equal(integrationStatus('ADM-14'), 'PARTIEL', 'ADM-14 (fiche, incidents & journal) est livrée par P4B-1');
     assert.equal(integrationStatus('ADM-16'), 'PARTIEL', 'ADM-16 (révision forcée — capacité absente déclarée) est livrée par P4B-1');
-    assert.equal(integrationStatus('ADM-18'), 'NON_INTEGRE', 'ADM-18 (paiements) : P4B-2, hors de cette tranche');
+    assert.equal(integrationStatus('ADM-18'), 'PARTIEL', 'ADM-18 (Paiements et rapprochement) est livrée par P4B-2');
+    assert.equal(integrationStatus('ADM-20'), 'PARTIEL', 'ADM-20 (anomalies, déclarations et incidents) est livrée par P4B-2');
     assert.equal(integrationStatus('ADM-26'), 'NON_INTEGRE', 'ADM-26 (litiges — file de modération) reste hors tranches livrées');
   });
 
@@ -619,6 +649,133 @@ export async function runAdminTests(): Promise<{ name: string; success: boolean;
     const noCurrency = formatContractAmount(1200, '');
     assert.ok(!noCurrency.includes('€'), 'devise absente : aucun symbole inventé');
     assert.ok(formatContractAmount(1200, 'XX-BOGUS').includes('XX-BOGUS'), 'devise inconnue : la valeur serveur est rendue telle quelle, sans conversion');
+  });
+
+  /* ── P4B-2-DESIGN-ADMIN-PAYMENTS — Paiements, déclarations et rapprochement ── */
+
+  check('ADM — P4B-2 : routes canoniques des cinq fiches et deux unités exactes (units.py)', () => {
+    const cases = [
+      ['/admin/paiements', 'ADM-18', 'ADM-18', {}],
+      ['/admin/paiements/reconciliation', 'ADM-19', 'ADM-18', {}],
+      ['/admin/paiements/anomalies', 'ADM-20', 'ADM-20', {}],
+      ['/admin/paiements/declarations-externes', 'ADM-21', 'ADM-20', {}],
+      ['/admin/paiements/incidents/pay-e2e-1', 'ADM-22', 'ADM-20', { id: 'pay-e2e-1' }],
+    ] as const;
+    for (const [path, code, unitId, params] of cases) {
+      const resolved = resolveAdminScreen(path);
+      assert.equal(resolved?.code, code, `fiche P4B-2 de ${path}`);
+      assert.equal(resolved?.unitId, unitId, `unité canonique de ${path}`);
+      assert.deepEqual(resolved?.params, params, `paramètres réels de ${path}`);
+      const production = resolveRoute(path);
+      assert.equal(production.kind, 'shell');
+      if (production.kind === 'shell') {
+        assert.equal(production.shell, 'ADMIN');
+        assert.equal(production.notFound, false);
+        assert.equal(production.unitId, unitId);
+      }
+    }
+    assert.equal(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-18')?.criticality, 'P0');
+    assert.equal(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-20')?.criticality, 'P0');
+  });
+
+  check('ADM — P4B-2 : statuts, natures, déclarations, verdicts et revue en parité avec les types serveur', () => {
+    assert.deepEqual(Object.keys(PAYMENT_STATUS_LABELS), PAYMENT_LIFECYCLE_STATUS_VALUES, 'statuts Payment affichés != PAYMENT_LIFECYCLE_STATUS_VALUES');
+    assert.deepEqual(Object.keys(PAYMENT_STATUS_TONES), PAYMENT_LIFECYCLE_STATUS_VALUES, 'teintes != statuts Payment réels');
+    assert.deepEqual(Object.keys(PAYMENT_TYPE_LABELS), PAYMENT_TYPE_VALUES, 'natures de Payment affichées != PAYMENT_TYPE_VALUES');
+    const declarationOutcomes: readonly PaymentDeclarationRecord['outcome'][] = ['PENDING', 'VERIFIED', 'REJECTED'];
+    assert.deepEqual(Object.keys(PAYMENT_DECLARATION_OUTCOME_LABELS), declarationOutcomes, 'outcomes != type réel d’une tentative de déclaration');
+    const reconciliationVerdicts: readonly PaymentReconciliationVerdict[] = ['MATCH', 'MISMATCH', 'NOT_FOUND', 'DUPLICATE', 'REVIEW_REQUIRED'];
+    assert.deepEqual(Object.keys(PAYMENT_RECONCILIATION_VERDICT_LABELS), reconciliationVerdicts, 'verdicts != les états de rapprochement serveur');
+    const batchStatuses: readonly PaymentReconciliationBatchStatus[] = ['PENDING', 'PROCESSING', 'COMPLETED', 'PARTIAL', 'FAILED'];
+    const itemStatuses: readonly PaymentReconciliationItemStatus[] = ['PENDING', 'PROCESSING', 'RETRYABLE', 'MATCH', 'MISMATCH', 'NOT_FOUND', 'DUPLICATE', 'REVIEW_REQUIRED', 'FAILED'];
+    const reviewDecisions: readonly PaymentReconciliationReviewDecision[] = ['OPEN', 'CONFIRMED', 'REJECTED'];
+    assert.deepEqual(Object.keys(PAYMENT_RECONCILIATION_BATCH_STATUS_LABELS).sort(), [...batchStatuses].sort());
+    assert.deepEqual(Object.keys(PAYMENT_RECONCILIATION_ITEM_STATUS_LABELS).sort(), [...itemStatuses].sort());
+    assert.deepEqual(Object.keys(PAYMENT_RECONCILIATION_REVIEW_DECISION_LABELS).sort(), [...reviewDecisions].sort());
+    assert.equal(PAYMENT_STATUS_LABELS.VERIFIED, 'Vérifié — non payé', 'VERIFIED doit rester distinct de PAID');
+    assert.equal(PAYMENT_STATUS_LABELS.PAID, 'Payé (état du cycle)');
+    assert.equal(PAYMENT_TYPE_LABELS.SALARY.label, 'Salaire');
+    assert.equal(PAYMENT_TYPE_LABELS.PLATFORM_FEE.label, 'Frais dus à LE LABEUR');
+    assert.notEqual(PAYMENT_TYPE_LABELS.SALARY.label, PAYMENT_TYPE_LABELS.PLATFORM_FEE.label, 'Salaire et frais doivent rester séparés');
+    assert.ok(PAYMENT_TYPE_LABELS.SALARY.detail.includes('ne reçoit ni ne détient'), 'le Salaire doit rester un paiement externe');
+  });
+
+  check('ADM — P4B-2 : handlers/permissions réels seulement ; aucune route inventée ni accès partie contourné', () => {
+    const route = (key: string) => API_ROUTE_CONTRACTS.find((candidate) => candidate.key === key);
+    const adminRoutes = [
+      ['admin.payments.list', 'GET', '/api/v1/admin/payments', 'payments:read:any', false],
+      ['admin.payments.approve', 'POST', '/api/v1/admin/payments/:paymentId/approve', 'payments:approve', true],
+      ['admin.payments.reject', 'POST', '/api/v1/admin/payments/:paymentId/reject', 'payments:reject', true],
+      ['admin.payments.confirm', 'POST', '/api/v1/admin/payments/:paymentId/confirm', 'payments:approve', true],
+      ['admin.payment-reconciliation.batches.read', 'GET', '/api/v1/admin/payment-reconciliation/batches/:batchId', 'payments:read:any', false],
+      ['admin.payment-reconciliation.batches.retry', 'POST', '/api/v1/admin/payment-reconciliation/batches/:batchId/retry', 'payments:read:any', true],
+      ['admin.payment-reconciliation.reviews.decide', 'POST', '/api/v1/admin/payment-reconciliation/reviews/:reviewId/decision', 'payments:approve', true],
+      ['admin.payment-reconciliation.reviews.correction-attempt', 'POST', '/api/v1/admin/payment-reconciliation/reviews/:reviewId/correction-attempts', 'payments:approve', true],
+    ] as const;
+    for (const [key, method, path, permission, idempotent] of adminRoutes) {
+      const contract = route(key);
+      assert.ok(contract, `contrat serveur absent : ${key}`);
+      assert.equal(contract.method, method, `${key} méthode`);
+      assert.equal(contract.path, path, `${key} chemin`);
+      assert.equal(contract.scope, 'admin', `${key} scope ADMIN`);
+      assert.equal(contract.permission, permission, `${key} permission dérivée serveur`);
+      assert.equal(Boolean('idempotency' in contract && contract.idempotency), idempotent, `${key} idempotence`);
+      if (idempotent) assert.equal('auditOnMutation' in contract && contract.auditOnMutation, true, `${key} audit serveur`);
+      assert.ok(ADMIN_API_PATHS.includes(path), `${key} non gardée par AdminApi`);
+    }
+    const partRoute = route('payments.read');
+    assert.ok(partRoute);
+    assert.equal(partRoute.path, '/api/v1/payments/:paymentId');
+    assert.equal(partRoute.scope, 'owner', 'la route de lecture reste portée par son scope produit');
+    assert.ok(ADMIN_API_PATHS.includes(partRoute.path), 'consultation réelle non gardée');
+    const paymentsSource = readFileSync(new URL('../backend/repositories/paymentRepository.ts', import.meta.url), 'utf8');
+    assert.ok(paymentsSource.includes("trusted.role !== 'ADMIN' && !trusted.permissions.includes('payments:read:any')"), 'le handler de lecture n’autorise pas explicitement ADMIN avec payments:read:any');
+    const entrySource = readFileSync(new URL('../backend/api/entry.ts', import.meta.url), 'utf8');
+    assert.ok(entrySource.includes('...paymentHandlers,'), 'handlers Payment non branchés dans le Worker réel');
+    assert.ok(entrySource.includes('...paymentReconciliationHandlers,'), 'handlers de batch non branchés dans le Worker réel');
+
+    const absent = [
+      '/api/v1/admin/payments/overview',
+      '/api/v1/admin/payments/events',
+      '/api/v1/admin/psp/health',
+      '/api/v1/admin/reconciliation',
+      '/api/v1/admin/reconciliation/summary',
+      '/api/v1/admin/payments/anomalies',
+      '/api/v1/admin/payments/external-declarations',
+      '/api/v1/admin/payments/incidents/:id',
+    ];
+    for (const path of absent) {
+      assert.equal(API_ROUTE_CONTRACTS.some((candidate) => candidate.path === path), false, `capacité présentée absente mais trouvée : ${path}`);
+    }
+    assert.equal(API_ROUTE_CONTRACTS.some((candidate) => candidate.method === 'GET' && String(candidate.path) === '/api/v1/admin/payment-reconciliation/batches'), false, 'le registre global des lots ne doit pas être confondu avec la route POST de création');
+    assert.ok(!ADMIN_API_PATHS.some((path) => /admin\/(?:payments\/(?:overview|events|anomalies|external-declarations|incidents)|psp\/health|reconciliation(?:\/summary)?)/.test(path)), 'AdminApi appelle une route déclarée BACKEND_GAP');
+  });
+
+  check('ADM — P4B-2 : actions idempotentes, états distincts, écran sans source métier alternative ni calcul monétaire', () => {
+    const source = stripComments(readFileSync(new URL('./screens/payments.tsx', import.meta.url), 'utf8'));
+    assert.ok(source.includes('useSingleFlightAction'), 'garde contre les doubles soumissions UI absente');
+    assert.ok(source.includes('current.status === \'PENDING_VERIFICATION\''), 'actions de déclaration non bornées au statut réel');
+    assert.ok(source.includes('current.status === \'VERIFIED\''), 'transition vers PAID non bornée à VERIFIED');
+    assert.ok(source.includes('api.verifyPayment'), 'route réelle payments.approve absente');
+    assert.ok(source.includes('api.rejectPayment'), 'route réelle payments.reject absente');
+    assert.ok(source.includes('api.markPaymentPaid'), 'route réelle payments.confirm absente');
+    assert.ok(source.includes('api.decidePaymentReconciliationReview'), 'route de revue absente');
+    assert.ok(source.includes('api.recordPaymentReconciliationCorrectionAttempt'), 'tentative append-only absente');
+    assert.ok(source.includes('Non exposée par le DTO Payment'), 'confirmation du Candidat ne doit pas être déduite');
+    assert.ok(source.includes('VERIFIED ne vaut pas PAID'), 'distinction VERIFIED/PAID non affichée');
+    assert.ok(!/\bfetch\s*\(/.test(source), 'aucun appel réseau direct');
+    assert.ok(!/\/api\/v1/.test(source), 'aucun chemin API dupliqué dans l’écran');
+    assert.ok(!/Math\.(?:round|ceil|floor)|toFixed\s*\(|\b(?:payment\.)?amount\s*(?:\+|-|\*|\/)|(?:\+|-|\*|\/)\s*\b(?:payment\.)?amount\b/i.test(source), 'calcul, arrondi ou agrégat monétaire client détecté');
+    assert.ok(!/new Date\(\)/.test(source), 'aucun horodatage métier inventé depuis l’horloge locale');
+    assert.ok(!/localStorage|sessionStorage/.test(source), 'aucune source de vérité de navigateur');
+  });
+
+  check('ADM — P4B-2 : montant unitaire affiché sans conversion ni arrondi monétaire', () => {
+    assert.equal(formatPaymentAmount(Number.NaN, 'XOF'), '—');
+    assert.equal(formatPaymentAmount(120000.5, 'XOF'), '120000.5 XOF', 'montant de Salaire non arrondi selon les décimales de la devise');
+    assert.equal(formatPaymentAmount(30000, 'XOF'), '30000 XOF', 'montant de frais distinct, jamais additionné');
+    assert.equal(formatPaymentAmount(120000, ''), '120000', 'devise absente : aucune devise ajoutée');
+    assert.equal(formatPaymentAmount(12.75, 'XX-BOGUS'), '12.75 XX-BOGUS', 'devise inconnue affichée sans conversion');
   });
 
   return results;

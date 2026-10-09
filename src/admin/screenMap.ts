@@ -11,7 +11,7 @@ import { ADMIN_DESIGN_SCREENS, ADMIN_DESIGN_UNITS } from './catalog';
 import { ADMIN_UNIT_GAPS } from './gaps';
 
 export interface ResolvedAdminScreen {
-  /** Code de fiche (ADM-01 … ADM-17, tranches livrées). */
+  /** Code de fiche ADM livré par P4A, P4B-1 ou P4B-2. */
   readonly code: string;
   /** Unité de production qui contient cette fiche (regroupement `units.py`). */
   readonly unitId: string;

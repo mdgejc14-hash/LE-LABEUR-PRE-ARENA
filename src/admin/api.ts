@@ -1,5 +1,5 @@
 /**
- * ADM — accès frontend aux routes BACKEND EXISTANTES (tranches P4A et P4B-1).
+ * ADM — accès frontend aux routes BACKEND EXISTANTES (tranches P4A, P4B-1 et P4B-2).
  *
  * Règles absolues :
  *  - aucun endpoint n'est créé, renommé ou contourné ; chaque chemin appelé ici
@@ -20,10 +20,33 @@ import type {
 } from '../backend/matching/records';
 import type { QualificationReviewQueueItem } from '../backend/matching/matchingRepository';
 import type { ClaimView } from '../backend/disputes/claimRepository';
+import type { PaymentView } from '../backend/repositories/paymentRepository';
+import type { PaymentDeclarationRecord } from '../backend/persistence/paymentRecords';
+import type {
+  PaymentReconciliationBatchReport,
+  PaymentReconciliationCorrectionAttemptInput,
+  PaymentReconciliationReviewDecisionInput,
+} from '../backend/payments/paymentReconciliationBatch';
+import type {
+  PaymentReconciliationCorrectionAttemptRecord,
+  PaymentReconciliationReviewRecord,
+} from '../backend/persistence/paymentReconciliationRecords';
 import type { Contract } from '../types';
 import { ApiClientError, HttpApiClient } from '../repositories/apiClient';
 
-export type { AdminUserDto, MissionQualificationRecord, QualificationDecision, QualificationReviewQueueItem, ClaimView, Contract };
+export type {
+  AdminUserDto,
+  MissionQualificationRecord,
+  QualificationDecision,
+  QualificationReviewQueueItem,
+  ClaimView,
+  Contract,
+  PaymentView,
+  PaymentDeclarationRecord,
+  PaymentReconciliationBatchReport,
+  PaymentReconciliationReviewRecord,
+  PaymentReconciliationCorrectionAttemptRecord,
+};
 
 /** Session serveur réelle : rôle, statut de compte et permissions dérivées serveur. */
 export interface AdminSession {
@@ -35,6 +58,8 @@ export interface AdminPage<T> {
   readonly items: T[];
   readonly hasMore: boolean;
   readonly cursor: string | null;
+  /** Frontière de contrôle renvoyée quand aucune persistance durable n'est ouverte. */
+  readonly persistence?: string;
 }
 
 /** Réponse réelle de admin.stats.read (frontière de contrôle : métriques vides). */
@@ -70,6 +95,16 @@ export const ADMIN_API_PATHS: readonly string[] = [
   // contrats et lecture ADMIN des Claims rattachés (incidents d'un contrat).
   '/api/v1/admin/contracts',
   '/api/v1/admin/claims',
+  // P4B-2 — lecture ADMIN des paiements et des lots de rapprochement déjà connus.
+  '/api/v1/admin/payments',
+  '/api/v1/payments/:paymentId',
+  '/api/v1/admin/payments/:paymentId/approve',
+  '/api/v1/admin/payments/:paymentId/reject',
+  '/api/v1/admin/payments/:paymentId/confirm',
+  '/api/v1/admin/payment-reconciliation/batches/:batchId',
+  '/api/v1/admin/payment-reconciliation/batches/:batchId/retry',
+  '/api/v1/admin/payment-reconciliation/reviews/:reviewId/decision',
+  '/api/v1/admin/payment-reconciliation/reviews/:reviewId/correction-attempts',
 ];
 
 /** Clé d'idempotence explicite (jamais réutilisée entre deux commandes). */
@@ -85,6 +120,9 @@ function page<T>(payload: unknown): AdminPage<T> {
     items: value.items as T[],
     hasMore: Boolean(value.hasMore),
     cursor: typeof value.cursor === 'string' ? value.cursor : null,
+    ...(typeof (value as { persistence?: unknown }).persistence === 'string'
+      ? { persistence: (value as { persistence: string }).persistence }
+      : {}),
   };
 }
 
@@ -191,6 +229,116 @@ export class AdminApi {
    */
   claims(options: ListOptions = {}): Promise<AdminPage<ClaimView>> {
     return this.list<ClaimView>('/admin/claims', options);
+  }
+
+  /* ── Paiements et rapprochement (P4B-2 — routes réellement présentes) ── */
+
+  /**
+   * Registre ADMIN `admin.payments.list` — permission serveur `payments:read:any`.
+   * La page peut être une frontière de contrôle `persistence: not-configured`;
+   * ce marqueur est conservé pour distinguer absence de source et registre vide.
+   */
+  payments(options: ListOptions = {}): Promise<AdminPage<PaymentView>> {
+    return this.list<PaymentView>('/admin/payments', options);
+  }
+
+  /**
+   * Consultation unitaire réelle. La route `payments.read` est déclarée avec
+   * scope `owner`, mais son handler autorise explicitement ADMIN avec
+   * `payments:read:any`; aucun endpoint réservé aux parties n'est contourné.
+   */
+  payment(paymentId: string, signal?: AbortSignal): Promise<PaymentView> {
+    return this.client.request<PaymentView>(`/payments/${encodeURIComponent(paymentId)}`, { signal });
+  }
+
+  /** Vérification de la déclaration courante par l'ADMIN (`payments:approve`). */
+  verifyPayment(paymentId: string, signal?: AbortSignal, idempotencyKey = newIdempotencyKey()): Promise<PaymentView> {
+    return this.client.request<PaymentView>(`/admin/payments/${encodeURIComponent(paymentId)}/approve`, {
+      method: 'POST',
+      body: {},
+      idempotencyKey,
+      signal,
+    });
+  }
+
+  /** Transition `VERIFIED → PAID` côté serveur après son rapprochement réel. */
+  markPaymentPaid(paymentId: string, signal?: AbortSignal, idempotencyKey = newIdempotencyKey()): Promise<PaymentView> {
+    return this.client.request<PaymentView>(`/admin/payments/${encodeURIComponent(paymentId)}/confirm`, {
+      method: 'POST',
+      body: {},
+      idempotencyKey,
+      signal,
+    });
+  }
+
+  /** Rejet ADMIN avec motif obligatoire (`payments:reject`). */
+  rejectPayment(paymentId: string, reason: string, signal?: AbortSignal, idempotencyKey = newIdempotencyKey()): Promise<PaymentView> {
+    return this.client.request<PaymentView>(`/admin/payments/${encodeURIComponent(paymentId)}/reject`, {
+      method: 'POST',
+      body: { reason },
+      idempotencyKey,
+      signal,
+    });
+  }
+
+  /** Lecture paginée d'un lot persisté, à partir de son identifiant connu. */
+  paymentReconciliationBatch(batchId: string, options: ListOptions = {}): Promise<PaymentReconciliationBatchReport> {
+    return this.client.request<PaymentReconciliationBatchReport>(
+      `/admin/payment-reconciliation/batches/${encodeURIComponent(batchId)}`,
+      {
+        query: { limit: options.limit ?? 100, cursor: options.cursor ?? null },
+        signal: options.signal,
+      },
+    );
+  }
+
+  /** Reprise idempotente des items FAILED/RETRYABLE (pas de transfert de fonds). */
+  retryPaymentReconciliationBatch(batchId: string, signal?: AbortSignal, idempotencyKey = newIdempotencyKey()): Promise<PaymentReconciliationBatchReport> {
+    return this.client.request<PaymentReconciliationBatchReport>(
+      `/admin/payment-reconciliation/batches/${encodeURIComponent(batchId)}/retry`,
+      {
+        method: 'POST',
+        body: {},
+        idempotencyKey,
+        signal,
+      },
+    );
+  }
+
+  /** Décision de revue ADMIN, idempotente et distincte du statut du Paiement. */
+  decidePaymentReconciliationReview(
+    reviewId: string,
+    input: Omit<PaymentReconciliationReviewDecisionInput, 'idempotencyKey'>,
+    signal?: AbortSignal,
+    idempotencyKey = newIdempotencyKey(),
+  ): Promise<{ review: PaymentReconciliationReviewRecord; replayed?: boolean }> {
+    return this.client.request(
+      `/admin/payment-reconciliation/reviews/${encodeURIComponent(reviewId)}/decision`,
+      {
+        method: 'POST',
+        body: input,
+        idempotencyKey,
+        signal,
+      },
+    );
+  }
+
+  /** Proposition append-only de correction ; le backend ne l'applique pas. */
+  recordPaymentReconciliationCorrectionAttempt(
+    reviewId: string,
+    input: Omit<PaymentReconciliationCorrectionAttemptInput, 'idempotencyKey'>,
+    signal?: AbortSignal,
+    idempotencyKey = newIdempotencyKey(),
+  ): Promise<{ correctionAttempt: PaymentReconciliationCorrectionAttemptRecord; replayed?: boolean }> {
+    return this.client.request(
+      `/admin/payment-reconciliation/reviews/${encodeURIComponent(reviewId)}/correction-attempts`,
+      {
+        method: 'POST',
+        body: input,
+        idempotencyKey,
+        signal,
+      },
+    );
   }
 
   /* ── Frontières de contrôle ADMIN (réponses réelles, sans données métier) ── */
