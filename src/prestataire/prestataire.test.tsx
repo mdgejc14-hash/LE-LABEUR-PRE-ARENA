@@ -293,7 +293,7 @@ export async function runPrestataireTests(): Promise<PrestataireTestCase[]> {
     return 'repli honnête + 26 unités avec routes listées';
   });
 
-  check('PRE — intégration : 26 unités PRE PARTIEL, PUB/SYS/EMP inchangés, 7 unités ADM livrées en P4A, autres ADM/FIN/RTC non intégrées', () => {
+  check('PRE — intégration : 26 unités PRE PARTIEL, PUB/SYS/EMP inchangés, 12 unités ADM livrées en P4A/P4B-1/P4B-2, autres ADM/FIN/RTC non intégrées', () => {
     assert.equal(INTEGRATED_PRE_UNIT_IDS.length, 26);
     for (const unitId of INTEGRATED_PRE_UNIT_IDS) {
       assert.equal(integrationStatus(unitId), 'PARTIEL', `${unitId} doit être PARTIEL`);
@@ -302,7 +302,7 @@ export async function runPrestataireTests(): Promise<PrestataireTestCase[]> {
     }
     for (const unit of PRODUCTION_UNITS) {
       if (unit.family === 'PRE' || unit.family === 'PUB' || unit.family === 'SYS' || unit.family === 'EMP') continue;
-      // P4A-DESIGN-ADMIN-CORE a livré les 7 unités ADM de sa tranche depuis P3.
+      // Les tranches P4A, P4B-1 et P4B-2 ont livré 12 unités ADM depuis P3.
       if (ADMIN_UNIT_IDS.includes(unit.id)) continue;
       assert.equal(integrationStatus(unit.id), 'NON_INTEGRE', `${unit.id} ne doit pas être touchée par cette tranche`);
     }

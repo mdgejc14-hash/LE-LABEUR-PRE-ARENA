@@ -1,14 +1,15 @@
 /**
- * ADM —— registre des écrans livrés (10 unités, 17 fiches — tranches P4A et P4B-1).
+ * ADM —— registre des écrans livrés (12 unités, 22 fiches — tranches P4A, P4B-1 et P4B-2).
  *
- * Chaque code de fiche ADM-01 → ADM-17 est associé à l'écran qui le rend. Les
- * variantes des fiches (mêmes zones, état imposé par la route) réutilisent
- * l'écran canonique : c'est la structure décrite par le Master Design.
- * P4B-1 ajoute la supervision des contrats : ADM-13 (registre), ADM-14
- * (fiche), ADM-15 (incidents), ADM-16 (révision forcée — capacité absente)
- * et ADM-17 (journal). Les fiches ADM-18 et suivantes (paiements, salaire,
- * litiges, remplacements, réputation, documents, ops, sécurité, infra) restent
- * hors tranches : aucune entrée n'est ajoutée pour elles.
+ * Chaque code de fiche ADM-01 → ADM-22 livré par ces tranches est associé à
+ * l'écran qui le rend. Les variantes des fiches (mêmes zones, état imposé par
+ * la route) réutilisent l'écran canonique, comme le décrit le Master Design.
+ * P4B-1 ajoute la supervision des contrats (ADM-13 → ADM-17). P4B-2 ajoute
+ * ADM-18/19 Paiements et rapprochement, ADM-20 anomalies (BACKEND_GAP), ADM-21
+ * déclarations externes depuis le DTO Payment et ADM-22 incident financier
+ * (BACKEND_GAP), sur les routes canoniques déjà définies.
+ * Les autres fiches (salaire en tant qu'écran dédié, litiges, remplacements,
+ * réputation, documents, ops, sécurité, infra) restent hors tranche.
  *
  * Ce module est le SEUL point d'entrée des routes `/admin/*` des tranches :
  * il résout la fiche depuis le chemin réel, applique la garde de session puis
@@ -35,6 +36,13 @@ import {
   Admin16ContractForcedRevision,
   Admin17ContractJournal,
 } from './screens/contracts';
+import {
+  Admin18PaymentRegistry,
+  Admin19PaymentReconciliation,
+  Admin20PaymentAnomaliesScreen,
+  Admin21ExternalDeclarationsScreen,
+  Admin22PaymentIncidentScreen,
+} from './screens/payments';
 
 type AdminScreenComponent = (props: AdminUnitProps) => ReactNode;
 
@@ -57,6 +65,11 @@ export const ADMIN_SCREEN_COMPONENTS: Readonly<Record<string, AdminScreenCompone
   'ADM-15': Admin15ContractIncidents,
   'ADM-16': Admin16ContractForcedRevision,
   'ADM-17': Admin17ContractJournal,
+  'ADM-18': Admin18PaymentRegistry,
+  'ADM-19': Admin19PaymentReconciliation,
+  'ADM-20': Admin20PaymentAnomaliesScreen,
+  'ADM-21': Admin21ExternalDeclarationsScreen,
+  'ADM-22': Admin22PaymentIncidentScreen,
 };
 
 export function adminScreenCodes(): readonly string[] {

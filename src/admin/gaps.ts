@@ -115,4 +115,28 @@ export const ADMIN_UNIT_GAPS: Record<string, readonly string[]> = {
     'ADM-17 · valeurs avant/après (deltas) et horodatages milliseconde : non exposés par le DTO ; seuls les champs réellement produits sont affichés.',
     'ADM-17 · aucun agent ne peut écrire dans l’historique : le produit écrit ces lignes lors des transitions réelles ; cette tranche n’ajoute aucune route d’écriture.',
   ],
+  /* ── P4B-2 · paiements, déclarations et rapprochement ── */
+  'ADM-18': [
+    'ADM-18 · fiche : GET /admin/payments/overview, GET /admin/payments/events et GET /admin/psp/health — absents. Le registre réel admin.payments.list ne fournit ni agrégats financiers, ni flux temporel, ni état opérateur ; aucun montant n’est additionné dans le navigateur.',
+    'ADM-18 · le DTO Payment expose les échéances et montants unitaires réellement stockés. Il ne fournit pas de synthèse globale ni de détails d’événements financiers à 24 h.',
+    'ADM-18 · la consultation unitaire ADMIN utilise le handler existant GET /api/v1/payments/:paymentId, dont la permission payments:read:any est vérifiée par le handler ; aucune route frontend de détail supplémentaire n’est créée.',
+  ],
+  'ADM-19': [
+    'ADM-19 · GET /admin/reconciliation?period=&operator=, GET /admin/reconciliation/summary et GET /admin/payment-reconciliation/batches — absents. Le produit permet uniquement GET /admin/payment-reconciliation/batches/:batchId si l’identifiant du lot est déjà connu ; aucun registre global ni historique des lots n’est exposé.',
+    'ADM-19 · les items du batch exposent les verdicts réels MATCH, MISMATCH, NOT_FOUND, DUPLICATE et REVIEW_REQUIRED, leurs comparaisons, raisons et horodatages. Un MATCH n’est ni une vérification du Paiement ni un état PAID.',
+    'ADM-19 · POST /admin/reconciliation/gaps/:id/impute — absent. L’API existante de tentative de correction consigne une proposition append-only non appliquée ; aucune écriture compensatoire ou modification du Paiement n’est produite par l’interface.',
+    'ADM-19 · aucun import de relevé propre à un opérateur ni fournisseur réel n’est configuré par cette tranche ; le batch existant n’accepte que des éléments normalisés et reste soumis aux fournisseurs effectivement configurés par le serveur.',
+  ],
+  'ADM-20': [
+    'ADM-20 · GET /admin/payments/anomalies, POST /admin/payments/anomalies/:id/treat et POST /admin/payments/anomalies/:id/false-positive — absents du catalogue et sans handler. Aucun détecteur, seuil, score, file d’anomalies ni faux positif n’est simulé.',
+    'ADM-20 · les verdicts MISMATCH, NOT_FOUND, DUPLICATE et REVIEW_REQUIRED ne sont affichés que lorsqu’ils sont réellement lus dans un lot de rapprochement identifié ; ils ne créent pas une file globale d’anomalies.',
+  ],
+  'ADM-21': [
+    'ADM-21 · aucune route ADMIN dédiée aux déclarations externes n’existe. Les déclarations réellement persistées sont incluses dans le DTO Payment de admin.payments.list et de payments.read ; l’écran ne contourne pas les routes réservées à l’Employeur ou au Candidat.',
+    'ADM-21 · seuls les états PENDING, VERIFIED et REJECTED de chaque tentative, ainsi que les champs réellement exposés, sont affichés. Aucun délai de 72 h, contestation, antécédent de compte ou dossier de pièces dédié n’est fourni par le DTO.',
+    'ADM-21 · les actions ADMIN réelles sont bornées au Paiement courant PENDING_VERIFICATION : approve (payments:approve) ou reject avec motif (payments:reject). Le statut VERIFIED reste distinct de PAID ; la confirmation OTP du Candidat n’est pas accessible à l’ADMIN par cette tranche.',
+  ],
+  'ADM-22': [
+    'ADM-22 · GET /admin/payments/incidents/:id, POST /admin/payments/incidents/:id/resolve et POST /admin/payments/incidents/:id/escalate — absents du catalogue et sans handler. Aucun remboursement, réémission, écriture compensatoire ou incident financier n’est inventé.',
+  ],
 };

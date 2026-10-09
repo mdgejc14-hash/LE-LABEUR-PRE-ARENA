@@ -296,7 +296,7 @@ export async function runEmployerTests(): Promise<{ name: string; success: boole
     }
   });
 
-  check('EMP — intégration : 32 unités EMP PARTIEL, PRE livré en P3 et 7 unités ADM livrées en P4A, FIN/RTC inchangés', () => {
+  check('EMP — intégration : 32 unités EMP PARTIEL, PRE livré en P3 et 12 unités ADM livrées en P4A/P4B-1/P4B-2, FIN/RTC inchangés', () => {
     assert.equal(EMPLOYER_UNIT_IDS.length, 32);
     for (const unitId of EMPLOYER_UNIT_IDS) {
       assert.equal(integrationStatus(unitId), 'PARTIEL', `${unitId} doit être PARTIEL`);
@@ -304,7 +304,7 @@ export async function runEmployerTests(): Promise<{ name: string; success: boole
     }
     for (const unit of PRODUCTION_UNITS) {
       // P3-DESIGN-PRESTATAIRE a livré les 26 unités PRE depuis cette tranche EMP,
-      // et P4A-DESIGN-ADMIN-CORE a livré les 7 unités ADM de sa tranche : elles sont
+      // et les tranches P4A, P4B-1 et P4B-2 ont livré 12 unités ADM : elles sont
       // PARTIEL, comme PUB/SYS/EMP. Seules les autres ADM, FIN et RTC restent non intégrées.
       if (unit.family === 'EMP' || unit.family === 'PUB' || unit.family === 'SYS' || unit.family === 'PRE') continue;
       if (ADMIN_UNIT_IDS.includes(unit.id)) continue;
@@ -314,7 +314,8 @@ export async function runEmployerTests(): Promise<{ name: string; success: boole
     assert.equal(integrationStatus('PRE-01'), 'PARTIEL', 'PRE-01 est livrée par P3-DESIGN-PRESTATAIRE');
     assert.equal(integrationStatus('ADM-01'), 'PARTIEL', 'ADM-01 est livrée par P4A-DESIGN-ADMIN-CORE');
     assert.equal(integrationStatus('ADM-13'), 'PARTIEL', 'ADM-13 (contrats) est livrée par P4B-1-DESIGN-ADMIN-CONTRACTS');
-    assert.equal(integrationStatus('ADM-18'), 'NON_INTEGRE', 'ADM-18 (paiements) reste hors tranches livrées');
+    assert.equal(integrationStatus('ADM-18'), 'PARTIEL', 'ADM-18 (Paiements et rapprochement) est livrée par P4B-2');
+    assert.equal(integrationStatus('ADM-20'), 'PARTIEL', 'ADM-20 (anomalies, déclarations et incidents) est livrée par P4B-2');
   });
 
   check('EMP — erreurs : projection en états StateGuard, corrélation sûre uniquement', () => {

@@ -3,7 +3,8 @@ Catalogue ADM — structure des unités livrées, lue dans la source canonique.
 
 Tranches livrées :
   P4A-DESIGN-ADMIN-CORE : supervision de base ;
-  P4B-1-DESIGN-ADMIN-CONTRACTS : supervision des contrats.
+  P4B-1-DESIGN-ADMIN-CONTRACTS : supervision des contrats ;
+  P4B-2-DESIGN-ADMIN-PAYMENTS : paiements, déclarations et rapprochement.
 
 Ce générateur ne produit AUCUN libellé métier : les textes affichés par
 l'interface viennent de `src/admin/vocabulary.ts` (vocabulaire LE LABEUR).
@@ -29,9 +30,9 @@ Périmètre de la tranche P4B-1 (supervision des contrats uniquement) :
   ADM-16 contrat — révision forcée (unité propre ; capacité absente côté
          serveur, déclarée BACKEND_GAP par la tranche).
 
-Les écrans ADM suivants (paiements, salaires, litiges, remplacements,
-réputation, documents, notifications, ops, sécurité avancée, infra, FIN) sont
-hors tranche et ne figurent PAS dans ce catalogue.
+Les écrans ADM suivants (salaires, litiges, remplacements, réputation, documents,
+notifications, ops, sécurité avancée, infra, FIN) restent hors tranche et ne figurent
+PAS dans ce catalogue.
 """
 import json
 import sys
@@ -44,20 +45,25 @@ sys.path.insert(0, str(ROOT / 'design'))
 from llab.content import load_all  # noqa: E402
 from llab.units import unit_of  # noqa: E402
 
-# Fiches ADM livrées par les tranches P4A et P4B-1 (périmètre strict).
+# Fiches ADM livrées par les tranches P4A, P4B-1 et P4B-2 (périmètre strict).
 TRANCHE_P4A = {
     'ADM-01', 'ADM-02', 'ADM-03', 'ADM-04', 'ADM-05',
     'ADM-06', 'ADM-07', 'ADM-08', 'ADM-09',
     'ADM-10', 'ADM-11', 'ADM-12',
 }
 
-# P4B-1-DESIGN-ADMIN-CONTRACTS : supervision des contrats uniquement
-# (paiements et rapprochement = P4B-2, hors catalogue).
+# P4B-1-DESIGN-ADMIN-CONTRACTS : supervision des contrats uniquement.
 TRANCHE_P4B1 = {
     'ADM-13', 'ADM-14', 'ADM-15', 'ADM-16', 'ADM-17',
 }
 
-TRANCHE_ADMIN = TRANCHE_P4A | TRANCHE_P4B1
+# P4B-2-DESIGN-ADMIN-PAYMENTS : unités exactes de `design/llab/units.py`.
+# ADM-18 regroupe ADM-18/19 ; ADM-20 regroupe ADM-20/21/22.
+TRANCHE_P4B2 = {
+    'ADM-18', 'ADM-19', 'ADM-20', 'ADM-21', 'ADM-22',
+}
+
+TRANCHE_ADMIN = TRANCHE_P4A | TRANCHE_P4B1 | TRANCHE_P4B2
 
 families = load_all()
 SCREENS = [s for s in families['ADM'] if s.code in TRANCHE_ADMIN]
@@ -117,7 +123,7 @@ screens = [{
 payload = (
     '// GÉNÉRÉ PAR scripts/design/generate-admin-catalog.py — NE PAS ÉDITER À LA MAIN.\n'
     '// Source : design/llab/content/adm_*.py, design/llab/units.py — tranches livrées :\n'
-    '// P4A (ADM-01 → ADM-12) et P4B-1 CONTRATS (ADM-13 → ADM-17).\n'
+    '// P4A (ADM-01 → ADM-12), P4B-1 CONTRATS (ADM-13 → ADM-17) et P4B-2 PAIEMENTS (ADM-18 → ADM-22).\n'
     '// Régénérer : npm run design:admin\n'
     '//\n'
     '// Référence de design UNIQUEMENT : aucun libellé de ce fichier n\'est affiché par\n'

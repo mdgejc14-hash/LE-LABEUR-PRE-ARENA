@@ -35,6 +35,14 @@ import type { ContractStatus, UserRole } from '../types';
 import type { ServerUserRecord } from '../backend/identity/stores';
 import type { QualificationDecision, QualificationReasonSeverity } from '../backend/matching/records';
 import type { ClaimStatus, ClaimType } from '../backend/disputes/records';
+import type { PaymentLifecycleStatus, PaymentType } from '../domain/paymentLifecycle';
+import type {
+  PaymentReconciliationBatchStatus,
+  PaymentReconciliationItemStatus,
+  PaymentReconciliationReviewDecision,
+  PaymentReconciliationVerdict,
+} from '../backend/persistence/paymentReconciliationRecords';
+import type { PaymentDeclarationRecord } from '../backend/persistence/paymentRecords';
 
 /** Objets métier canoniques du produit (noms de code stables, jamais traduits en UI). */
 export const PRODUCT_OBJECTS = {
@@ -249,6 +257,111 @@ export const CLAIM_STATUS_TONES: Record<ClaimStatus, 'emerald' | 'amber' | 'clay
   CLOSED: 'slate',
 };
 
+/* ── P4B-2 · Paiement, échéance, déclaration et rapprochement ──────────── */
+
+/** Statuts strictement identiques au domaine Payment (`PAYMENT_LIFECYCLE_STATUS_VALUES`). */
+export const PAYMENT_STATUS_LABELS: Record<PaymentLifecycleStatus, string> = {
+  SCHEDULED: 'Échéance prévue',
+  DUE: 'Échéance due',
+  PENDING_VERIFICATION: 'En attente de vérification',
+  VERIFIED: 'Vérifié — non payé',
+  PAID: 'Payé (état du cycle)',
+  REJECTED: 'Déclaration rejetée',
+};
+
+export const PAYMENT_STATUS_TONES: Record<PaymentLifecycleStatus, 'slate' | 'amber' | 'violet' | 'emerald' | 'clay' | 'gold'> = {
+  SCHEDULED: 'slate',
+  DUE: 'amber',
+  PENDING_VERIFICATION: 'violet',
+  VERIFIED: 'emerald',
+  PAID: 'gold',
+  REJECTED: 'clay',
+};
+
+/** Nature réelle et destination distincte, telles que renvoyées par le serveur. */
+export const PAYMENT_TYPE_LABELS: Record<PaymentType, { label: string; detail: string }> = {
+  SALARY: {
+    label: 'Salaire',
+    detail: 'Paiement externe de l’Employeur au Candidat ; LE LABEUR ne reçoit ni ne détient le Salaire.',
+  },
+  PLATFORM_FEE: {
+    label: 'Frais dus à LE LABEUR',
+    detail: 'Paiement distinct dû à LE LABEUR par l’Employeur ; il ne s’agit pas du Salaire.',
+  },
+};
+
+export type PaymentDeclarationOutcome = PaymentDeclarationRecord['outcome'];
+
+export const PAYMENT_DECLARATION_OUTCOME_LABELS: Record<PaymentDeclarationOutcome, string> = {
+  PENDING: 'Déclaration en attente de vérification',
+  VERIFIED: 'Déclaration vérifiée',
+  REJECTED: 'Déclaration rejetée',
+};
+
+export const PAYMENT_RECONCILIATION_VERDICT_LABELS: Record<PaymentReconciliationVerdict, string> = {
+  MATCH: 'Correspondance',
+  MISMATCH: 'Discordance',
+  NOT_FOUND: 'Élément absent',
+  DUPLICATE: 'Doublon',
+  REVIEW_REQUIRED: 'Examen requis',
+};
+
+export const PAYMENT_RECONCILIATION_BATCH_STATUS_LABELS: Record<PaymentReconciliationBatchStatus, string> = {
+  PENDING: 'En attente',
+  PROCESSING: 'En cours',
+  COMPLETED: 'Terminé',
+  PARTIAL: 'Partiel',
+  FAILED: 'Échec',
+};
+
+export const PAYMENT_RECONCILIATION_ITEM_STATUS_LABELS: Record<PaymentReconciliationItemStatus, string> = {
+  PENDING: 'En attente',
+  PROCESSING: 'En cours',
+  RETRYABLE: 'Reprise possible',
+  MATCH: 'Correspondance',
+  MISMATCH: 'Discordance',
+  NOT_FOUND: 'Élément absent',
+  DUPLICATE: 'Doublon',
+  REVIEW_REQUIRED: 'Examen requis',
+  FAILED: 'Échec',
+};
+
+export const PAYMENT_RECONCILIATION_REVIEW_DECISION_LABELS: Record<PaymentReconciliationReviewDecision, string> = {
+  OPEN: 'Ouverte',
+  CONFIRMED: 'Confirmée par revue ADMIN',
+  REJECTED: 'Rejetée par revue ADMIN',
+};
+
+export const PAYMENT_RECONCILIATION_FIELD_LABELS: Record<string, string> = {
+  provider: 'Fournisseur',
+  externalTransactionId: 'Référence de transaction externe',
+  reference: 'Référence',
+  amount: 'Montant transmis',
+  currency: 'Devise transmise',
+  payer: 'Émetteur externe',
+  recipient: 'Destinataire externe',
+  date: 'Date comparée',
+};
+
+/** État d'une échéance fourni par le serveur ; aucune date n'est comparée dans le navigateur. */
+export function paymentDueLabel(due: boolean | undefined): string {
+  if (due === true) return 'Échéance atteinte selon le serveur';
+  if (due === false) return 'Échéance non atteinte selon le serveur';
+  return 'État d’échéance absent';
+}
+
+/**
+ * Affichage du montant unitaire transmis par Payment. Aucune conversion,
+ * somme, différence, pourcentage ni autre règle financière n'est appliquée.
+ */
+export function formatPaymentAmount(value: number, currency: string): string {
+  if (!Number.isFinite(value)) return '—';
+  // Le DTO montant est numérique : String préserve sa représentation, sans
+  // arrondi dépendant des décimales configurées pour une devise.
+  const amount = String(value);
+  return currency ? `${amount} ${currency}` : amount;
+}
+
 /** Réponse réellement stockée sur un jalon d'exécution (oui/non/absent) — affichage seul. */
 export function formatYesNo(value: 'YES' | 'NO' | undefined): string {
   if (value === 'YES') return 'Oui';
@@ -294,4 +407,9 @@ export const ADMIN_UI_TERMS = {
   CONTRACT_INCIDENTS: PRODUCT_LABELS.CLAIM.plural,
   CONTRACT_JOURNAL: `Historique du ${PRODUCT_LABELS.CONTRACT.singular.toLowerCase()}`,
   CONTRACT_FORCED_REVISION: 'Révision forcée',
+  PAYMENT_REGISTRY: PRODUCT_LABELS.PAYMENT.plural,
+  PAYMENT_RECONCILIATION: 'Rapprochement des paiements',
+  PAYMENT_ANOMALIES: 'Anomalies de paiement',
+  EXTERNAL_PAYMENT_DECLARATIONS: 'Déclarations de paiement externe',
+  PAYMENT_INCIDENT: 'Incident de paiement',
 } as const;

@@ -1,12 +1,12 @@
 /**
- * P4B-1-DESIGN-ADMIN-CONTRACTS — vérification UI réelle (Chromium) de l'espace
- * supervision livré (P4A + P4B-1 contrats).
+ * P4B-2-DESIGN-ADMIN-PAYMENTS — vérification UI réelle (Chromium) de l'espace
+ * supervision livré (P4A + P4B-1 contrats + P4B-2 paiements).
  *
  * Comme le script P2, ce script n'affirme rien sur des données simulées dans
  * l'application : les fixtures HTTP vivent ICI et ne sont jamais activées dans
  * le produit. Ce qui est vérifié dans un navigateur réel :
  *
- *  1. AUCUNE source de données configurée : les 17 fiches ADM rendent leur
+ *  1. AUCUNE source de données configurée : les 22 fiches ADM rendent leur
  *     conteneur (`data-unit`, `data-screen`), la structure déclarée par le
  *     design (`data-sheet-frame`) et le BACKEND_GAP, sans débordement
  *     horizontal à 360 px comme à 1440 px ; aucun terme du Master Design ni
@@ -24,7 +24,11 @@
  *     secret ni un message brut ;
  *  5. clavier et focus : navigation au dock avec focus rendu au contenu,
  *     segment du registre activable au clavier (aria-pressed), tables sémantiques ;
- *  6. reduced-motion : les transitions de l'espace supervision sont neutralisées.
+ *  6. reduced-motion : les transitions de l'espace supervision sont neutralisées ;
+ *  7. P4B-2 : états/natures de Paiement, permissions, déclaration vs vérification
+ *     vs PAID, rapprochement/revue, erreurs/vides, idempotence UI, 360/1440 px.
+ *     Toutes les commandes de test sont interceptées par Playwright : aucun
+ *     handler financier réel n'est appelé.
  *
  * Exécution : `npm run verify:admin-ui`.
  */
@@ -121,6 +125,241 @@ const FIXTURE_CLAIM = {
   restrictions: [],
 };
 
+const FIXTURE_SALARY_REJECTED_DECLARATION = {
+  declarationId: 'decl-salary-old-e2e',
+  paymentId: 'pay-salary-e2e',
+  contractId: 'ctr-e2e-1',
+  periodKey: '2026-09',
+  paymentType: 'SALARY',
+  attemptNumber: 1,
+  amount: 120000,
+  currency: 'XOF',
+  reference: 'salary-old-ref-e2e',
+  externalTransactionId: 'salary-old-ext-e2e',
+  provider: 'fixture-external-source',
+  proof: { fileName: 'preuve-salaire-e2e.pdf' },
+  comment: 'Déclaration historique de test',
+  submittedAt: '2026-09-03T10:00:00.000Z',
+  submittedBy: 'usr-emp-e2e',
+  outcome: 'REJECTED',
+  reviewedAt: '2026-09-03T11:00:00.000Z',
+  reviewedBy: 'usr-admin-e2e',
+  rejectionReason: 'Référence externe discordante',
+  idempotencyKey: 'decl-salary-old-key-e2e',
+  createdAt: '2026-09-03T10:00:00.000Z',
+  updatedAt: '2026-09-03T11:00:00.000Z',
+};
+
+const FIXTURE_SALARY_PENDING_DECLARATION = {
+  declarationId: 'decl-salary-current-e2e',
+  paymentId: 'pay-salary-e2e',
+  contractId: 'ctr-e2e-1',
+  periodKey: '2026-09',
+  paymentType: 'SALARY',
+  attemptNumber: 2,
+  amount: 120000,
+  currency: 'XOF',
+  reference: 'salary-current-ref-e2e',
+  externalTransactionId: 'salary-current-ext-e2e',
+  provider: 'fixture-external-source',
+  proof: { fileName: 'preuve-salaire-courante-e2e.pdf' },
+  comment: 'Déclaration en attente de vérification',
+  submittedAt: '2026-09-04T10:00:00.000Z',
+  submittedBy: 'usr-emp-e2e',
+  outcome: 'PENDING',
+  idempotencyKey: 'decl-salary-current-key-e2e',
+  createdAt: '2026-09-04T10:00:00.000Z',
+  updatedAt: '2026-09-04T10:00:00.000Z',
+};
+
+const FIXTURE_FEE_VERIFIED_DECLARATION = {
+  declarationId: 'decl-fee-e2e',
+  paymentId: 'pay-fee-e2e',
+  contractId: 'ctr-e2e-1',
+  periodKey: '2026-09',
+  paymentType: 'PLATFORM_FEE',
+  attemptNumber: 1,
+  amount: 30000,
+  currency: 'XOF',
+  reference: 'fee-ref-e2e',
+  externalTransactionId: 'fee-ext-e2e',
+  provider: 'fixture-external-source',
+  submittedAt: '2026-09-05T10:00:00.000Z',
+  submittedBy: 'usr-emp-e2e',
+  outcome: 'VERIFIED',
+  reviewedAt: '2026-09-05T11:00:00.000Z',
+  reviewedBy: 'usr-admin-e2e',
+  idempotencyKey: 'decl-fee-key-e2e',
+  createdAt: '2026-09-05T10:00:00.000Z',
+  updatedAt: '2026-09-05T11:00:00.000Z',
+};
+
+const FIXTURE_SALARY_PAYMENT = {
+  paymentId: 'pay-salary-e2e',
+  contractId: 'ctr-e2e-1',
+  employerId: 'usr-emp-e2e',
+  candidateId: 'usr-can-e2e',
+  paymentType: 'SALARY',
+  scheduleEntryId: 'schedule-salary-e2e',
+  monthNumber: 1,
+  periodKey: '2026-09',
+  amount: 120000,
+  currency: 'XOF',
+  scheduledAt: '2026-09-01T00:00:00.000Z',
+  dueAt: '2026-09-03T00:00:00.000Z',
+  status: 'PENDING_VERIFICATION',
+  due: true,
+  declared: true,
+  verified: false,
+  paid: false,
+  rejected: false,
+  idempotencyKey: 'payment-salary-e2e',
+  declarationCount: 2,
+  createdAt: '2026-09-01T00:00:00.000Z',
+  updatedAt: '2026-09-04T10:00:00.000Z',
+  submittedAt: '2026-09-04T10:00:00.000Z',
+  submittedBy: 'usr-emp-e2e',
+  reference: 'salary-current-ref-e2e',
+  externalTransactionId: 'salary-current-ext-e2e',
+  provider: 'fixture-external-source',
+  currentDeclarationId: 'decl-salary-current-e2e',
+  declarations: [FIXTURE_SALARY_REJECTED_DECLARATION, FIXTURE_SALARY_PENDING_DECLARATION],
+};
+
+const FIXTURE_FEE_PAYMENT = {
+  paymentId: 'pay-fee-e2e',
+  contractId: 'ctr-e2e-1',
+  employerId: 'usr-emp-e2e',
+  candidateId: 'usr-can-e2e',
+  paymentType: 'PLATFORM_FEE',
+  scheduleEntryId: 'schedule-fee-e2e',
+  monthNumber: 1,
+  periodKey: '2026-09',
+  amount: 30000,
+  currency: 'XOF',
+  scheduledAt: '2026-09-01T00:00:00.000Z',
+  dueAt: '2026-09-03T00:00:00.000Z',
+  status: 'VERIFIED',
+  due: true,
+  declared: true,
+  verified: true,
+  paid: false,
+  rejected: false,
+  idempotencyKey: 'payment-fee-e2e',
+  declarationCount: 1,
+  createdAt: '2026-09-01T00:00:00.000Z',
+  updatedAt: '2026-09-05T11:00:00.000Z',
+  submittedAt: '2026-09-05T10:00:00.000Z',
+  submittedBy: 'usr-emp-e2e',
+  reference: 'fee-ref-e2e',
+  externalTransactionId: 'fee-ext-e2e',
+  provider: 'fixture-external-source',
+  currentDeclarationId: 'decl-fee-e2e',
+  declarations: [FIXTURE_FEE_VERIFIED_DECLARATION],
+};
+
+const FIXTURE_SCHEDULED_PAYMENT = {
+  paymentId: 'pay-scheduled-e2e',
+  contractId: 'ctr-e2e-1',
+  employerId: 'usr-emp-e2e',
+  candidateId: 'usr-can-e2e',
+  paymentType: 'SALARY',
+  scheduleEntryId: 'schedule-next-e2e',
+  monthNumber: 2,
+  periodKey: '2026-10',
+  amount: 120000,
+  currency: 'XOF',
+  scheduledAt: '2026-10-01T00:00:00.000Z',
+  dueAt: '2026-10-03T00:00:00.000Z',
+  status: 'SCHEDULED',
+  due: false,
+  declared: false,
+  verified: false,
+  paid: false,
+  rejected: false,
+  idempotencyKey: 'payment-scheduled-e2e',
+  declarationCount: 0,
+  createdAt: '2026-09-01T00:00:00.000Z',
+  updatedAt: '2026-09-01T00:00:00.000Z',
+  declarations: [],
+};
+
+const FIXTURE_BATCH_REPORT = {
+  batch: {
+    batchId: 'batch-e2e-1',
+    provider: 'fixture-external-source',
+    idempotencyKey: 'batch-key-e2e',
+    payloadHash: 'hash-e2e',
+    requestedBy: 'usr-admin-e2e',
+    status: 'PARTIAL',
+    totalItems: 4,
+    processedItems: 3,
+    matchedItems: 1,
+    mismatchedItems: 1,
+    notFoundItems: 0,
+    duplicateItems: 0,
+    reviewItems: 1,
+    failedItems: 0,
+    pendingItems: 0,
+    processingItems: 0,
+    retryableItems: 1,
+    createdAt: '2026-09-06T10:00:00.000Z',
+    startedAt: '2026-09-06T10:00:01.000Z',
+    completedAt: '2026-09-06T10:01:00.000Z',
+  },
+  items: [
+    {
+      itemId: 'item-match-e2e', batchId: 'batch-e2e-1', itemIndex: 0, provider: 'fixture-external-source',
+      externalTransactionId: 'ext-match-e2e', reference: 'ref-match-e2e',
+      normalizedMetadata: { amount: 120000, currency: 'XOF', status: 'SUCCESS', payer: 'usr-emp-e2e', recipient: 'usr-can-e2e' },
+      validationReasons: [], status: 'MATCH', matchedPaymentId: 'pay-salary-e2e', attempts: 1,
+      nextAttemptAt: '2026-09-06T10:00:00.000Z', createdAt: '2026-09-06T10:00:00.000Z', updatedAt: '2026-09-06T10:00:10.000Z',
+      result: {
+        verdict: 'MATCH', paymentId: 'pay-salary-e2e', provider: 'fixture-external-source', externalTransactionId: 'ext-match-e2e',
+        reference: 'ref-match-e2e',
+        comparisons: [{ field: 'reference', expected: 'ref-match-e2e', actual: 'ref-match-e2e', matched: true }],
+        reasons: [], reconciledAt: '2026-09-06T10:00:10.000Z',
+      },
+    },
+    {
+      itemId: 'item-mismatch-e2e', batchId: 'batch-e2e-1', itemIndex: 1, provider: 'fixture-external-source',
+      externalTransactionId: 'ext-mismatch-e2e', reference: 'ref-mismatch-e2e',
+      normalizedMetadata: { amount: 30000, currency: 'XOF', status: 'SUCCESS' },
+      validationReasons: [], status: 'MISMATCH', matchedPaymentId: 'pay-fee-e2e', attempts: 1,
+      nextAttemptAt: '2026-09-06T10:00:00.000Z', createdAt: '2026-09-06T10:00:00.000Z', updatedAt: '2026-09-06T10:00:20.000Z',
+      result: {
+        verdict: 'MISMATCH', paymentId: 'pay-fee-e2e', provider: 'fixture-external-source', externalTransactionId: 'ext-mismatch-e2e',
+        reference: 'ref-mismatch-e2e',
+        comparisons: [{ field: 'amount', expected: 30000, actual: 29900, matched: false, detail: 'Comparaison explicitement fournie par la fixture.' }],
+        reasons: ['Montant externe discordant.'], reconciledAt: '2026-09-06T10:00:20.000Z',
+      },
+    },
+    {
+      itemId: 'item-review-e2e', batchId: 'batch-e2e-1', itemIndex: 2, provider: 'fixture-external-source',
+      externalTransactionId: 'ext-review-e2e', reference: 'ref-review-e2e',
+      normalizedMetadata: { amount: 30000, currency: 'XOF', status: 'SUCCESS' },
+      validationReasons: [], status: 'REVIEW_REQUIRED', matchedPaymentId: 'pay-fee-e2e', reviewId: 'review-e2e-1', attempts: 1,
+      nextAttemptAt: '2026-09-06T10:00:00.000Z', createdAt: '2026-09-06T10:00:00.000Z', updatedAt: '2026-09-06T10:00:30.000Z',
+      result: {
+        verdict: 'REVIEW_REQUIRED', paymentId: 'pay-fee-e2e', provider: 'fixture-external-source', externalTransactionId: 'ext-review-e2e',
+        reference: 'ref-review-e2e', comparisons: [], reasons: ['Revue ADMIN requise.'], reconciledAt: '2026-09-06T10:00:30.000Z',
+      },
+    },
+    {
+      itemId: 'item-retry-e2e', batchId: 'batch-e2e-1', itemIndex: 3, provider: 'fixture-external-source',
+      externalTransactionId: 'ext-retry-e2e', reference: 'ref-retry-e2e',
+      normalizedMetadata: { amount: 10000, currency: 'XOF', status: 'UNKNOWN' },
+      validationReasons: ['Élément de test en reprise.'], status: 'RETRYABLE', attempts: 1,
+      nextAttemptAt: '2026-09-06T10:05:00.000Z', createdAt: '2026-09-06T10:00:00.000Z', updatedAt: '2026-09-06T10:00:40.000Z',
+    },
+  ],
+  cursor: null,
+  limit: 100,
+  hasMore: false,
+};
+
+let fixturePaymentRows: Record<string, unknown>[] = [FIXTURE_SALARY_PAYMENT, FIXTURE_FEE_PAYMENT, FIXTURE_SCHEDULED_PAYMENT];
+type PaymentListMode = 'ready' | 'empty' | 'not-configured' | 'error';
 type SessionMode = 'admin' | 'employer' | 'anonymous' | 'error';
 
 async function startApp(environment: 'demo' | 'api'): Promise<{ origin: string; server: ViteDevServer }> {
@@ -162,8 +401,42 @@ try {
 
   /** Fixtures HTTP : session réelle et pages ADMIN réelles (jamais dans l'application). */
   let sessionMode: SessionMode = 'admin';
+  let paymentListMode: PaymentListMode = 'ready';
+  let paymentReadPermission = true;
+  let paymentActionPermissions: 'all' | 'read-only' = 'all';
+  let paymentListDelayMs = 0;
+  let approveFailureCount = 0;
+  let approveDelayMs = 0;
+  let batchRetryFailureCount = 0;
+  let paymentListCalls = 0;
+  let paymentDetailCalls = 0;
+  const approveIdempotencyKeys: string[] = [];
+  const rejectIdempotencyKeys: string[] = [];
+  const confirmRequests: string[] = [];
+  const batchRetryIdempotencyKeys: string[] = [];
+  const reviewDecisionRequests: Array<{ key: string; body: Record<string, unknown> }> = [];
+  const correctionAttemptRequests: Array<{ key: string; body: Record<string, unknown> }> = [];
+  const resetPaymentFixtures = () => {
+    fixturePaymentRows = [FIXTURE_SALARY_PAYMENT, FIXTURE_FEE_PAYMENT, FIXTURE_SCHEDULED_PAYMENT];
+    paymentListMode = 'ready';
+    paymentReadPermission = true;
+    paymentActionPermissions = 'all';
+    paymentListDelayMs = 0;
+    approveFailureCount = 0;
+    approveDelayMs = 0;
+    batchRetryFailureCount = 0;
+    paymentListCalls = 0;
+    paymentDetailCalls = 0;
+    approveIdempotencyKeys.length = 0;
+    rejectIdempotencyKeys.length = 0;
+    confirmRequests.length = 0;
+    batchRetryIdempotencyKeys.length = 0;
+    reviewDecisionRequests.length = 0;
+    correctionAttemptRequests.length = 0;
+  };
   await page.route('**/api/v1/**', async (route) => {
     const url = new URL(route.request().url());
+    const method = route.request().method();
     if (url.pathname.endsWith('/auth/session')) {
       if (sessionMode === 'anonymous') {
         await route.fulfill({ status: 401, contentType: 'application/json', body: JSON.stringify({ error: { code: 'UNAUTHENTICATED', message: SERVER_SECRET, requestId: SERVER_REQUEST_ID } }) });
@@ -184,7 +457,15 @@ try {
             status: 'ACTIVE',
             displayName: sessionMode === 'admin' ? 'Superviseur de test' : 'Employeur de test',
           },
-          permissions: sessionMode === 'admin' ? ['users:read:any', 'contracts:read:any', 'incidents:read:any'] : [],
+          permissions: sessionMode === 'admin'
+            ? [
+                'users:read:any',
+                'contracts:read:any',
+                'incidents:read:any',
+                ...(paymentReadPermission ? ['payments:read:any'] : []),
+                ...(paymentActionPermissions === 'all' ? ['payments:approve', 'payments:reject'] : []),
+              ]
+            : [],
         }),
       });
       return;
@@ -195,6 +476,146 @@ try {
     }
     if (url.pathname === '/api/v1/admin/claims') {
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ items: [FIXTURE_CLAIM], cursor: null, limit: 100, hasMore: false }) });
+      return;
+    }
+    if (url.pathname === '/api/v1/admin/payments' && method === 'GET') {
+      paymentListCalls += 1;
+      if (!paymentReadPermission) {
+        await route.fulfill({ status: 403, contentType: 'application/json', body: JSON.stringify({ error: { code: 'FORBIDDEN', message: SERVER_SECRET, requestId: SERVER_REQUEST_ID } }) });
+        return;
+      }
+      if (paymentListDelayMs > 0) await new Promise((resolveDelay) => setTimeout(resolveDelay, paymentListDelayMs));
+      if (paymentListMode === 'error') {
+        await route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: { code: 'INTERNAL', message: SERVER_SECRET, requestId: SERVER_REQUEST_ID } }) });
+        return;
+      }
+      const items = paymentListMode === 'empty' || paymentListMode === 'not-configured' ? [] : fixturePaymentRows;
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          items,
+          cursor: null,
+          limit: 100,
+          hasMore: false,
+          ...(paymentListMode === 'not-configured' ? { persistence: 'not-configured' } : {}),
+        }),
+      });
+      return;
+    }
+    if (url.pathname.startsWith('/api/v1/payments/') && method === 'GET') {
+      paymentDetailCalls += 1;
+      const paymentId = decodeURIComponent(url.pathname.split('/').at(-1) ?? '');
+      if (!paymentReadPermission) {
+        await route.fulfill({ status: 403, contentType: 'application/json', body: JSON.stringify({ error: { code: 'FORBIDDEN', message: SERVER_SECRET, requestId: SERVER_REQUEST_ID } }) });
+        return;
+      }
+      const payment = fixturePaymentRows.find((item) => item.paymentId === paymentId);
+      if (!payment) {
+        await route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ error: { code: 'NOT_FOUND', message: 'Paiement absent de la fixture.', requestId: SERVER_REQUEST_ID } }) });
+        return;
+      }
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(payment) });
+      return;
+    }
+    if (url.pathname.startsWith('/api/v1/admin/payments/') && method === 'POST') {
+      const paymentId = decodeURIComponent(url.pathname.split('/')[5] ?? '');
+      const command = url.pathname.split('/').at(-1);
+      const key = route.request().headers()['idempotency-key'] ?? '';
+      if (command === 'approve') {
+        approveIdempotencyKeys.push(key);
+        if (approveDelayMs > 0) await new Promise((resolveDelay) => setTimeout(resolveDelay, approveDelayMs));
+        if (approveFailureCount > 0) {
+          approveFailureCount -= 1;
+          await route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: { code: 'INTERNAL', message: SERVER_SECRET, requestId: SERVER_REQUEST_ID } }) });
+          return;
+        }
+        const current = fixturePaymentRows.find((item) => item.paymentId === paymentId);
+        if (!current) {
+          await route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ error: { code: 'NOT_FOUND', message: 'Paiement absent de la fixture.', requestId: SERVER_REQUEST_ID } }) });
+          return;
+        }
+        const declarations = Array.isArray(current.declarations)
+          ? (current.declarations as Array<Record<string, unknown>>).map((declaration) => declaration.declarationId === current.currentDeclarationId
+              ? { ...declaration, outcome: 'VERIFIED', reviewedAt: '2026-09-07T12:00:00.000Z', reviewedBy: 'usr-admin-e2e' }
+              : declaration)
+          : [];
+        const updated = { ...current, status: 'VERIFIED', verified: true, paid: false, declarations, verifiedAt: '2026-09-07T12:00:00.000Z', verifiedBy: 'usr-admin-e2e', updatedAt: '2026-09-07T12:00:00.000Z' };
+        fixturePaymentRows = fixturePaymentRows.map((item) => item.paymentId === paymentId ? updated : item);
+        await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(updated) });
+        return;
+      }
+      if (command === 'reject') {
+        rejectIdempotencyKeys.push(key);
+        const requestBody = route.request().postDataJSON() as { reason?: string };
+        const current = fixturePaymentRows.find((item) => item.paymentId === paymentId);
+        if (!current) {
+          await route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ error: { code: 'NOT_FOUND', message: 'Paiement absent de la fixture.', requestId: SERVER_REQUEST_ID } }) });
+          return;
+        }
+        const declarations = Array.isArray(current.declarations)
+          ? (current.declarations as Array<Record<string, unknown>>).map((declaration) => declaration.declarationId === current.currentDeclarationId
+              ? { ...declaration, outcome: 'REJECTED', reviewedAt: '2026-09-07T12:00:00.000Z', reviewedBy: 'usr-admin-e2e', rejectionReason: requestBody.reason }
+              : declaration)
+          : [];
+        const updated = { ...current, status: 'REJECTED', rejected: true, declarations, rejectionReason: requestBody.reason, updatedAt: '2026-09-07T12:00:00.000Z' };
+        fixturePaymentRows = fixturePaymentRows.map((item) => item.paymentId === paymentId ? updated : item);
+        await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(updated) });
+        return;
+      }
+      if (command === 'confirm') {
+        confirmRequests.push(key);
+        const current = fixturePaymentRows.find((item) => item.paymentId === paymentId);
+        const updated = current ? { ...current, status: 'PAID', verified: true, paid: true, updatedAt: '2026-09-07T12:10:00.000Z' } : null;
+        if (updated) fixturePaymentRows = fixturePaymentRows.map((item) => item.paymentId === paymentId ? updated : item);
+        await route.fulfill(updated
+          ? { status: 200, contentType: 'application/json', body: JSON.stringify(updated) }
+          : { status: 404, contentType: 'application/json', body: JSON.stringify({ error: { code: 'NOT_FOUND', message: 'Paiement absent de la fixture.', requestId: SERVER_REQUEST_ID } }) });
+        return;
+      }
+    }
+    if (url.pathname === '/api/v1/admin/payment-reconciliation/batches/batch-e2e-1' && method === 'GET') {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(FIXTURE_BATCH_REPORT) });
+      return;
+    }
+    if (url.pathname === '/api/v1/admin/payment-reconciliation/batches/batch-e2e-1/retry' && method === 'POST') {
+      batchRetryIdempotencyKeys.push(route.request().headers()['idempotency-key'] ?? '');
+      if (batchRetryFailureCount > 0) {
+        batchRetryFailureCount -= 1;
+        await route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: { code: 'INTERNAL', message: SERVER_SECRET, requestId: SERVER_REQUEST_ID } }) });
+        return;
+      }
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ...FIXTURE_BATCH_REPORT, replayed: true }) });
+      return;
+    }
+    if (url.pathname === '/api/v1/admin/payment-reconciliation/reviews/review-e2e-1/decision' && method === 'POST') {
+      const body = route.request().postDataJSON() as Record<string, unknown>;
+      const key = route.request().headers()['idempotency-key'] ?? '';
+      reviewDecisionRequests.push({ key, body });
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ review: {
+          reviewId: 'review-e2e-1', batchId: 'batch-e2e-1', itemId: 'item-review-e2e', paymentId: 'pay-fee-e2e',
+          reason: 'Revue de rapprochement', decision: body.decision, openedBy: 'usr-admin-e2e', openedAt: '2026-09-06T10:00:00.000Z',
+          actorId: 'usr-admin-e2e', decidedAt: '2026-09-07T12:00:00.000Z', createdAt: '2026-09-06T10:00:00.000Z', updatedAt: '2026-09-07T12:00:00.000Z',
+        } }),
+      });
+      return;
+    }
+    if (url.pathname === '/api/v1/admin/payment-reconciliation/reviews/review-e2e-1/correction-attempts' && method === 'POST') {
+      const body = route.request().postDataJSON() as Record<string, unknown>;
+      const key = route.request().headers()['idempotency-key'] ?? '';
+      correctionAttemptRequests.push({ key, body });
+      await route.fulfill({
+        status: 201,
+        contentType: 'application/json',
+        body: JSON.stringify({ correctionAttempt: {
+          correctionAttemptId: 'cor-e2e-1', reviewId: 'review-e2e-1', batchId: 'batch-e2e-1', itemId: 'item-review-e2e', paymentId: 'pay-fee-e2e',
+          attemptedBy: 'usr-admin-e2e', idempotencyKey: key, proposedChanges: body.proposedChanges, evidenceReference: body.evidenceReference,
+          note: body.note, status: 'RECORDED', createdAt: '2026-09-07T12:01:00.000Z',
+        } }),
+      });
       return;
     }
     if (url.pathname === '/api/v1/admin/users') {
@@ -229,7 +650,7 @@ try {
     assert.ok(!text.includes(SERVER_SECRET), `${label} : message serveur brut rendu`);
   };
 
-  /* ── 1. Aucune source de données configurée : 17 fiches, deux largeurs ── */
+  /* ── 1. Aucune source de données configurée : 22 fiches, deux largeurs ── */
   const demo = await startApp('demo');
   demoServer = demo.server;
   for (const width of [360, 1440]) {
@@ -299,6 +720,234 @@ try {
   const api = await startApp('api');
   apiServer = api.server;
 
+  await check('ADM-18 — registre réel, Salaire séparé des frais LE LABEUR, statuts serveur et filtres clavier', async () => {
+    sessionMode = 'admin';
+    resetPaymentFixtures();
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await page.goto(api.origin + '/admin/paiements');
+    await page.locator('[data-screen="ADM-18"]').waitFor();
+    await page.getByText('pay-salary-e2e', { exact: true }).first().waitFor();
+    let text = await screenText();
+    assert.ok(text.includes('120000 XOF'), 'montant unitaire de Salaire absent');
+    assert.ok(text.includes('30000 XOF'), 'montant unitaire des frais absent');
+    assert.ok(says(text, 'Salaire · SALARY'), 'nature Salaire réelle absente');
+    assert.ok(says(text, 'Frais dus à LE LABEUR · PLATFORM_FEE'), 'nature des frais de LE LABEUR réelle absente');
+    assert.ok(says(text, 'PENDING_VERIFICATION') && says(text, 'VERIFIED') && says(text, 'SCHEDULED'), 'états serveur réels absents');
+    assert.ok(!text.includes('150000'), 'un total financier recalculé ne doit jamais être affiché');
+    await assertNoForbiddenText('/admin/paiements', text);
+    assert.equal(await page.locator('[data-screen="ADM-18"] table caption').count(), 1, 'table sans légende accessible');
+    assert.equal(await page.locator('[data-screen="ADM-18"] table thead th[scope="col"]').count(), 9, 'en-têtes de colonnes non sémantiques');
+
+    const feeFilter = page.getByRole('button', { name: 'Frais LE LABEUR' });
+    await feeFilter.focus();
+    await feeFilter.press('Enter');
+    assert.equal(await feeFilter.getAttribute('aria-pressed'), 'true', 'filtre clavier non activé');
+    assert.equal(await page.locator('[data-screen="ADM-18"] tbody tr').count(), 1, 'le filtre local de nature doit limiter à la page réellement chargée');
+    assert.ok(!(await screenText()).includes('pay-salary-e2e'), 'un Salaire reste affiché après filtre frais');
+    await page.getByRole('button', { name: 'Tous', exact: true }).click();
+
+    await page.setViewportSize({ width: 360, height: 900 });
+    await page.waitForFunction(() => document.documentElement.scrollWidth <= innerWidth, null, { timeout: 5000 }).catch(() => undefined);
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'débordement horizontal du registre à 360 px');
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.waitForFunction(() => document.documentElement.scrollWidth <= innerWidth, null, { timeout: 5000 }).catch(() => undefined);
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'débordement horizontal du registre à 1440 px');
+  });
+
+  await check('ADM-18/21 — consultation, déclaration distincte de la vérification, vérification distincte de PAID, clé idempotente réutilisée', async () => {
+    sessionMode = 'admin';
+    resetPaymentFixtures();
+    approveFailureCount = 1;
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto(api.origin + '/admin/paiements');
+    await page.locator('[data-screen="ADM-18"]').waitFor();
+    await page.getByRole('button', { name: 'Consulter le Paiement pay-salary-e2e' }).click();
+    const detail = page.locator('[data-payment-detail="pay-salary-e2e"]');
+    await detail.waitFor();
+    await detail.getByText('Confirmation du Candidat (OTP)', { exact: false }).waitFor();
+    assert.ok((await detail.innerText()).includes('Non exposée par le DTO Payment'), 'confirmation du Candidat inventée ou non déclarée');
+    await detail.getByRole('button', { name: 'Préparer la vérification' }).click();
+    const confirmVerification = detail.getByRole('button', { name: 'Confirmer la vérification' });
+    await confirmVerification.click();
+    await detail.locator('[data-command-error="true"]').waitFor();
+    assert.equal(approveIdempotencyKeys.length, 1, 'première commande verify attendue');
+    assert.ok(approveIdempotencyKeys[0], 'clé d’idempotence absente');
+    assert.ok(!(await detail.innerText()).includes(SERVER_SECRET), 'message serveur brut rendu dans l’erreur');
+    await confirmVerification.click();
+    await detail.getByRole('status').filter({ hasText: 'Réponse serveur' }).waitFor();
+    assert.equal(approveIdempotencyKeys.length, 2, 'commande rejouée avec réponse fixture attendue');
+    assert.equal(approveIdempotencyKeys[0], approveIdempotencyKeys[1], 'le rejeu de la même commande doit réutiliser la même clé d’idempotence');
+    const verifiedText = await detail.innerText();
+    assert.ok(says(verifiedText, 'Vérifié — non payé') && says(verifiedText, 'VERIFIED'), `la déclaration vérifiée n’est pas distincte du statut du cycle : ${verifiedText}`);
+    assert.ok(says(verifiedText, 'Statut PAID du cycle') && says(verifiedText, 'Non'), 'l’état PAID ne reste pas séparé de VERIFIED');
+    assert.ok(says(verifiedText, 'Préparer le passage à PAID'), 'transition serveur vers PAID non proposée depuis VERIFIED');
+    assert.equal(confirmRequests.length, 0, 'aucune transition PAID ne doit être déclenchée par le test de vérification');
+    assert.equal(paymentDetailCalls, 1, 'lecture unitaire réelle attendue');
+    await assertNoForbiddenText('/admin/paiements (consultation)', verifiedText);
+  });
+
+  await check('ADM-18 — single-flight clavier/souris : double clic pendant une commande = une seule requête', async () => {
+    sessionMode = 'admin';
+    resetPaymentFixtures();
+    approveDelayMs = 450;
+    await page.goto(api.origin + '/admin/paiements');
+    await page.locator('[data-screen="ADM-18"]').waitFor();
+    await page.getByRole('button', { name: 'Consulter le Paiement pay-salary-e2e' }).click();
+    const detail = page.locator('[data-payment-detail="pay-salary-e2e"]');
+    await detail.waitFor();
+    await detail.getByRole('button', { name: 'Préparer la vérification' }).click();
+    await detail.getByRole('button', { name: 'Confirmer la vérification' }).dblclick();
+    await detail.getByRole('status').filter({ hasText: 'Réponse serveur' }).waitFor();
+    assert.equal(approveIdempotencyKeys.length, 1, 'un double clic a produit plusieurs requêtes');
+    assert.ok(approveIdempotencyKeys[0], 'commande UI sans Idempotency-Key');
+    assert.equal(confirmRequests.length, 0, 'la vérification ne doit pas appeler la transition PAID');
+  });
+
+  await check('ADM-18 — autorisation, chargement, erreur, vide et frontière de contrôle not-configured', async () => {
+    sessionMode = 'admin';
+    resetPaymentFixtures();
+    paymentReadPermission = false;
+    await page.goto(api.origin + '/admin/paiements');
+    await page.locator('[data-state="403"]').waitFor();
+    assert.equal(paymentListCalls, 1, 'lecture ADMIN doit atteindre la permission serveur réelle');
+    await assertNoForbiddenText('paiements 403 permission', await page.locator('[data-state="403"]').innerText());
+
+    paymentReadPermission = true;
+    paymentListMode = 'error';
+    await page.goto(api.origin + '/admin/paiements');
+    await page.locator('[data-state="500"]').waitFor();
+    assert.ok(!(await page.locator('[data-state="500"]').innerText()).includes(SERVER_SECRET), 'erreur de liste révèle le message brut');
+
+    paymentListMode = 'empty';
+    await page.goto(api.origin + '/admin/paiements');
+    await page.getByText('Aucun Paiement n’est renvoyé par le registre ADMIN réel.').waitFor();
+
+    paymentListMode = 'not-configured';
+    await page.goto(api.origin + '/admin/paiements');
+    await page.getByText('not-configured', { exact: false }).waitFor();
+    assert.ok(!(await screenText()).includes('Aucun Paiement n’est renvoyé'), 'frontière de contrôle présentée comme un registre métier vide');
+
+    paymentListMode = 'ready';
+    paymentListDelayMs = 1500;
+    await page.goto(api.origin + '/admin/paiements');
+    await page.locator('[data-screen="ADM-18"] [data-loading="true"]').waitFor();
+    await page.locator('[data-screen="ADM-18"] table').waitFor();
+    paymentListDelayMs = 0;
+  });
+
+  await check('ADM-21 — permissions d’action, déclarations réelles et distinction Salaire/frais/déclaration/vérification', async () => {
+    sessionMode = 'admin';
+    resetPaymentFixtures();
+    paymentActionPermissions = 'read-only';
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto(api.origin + '/admin/paiements/declarations-externes');
+    await page.locator('[data-screen="ADM-21"]').waitFor();
+    await page.getByText('decl-salary-current-e2e', { exact: false }).waitFor();
+    const text = await screenText();
+    assert.ok(says(text, 'REJECTED') && says(text, 'PENDING') && says(text, 'VERIFIED'), 'états réels des tentatives absents');
+    assert.ok(says(text, 'Déclaration externe ≠ vérification ≠ paiement'), 'distinctions de cycle non rappelées');
+    assert.ok(says(text, 'Salaire · SALARY') && says(text, 'Frais dus à LE LABEUR · PLATFORM_FEE'), 'types réels ou séparation métier absents');
+    assert.ok(text.includes('120000 XOF') && text.includes('30000 XOF'), 'montants unitaires de la réponse serveur absents');
+    assert.ok(!text.includes('150000'), 'total monétaire recalculé rendu');
+    assert.ok(says(text, 'payments:approve absente') || says(text, 'permission'), 'absence de permission non dite');
+    assert.equal(await page.getByRole('button', { name: 'Préparer la vérification' }).count(), 0, 'action visible sans payments:approve');
+    assert.equal(approveIdempotencyKeys.length, 0, 'aucune mutation ne doit être déclenchée sans permission');
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'débordement horizontal ADM-21 à 1440 px');
+    await page.setViewportSize({ width: 360, height: 900 });
+    await page.waitForFunction(() => document.documentElement.scrollWidth <= innerWidth, null, { timeout: 5000 }).catch(() => undefined);
+    const mobileLayout = await page.evaluate(() => ({
+      viewport: innerWidth,
+      scroll: document.documentElement.scrollWidth,
+      overflow: Array.from(document.querySelectorAll('*')).map((element) => {
+        const bounds = element.getBoundingClientRect();
+        return { tag: element.tagName, className: (element as HTMLElement).className, text: (element.textContent ?? '').trim().slice(0, 100), left: bounds.left, right: bounds.right, width: bounds.width };
+      }).filter((element) => element.left < -1 || element.right > innerWidth + 1).slice(0, 30),
+    }));
+    if (mobileLayout.scroll > mobileLayout.viewport) console.error('DEBUG ADM-21 mobile overflow', JSON.stringify(mobileLayout, null, 2));
+    assert.ok(mobileLayout.scroll <= mobileLayout.viewport, 'débordement horizontal ADM-21 à 360 px');
+    await assertNoForbiddenText('/admin/paiements/declarations-externes', text);
+  });
+
+  await check('ADM-19 — lot connu, verdicts/comparaisons réels, retry idempotent, décision de revue et tentative non appliquée', async () => {
+    sessionMode = 'admin';
+    resetPaymentFixtures();
+    batchRetryFailureCount = 1;
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto(api.origin + '/admin/paiements/reconciliation');
+    await page.locator('[data-screen="ADM-19"]').waitFor();
+    await page.getByLabel('Identifiant du lot de rapprochement').fill('batch-e2e-1');
+    await page.getByRole('button', { name: 'Consulter le lot' }).click();
+    await page.getByRole('heading', { name: 'Lot batch-e2e-1', exact: true }).waitFor();
+    let text = await screenText();
+    assert.ok(says(text, 'MATCH') && says(text, 'MISMATCH') && says(text, 'REVIEW_REQUIRED') && says(text, 'RETRYABLE'), 'verdicts et états réels du lot absents');
+    assert.ok(says(text, 'Comparaisons renvoyées par le serveur'), 'comparaisons serveur non disponibles à l’inspection');
+    assert.ok(says(text, 'Un lot déjà identifié') || says(text, 'lot'), 'état d’accès au lot non clair');
+    await page.getByRole('button', { name: 'Reprendre les éléments échoués ou réessayables' }).click();
+    await page.locator('[data-command-error="true"]').waitFor();
+    const retryButton = page.getByRole('button', { name: 'Reprendre les éléments échoués ou réessayables' });
+    await retryButton.click();
+    await page.getByRole('status').filter({ hasText: 'rejouée' }).waitFor();
+    assert.equal(batchRetryIdempotencyKeys.length, 2, 'reprise test attendue deux fois');
+    assert.ok(batchRetryIdempotencyKeys[0], 'clé d’idempotence retry absente');
+    assert.equal(batchRetryIdempotencyKeys[0], batchRetryIdempotencyKeys[1], 'même reprise doit garder la même clé au rejeu');
+
+    const correctionDetails = page.locator('[data-screen="ADM-19"] details').filter({ hasText: 'Consigner une tentative de correction' }).first();
+    await correctionDetails.locator('summary').click();
+    const correctionForm = correctionDetails.locator('form');
+    await correctionForm.locator('textarea').first().fill('{"reference":"proposition-e2e"}');
+    await correctionForm.getByRole('button', { name: 'Enregistrer la tentative' }).click();
+    await page.locator('[data-screen="ADM-19"] [role="status"]').filter({ hasText: 'non appliquée' }).waitFor();
+    assert.equal(correctionAttemptRequests.length, 1, 'tentative de correction append-only absente');
+    assert.deepEqual(correctionAttemptRequests[0].body.proposedChanges, { reference: 'proposition-e2e' });
+    assert.ok(correctionAttemptRequests[0].key, 'clé d’idempotence de correction absente');
+
+    const decisionDetails = page.locator('[data-screen="ADM-19"] details').filter({ hasText: 'Consigner une décision de revue' }).first();
+    await decisionDetails.locator('summary').click();
+    await decisionDetails.getByLabel('Décision réelle acceptée par le serveur').selectOption('CONFIRMED');
+    await decisionDetails.getByLabel('Référence de preuve (facultative)').fill('preuve-revue-e2e');
+    await decisionDetails.getByRole('button', { name: 'Consigner la décision' }).click();
+    await page.locator('[data-screen="ADM-19"] [role="status"]').filter({ hasText: 'statut du Paiement n’est pas modifié' }).waitFor();
+    assert.equal(reviewDecisionRequests.length, 1, 'décision de revue réelle non envoyée à la route mockée');
+    assert.equal(reviewDecisionRequests[0].body.decision, 'CONFIRMED');
+    assert.ok(reviewDecisionRequests[0].key, 'clé d’idempotence de revue absente');
+    assert.equal(confirmRequests.length, 0, 'le rapprochement ou la revue ne doit pas déclencher une transition PAID');
+    text = await screenText();
+    assert.ok(says(text, 'le statut du Paiement n’est pas modifié') && says(text, 'non appliquée au Paiement'), 'distinction revue/correction vs paiement non déclarée');
+    await assertNoForbiddenText('/admin/paiements/reconciliation', text);
+    await page.setViewportSize({ width: 360, height: 900 });
+    await page.waitForFunction(() => document.documentElement.scrollWidth <= innerWidth, null, { timeout: 5000 }).catch(() => undefined);
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'débordement horizontal ADM-19 à 360 px');
+  });
+
+  await check('ADM-20/22 — gaps honnêtes : aucune anomalie ou incident financier simulé, aucun formulaire sans handler', async () => {
+    sessionMode = 'admin';
+    resetPaymentFixtures();
+    await page.goto(api.origin + '/admin/paiements/anomalies');
+    await page.locator('[data-screen="ADM-20"]').waitFor();
+    const anomalyText = await screenText();
+    assert.ok(says(anomalyText, 'BACKEND_GAP'), 'gap de détection absent');
+    assert.ok(says(anomalyText, 'Aucune anomalie'), 'file d’anomalies simulée ou état vide ambigu');
+    assert.equal(await page.locator('[data-screen="ADM-20"] form').count(), 0, 'aucune mutation ne peut être proposée sans handler');
+    await page.goto(api.origin + '/admin/paiements/incidents/pay-salary-e2e');
+    await page.locator('[data-screen="ADM-22"]').waitFor();
+    const incidentText = await screenText();
+    assert.ok(says(incidentText, 'pay-salary-e2e'), 'référence technique d’incident non conservée');
+    assert.ok(says(incidentText, 'BACKEND_GAP') && says(incidentText, 'Aucun détail financier'), 'absence de handler d’incident non dite');
+    assert.equal(await page.locator('[data-screen="ADM-22"] form').count(), 0, 'aucun formulaire sur la fiche d’incident absente');
+    await assertNoForbiddenText('/admin/paiements/anomalies et incidents', `${anomalyText} ${incidentText}`);
+  });
+
+  await check('ADM — refus non-ADMIN sur la route Paiement : aucune lecture ADMIN ni accès partie contourné', async () => {
+    resetPaymentFixtures();
+    sessionMode = 'employer';
+    await page.goto(api.origin + '/admin/paiements');
+    await page.locator('[data-state="403"]').waitFor();
+    assert.equal(paymentListCalls, 0, 'la page protégée ne doit pas appeler admin.payments.list après refus');
+    assert.equal(paymentDetailCalls, 0, 'aucune lecture unitaire ne doit contourner la garde ADMIN');
+    await assertNoForbiddenText('paiements refusés', await page.locator('[data-state="403"]').innerText());
+    sessionMode = 'admin';
+  });
+
   await check('ADM registre (ADM-13) — les valeurs affichées viennent de la réponse serveur, aucune donnée de démonstration', async () => {
     sessionMode = 'admin';
     await page.setViewportSize({ width: 1440, height: 900 });
@@ -314,6 +963,7 @@ try {
     await assertNoForbiddenText('/admin/contrats', text);
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'débordement horizontal 1440');
     await page.setViewportSize({ width: 360, height: 900 });
+    await page.waitForFunction(() => document.documentElement.scrollWidth <= innerWidth, null, { timeout: 5000 }).catch(() => undefined);
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'débordement horizontal 360');
   });
 
@@ -332,6 +982,7 @@ try {
   await check('ADM fiche (ADM-14) — parties, conditions, signatures, frise et jalons composés depuis la page réelle', async () => {
     await page.goto(api.origin + '/admin/contrats/ctr-e2e-1');
     await page.locator('[data-screen="ADM-14"]').waitFor();
+    await page.locator('[data-screen="ADM-14"]').getByText('ctr-e2e-1', { exact: false }).first().waitFor();
     const text = await screenText();
     assert.ok(text.includes('ctr-e2e-1'), 'référence absente');
     assert.ok(says(text, 'Période d’essai de 15 jours'), 'condition réelle absente');
@@ -344,6 +995,7 @@ try {
   await check('ADM incidents (ADM-15) — le Claim rattaché vient de la réponse serveur ; score et actions préventives déclarés indisponibles', async () => {
     await page.goto(api.origin + '/admin/contrats/ctr-e2e-1/incidents');
     await page.locator('[data-screen="ADM-15"]').waitFor();
+    await page.locator('[data-screen="ADM-15"]').getByText('clm-e2e-1', { exact: false }).waitFor();
     const text = await screenText();
     assert.ok(text.includes('clm-e2e-1'), 'Claim rattaché absent');
     assert.ok(says(text, 'Incident de contrat'), 'type de Claim réel absent');
@@ -355,6 +1007,7 @@ try {
   await check('ADM journal (ADM-17) — l’historique émis est rendu ; vérification et export déclarés indisponibles', async () => {
     await page.goto(api.origin + '/admin/contrats/ctr-e2e-1/journal');
     await page.locator('[data-screen="ADM-17"]').waitFor();
+    await page.locator('[data-screen="ADM-17"]').getByText('CONTRACT_CREATED', { exact: false }).waitFor();
     const text = await screenText();
     assert.ok(says(text, 'CONTRACT_CREATED'), 'événement réel absent du journal');
     assert.ok(text.includes('A. Gbian'), 'acteur réel absent du journal');
@@ -365,6 +1018,7 @@ try {
   await check('ADM révision forcée (ADM-16) — capacité absente, AUCUN formulaire rendu, aucune commande simulée', async () => {
     await page.goto(api.origin + '/admin/contrats/ctr-e2e-1/revision-forcee');
     await page.locator('[data-screen="ADM-16"]').waitFor();
+    await page.locator('[data-screen="ADM-16"]').getByRole('heading', { name: 'Révision forcée — indisponible', exact: true }).waitFor();
     const text = await screenText();
     assert.ok(says(text, 'indisponible'), 'capacité absente non dite');
     assert.equal(await page.locator('[data-screen="ADM-16"] form').count(), 0, 'aucun formulaire possible : aucune route serveur');
@@ -376,6 +1030,7 @@ try {
   await check('ADM fiche — référence hors page chargée : état honnête, rien de rechargé à part', async () => {
     await page.goto(api.origin + '/admin/contrats/ctr-inexistant');
     await page.locator('[data-screen="ADM-14"]').waitFor();
+    await page.locator('[data-screen="ADM-14"]').getByText('n’est pas dans la page réellement chargée', { exact: false }).waitFor();
     const text = await screenText();
     assert.ok(says(text, 'n’est pas dans la page réellement chargée'), 'état introuvable non dit');
     assert.ok(says(text, 'BACKEND_GAP'), 'capacité absente non déclarée');
@@ -402,6 +1057,7 @@ try {
     sessionMode = 'admin';
     await page.goto(api.origin + '/admin/contrats');
     await page.locator('[data-screen="ADM-13"]').waitFor();
+    await page.locator('[data-screen="ADM-13"] table caption.sr-only, [data-screen="ADM-13"] table caption').waitFor();
     assert.equal(await page.locator('[data-screen="ADM-13"] table caption.sr-only, [data-screen="ADM-13"] table caption').count(), 1, 'table sans caption');
     assert.ok(await page.locator('[data-screen="ADM-13"] table thead th').first().getAttribute('scope') === 'col', 'en-tête sans scope');
     const inputs = await page.locator('[data-screen="ADM-13"] input[type="search"]').count();

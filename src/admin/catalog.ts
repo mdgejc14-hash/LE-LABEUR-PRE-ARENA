@@ -1,6 +1,6 @@
 // GÉNÉRÉ PAR scripts/design/generate-admin-catalog.py — NE PAS ÉDITER À LA MAIN.
 // Source : design/llab/content/adm_*.py, design/llab/units.py — tranches livrées :
-// P4A (ADM-01 → ADM-12) et P4B-1 CONTRATS (ADM-13 → ADM-17).
+// P4A (ADM-01 → ADM-12), P4B-1 CONTRATS (ADM-13 → ADM-17) et P4B-2 PAIEMENTS (ADM-18 → ADM-22).
 // Régénérer : npm run design:admin
 //
 // Référence de design UNIQUEMENT : aucun libellé de ce fichier n'est affiché par
@@ -566,6 +566,133 @@ export const ADMIN_DESIGN_UNITS = [
       "POST /admin/contracts/:id/forced-revision {type, legalBasis, motive, patch}",
       "POST /admin/contracts/:id/forced-revision/countersign"
     ]
+  },
+  {
+    "id": "ADM-18",
+    "canon": "ADM — paiements (vue globale & réconciliation)",
+    "criticality": "P0",
+    "archetype": "Tour de contrôle financier",
+    "screenCodes": [
+      "ADM-18",
+      "ADM-19"
+    ],
+    "routes": [
+      "/admin/paiements",
+      "/admin/paiements/reconciliation"
+    ],
+    "zoneKinds": [
+      "cta",
+      "kpi",
+      "list",
+      "table",
+      "timeline"
+    ],
+    "componentRefs": [
+      "Badge",
+      "Bandeau",
+      "Détecteur",
+      "Histogramme",
+      "Journal",
+      "Table",
+      "Écriture"
+    ],
+    "stateNames": [
+      "Nominal",
+      "Taux d'échec élevé",
+      "Volume inhabituel",
+      "PSP indisponible",
+      "Équilibré",
+      "Écart mineur",
+      "Écart significatif",
+      "Imputé"
+    ],
+    "tokens": [
+      "--amber-500",
+      "--clay-500",
+      "--emerald-500",
+      "--gold-500",
+      "--mono",
+      "--table"
+    ],
+    "designApi": [
+      "GET /admin/payments/overview",
+      "GET /admin/payments/events?since=",
+      "GET /admin/psp/health",
+      "GET /admin/reconciliation?period=&operator=",
+      "POST /admin/reconciliation/gaps/:id/impute {motive, entry}",
+      "GET /admin/reconciliation/summary"
+    ]
+  },
+  {
+    "id": "ADM-20",
+    "canon": "ADM — paiements (anomalies, déclarations & incidents)",
+    "criticality": "P0",
+    "archetype": "Chasse aux irrégularités",
+    "screenCodes": [
+      "ADM-20",
+      "ADM-21",
+      "ADM-22"
+    ],
+    "routes": [
+      "/admin/paiements/anomalies",
+      "/admin/paiements/declarations-externes",
+      "/admin/paiements/incidents/:id"
+    ],
+    "zoneKinds": [
+      "cta",
+      "doc",
+      "hero",
+      "kpi",
+      "list",
+      "table",
+      "timeline"
+    ],
+    "componentRefs": [
+      "Carte",
+      "Double",
+      "Décision",
+      "Lien",
+      "Panneau",
+      "Preuve",
+      "Statistiques",
+      "Table",
+      "Traitement",
+      "Visionneuse"
+    ],
+    "stateNames": [
+      "Nominal",
+      "Vague",
+      "Faux positif",
+      "Confirmée",
+      "Dans les délais",
+      "Contestée",
+      "Confirmée",
+      "Fraude établie",
+      "Ouvert",
+      "Résolu",
+      "Escaladé",
+      "Rouvert"
+    ],
+    "tokens": [
+      "--amber-500",
+      "--clay-500",
+      "--clay-600",
+      "--emerald-500",
+      "--glass-2",
+      "--mono",
+      "--table",
+      "--violet-500"
+    ],
+    "designApi": [
+      "GET /admin/payments/anomalies?cursor=",
+      "POST /admin/payments/anomalies/:id/treat",
+      "POST /admin/payments/anomalies/:id/false-positive",
+      "GET /admin/payments/external-declarations?cursor=",
+      "POST /admin/payments/external-declarations/:id/decide",
+      "GET /admin/payments/incidents/:id",
+      "POST /admin/payments/incidents/:id/resolve {option, entries}",
+      "POST /admin/payments/incidents/:id/escalate"
+    ]
   }
 ] as const;
 
@@ -1026,6 +1153,140 @@ export const ADMIN_DESIGN_SCREENS = [
       "--emerald-500",
       "--clay-500",
       "--table"
+    ]
+  },
+  {
+    "code": "ADM-18",
+    "unitId": "ADM — paiements (vue globale & réconciliation)",
+    "route": "/admin/paiements",
+    "canonicalRoute": "/admin/paiements",
+    "role": "ADMIN",
+    "criticality": "P0",
+    "zoneKinds": [
+      "kpi",
+      "timeline",
+      "table",
+      "cta"
+    ],
+    "variantOf": null,
+    "designApi": [
+      "GET /admin/payments/overview",
+      "GET /admin/payments/events?since=",
+      "GET /admin/psp/health"
+    ],
+    "tokens": [
+      "--gold-500",
+      "--emerald-500",
+      "--clay-500",
+      "--mono",
+      "--table"
+    ]
+  },
+  {
+    "code": "ADM-19",
+    "unitId": "ADM — paiements (vue globale & réconciliation)",
+    "route": "/admin/paiements/reconciliation",
+    "canonicalRoute": "/admin/paiements/reconciliation",
+    "role": "ADMIN",
+    "criticality": "P0",
+    "zoneKinds": [
+      "table",
+      "kpi",
+      "list",
+      "cta"
+    ],
+    "variantOf": null,
+    "designApi": [
+      "GET /admin/reconciliation?period=&operator=",
+      "POST /admin/reconciliation/gaps/:id/impute {motive, entry}",
+      "GET /admin/reconciliation/summary"
+    ],
+    "tokens": [
+      "--emerald-500",
+      "--clay-500",
+      "--amber-500",
+      "--mono",
+      "--table"
+    ]
+  },
+  {
+    "code": "ADM-20",
+    "unitId": "ADM — paiements (anomalies, déclarations & incidents)",
+    "route": "/admin/paiements/anomalies",
+    "canonicalRoute": "/admin/paiements/anomalies",
+    "role": "ADMIN",
+    "criticality": "P0",
+    "zoneKinds": [
+      "list",
+      "table",
+      "kpi",
+      "cta"
+    ],
+    "variantOf": null,
+    "designApi": [
+      "GET /admin/payments/anomalies?cursor=",
+      "POST /admin/payments/anomalies/:id/treat",
+      "POST /admin/payments/anomalies/:id/false-positive"
+    ],
+    "tokens": [
+      "--clay-500",
+      "--clay-600",
+      "--mono",
+      "--amber-500",
+      "--table"
+    ]
+  },
+  {
+    "code": "ADM-21",
+    "unitId": "ADM — paiements (anomalies, déclarations & incidents)",
+    "route": "/admin/paiements/declarations-externes",
+    "canonicalRoute": "/admin/paiements/declarations-externes",
+    "role": "ADMIN",
+    "criticality": "P1",
+    "zoneKinds": [
+      "table",
+      "doc",
+      "kpi",
+      "cta"
+    ],
+    "variantOf": null,
+    "designApi": [
+      "GET /admin/payments/external-declarations?cursor=",
+      "POST /admin/payments/external-declarations/:id/decide"
+    ],
+    "tokens": [
+      "--clay-500",
+      "--amber-500",
+      "--emerald-500",
+      "--mono",
+      "--glass-2"
+    ]
+  },
+  {
+    "code": "ADM-22",
+    "unitId": "ADM — paiements (anomalies, déclarations & incidents)",
+    "route": "/admin/paiements/incidents/:id",
+    "canonicalRoute": "/admin/paiements/incidents/:id",
+    "role": "ADMIN",
+    "criticality": "P0",
+    "zoneKinds": [
+      "hero",
+      "timeline",
+      "list",
+      "cta"
+    ],
+    "variantOf": null,
+    "designApi": [
+      "GET /admin/payments/incidents/:id",
+      "POST /admin/payments/incidents/:id/resolve {option, entries}",
+      "POST /admin/payments/incidents/:id/escalate"
+    ],
+    "tokens": [
+      "--clay-500",
+      "--emerald-500",
+      "--violet-500",
+      "--mono",
+      "--glass-2"
     ]
   }
 ] as const;
