@@ -313,7 +313,8 @@ export async function runEmployerTests(): Promise<{ name: string; success: boole
     assert.equal(isEmployerUnit('PRE-01'), false);
     assert.equal(integrationStatus('PRE-01'), 'PARTIEL', 'PRE-01 est livrée par P3-DESIGN-PRESTATAIRE');
     assert.equal(integrationStatus('ADM-01'), 'PARTIEL', 'ADM-01 est livrée par P4A-DESIGN-ADMIN-CORE');
-    assert.equal(integrationStatus('ADM-13'), 'NON_INTEGRE', 'ADM-13 (contrats) reste hors tranche P4A');
+    assert.equal(integrationStatus('ADM-13'), 'PARTIEL', 'ADM-13 (contrats) est livrée par P4B-1-DESIGN-ADMIN-CONTRACTS');
+    assert.equal(integrationStatus('ADM-18'), 'NON_INTEGRE', 'ADM-18 (paiements) reste hors tranches livrées');
   });
 
   check('EMP — erreurs : projection en états StateGuard, corrélation sûre uniquement', () => {

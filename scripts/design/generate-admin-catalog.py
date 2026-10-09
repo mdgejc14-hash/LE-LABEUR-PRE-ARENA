@@ -1,9 +1,13 @@
 """
-P4A-DESIGN-ADMIN-CORE — structure des unités ADM de la tranche, lue dans la source canonique.
+Catalogue ADM — structure des unités livrées, lue dans la source canonique.
+
+Tranches livrées :
+  P4A-DESIGN-ADMIN-CORE : supervision de base ;
+  P4B-1-DESIGN-ADMIN-CONTRACTS : supervision des contrats.
 
 Ce générateur ne produit AUCUN libellé métier : les textes affichés par
 l'interface viennent de `src/admin/vocabulary.ts` (vocabulaire LE LABEUR).
-Il exporte uniquement la STRUCTURE des fiches ADM de la tranche P4A :
+Il exporte uniquement la STRUCTURE des fiches ADM des tranches livrées :
   - codes d'écran, routes techniques (celles du routeur P0, jamais renommées) ;
   - genres de zones et composants cités par la fiche ;
   - noms d'états d'interface de la fiche (référence de design) ;
@@ -18,7 +22,14 @@ Périmètre de la tranche P4A (première partie de la famille ADM) :
   ADM-08 / ADM-09 qualification (décision de revue et historique) ;
   ADM-10 / ADM-11 / ADM-12 matching (runs, audit et règles existantes).
 
-Les écrans ADM suivants (contrats, paiements, salaires, litiges, remplacements,
+Périmètre de la tranche P4B-1 (supervision des contrats uniquement) :
+  ADM-13 registre des contrats ;
+  ADM-14 / ADM-15 / ADM-17 contrat — fiche, incidents et journal (une seule
+         unité de production selon `units.py`) ;
+  ADM-16 contrat — révision forcée (unité propre ; capacité absente côté
+         serveur, déclarée BACKEND_GAP par la tranche).
+
+Les écrans ADM suivants (paiements, salaires, litiges, remplacements,
 réputation, documents, notifications, ops, sécurité avancée, infra, FIN) sont
 hors tranche et ne figurent PAS dans ce catalogue.
 """
@@ -33,15 +44,23 @@ sys.path.insert(0, str(ROOT / 'design'))
 from llab.content import load_all  # noqa: E402
 from llab.units import unit_of  # noqa: E402
 
-# Tranche P4A-DESIGN-ADMIN-CORE : fiches ADM livrées par cette tranche.
+# Fiches ADM livrées par les tranches P4A et P4B-1 (périmètre strict).
 TRANCHE_P4A = {
     'ADM-01', 'ADM-02', 'ADM-03', 'ADM-04', 'ADM-05',
     'ADM-06', 'ADM-07', 'ADM-08', 'ADM-09',
     'ADM-10', 'ADM-11', 'ADM-12',
 }
 
+# P4B-1-DESIGN-ADMIN-CONTRACTS : supervision des contrats uniquement
+# (paiements et rapprochement = P4B-2, hors catalogue).
+TRANCHE_P4B1 = {
+    'ADM-13', 'ADM-14', 'ADM-15', 'ADM-16', 'ADM-17',
+}
+
+TRANCHE_ADMIN = TRANCHE_P4A | TRANCHE_P4B1
+
 families = load_all()
-SCREENS = [s for s in families['ADM'] if s.code in TRANCHE_P4A]
+SCREENS = [s for s in families['ADM'] if s.code in TRANCHE_ADMIN]
 
 # Unité de production = regroupement `units.unit_of(canon)` de la source canonique.
 # Ordre d'unité = ordre des fiches ADM de la tranche ; l'id est le plus petit code.
@@ -97,7 +116,8 @@ screens = [{
 
 payload = (
     '// GÉNÉRÉ PAR scripts/design/generate-admin-catalog.py — NE PAS ÉDITER À LA MAIN.\n'
-    '// Source : design/llab/content/adm_*.py, design/llab/units.py (tranche P4A : ADM-01 → ADM-12).\n'
+    '// Source : design/llab/content/adm_*.py, design/llab/units.py — tranches livrées :\n'
+    '// P4A (ADM-01 → ADM-12) et P4B-1 CONTRATS (ADM-13 → ADM-17).\n'
     '// Régénérer : npm run design:admin\n'
     '//\n'
     '// Référence de design UNIQUEMENT : aucun libellé de ce fichier n\'est affiché par\n'

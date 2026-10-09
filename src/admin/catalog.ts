@@ -1,5 +1,6 @@
 // GÉNÉRÉ PAR scripts/design/generate-admin-catalog.py — NE PAS ÉDITER À LA MAIN.
-// Source : design/llab/content/adm_*.py, design/llab/units.py (tranche P4A : ADM-01 → ADM-12).
+// Source : design/llab/content/adm_*.py, design/llab/units.py — tranches livrées :
+// P4A (ADM-01 → ADM-12) et P4B-1 CONTRATS (ADM-13 → ADM-17).
 // Régénérer : npm run design:admin
 //
 // Référence de design UNIQUEMENT : aucun libellé de ce fichier n'est affiché par
@@ -413,6 +414,158 @@ export const ADMIN_DESIGN_UNITS = [
       "GET /admin/matching/runs/:id/bias-tests",
       "POST /admin/matching/factors/:id/disable"
     ]
+  },
+  {
+    "id": "ADM-13",
+    "canon": "ADM — contrats (registre)",
+    "criticality": "P0",
+    "archetype": "Grand livre des engagements",
+    "screenCodes": [
+      "ADM-13"
+    ],
+    "routes": [
+      "/admin/contrats"
+    ],
+    "zoneKinds": [
+      "chips",
+      "cta",
+      "kpi",
+      "table"
+    ],
+    "componentRefs": [
+      "Badge",
+      "Détecteur",
+      "Table"
+    ],
+    "stateNames": [
+      "Nominal",
+      "Charge incident",
+      "Signatures bloquées",
+      "Vide"
+    ],
+    "tokens": [
+      "--amber-500",
+      "--gold-500",
+      "--mono",
+      "--surface-1",
+      "--table"
+    ],
+    "designApi": [
+      "GET /admin/contracts?segment=&cursor=",
+      "GET /admin/contracts/summary",
+      "POST /admin/contracts/export"
+    ]
+  },
+  {
+    "id": "ADM-14",
+    "canon": "ADM — contrat (fiche, incidents & journal)",
+    "criticality": "P0",
+    "archetype": "Dossier contractuel complet",
+    "screenCodes": [
+      "ADM-14",
+      "ADM-15",
+      "ADM-17"
+    ],
+    "routes": [
+      "/admin/contrats/:id",
+      "/admin/contrats/:id/incidents",
+      "/admin/contrats/:id/journal"
+    ],
+    "zoneKinds": [
+      "cta",
+      "doc",
+      "hero",
+      "kpi",
+      "list",
+      "table",
+      "timeline"
+    ],
+    "componentRefs": [
+      "Actions",
+      "Bandeau",
+      "C-06",
+      "Export",
+      "Notes",
+      "Score",
+      "Table",
+      "Vérificateur"
+    ],
+    "stateNames": [
+      "Actif sain",
+      "En incident",
+      "Contesté",
+      "Audit demandé",
+      "Stable",
+      "À surveiller",
+      "Risque élevé",
+      "Résolu",
+      "Intègre",
+      "Rupture détectée",
+      "Volumineux",
+      "Vide"
+    ],
+    "tokens": [
+      "--amber-500",
+      "--clay-500",
+      "--emerald-500",
+      "--gold-500",
+      "--mono",
+      "--surface-1",
+      "--table",
+      "--violet-500"
+    ],
+    "designApi": [
+      "GET /admin/contracts/:id",
+      "POST /admin/contracts/:id/notes",
+      "GET /admin/contracts/:id/versions",
+      "GET /admin/contracts/:id/incidents",
+      "POST /admin/contracts/:id/incidents",
+      "POST /admin/contracts/:id/preventions {type}",
+      "GET /admin/contracts/:id/journal?cursor=",
+      "POST /admin/contracts/:id/journal/verify",
+      "GET /admin/contracts/:id/journal/export"
+    ]
+  },
+  {
+    "id": "ADM-16",
+    "canon": "ADM — contrat (révision forcée)",
+    "criticality": "P0",
+    "archetype": "Écrire la loi du dossier",
+    "screenCodes": [
+      "ADM-16"
+    ],
+    "routes": [
+      "/admin/contrats/:id/revision-forcee"
+    ],
+    "zoneKinds": [
+      "cta",
+      "doc",
+      "form",
+      "kpi"
+    ],
+    "componentRefs": [
+      "Aperçu",
+      "Bloc",
+      "Double",
+      "Formulaire"
+    ],
+    "stateNames": [
+      "Préparation",
+      "Contre-signature",
+      "Appliquée",
+      "Annulée"
+    ],
+    "tokens": [
+      "--clay-500",
+      "--clay-600",
+      "--glass-3",
+      "--gold-500",
+      "--mono"
+    ],
+    "designApi": [
+      "POST /admin/contracts/:id/forced-revision {type, legalBasis, motive, patch}",
+      "POST /admin/contracts/:id/forced-revision/countersign"
+    ]
   }
 ] as const;
 
@@ -740,6 +893,139 @@ export const ADMIN_DESIGN_SCREENS = [
       "--gold-500",
       "--clay-500",
       "--mono"
+    ]
+  },
+  {
+    "code": "ADM-13",
+    "unitId": "ADM — contrats (registre)",
+    "route": "/admin/contrats",
+    "canonicalRoute": "/admin/contrats",
+    "role": "ADMIN",
+    "criticality": "P0",
+    "zoneKinds": [
+      "chips",
+      "table",
+      "kpi",
+      "cta"
+    ],
+    "variantOf": null,
+    "designApi": [
+      "GET /admin/contracts?segment=&cursor=",
+      "GET /admin/contracts/summary",
+      "POST /admin/contracts/export"
+    ],
+    "tokens": [
+      "--surface-1",
+      "--gold-500",
+      "--amber-500",
+      "--mono",
+      "--table"
+    ]
+  },
+  {
+    "code": "ADM-14",
+    "unitId": "ADM — contrat (fiche, incidents & journal)",
+    "route": "/admin/contrats/:id",
+    "canonicalRoute": "/admin/contrats/:id",
+    "role": "ADMIN",
+    "criticality": "P0",
+    "zoneKinds": [
+      "hero",
+      "timeline",
+      "table",
+      "doc",
+      "cta"
+    ],
+    "variantOf": null,
+    "designApi": [
+      "GET /admin/contracts/:id",
+      "POST /admin/contracts/:id/notes",
+      "GET /admin/contracts/:id/versions"
+    ],
+    "tokens": [
+      "--surface-1",
+      "--gold-500",
+      "--clay-500",
+      "--mono",
+      "--table"
+    ]
+  },
+  {
+    "code": "ADM-15",
+    "unitId": "ADM — contrat (fiche, incidents & journal)",
+    "route": "/admin/contrats/:id/incidents",
+    "canonicalRoute": "/admin/contrats/:id/incidents",
+    "role": "ADMIN",
+    "criticality": "P1",
+    "zoneKinds": [
+      "table",
+      "kpi",
+      "list",
+      "cta"
+    ],
+    "variantOf": null,
+    "designApi": [
+      "GET /admin/contracts/:id/incidents",
+      "POST /admin/contracts/:id/incidents",
+      "POST /admin/contracts/:id/preventions {type}"
+    ],
+    "tokens": [
+      "--clay-500",
+      "--amber-500",
+      "--violet-500",
+      "--mono"
+    ]
+  },
+  {
+    "code": "ADM-16",
+    "unitId": "ADM — contrat (révision forcée)",
+    "route": "/admin/contrats/:id/revision-forcee",
+    "canonicalRoute": "/admin/contrats/:id/revision-forcee",
+    "role": "ADMIN",
+    "criticality": "P0",
+    "zoneKinds": [
+      "form",
+      "doc",
+      "kpi",
+      "cta"
+    ],
+    "variantOf": null,
+    "designApi": [
+      "POST /admin/contracts/:id/forced-revision {type, legalBasis, motive, patch}",
+      "POST /admin/contracts/:id/forced-revision/countersign"
+    ],
+    "tokens": [
+      "--clay-600",
+      "--clay-500",
+      "--mono",
+      "--glass-3",
+      "--gold-500"
+    ]
+  },
+  {
+    "code": "ADM-17",
+    "unitId": "ADM — contrat (fiche, incidents & journal)",
+    "route": "/admin/contrats/:id/journal",
+    "canonicalRoute": "/admin/contrats/:id/journal",
+    "role": "ADMIN",
+    "criticality": "P1",
+    "zoneKinds": [
+      "table",
+      "kpi",
+      "list",
+      "cta"
+    ],
+    "variantOf": null,
+    "designApi": [
+      "GET /admin/contracts/:id/journal?cursor=",
+      "POST /admin/contracts/:id/journal/verify",
+      "GET /admin/contracts/:id/journal/export"
+    ],
+    "tokens": [
+      "--mono",
+      "--emerald-500",
+      "--clay-500",
+      "--table"
     ]
   }
 ] as const;

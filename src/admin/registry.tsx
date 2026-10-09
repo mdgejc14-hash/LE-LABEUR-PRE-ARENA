@@ -1,11 +1,16 @@
 /**
- * ADM —— registre des écrans livrés (7 unités, 12 fiches — tranche P4A).
+ * ADM —— registre des écrans livrés (10 unités, 17 fiches — tranches P4A et P4B-1).
  *
- * Chaque code de fiche ADM-01 → ADM-12 est associé à l'écran qui le rend. Les
+ * Chaque code de fiche ADM-01 → ADM-17 est associé à l'écran qui le rend. Les
  * variantes des fiches (mêmes zones, état imposé par la route) réutilisent
  * l'écran canonique : c'est la structure décrite par le Master Design.
+ * P4B-1 ajoute la supervision des contrats : ADM-13 (registre), ADM-14
+ * (fiche), ADM-15 (incidents), ADM-16 (révision forcée — capacité absente)
+ * et ADM-17 (journal). Les fiches ADM-18 et suivantes (paiements, salaire,
+ * litiges, remplacements, réputation, documents, ops, sécurité, infra) restent
+ * hors tranches : aucune entrée n'est ajoutée pour elles.
  *
- * Ce module est le SEUL point d'entrée des routes `/admin/*` de la tranche :
+ * Ce module est le SEUL point d'entrée des routes `/admin/*` des tranches :
  * il résout la fiche depuis le chemin réel, applique la garde de session puis
  * rend l'écran.
  */
@@ -23,6 +28,13 @@ import {
   Admin09QualificationHistory,
 } from './screens/qualification';
 import { Admin10MatchingRuns, Admin11MatchingAudit, Admin12MatchingRules } from './screens/matching';
+import {
+  Admin13ContractsRegistry,
+  Admin14ContractSheet,
+  Admin15ContractIncidents,
+  Admin16ContractForcedRevision,
+  Admin17ContractJournal,
+} from './screens/contracts';
 
 type AdminScreenComponent = (props: AdminUnitProps) => ReactNode;
 
@@ -40,6 +52,11 @@ export const ADMIN_SCREEN_COMPONENTS: Readonly<Record<string, AdminScreenCompone
   'ADM-10': Admin10MatchingRuns,
   'ADM-11': Admin11MatchingAudit,
   'ADM-12': Admin12MatchingRules,
+  'ADM-13': Admin13ContractsRegistry,
+  'ADM-14': Admin14ContractSheet,
+  'ADM-15': Admin15ContractIncidents,
+  'ADM-16': Admin16ContractForcedRevision,
+  'ADM-17': Admin17ContractJournal,
 };
 
 export function adminScreenCodes(): readonly string[] {

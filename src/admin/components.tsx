@@ -16,7 +16,7 @@ import { GlassSurface, NeoPressButton, SquircleCard, StatusSeal, type SealTone }
 import { Link } from '../routing/navigation';
 import { adminScreenByCode } from './screenMap';
 
-/** Genres de zones réellement déclarés par les fiches ADM de la tranche P4A. */
+/** Genres de zones réellement déclarés par les fiches ADM des tranches livrées. */
 export type AdminZoneKind =
   | 'hero' | 'kpi' | 'list' | 'table' | 'timeline' | 'form' | 'cta'
   | 'chips' | 'ring' | 'verdict' | 'doc' | 'chat';

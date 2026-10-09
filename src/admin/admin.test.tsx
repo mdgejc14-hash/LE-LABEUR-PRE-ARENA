@@ -1,11 +1,12 @@
 /**
- * P4A-DESIGN-ADMIN-CORE — tests de la tranche supervision (espace ADMIN).
+ * P4A-DESIGN-ADMIN-CORE + P4B-1-DESIGN-ADMIN-CONTRACTS — tests de l'espace
+ * supervision (écrans ADMIN livrés : base + contrats).
  *
  * Couverture :
  *  1. parité du catalogue généré avec la source de design (Python) ;
- *  2. résolution de route : chaque fiche ADM de la tranche est atteignable et
+ *  2. résolution de route : chaque fiche ADM des tranches est atteignable et
  *     rattachée à son unité (regroupement `units.py`, pas une plage numérique) ;
- *  3. registre complet (7 unités / 12 fiches) ;
+ *  3. registre complet (10 unités / 17 fiches) ;
  *  4. API : chaque chemin appelé existe déjà dans `routeContracts.ts` ;
  *  5. GARDE-FOU DE VOCABULAIRE : aucun libellé métier du Master Design
  *     (Mission, Client, Prestataire, Litige) ne peut entrer dans l'interface,
@@ -17,9 +18,14 @@
  *  8. décisions de qualification : parité exacte avec le code serveur
  *     (QUALIFICATION_DECISIONS) et options de revue réelles ;
  *  9. garde de session : seul un compte ADMIN actif ouvre l'espace ;
- * 10. intégration : ADM tranche = PARTIEL, EMP/PRE/PUB/SYS inchangés, autres
- *     ADM/FIN/RTC non intégrées ;
- * 11. responsive, accessibilité (table sémantique) et reduced-motion (CSS).
+ * 10. intégration : ADM tranches = PARTIEL, EMP/PRE/PUB/SYS inchangés, autres
+ *     ADM (paiements, litiges, …)/FIN/RTC non intégrées ;
+ * 11. responsive, accessibilité (table sémantique) et reduced-motion (CSS) ;
+ * 12. P4B-1 contrats : routes ADM réelles du registre et des Claims, statuts
+ *     et types de Claim en parité exacte avec le serveur, segments du registre
+ *     en statuts réels uniquement, aucune donnée simulée, capacités absentes
+ *     vérifiées contre le catalogue de routes (aucune route ADMIN individuelle
+ *     de contrat n'existe : la fiche est composée depuis la page réelle).
  */
 
 import React from 'react';
@@ -36,7 +42,19 @@ import { DataTable } from './components';
 import { DOCK_DEFINITIONS } from '../design-system/shells/shellNavigation';
 import { deliveredScreensForUnit } from './screenMap';
 import { ADMIN_API_PATHS, REVIEW_DECISION_OPTIONS } from './api';
-import { DESIGN_ONLY_TERMS_NOT_RENDERED, PRODUCT_LABELS, QUALIFICATION_DECISION_LABELS, maskEmail } from './vocabulary';
+import {
+  CLAIM_STATUS_LABELS,
+  CLAIM_TYPE_LABELS,
+  CONTRACT_REGISTRY_SEGMENTS,
+  CONTRACT_STATUS_LABELS,
+  CONTRACT_STATUS_TONES,
+  DESIGN_ONLY_TERMS_NOT_RENDERED,
+  PRODUCT_LABELS,
+  QUALIFICATION_DECISION_LABELS,
+  formatContractAmount,
+  maskEmail,
+} from './vocabulary';
+import { CLAIM_STATUS_VALUES, CLAIM_TYPE_VALUES } from '../backend/disputes/records';
 import { adminError } from './errors';
 import { adminGuard, type AdminSessionState } from './hooks';
 import { API_ROUTE_CONTRACTS } from '../backend/api/routeContracts';
@@ -122,24 +140,33 @@ export async function runAdminTests(): Promise<{ name: string; success: boolean;
     execFileSync('python3', ['scripts/design/generate-admin-catalog.py', '--check']);
   });
 
-  check('ADM — 7 unités / 12 fiches, chaque fiche rattachée à une seule unité', () => {
-    assert.equal(ADMIN_DESIGN_UNITS.length, 7);
-    assert.equal(ADMIN_DESIGN_SCREENS.length, 12);
+  check('ADM — 10 unités / 17 fiches, chaque fiche rattachée à une seule unité', () => {
+    assert.equal(ADMIN_DESIGN_UNITS.length, 10);
+    assert.equal(ADMIN_DESIGN_SCREENS.length, 17);
     const codes = ADMIN_DESIGN_SCREENS.map((screen) => screen.code);
-    assert.equal(new Set(codes).size, 12);
+    assert.equal(new Set(codes).size, 17);
     for (const screen of ADMIN_DESIGN_SCREENS) {
       const unit = unitForScreen(screen.code);
       assert.ok(unit, `fiche sans unité : ${screen.code}`);
       const parent = ADMIN_DESIGN_UNITS.find((candidate) => candidate.id === unit);
       assert.ok((parent?.screenCodes as readonly string[] | undefined)?.includes(screen.code), `fiche ${screen.code} absente des fiches de ${unit}`);
     }
-    // Regroupement réel du Master (units.py) : pas une plage numérique.
-    assert.deepEqual(ADMIN_DESIGN_UNITS.map((unit) => unit.id), ['ADM-01', 'ADM-02', 'ADM-04', 'ADM-06', 'ADM-08', 'ADM-10', 'ADM-11']);
+    // Regroupement réel du Master (units.py) : pas une plage numérique. P4B-1
+    // ajoute ADM-13 (registre, unité propre), ADM-14 = {fiche, incidents,
+    // journal} (une seule unité de production) et ADM-16 (révision forcée,
+    // unité propre) — exactement les regroupements de `design/llab/units.py`.
+    assert.deepEqual(ADMIN_DESIGN_UNITS.map((unit) => unit.id), ['ADM-01', 'ADM-02', 'ADM-04', 'ADM-06', 'ADM-08', 'ADM-10', 'ADM-11', 'ADM-13', 'ADM-14', 'ADM-16']);
     assert.deepEqual(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-02')?.screenCodes, ['ADM-02', 'ADM-03']);
     assert.deepEqual(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-04')?.screenCodes, ['ADM-04', 'ADM-05']);
     assert.deepEqual(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-06')?.screenCodes, ['ADM-06', 'ADM-07']);
     assert.deepEqual(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-08')?.screenCodes, ['ADM-08', 'ADM-09']);
     assert.deepEqual(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-10')?.screenCodes, ['ADM-10', 'ADM-12']);
+    assert.deepEqual(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-13')?.screenCodes, ['ADM-13']);
+    assert.deepEqual(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-14')?.screenCodes, ['ADM-14', 'ADM-15', 'ADM-17']);
+    assert.deepEqual(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-16')?.screenCodes, ['ADM-16']);
+    assert.equal(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-14')?.canon, 'ADM — contrat (fiche, incidents & journal)');
+    assert.equal(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-13')?.canon, 'ADM — contrats (registre)');
+    assert.equal(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-16')?.canon, 'ADM — contrat (révision forcée)');
   });
 
   check('ADM — chaque route de fiche est résolue par le routeur P0 vers son unité', () => {
@@ -156,7 +183,7 @@ export async function runAdminTests(): Promise<{ name: string; success: boolean;
     assert.equal(index.kind === 'shell' && index.unitId, 'ADM-01', 'l’index /admin doit être le tableau de bord ADM-01');
   });
 
-  check('ADM — registre complet : les 12 fiches ont un écran, aucun code inconnu', () => {
+  check('ADM — registre complet : les 17 fiches livrées ont un écran, aucun code inconnu', () => {
     const registered = Object.keys(ADMIN_SCREEN_COMPONENTS).sort();
     const expected = ADMIN_DESIGN_SCREENS.map((screen) => screen.code).sort();
     assert.deepEqual(registered, expected);
@@ -316,8 +343,8 @@ export async function runAdminTests(): Promise<{ name: string; success: boolean;
     }
   });
 
-  check('ADM — intégration : 7 unités ADM PARTIEL, EMP/PRE/PUB/SYS inchangés, autres ADM/FIN/RTC non intégrées', () => {
-    assert.equal(ADMIN_UNIT_IDS.length, 7);
+  check('ADM — intégration : 10 unités ADM PARTIEL (P4A + P4B-1), EMP/PRE/PUB/SYS inchangés, autres ADM/FIN/RTC non intégrées', () => {
+    assert.equal(ADMIN_UNIT_IDS.length, 10);
     for (const unitId of ADMIN_UNIT_IDS) {
       assert.equal(integrationStatus(unitId), 'PARTIEL', `${unitId} doit être PARTIEL`);
       assert.ok(isAdminUnit(unitId), `${unitId} doit être reconnue comme unité ADM`);
@@ -330,7 +357,12 @@ export async function runAdminTests(): Promise<{ name: string; success: boolean;
     }
     assert.equal(isAdminUnit('EMP-01'), false);
     assert.equal(integrationStatus('EMP-01'), 'PARTIEL', 'EMP-01 est livrée par P2-DESIGN-EMPLOYER');
-    assert.equal(integrationStatus('ADM-13'), 'NON_INTEGRE', 'ADM-13 (contrats) reste hors tranche P4A');
+    // P4B-1 : les unités contrats sont livrées ; les tranches suivantes ne sont pas entamées.
+    assert.equal(integrationStatus('ADM-13'), 'PARTIEL', 'ADM-13 (registre des contrats) est livrée par P4B-1');
+    assert.equal(integrationStatus('ADM-14'), 'PARTIEL', 'ADM-14 (fiche, incidents & journal) est livrée par P4B-1');
+    assert.equal(integrationStatus('ADM-16'), 'PARTIEL', 'ADM-16 (révision forcée — capacité absente déclarée) est livrée par P4B-1');
+    assert.equal(integrationStatus('ADM-18'), 'NON_INTEGRE', 'ADM-18 (paiements) : P4B-2, hors de cette tranche');
+    assert.equal(integrationStatus('ADM-26'), 'NON_INTEGRE', 'ADM-26 (litiges — file de modération) reste hors tranches livrées');
   });
 
   check('ADM — erreurs : projection en états StateGuard, corrélation sûre uniquement', () => {
@@ -429,6 +461,164 @@ export async function runAdminTests(): Promise<{ name: string; success: boolean;
     assert.ok(css.includes('prefers-reduced-motion'), 'réduction de mouvement absente');
     assert.ok(css.includes('overflow-x: auto'), 'défilement horizontal de la table non maîtrisé');
     assert.ok(css.includes('--touch-target-mobile'), 'cible tactile non référencée');
+  });
+
+  /* ── P4B-1-DESIGN-ADMIN-CONTRACTS — supervision des contrats ── */
+
+  check('ADM — P4B-1 : routes des écrans contrats résolues (fiche propre à chaque chemin, params extraits)', () => {
+    const registre = resolveAdminScreen('/admin/contrats');
+    assert.equal(registre?.code, 'ADM-13');
+    assert.equal(registre?.unitId, 'ADM-13');
+    const fiche = resolveAdminScreen('/admin/contrats/ctr-42');
+    assert.equal(fiche?.code, 'ADM-14');
+    assert.equal(fiche?.unitId, 'ADM-14', 'ADM-14, ADM-15 et ADM-17 forment UNE unité (units.py)');
+    assert.deepEqual(fiche?.params, { id: 'ctr-42' });
+    const incidents = resolveAdminScreen('/admin/contrats/ctr-42/incidents');
+    assert.equal(incidents?.code, 'ADM-15');
+    assert.equal(incidents?.unitId, 'ADM-14');
+    const journal = resolveAdminScreen('/admin/contrats/ctr-42/journal');
+    assert.equal(journal?.code, 'ADM-17');
+    assert.equal(journal?.unitId, 'ADM-14');
+    const revision = resolveAdminScreen('/admin/contrats/ctr-42/revision-forcee');
+    assert.equal(revision?.code, 'ADM-16');
+    assert.equal(revision?.unitId, 'ADM-16');
+    // Chemins non décrits par les fiches de la tranche : aucun écran inventé.
+    assert.equal(resolveAdminScreen('/admin/contrats/ctr-42/versions'), null, 'aucune fiche ADMIN « versions » : pas d’invention');
+    assert.equal(resolveAdminScreen('/admin/contrats/ctr-42/paiements'), null, 'paiements = P4B-2 : aucun écran');
+    // Les gaps de l’unité et de la fiche atteinte sont fusionnés (résolution réelle).
+    const gapsIncidents = adminGapsFor('ADM-14', '/admin/contrats/ctr-42/incidents');
+    assert.ok(gapsIncidents.some((line) => line.includes('ADM-14')), 'gaps de l’unité ADM-14 absents');
+    assert.ok(gapsIncidents.some((line) => line.includes('ADM-15')), 'gaps de la fiche ADM-15 absents');
+  });
+
+  check('ADM — P4B-1 : routes du catalogue contrats = routes du routeur P0 (aucune route créée)', () => {
+    for (const unitId of ['ADM-13', 'ADM-14', 'ADM-16']) {
+      const catalogUnit = ADMIN_DESIGN_UNITS.find((unit) => unit.id === unitId);
+      const productionUnit = PRODUCTION_UNITS.find((unit) => unit.id === unitId);
+      assert.ok(catalogUnit && productionUnit, `unité introuvable : ${unitId}`);
+      assert.deepEqual(
+        [...catalogUnit.routes].sort(),
+        [...productionUnit.routes].sort(),
+        `${unitId} : les routes livrées doivent être exactement celles du routeur P0`,
+      );
+    }
+  });
+
+  check('ADM — P4B-1 : chemins et permissions ADMIN contrats — routes réelles du catalogue serveur, rien de plus', () => {
+    const contractsRoute = API_ROUTE_CONTRACTS.find((route) => route.key === 'admin.contracts.list');
+    assert.ok(contractsRoute, 'admin.contracts.list absente du catalogue serveur');
+    assert.equal(contractsRoute.path, '/api/v1/admin/contracts');
+    assert.equal(contractsRoute.permission, 'contracts:read:any', 'permission serveur réelle du registre');
+    assert.equal(contractsRoute.scope, 'admin');
+    const claimsRoute = API_ROUTE_CONTRACTS.find((route) => route.key === 'admin.claims.list');
+    assert.ok(claimsRoute, 'admin.claims.list absente du catalogue serveur');
+    assert.equal(claimsRoute.permission, 'incidents:read:any', 'permission serveur réelle des Claims');
+    assert.ok(ADMIN_API_PATHS.includes('/api/v1/admin/contracts'), 'chemin des contrats non vérifié');
+    assert.ok(ADMIN_API_PATHS.includes('/api/v1/admin/claims'), 'chemin des Claims non vérifié');
+    // Les capacités déclarées BACKEND_GAP sont réellement absentes : aucune route
+    // ADMIN individuelle de contrat (lecture, versions, journal, incidents, notes,
+    // export, synthèse, révision forcée) n’existe dans le catalogue.
+    for (const forbidden of ['/api/v1/admin/contracts/']) {
+      assert.equal(
+        API_ROUTE_CONTRACTS.some((route) => route.path.startsWith(forbidden)),
+        false,
+        `une route individuelle ${forbidden}* existerait : les BACKEND_GAP de la tranche seraient faux`,
+      );
+    }
+  });
+
+  check('ADM — P4B-1 : handlers opérationnels — registre ADMIN branché sur la persistance, frontière de contrôle sinon (états réels)', () => {
+    // Handler métier réel installé par la composition P0-F (couvert par le test
+    // backend `contracts.test.ts` : ADMIN lit, tiers et ADMIN non-partie obtiennent 403
+    // sur la route partie) et frontière de contrôle sécurisée sinon : les deux
+    // comportements affichés par la tranche viennent de ces faits-là.
+    const repositorySource = readFileSync(new URL('../backend/repositories/contractRepository.ts', import.meta.url), 'utf8');
+    assert.ok(repositorySource.includes("'admin.contracts.list': async context => repository.getAdminContracts("), 'handler admin.contracts.list non branché sur getAdminContracts : vérifier l’audit');
+    assert.ok(repositorySource.includes('requireAdmin(actor)'), 'garde ADMIN serveur absente du handler de lecture');
+    const identitySource = readFileSync(new URL('../backend/api/identityWorker.ts', import.meta.url), 'utf8');
+    assert.ok(identitySource.includes("'admin.contracts.list': adminControl('contracts')"), 'frontière de contrôle sans persistance absente : l’état affiché serait faux');
+    const entrySource = readFileSync(new URL('../backend/api/entry.ts', import.meta.url), 'utf8');
+    assert.ok(entrySource.includes('...contractHandlers,'), 'composition n’installe pas les handlers contrat : l’écran devrait annoncer 501');
+  });
+
+  check('ADM — P4B-1 : statuts de contrat affichés = statuts RÉELS du produit (aucun renommé)', () => {
+    // Source de vérité : l'union `ContractStatus` de src/types/index.ts.
+    const typesSource = readFileSync(new URL('../types/index.ts', import.meta.url), 'utf8');
+    const match = /export type ContractStatus =\s*\n([^;]+);/.exec(typesSource);
+    assert.ok(match, 'union ContractStatus introuvable dans src/types/index.ts');
+    const statuses = [...match[1].matchAll(/'([A-Z_]+)'/g)].map((found) => found[1]);
+    assert.ok(statuses.length >= 8, 'statuts inattendus dans l’union ContractStatus');
+    assert.deepEqual(Object.keys(CONTRACT_STATUS_LABELS).sort(), [...statuses].sort(), 'libellés ADMIN doivent couvrir exactement les statuts réels');
+    assert.deepEqual(Object.keys(CONTRACT_STATUS_TONES).sort(), [...statuses].sort(), 'teintes doivent couvrir exactement les statuts réels');
+    // Les libellés ADMIN sont les libellés officiels du produit, identiques à
+    // ceux déjà en usage côté EMPLOYER et CANDIDATE : aucune divergence terminologique.
+    // Comparaison dans le bloc CONTRACT_STATUS_LABELS seul (les mêmes codes de
+    // statut existent aussi pour les comptes : « ACTIVE : Actif » vs « Active »).
+    const extractBlock = (source: string) => {
+      const start = source.indexOf('CONTRACT_STATUS_LABELS');
+      const end = source.indexOf('};', start);
+      return source.slice(start, end);
+    };
+    const employerBlock = extractBlock(readFileSync(new URL('../employer/vocabulary.ts', import.meta.url), 'utf8'));
+    const prestataireBlock = extractBlock(readFileSync(new URL('../prestataire/vocabulary.ts', import.meta.url), 'utf8'));
+    assert.ok(employerBlock.length > 0 && prestataireBlock.length > 0, 'blocs CONTRACT_STATUS_LABELS introuvables');
+    for (const status of statuses) {
+      const adminLabel = CONTRACT_STATUS_LABELS[status as keyof typeof CONTRACT_STATUS_LABELS];
+      for (const [block, family] of [[employerBlock, 'EMPLOYER'], [prestataireBlock, 'CANDIDATE']] as const) {
+        const found = new RegExp(`\\b${status}: '([^']+)'`).exec(block);
+        assert.ok(found, `statut ${status} introuvable dans le vocabulaire ${family}`);
+        assert.equal(adminLabel, found[1], `libellé ADMIN « ${adminLabel} » diverge du libellé officiel ${family} ${status} = « ${found[1]} »`);
+      }
+    }
+    // Segments du registre : uniquement des statuts réels, jamais un statut inventé.
+    const all = CONTRACT_REGISTRY_SEGMENTS.find((segment) => segment.id === 'all');
+    assert.ok(all && all.statuses.length === 0, 'le segment « Tous » ne doit filtrer aucun statut');
+    for (const segment of CONTRACT_REGISTRY_SEGMENTS) {
+      for (const status of segment.statuses) {
+        assert.ok(statuses.includes(status), `segment ${segment.id} : statut inventé ${status}`);
+      }
+    }
+    assert.deepEqual(
+      CONTRACT_REGISTRY_SEGMENTS.map((segment) => segment.id),
+      ['all', 'signature', 'active', 'incident', 'completed', 'terminated', 'replaced'],
+      'segments de la fiche ADM-13 : Tous · En signature · Actifs · En incident · Terminés · Résiliés · Remplacés',
+    );
+  });
+
+  check('ADM — P4B-1 : Claim — parité exacte avec les enums serveur (le produit dit Claim)', () => {
+    assert.deepEqual(Object.keys(CLAIM_TYPE_LABELS).sort(), [...CLAIM_TYPE_VALUES].sort(), 'types de Claim affichés != CLAIM_TYPE_VALUES serveur');
+    assert.deepEqual(Object.keys(CLAIM_STATUS_LABELS).sort(), [...CLAIM_STATUS_VALUES].sort(), 'statuts de Claim affichés != CLAIM_STATUS_VALUES serveur');
+    for (const status of CLAIM_STATUS_VALUES) {
+      assert.ok(status in CLAIM_STATUS_LABELS, `statut de Claim sans libellé : ${status}`);
+    }
+    // Le libellé du statut INCIDENT du contrat nomme l'objet réel : « Claim en cours ».
+    assert.equal(CONTRACT_STATUS_LABELS.INCIDENT, 'Claim en cours');
+    assert.equal(PRODUCT_LABELS.CLAIM.singular, 'Claim');
+  });
+
+  check('ADM — P4B-1 : aucune donnée simulée dans les écrans contrats (audit d’honnêteté)', () => {
+    const source = stripComments(readFileSync(new URL('./screens/contracts.tsx', import.meta.url), 'utf8'));
+    assert.ok(!/mock/i.test(source), 'référence mock interdite dans un écran livré');
+    assert.ok(!/Math\.random/.test(source), 'aléatoire interdit : aucune valeur inventée');
+    assert.ok(!/\bfetch\s*\(/.test(source), 'aucun appel réseau direct : passer par AdminApi (chemins vérifiés)');
+    assert.ok(!/\/api\/v1/.test(source), 'aucun chemin d’API écrit dans l’écran : les chemins vivent dans api.ts (gardés par test)');
+    assert.ok(!/VITE_/.test(source), 'aucune lecture d’environnement dans l’écran');
+    // Valeurs manquantes : « — » littéral, jamais un 0 ou une date de remplissage.
+    assert.ok(source.includes("?? '—'"), 'le témoin d’absence « — » doit être utilisé');
+    assert.ok(!/new Date\(\)/.test(source), 'aucune horloge locale injectée comme donnée métier');
+    // Les écrans ne parlent qu’à AdminApi (chemins gardés par test contre le
+    // catalogue serveur) : aucune source de données alternative n’est branchée.
+    assert.ok(source.includes("from '../api'"), 'les écrans doivent importer AdminApi depuis api.ts');
+    assert.ok(!/from '\.\.\/\.\.\/backend/.test(source), 'aucun import direct du backend par les écrans contrats');
+  });
+
+  check('ADM — P4B-1 : formatContractAmount — affichage seul, aucune valeur inventée', () => {
+    assert.equal(formatContractAmount(Number.NaN, 'EUR'), '—', 'montant absent : « — », jamais un zéro');
+    const euro = formatContractAmount(1200, 'EUR');
+    assert.ok(/1/.test(euro) && /200/.test(euro), `montant réel absent de l’affichage : ${euro}`);
+    const noCurrency = formatContractAmount(1200, '');
+    assert.ok(!noCurrency.includes('€'), 'devise absente : aucun symbole inventé');
+    assert.ok(formatContractAmount(1200, 'XX-BOGUS').includes('XX-BOGUS'), 'devise inconnue : la valeur serveur est rendue telle quelle, sans conversion');
   });
 
   return results;
