@@ -10,6 +10,13 @@
  * routeur P0, API existantes) et portent chacune au moins une capacité absente
  * déclarée (`src/prestataire/gaps.ts`) → statut PARTIEL. Aucune unité ADM/FIN/RTC
  * n'est touchée.
+ *
+ * P4A-DESIGN-ADMIN-CORE : les 7 unités ADM de la première tranche de
+ * supervision (ADM-01, ADM-02, ADM-04, ADM-06, ADM-08, ADM-10, ADM-11 — 12
+ * fiches) sont livrées (écran réel, routes du routeur P0, API existantes) et
+ * portent chacune au moins une capacité absente déclarée
+ * (`src/admin/gaps.ts`) → statut PARTIEL. Les autres unités ADM, FIN et RTC
+ * restent non intégrées (tranches suivantes de P4).
  */
 
 import { PRODUCTION_UNITS, TOTAL_UNITS, UNIT_COUNTS_BY_FAMILY, type ProductionUnit } from '../design-system/generated/productionUnits';
@@ -17,6 +24,8 @@ import { EMPLOYER_DESIGN_UNITS } from '../employer/catalog';
 import { EMPLOYER_UNIT_GAPS } from '../employer/gaps';
 import { PRESTATAIRE_DESIGN_UNITS } from '../prestataire/catalog';
 import { PRESTATAIRE_UNIT_GAPS } from '../prestataire/gaps';
+import { ADMIN_DESIGN_UNITS } from '../admin/catalog';
+import { ADMIN_UNIT_GAPS } from '../admin/gaps';
 
 export type IntegrationStatus = 'NON_INTEGRE' | 'PARTIEL' | 'INTEGRE';
 
@@ -41,6 +50,12 @@ export const EMPLOYER_UNIT_IDS: readonly string[] = EMPLOYER_DESIGN_UNITS.map((u
  */
 export const PRESTATAIRE_UNIT_IDS: readonly string[] = PRESTATAIRE_DESIGN_UNITS.map((unit) => unit.id);
 
+/**
+ * Unités ADM livrées par P4A-DESIGN-ADMIN-CORE (7 unités, 12 fiches). Même
+ * règle : PARTIEL dès qu'une fiche déclare une capacité absente.
+ */
+export const ADMIN_UNIT_IDS: readonly string[] = ADMIN_DESIGN_UNITS.map((unit) => unit.id);
+
 export const PARTIAL_UNIT_IDS: readonly string[] = [
   ...PARTIAL_PUBLIC_AND_SYSTEM,
   ...EMPLOYER_UNIT_IDS.filter((unitId) =>
@@ -53,6 +68,11 @@ export const PARTIAL_UNIT_IDS: readonly string[] = [
       (screenCode) => (PRESTATAIRE_UNIT_GAPS[screenCode] ?? []).length > 0,
     ),
   ),
+  ...ADMIN_UNIT_IDS.filter((unitId) =>
+    (ADMIN_DESIGN_UNITS.find((unit) => unit.id === unitId)?.screenCodes ?? []).some(
+      (screenCode) => (ADMIN_UNIT_GAPS[screenCode] ?? []).length > 0,
+    ),
+  ),
 ];
 
 export function isEmployerUnit(unitId: string | null): boolean {
@@ -61,6 +81,10 @@ export function isEmployerUnit(unitId: string | null): boolean {
 
 export function isPrestataireUnit(unitId: string | null): boolean {
   return unitId !== null && PRESTATAIRE_UNIT_IDS.includes(unitId);
+}
+
+export function isAdminUnit(unitId: string | null): boolean {
+  return unitId !== null && ADMIN_UNIT_IDS.includes(unitId);
 }
 
 export function integrationStatus(unitId: string): IntegrationStatus {

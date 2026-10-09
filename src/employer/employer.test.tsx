@@ -34,7 +34,7 @@ import { notificationDomain } from './screens/overview';
 import { toOfferDraft, EMPTY_OFFER_DRAFT } from './draft';
 import { API_ROUTE_CONTRACTS } from '../backend/api/routeContracts';
 import { resolveRoute } from '../routing/resolveRoute';
-import { EMPLOYER_UNIT_IDS, integrationStatus, isEmployerUnit } from '../routing/integration';
+import { ADMIN_UNIT_IDS, EMPLOYER_UNIT_IDS, integrationStatus, isEmployerUnit } from '../routing/integration';
 import { PRODUCTION_UNITS } from '../design-system/generated/productionUnits';
 import { ApiClientError } from '../repositories/apiClient';
 import type { NotificationView } from './api';
@@ -296,20 +296,24 @@ export async function runEmployerTests(): Promise<{ name: string; success: boole
     }
   });
 
-  check('EMP — intégration : 32 unités EMP PARTIEL, ADM/FIN/RTC inchangés (PRE livré en P3)', () => {
+  check('EMP — intégration : 32 unités EMP PARTIEL, PRE livré en P3 et 7 unités ADM livrées en P4A, FIN/RTC inchangés', () => {
     assert.equal(EMPLOYER_UNIT_IDS.length, 32);
     for (const unitId of EMPLOYER_UNIT_IDS) {
       assert.equal(integrationStatus(unitId), 'PARTIEL', `${unitId} doit être PARTIEL`);
       assert.ok(isEmployerUnit(unitId), `${unitId} doit être reconnue comme unité EMP`);
     }
     for (const unit of PRODUCTION_UNITS) {
-      // P3-DESIGN-PRESTATAIRE a livré les 26 unités PRE depuis cette tranche EMP :
-      // elles sont PARTIEL, comme PUB/SYS/EMP. Seules ADM/FIN/RTC restent non intégrées.
+      // P3-DESIGN-PRESTATAIRE a livré les 26 unités PRE depuis cette tranche EMP,
+      // et P4A-DESIGN-ADMIN-CORE a livré les 7 unités ADM de sa tranche : elles sont
+      // PARTIEL, comme PUB/SYS/EMP. Seules les autres ADM, FIN et RTC restent non intégrées.
       if (unit.family === 'EMP' || unit.family === 'PUB' || unit.family === 'SYS' || unit.family === 'PRE') continue;
+      if (ADMIN_UNIT_IDS.includes(unit.id)) continue;
       assert.equal(integrationStatus(unit.id), 'NON_INTEGRE', `${unit.id} ne doit pas être touchée par cette tranche`);
     }
     assert.equal(isEmployerUnit('PRE-01'), false);
     assert.equal(integrationStatus('PRE-01'), 'PARTIEL', 'PRE-01 est livrée par P3-DESIGN-PRESTATAIRE');
+    assert.equal(integrationStatus('ADM-01'), 'PARTIEL', 'ADM-01 est livrée par P4A-DESIGN-ADMIN-CORE');
+    assert.equal(integrationStatus('ADM-13'), 'NON_INTEGRE', 'ADM-13 (contrats) reste hors tranche P4A');
   });
 
   check('EMP — erreurs : projection en états StateGuard, corrélation sûre uniquement', () => {

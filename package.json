@@ -27,6 +27,8 @@
     "design:employer:check": "python3 scripts/design/generate-employer-catalog.py --check",
     "design:prestataire": "python3 scripts/design/generate-prestataire-catalog.py",
     "design:prestataire:check": "python3 scripts/design/generate-prestataire-catalog.py --check",
+    "design:admin": "python3 scripts/design/generate-admin-catalog.py",
+    "design:admin:check": "python3 scripts/design/generate-admin-catalog.py --check",
     "verify:employer-ui": "tsx scripts/verify-employer-ui.ts"
   },
   "dependencies": {

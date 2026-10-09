@@ -1,0 +1,747 @@
+// GÉNÉRÉ PAR scripts/design/generate-admin-catalog.py — NE PAS ÉDITER À LA MAIN.
+// Source : design/llab/content/adm_*.py, design/llab/units.py (tranche P4A : ADM-01 → ADM-12).
+// Régénérer : npm run design:admin
+//
+// Référence de design UNIQUEMENT : aucun libellé de ce fichier n'est affiché par
+// l'interface. Les textes visibles viennent de src/admin/vocabulary.ts (vocabulaire
+// LE LABEUR : ADMIN, EMPLOYER, CANDIDATE, OFFER, APPLICATION, PROPOSAL, CONTRACT, CLAIM,
+// PAYMENT, SALARY, REPLACEMENT, MATCHING, DOCUMENT, QUALIFICATION).
+// Les routes sont celles du routeur P0 : elles ne sont ni renommées ni réécrites.
+
+export interface AdminDesignScreen {
+  readonly code: string;
+  readonly unitId: string;
+  readonly route: string;
+  readonly canonicalRoute: string;
+  readonly role: string;
+  readonly criticality: string;
+  readonly zoneKinds: readonly string[];
+  readonly variantOf: string | null;
+  readonly designApi: readonly string[];
+  readonly tokens: readonly string[];
+}
+
+export interface AdminDesignUnit {
+  readonly id: string;
+  readonly canon: string;
+  readonly criticality: string;
+  readonly archetype: string;
+  readonly screenCodes: readonly string[];
+  readonly routes: readonly string[];
+  readonly zoneKinds: readonly string[];
+  readonly componentRefs: readonly string[];
+  readonly stateNames: readonly string[];
+  readonly tokens: readonly string[];
+  readonly designApi: readonly string[];
+}
+
+export const ADMIN_DESIGN_UNITS = [
+  {
+    "id": "ADM-01",
+    "canon": "ADM — dashboard général",
+    "criticality": "P0",
+    "archetype": "Salle de contrôle",
+    "screenCodes": [
+      "ADM-01"
+    ],
+    "routes": [
+      "/admin"
+    ],
+    "zoneKinds": [
+      "cta",
+      "kpi",
+      "list",
+      "table",
+      "timeline"
+    ],
+    "componentRefs": [
+      "Carte",
+      "Journal",
+      "Mode",
+      "Tuile"
+    ],
+    "stateNames": [
+      "Nominal",
+      "Charge",
+      "Incident",
+      "Astreinte"
+    ],
+    "tokens": [
+      "--amber-500",
+      "--clay-500",
+      "--emerald-500",
+      "--gold-500",
+      "--mono",
+      "--surface-0"
+    ],
+    "designApi": [
+      "GET /admin/overview",
+      "GET /admin/queues/summary",
+      "GET /admin/activity?since=",
+      "GET /admin/health/series?window=24h"
+    ]
+  },
+  {
+    "id": "ADM-02",
+    "canon": "ADM — utilisateurs (liste & fiche)",
+    "criticality": "P0",
+    "archetype": "Annuaire opérationnel",
+    "screenCodes": [
+      "ADM-02",
+      "ADM-03"
+    ],
+    "routes": [
+      "/admin/utilisateurs",
+      "/admin/utilisateurs/:id"
+    ],
+    "zoneKinds": [
+      "cta",
+      "form",
+      "hero",
+      "kpi",
+      "list",
+      "table"
+    ],
+    "componentRefs": [
+      "Badge",
+      "Bandeau",
+      "Chronologie",
+      "En-tête",
+      "Journal",
+      "Notes",
+      "Recherche",
+      "Table"
+    ],
+    "stateNames": [
+      "Vide",
+      "Résultats",
+      "Sélection multiple",
+      "Accès refusé",
+      "Compte sain",
+      "Compte sous surveillance",
+      "Compte bloqué",
+      "Compte supprimé"
+    ],
+    "tokens": [
+      "--amber-500",
+      "--clay-500",
+      "--emerald-500",
+      "--mono",
+      "--surface-1",
+      "--table",
+      "--text-lo"
+    ],
+    "designApi": [
+      "GET /admin/users?q=&role=&state=&cursor=",
+      "POST /admin/exports {type, filters, motive}",
+      "GET /admin/users/:id",
+      "GET /admin/users/:id/timeline",
+      "POST /admin/users/:id/notes",
+      "POST /admin/users/:id/review"
+    ]
+  },
+  {
+    "id": "ADM-04",
+    "canon": "ADM — blocage (geste)",
+    "criticality": "P0",
+    "archetype": "Geste lourd, tracé",
+    "screenCodes": [
+      "ADM-04",
+      "ADM-05"
+    ],
+    "routes": [
+      "/admin/utilisateurs/:id/blocage",
+      "/admin/blocages"
+    ],
+    "zoneKinds": [
+      "cta",
+      "form",
+      "kpi",
+      "list",
+      "table"
+    ],
+    "componentRefs": [
+      "Badge",
+      "Double",
+      "Formulaire",
+      "Notification",
+      "Simulateur",
+      "Statistiques",
+      "Table"
+    ],
+    "stateNames": [
+      "Préparation",
+      "Contre-signature requise",
+      "Prononcé",
+      "Contestation",
+      "Levée",
+      "Vide",
+      "Actif",
+      "Appel en cours",
+      "Annulé en appel"
+    ],
+    "tokens": [
+      "--amber-500",
+      "--clay-500",
+      "--clay-600",
+      "--emerald-500",
+      "--glass-3",
+      "--mono",
+      "--table"
+    ],
+    "designApi": [
+      "POST /admin/users/:id/block {scope, duration, motive}",
+      "POST /admin/users/:id/unblock",
+      "POST /admin/users/:id/block/countersign",
+      "GET /admin/blocks?cursor=&filters=",
+      "GET /admin/blocks/stats",
+      "POST /admin/blocks/export"
+    ]
+  },
+  {
+    "id": "ADM-06",
+    "canon": "ADM — qualification (file & revue)",
+    "criticality": "P0",
+    "archetype": "File des verdicts en attente",
+    "screenCodes": [
+      "ADM-06",
+      "ADM-07"
+    ],
+    "routes": [
+      "/admin/qualification",
+      "/admin/qualification/:id"
+    ],
+    "zoneKinds": [
+      "chat",
+      "cta",
+      "hero",
+      "kpi",
+      "list",
+      "table",
+      "verdict"
+    ],
+    "componentRefs": [
+      "Badge",
+      "Checklist",
+      "Comparateur",
+      "Compteur",
+      "Fil",
+      "Panneau",
+      "Table",
+      "Verrou"
+    ],
+    "stateNames": [
+      "File saine",
+      "Surcharge",
+      "Élément verrouillé",
+      "Vide",
+      "En examen",
+      "Complément demandé",
+      "Décision prête",
+      "Abandon/skip"
+    ],
+    "tokens": [
+      "--amber-500",
+      "--glass-1",
+      "--gold-500",
+      "--mono",
+      "--surface-1",
+      "--table",
+      "--text-mid",
+      "--violet-500"
+    ],
+    "designApi": [
+      "GET /admin/qualification/queue?cursor=",
+      "POST /admin/qualification/:id/claim",
+      "GET /admin/qualification/sla",
+      "GET /admin/qualification/:id",
+      "POST /admin/qualification/:id/request-info",
+      "POST /admin/qualification/:id/recuse"
+    ]
+  },
+  {
+    "id": "ADM-08",
+    "canon": "ADM — qualification (décision)",
+    "criticality": "P0",
+    "archetype": "Verdict humain",
+    "screenCodes": [
+      "ADM-08",
+      "ADM-09"
+    ],
+    "routes": [
+      "/admin/qualification/:id/decision",
+      "/admin/qualification/historique"
+    ],
+    "zoneKinds": [
+      "cta",
+      "doc",
+      "kpi",
+      "list",
+      "table",
+      "verdict"
+    ],
+    "componentRefs": [
+      "Cartes",
+      "Distribution",
+      "Détecteur",
+      "Générateur",
+      "Récapitulatif",
+      "Signature",
+      "Table"
+    ],
+    "stateNames": [
+      "Brouillon",
+      "Publiée",
+      "Bloquée",
+      "Annulée en recours",
+      "Nominal",
+      "Dérive détectée",
+      "Recours élevé",
+      "Vide"
+    ],
+    "tokens": [
+      "--amber-500",
+      "--clay-500",
+      "--emerald-500",
+      "--glass-2",
+      "--mono",
+      "--table",
+      "--violet-500"
+    ],
+    "designApi": [
+      "POST /admin/qualification/:id/decision {verdict, ruleRefs, facts, clientText}",
+      "GET /admin/qualification/:id/effects-preview",
+      "GET /admin/qualification/history?cursor=&filters=",
+      "GET /admin/qualification/analytics",
+      "POST /admin/qualification/export"
+    ]
+  },
+  {
+    "id": "ADM-10",
+    "canon": "ADM — matching (runs & règles)",
+    "criticality": "P1",
+    "archetype": "Salle des moteurs",
+    "screenCodes": [
+      "ADM-10",
+      "ADM-12"
+    ],
+    "routes": [
+      "/admin/matching",
+      "/admin/matching/rulesets"
+    ],
+    "zoneKinds": [
+      "cta",
+      "form",
+      "kpi",
+      "list",
+      "table"
+    ],
+    "componentRefs": [
+      "Badge",
+      "Garde-fous",
+      "Historique",
+      "Indicateur",
+      "Simulation",
+      "Table",
+      "Éditeur"
+    ],
+    "stateNames": [
+      "Nominal",
+      "Lent",
+      "Échec",
+      "Vide",
+      "Active",
+      "En test",
+      "Bloquée",
+      "Archivée"
+    ],
+    "tokens": [
+      "--clay-500",
+      "--emerald-500",
+      "--gold-500",
+      "--mono",
+      "--table",
+      "--violet-500"
+    ],
+    "designApi": [
+      "GET /admin/matching/runs?cursor=",
+      "POST /admin/matching/runs/:id/retry",
+      "GET /admin/matching/health",
+      "GET /admin/matching/rulesets",
+      "POST /admin/matching/rulesets/:v/simulate",
+      "POST /admin/matching/rulesets/:v/activate"
+    ]
+  },
+  {
+    "id": "ADM-11",
+    "canon": "ADM — matching (audit)",
+    "criticality": "P0",
+    "archetype": "Rayons X du moteur",
+    "screenCodes": [
+      "ADM-11"
+    ],
+    "routes": [
+      "/admin/matching/runs/:id"
+    ],
+    "zoneKinds": [
+      "cta",
+      "list",
+      "ring",
+      "table"
+    ],
+    "componentRefs": [
+      "Anonymisation",
+      "Histogramme",
+      "Matrice",
+      "Tests"
+    ],
+    "stateNames": [
+      "Conforme",
+      "À surveiller",
+      "Hors seuil",
+      "Run purgé"
+    ],
+    "tokens": [
+      "--amber-500",
+      "--clay-500",
+      "--mono",
+      "--table",
+      "--violet-500"
+    ],
+    "designApi": [
+      "GET /admin/matching/runs/:id",
+      "GET /admin/matching/runs/:id/bias-tests",
+      "POST /admin/matching/factors/:id/disable"
+    ]
+  }
+] as const;
+
+export const ADMIN_DESIGN_SCREENS = [
+  {
+    "code": "ADM-01",
+    "unitId": "ADM — dashboard général",
+    "route": "/admin",
+    "canonicalRoute": "/admin",
+    "role": "ADMIN",
+    "criticality": "P0",
+    "zoneKinds": [
+      "kpi",
+      "list",
+      "table",
+      "timeline",
+      "cta"
+    ],
+    "variantOf": null,
+    "designApi": [
+      "GET /admin/overview",
+      "GET /admin/queues/summary",
+      "GET /admin/activity?since=",
+      "GET /admin/health/series?window=24h"
+    ],
+    "tokens": [
+      "--surface-0",
+      "--gold-500",
+      "--clay-500",
+      "--amber-500",
+      "--mono",
+      "--emerald-500"
+    ]
+  },
+  {
+    "code": "ADM-02",
+    "unitId": "ADM — utilisateurs (liste & fiche)",
+    "route": "/admin/utilisateurs",
+    "canonicalRoute": "/admin/utilisateurs",
+    "role": "ADMIN",
+    "criticality": "P0",
+    "zoneKinds": [
+      "form",
+      "table",
+      "kpi",
+      "cta"
+    ],
+    "variantOf": null,
+    "designApi": [
+      "GET /admin/users?q=&role=&state=&cursor=",
+      "POST /admin/exports {type, filters, motive}"
+    ],
+    "tokens": [
+      "--surface-1",
+      "--mono",
+      "--clay-500",
+      "--emerald-500",
+      "--amber-500",
+      "--table"
+    ]
+  },
+  {
+    "code": "ADM-03",
+    "unitId": "ADM — utilisateurs (liste & fiche)",
+    "route": "/admin/utilisateurs/:id",
+    "canonicalRoute": "/admin/utilisateurs/:id",
+    "role": "ADMIN",
+    "criticality": "P0",
+    "zoneKinds": [
+      "hero",
+      "kpi",
+      "list",
+      "table",
+      "cta"
+    ],
+    "variantOf": null,
+    "designApi": [
+      "GET /admin/users/:id",
+      "GET /admin/users/:id/timeline",
+      "POST /admin/users/:id/notes",
+      "POST /admin/users/:id/review"
+    ],
+    "tokens": [
+      "--surface-1",
+      "--mono",
+      "--clay-500",
+      "--amber-500",
+      "--text-lo"
+    ]
+  },
+  {
+    "code": "ADM-04",
+    "unitId": "ADM — blocage (geste)",
+    "route": "/admin/utilisateurs/:id/blocage",
+    "canonicalRoute": "/admin/utilisateurs/:id/blocage",
+    "role": "ADMIN",
+    "criticality": "P0",
+    "zoneKinds": [
+      "form",
+      "list",
+      "kpi",
+      "cta"
+    ],
+    "variantOf": null,
+    "designApi": [
+      "POST /admin/users/:id/block {scope, duration, motive}",
+      "POST /admin/users/:id/unblock",
+      "POST /admin/users/:id/block/countersign"
+    ],
+    "tokens": [
+      "--clay-500",
+      "--clay-600",
+      "--amber-500",
+      "--mono",
+      "--glass-3"
+    ]
+  },
+  {
+    "code": "ADM-05",
+    "unitId": "ADM — blocage (geste)",
+    "route": "/admin/blocages",
+    "canonicalRoute": "/admin/blocages",
+    "role": "ADMIN",
+    "criticality": "P1",
+    "zoneKinds": [
+      "table",
+      "kpi",
+      "list",
+      "cta"
+    ],
+    "variantOf": "ADM-04",
+    "designApi": [
+      "GET /admin/blocks?cursor=&filters=",
+      "GET /admin/blocks/stats",
+      "POST /admin/blocks/export"
+    ],
+    "tokens": [
+      "--mono",
+      "--clay-500",
+      "--emerald-500",
+      "--table"
+    ]
+  },
+  {
+    "code": "ADM-06",
+    "unitId": "ADM — qualification (file & revue)",
+    "route": "/admin/qualification",
+    "canonicalRoute": "/admin/qualification",
+    "role": "ADMIN",
+    "criticality": "P0",
+    "zoneKinds": [
+      "kpi",
+      "table",
+      "list",
+      "cta"
+    ],
+    "variantOf": null,
+    "designApi": [
+      "GET /admin/qualification/queue?cursor=",
+      "POST /admin/qualification/:id/claim",
+      "GET /admin/qualification/sla"
+    ],
+    "tokens": [
+      "--surface-1",
+      "--amber-500",
+      "--violet-500",
+      "--mono",
+      "--table"
+    ]
+  },
+  {
+    "code": "ADM-07",
+    "unitId": "ADM — qualification (file & revue)",
+    "route": "/admin/qualification/:id",
+    "canonicalRoute": "/admin/qualification/:id",
+    "role": "ADMIN",
+    "criticality": "P0",
+    "zoneKinds": [
+      "hero",
+      "verdict",
+      "list",
+      "chat",
+      "cta"
+    ],
+    "variantOf": null,
+    "designApi": [
+      "GET /admin/qualification/:id",
+      "POST /admin/qualification/:id/request-info",
+      "POST /admin/qualification/:id/recuse"
+    ],
+    "tokens": [
+      "--violet-500",
+      "--gold-500",
+      "--mono",
+      "--glass-1",
+      "--text-mid"
+    ]
+  },
+  {
+    "code": "ADM-08",
+    "unitId": "ADM — qualification (décision)",
+    "route": "/admin/qualification/:id/decision",
+    "canonicalRoute": "/admin/qualification/:id/decision",
+    "role": "ADMIN",
+    "criticality": "P0",
+    "zoneKinds": [
+      "verdict",
+      "doc",
+      "kpi",
+      "cta"
+    ],
+    "variantOf": null,
+    "designApi": [
+      "POST /admin/qualification/:id/decision {verdict, ruleRefs, facts, clientText}",
+      "GET /admin/qualification/:id/effects-preview"
+    ],
+    "tokens": [
+      "--emerald-500",
+      "--clay-500",
+      "--amber-500",
+      "--mono",
+      "--glass-2"
+    ]
+  },
+  {
+    "code": "ADM-09",
+    "unitId": "ADM — qualification (décision)",
+    "route": "/admin/qualification/historique",
+    "canonicalRoute": "/admin/qualification/historique",
+    "role": "ADMIN",
+    "criticality": "P2",
+    "zoneKinds": [
+      "table",
+      "kpi",
+      "list",
+      "cta"
+    ],
+    "variantOf": "ADM-08",
+    "designApi": [
+      "GET /admin/qualification/history?cursor=&filters=",
+      "GET /admin/qualification/analytics",
+      "POST /admin/qualification/export"
+    ],
+    "tokens": [
+      "--mono",
+      "--violet-500",
+      "--amber-500",
+      "--table"
+    ]
+  },
+  {
+    "code": "ADM-10",
+    "unitId": "ADM — matching (runs & règles)",
+    "route": "/admin/matching",
+    "canonicalRoute": "/admin/matching",
+    "role": "ADMIN",
+    "criticality": "P1",
+    "zoneKinds": [
+      "kpi",
+      "table",
+      "list",
+      "cta"
+    ],
+    "variantOf": null,
+    "designApi": [
+      "GET /admin/matching/runs?cursor=",
+      "POST /admin/matching/runs/:id/retry",
+      "GET /admin/matching/health"
+    ],
+    "tokens": [
+      "--violet-500",
+      "--mono",
+      "--emerald-500",
+      "--table"
+    ]
+  },
+  {
+    "code": "ADM-11",
+    "unitId": "ADM — matching (audit)",
+    "route": "/admin/matching/runs/:id",
+    "canonicalRoute": "/admin/matching/runs/:id",
+    "role": "ADMIN",
+    "criticality": "P0",
+    "zoneKinds": [
+      "ring",
+      "table",
+      "list",
+      "cta"
+    ],
+    "variantOf": null,
+    "designApi": [
+      "GET /admin/matching/runs/:id",
+      "GET /admin/matching/runs/:id/bias-tests",
+      "POST /admin/matching/factors/:id/disable"
+    ],
+    "tokens": [
+      "--violet-500",
+      "--clay-500",
+      "--amber-500",
+      "--mono",
+      "--table"
+    ]
+  },
+  {
+    "code": "ADM-12",
+    "unitId": "ADM — matching (runs & règles)",
+    "route": "/admin/matching/rulesets",
+    "canonicalRoute": "/admin/matching/rulesets",
+    "role": "ADMIN",
+    "criticality": "P1",
+    "zoneKinds": [
+      "table",
+      "form",
+      "kpi",
+      "cta"
+    ],
+    "variantOf": null,
+    "designApi": [
+      "GET /admin/matching/rulesets",
+      "POST /admin/matching/rulesets/:v/simulate",
+      "POST /admin/matching/rulesets/:v/activate"
+    ],
+    "tokens": [
+      "--violet-500",
+      "--gold-500",
+      "--clay-500",
+      "--mono"
+    ]
+  }
+] as const;
+
+export const ADMIN_UNIT_IDS: readonly string[] = ADMIN_DESIGN_UNITS.map((unit) => unit.id);

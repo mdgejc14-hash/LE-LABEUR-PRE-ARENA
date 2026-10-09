@@ -27,7 +27,7 @@ import { resolveRoute } from '../routing/resolveRoute';
 import { DOCK_DEFINITIONS } from '../design-system/shells/shellNavigation';
 import { API_ROUTE_CONTRACTS } from '../backend/api/routeContracts';
 import { PRODUCTION_UNITS } from '../design-system/generated/productionUnits';
-import { INTEGRATED_UNIT_IDS, PARTIAL_UNIT_IDS, PRESTATAIRE_UNIT_IDS as INTEGRATED_PRE_UNIT_IDS, integrationStatus, isPrestataireUnit } from '../routing/integration';
+import { ADMIN_UNIT_IDS, INTEGRATED_UNIT_IDS, PARTIAL_UNIT_IDS, PRESTATAIRE_UNIT_IDS as INTEGRATED_PRE_UNIT_IDS, integrationStatus, isPrestataireUnit } from '../routing/integration';
 import { ApiClientError } from '../repositories/apiClient';
 import type { NotificationView } from './api';
 import type { PrestataireUnitProps } from './types';
@@ -293,7 +293,7 @@ export async function runPrestataireTests(): Promise<PrestataireTestCase[]> {
     return 'repli honnête + 26 unités avec routes listées';
   });
 
-  check('PRE — intégration : 26 unités PRE PARTIEL, PUB/SYS/EMP inchangés, ADM/FIN/RTC non intégrées', () => {
+  check('PRE — intégration : 26 unités PRE PARTIEL, PUB/SYS/EMP inchangés, 7 unités ADM livrées en P4A, autres ADM/FIN/RTC non intégrées', () => {
     assert.equal(INTEGRATED_PRE_UNIT_IDS.length, 26);
     for (const unitId of INTEGRATED_PRE_UNIT_IDS) {
       assert.equal(integrationStatus(unitId), 'PARTIEL', `${unitId} doit être PARTIEL`);
@@ -302,10 +302,13 @@ export async function runPrestataireTests(): Promise<PrestataireTestCase[]> {
     }
     for (const unit of PRODUCTION_UNITS) {
       if (unit.family === 'PRE' || unit.family === 'PUB' || unit.family === 'SYS' || unit.family === 'EMP') continue;
+      // P4A-DESIGN-ADMIN-CORE a livré les 7 unités ADM de sa tranche depuis P3.
+      if (ADMIN_UNIT_IDS.includes(unit.id)) continue;
       assert.equal(integrationStatus(unit.id), 'NON_INTEGRE', `${unit.id} ne doit pas être touchée par cette tranche`);
     }
     assert.equal(isPrestataireUnit('EMP-01'), false);
     assert.equal(INTEGRATED_UNIT_IDS.length, 0, 'aucune unité intégralement couverte');
+    assert.equal(integrationStatus('ADM-01'), 'PARTIEL', 'ADM-01 est livrée par P4A-DESIGN-ADMIN-CORE');
     return '26 unités PRE en PARTIEL, 0 / 120 intégrées';
   });
 
