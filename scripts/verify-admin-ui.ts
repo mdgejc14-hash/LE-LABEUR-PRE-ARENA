@@ -1,14 +1,15 @@
 /**
- * P4G-2-DESIGN-ADMIN-SUPERVISION — vérification UI réelle (Chromium) de
+ * P4G-4-DESIGN-ADMIN-INFRASTRUCTURE — vérification UI réelle (Chromium) de
  * l'espace supervision livré (P4A + P4B-1 contrats + P4B-2 paiements + P4C
  * salaire + P4D Claims + P4E-1 Remplacements + P4E-2 Réputation + P4F
- * Documents + P4F-2 Notifications + P4G-1 operations + P4G-2 SLO/DLQ/incidents).
+ * Documents + P4F-2 Notifications + P4G-1 opérations + P4G-2 supervision +
+ * P4G-3 sécurité + P4G-4 topologie/Worker edge).
  *
  * Comme le script P2, ce script n'affirme rien sur des données simulées dans
  * l'application : les fixtures HTTP vivent ICI et ne sont jamais activées dans
  * le produit. Ce qui est vérifié dans un navigateur réel :
  *
- *  1. AUCUNE source de données configurée : les 48 fiches ADM rendent leur
+ *  1. AUCUNE source de données configurée : les 52 fiches ADM rendent leur
  *     conteneur (`data-unit`, `data-screen`), la structure déclarée par le
  *     design (`data-sheet-frame`) et le BACKEND_GAP, sans débordement
  *     horizontal à 360 px comme à 1440 px ; aucun terme du Master Design ni
@@ -2738,6 +2739,68 @@ try {
       assert.deepEqual(securityRequests, [], 'aucune lecture sensible après refus ou erreur');
     } finally {
       page.off('request', trackSecurityRequests);
+      sessionMode = 'admin';
+    }
+  });
+
+  await check('ADM-57/58 — topologie et Worker edge diagnostiques, sans mesure ni action simulée (360/1440 px)', async () => {
+    sessionMode = 'admin';
+    const paths = [['/admin/infra', 'ADM-57'], ['/admin/infra/worker', 'ADM-58']] as const;
+    const infrastructureRequests: string[] = [];
+    const trackInfrastructureRequests = (request: { url(): string }) => {
+      const path = new URL(request.url()).pathname;
+      if (path.startsWith('/api/v1/admin/infra/') || path === '/healthz') infrastructureRequests.push(request.url());
+    };
+    page.on('request', trackInfrastructureRequests);
+    try {
+      for (const width of [360, 1440]) {
+        await page.setViewportSize({ width, height: 900 });
+        for (const [path, code] of paths) {
+          await page.goto(api.origin + path);
+          const screen = page.locator(`[data-screen="${code}"]`);
+          await screen.waitFor();
+          await screen.locator('[data-backend-gap="true"]').last().waitFor();
+          const text = await screen.innerText();
+          assert.ok(says(text, 'BACKEND_GAP'), `${code} : absence de contrat ADMIN non signalée`);
+          assert.equal(await screen.locator('[data-no-invented-infrastructure]').count(), 1, `${code} : mesures absentes non expliquées`);
+          const values = (await screen.locator('.lbm-admin__kpi-value').allTextContents()).map((value) => value.trim());
+          assert.ok(values.length > 0 && values.every((value) => value === '—'), `${code} : état ou mesure inventé (${values.join(', ')})`);
+          assert.equal(await screen.locator('form').count(), 0, `${code} : formulaire sans handler`);
+          assert.ok(await screen.locator('button[data-unavailable-action]').count() > 0, `${code} : actions absentes non identifiées`);
+          assert.equal(await screen.locator('button:not([disabled])').count(), 0, `${code} : action d’infrastructure activable`);
+          if (code === 'ADM-58') {
+            assert.equal(await screen.locator('table tbody tr').count(), 1, 'aucun déploiement serveur ne doit être suggéré');
+            assert.ok(says(await screen.locator('table tbody tr').innerText(), 'Aucune liste'), 'liste de déploiements absente non expliquée');
+          }
+          assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${code} : débordement à ${width}px`);
+          await assertNoForbiddenText(path, text);
+        }
+      }
+      await page.goto(api.origin + '/admin/infra');
+      const topology = page.locator('[data-screen="ADM-57"]');
+      await topology.waitFor();
+      assert.equal(await topology.locator('a[href="/admin/infra/worker"]').count(), 1, 'navigation vers ADM-58 absente');
+      await topology.locator('a[href="/admin/infra/worker"]').click();
+      await page.locator('[data-screen="ADM-58"]').waitFor();
+      assert.equal(await page.locator('[data-screen="ADM-58"] a[href="/admin/infra"]').count(), 1, 'retour vers ADM-57 absent');
+      assert.deepEqual(infrastructureRequests, [], 'aucune lecture /admin/infra ni /healthz utilisée comme substitut');
+
+      sessionMode = 'employer';
+      for (const [path, code] of paths) {
+        await page.goto(api.origin + path);
+        await page.locator('[data-state="403"]').waitFor();
+        assert.equal(await page.locator(`[data-screen="${code}"]`).count(), 0, `${code} : accès non-ADMIN rendu`);
+      }
+      sessionMode = 'anonymous';
+      await page.goto(api.origin + paths[0][0]);
+      await page.locator('[data-state="401"]').waitFor();
+      sessionMode = 'error';
+      await page.goto(api.origin + paths[1][0]);
+      await page.locator('[data-state="500"]').waitFor();
+      assert.ok(!(await page.locator('[data-state="500"]').innerText()).includes(SERVER_SECRET), 'erreur de session brute rendue');
+      assert.deepEqual(infrastructureRequests, [], 'aucune donnée infra après refus ou erreur de session');
+    } finally {
+      page.off('request', trackInfrastructureRequests);
       sessionMode = 'admin';
     }
   });

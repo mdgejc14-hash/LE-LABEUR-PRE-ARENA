@@ -29,7 +29,11 @@ Tranches livrées :
   (ADM-47 regroupant ADM-47/49 ; ADM-48 reste une unité distincte). Les routes
   du référentiel sont des références de design, pas des contrats actifs.
   P4G-3-DESIGN-ADMIN-SECURITY : dashboard et contrôles d’accès (ADM-50/51,
-  unité unique). Aucune API de détection ou de qualification ADMIN installée.
+  unité unique). Aucune API de détection ou de qualification ADMIN installée ;
+  ADM-52 → ADM-56 restent reportées.
+  P4G-4-DESIGN-ADMIN-INFRASTRUCTURE : ADM-57/58 (topologie et Worker edge,
+  unité exacte « ADM — infra (topologie & bord) »). Vues diagnostiques uniquement,
+  sans contrat ni handler ADMIN d’infrastructure.
 
 Ce générateur ne produit AUCUN libellé métier : les textes affichés par
 l'interface viennent de `src/admin/vocabulary.ts` (vocabulaire LE LABEUR).
@@ -87,8 +91,13 @@ aucune API de supervision n’est déduite des routes décrites dans les fiches.
 
 Périmètre de la tranche P4G-3 : ADM-50 / ADM-51 (unité exacte `ADM —
 sécurité (dashboard & IDOR)`). ADM-52/53/54 et ADM-55/56 restent reportés.
-Les autres écrans ADM (sécurité restante, infra), FIN et RTC restent hors tranche et
-ne figurent PAS dans ce catalogue.
+
+Périmètre de la tranche P4G-4 : ADM-57 / ADM-58 (unité exacte `ADM — infra
+(topologie & bord)`). Aucun flux de topologie, de métriques Edge, de déploiement
+ou de commande ADMIN n’est exposé ; les vues sont diagnostiques avec BACKEND_GAP.
+ADM-59/60 (PostgreSQL & R2), ADM-61 (WebRTC/TURN), ADM-62 (observabilité) et
+ADM-63 (statut global/public) restent hors tranche. FIN et RTC restent également
+hors de ce catalogue.
 """
 import json
 import sys
@@ -101,7 +110,7 @@ sys.path.insert(0, str(ROOT / 'design'))
 from llab.content import load_all  # noqa: E402
 from llab.units import unit_of  # noqa: E402
 
-# Fiches ADM livrées par les tranches P4A → P4G-3 (périmètre strict, sélection explicite).
+# Fiches ADM livrées par les tranches P4A → P4G-4 (périmètre strict, sélection explicite).
 TRANCHE_P4A = {
     'ADM-01', 'ADM-02', 'ADM-03', 'ADM-04', 'ADM-05',
     'ADM-06', 'ADM-07', 'ADM-08', 'ADM-09',
@@ -173,7 +182,10 @@ TRANCHE_P4G2 = {'ADM-47', 'ADM-48', 'ADM-49'}
 # P4G-3 : première unité de sécurité (dashboard & IDOR) ; pas de contrat serveur associé.
 TRANCHE_P4G3 = {'ADM-50', 'ADM-51'}
 
-TRANCHE_ADMIN = TRANCHE_P4G1 | TRANCHE_P4G2 | TRANCHE_P4G3 | TRANCHE_P4A | TRANCHE_P4B1 | TRANCHE_P4B2 | TRANCHE_P4C | TRANCHE_P4D | TRANCHE_P4E1 | TRANCHE_P4E2 | TRANCHE_P4F | TRANCHE_P4F2
+# P4G-4 : unité topologie & Worker edge, diagnostique faute de contrat ADMIN.
+TRANCHE_P4G4 = {'ADM-57', 'ADM-58'}
+
+TRANCHE_ADMIN = TRANCHE_P4G1 | TRANCHE_P4G2 | TRANCHE_P4G3 | TRANCHE_P4G4 | TRANCHE_P4A | TRANCHE_P4B1 | TRANCHE_P4B2 | TRANCHE_P4C | TRANCHE_P4D | TRANCHE_P4E1 | TRANCHE_P4E2 | TRANCHE_P4F | TRANCHE_P4F2
 
 families = load_all()
 SCREENS = [s for s in families['ADM'] if s.code in TRANCHE_ADMIN]
@@ -237,7 +249,8 @@ payload = (
     '// P4C SALAIRE (ADM-23 → ADM-24), P4D CLAIMS (ADM-26 → ADM-30), P4E-1 REMPLACEMENTS (ADM-31 → ADM-33),\n'
     '// P4E-2 RÉPUTATION (ADM-34 → ADM-36), P4F DOCUMENTS (ADM-37 → ADM-40),\n'
     '// P4F-2 NOTIFICATIONS (ADM-41 → ADM-43), P4G-1 OPÉRATIONS (ADM-44 → ADM-46),\n'
-    '// P4G-2 SUPERVISION (ADM-47 → ADM-49), P4G-3 SÉCURITÉ (ADM-50 → ADM-51).\n'
+    '// P4G-2 SUPERVISION (ADM-47 → ADM-49), P4G-3 SÉCURITÉ (ADM-50 → ADM-51),\n'
+    '// P4G-4 INFRASTRUCTURE (ADM-57 → ADM-58).\n'
     '// Régénérer : npm run design:admin\n'
     '//\n'
     '// Référence de design UNIQUEMENT : aucun libellé de ce fichier n\'est affiché par\n'

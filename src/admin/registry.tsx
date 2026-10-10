@@ -1,9 +1,9 @@
 /**
- * ADM —— registre des écrans livrés (26 unités, 50 fiches — tranches P4A,
- * P4B-1, P4B-2, P4C, P4D, P4E-1, P4E-2, P4F, P4F-2, P4G-1, P4G-2 et P4G-3).
+ * ADM —— registre des écrans livrés (27 unités, 52 fiches — tranches P4A,
+ * P4B-1, P4B-2, P4C, P4D, P4E-1, P4E-2, P4F, P4F-2, P4G-1, P4G-2, P4G-3 et P4G-4).
  *
- * Chaque code de fiche ADM-01 → ADM-24 et ADM-26 → ADM-51 livré par ces
- * tranches est associé à l'écran qui le rend. Les variantes des fiches (mêmes
+ * Chaque code de fiche ADM-01 → ADM-24, ADM-26 → ADM-51 et ADM-57/58 livré
+ * par ces tranches est associé à l'écran qui le rend. Les variantes des fiches (mêmes
  * zones, état imposé par la route) réutilisent l'écran canonique, comme le
  * décrit le Master Design.
  * P4B-1 ajoute la supervision des contrats (ADM-13 → ADM-17). P4B-2 ajoute
@@ -28,8 +28,10 @@
  * BACKEND_GAP.
  * P4G-1 ajoute ADM-44/45/46 : files, jobs et planifications sans API ADMIN ops.
  * P4G-2 ajoute ADM-47/48/49 : SLO, dead-letter et détail d’incident sous forme
- * diagnostique BACKEND_GAP, sans API ni commande ops. Sécurité et infra restent hors tranche.
+ * diagnostique BACKEND_GAP, sans API ni commande ops.
  * P4G-3 ajoute ADM-50/51, diagnostic sécurité sans API de détection ADMIN.
+ * P4G-4 ajoute l’unité ADM-57/58, topologie et Worker edge diagnostiques ;
+ * aucun contrat ni handler ADMIN d’infrastructure n’est disponible.
  *
  * Ce module est le SEUL point d'entrée des routes `/admin/*` des tranches :
  * il résout la fiche depuis le chemin réel, applique la garde de session puis
@@ -47,6 +49,7 @@ import {
   Admin49OpsIncident,
 } from './screens/operationsSupervision';
 import { Admin50SecurityOverview, Admin51AccessControls } from './screens/security';
+import { Admin57InfrastructureTopology, Admin58WorkerEdge } from './screens/infrastructure';
 import { Admin01Dashboard } from './screens/overview';
 import { Admin02Users, Admin03UserSheet, Admin04Block, Admin05BlockJournal } from './screens/users';
 import {
@@ -154,6 +157,8 @@ export const ADMIN_SCREEN_COMPONENTS: Readonly<Record<string, AdminScreenCompone
   'ADM-49': Admin49OpsIncident,
   'ADM-50': Admin50SecurityOverview,
   'ADM-51': Admin51AccessControls,
+  'ADM-57': Admin57InfrastructureTopology,
+  'ADM-58': Admin58WorkerEdge,
 };
 
 export function adminScreenCodes(): readonly string[] {
