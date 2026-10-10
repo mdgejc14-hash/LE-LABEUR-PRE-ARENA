@@ -19,6 +19,12 @@
  * Les commandes ADMIN historiques assign / transfer / finalize sont déclarées
  * dans le catalogue mais SANS handler, volontairement : elles contourneraient
  * la Candidature, la Proposition et la réponse explicite du Candidat.
+ *
+ * P4E-2-DESIGN-ADMIN-REPUTATION (ADM-34 → ADM-36) : le ledger est lu par
+ * admin.reputation.entries.list / read (audit:read). La correction réelle est
+ * REVERSE / RESTORE (incidents:arbitrate), jamais un delta compensatoire. La
+ * vue dérivée GET /my/reputation est réservée au sujet (scope self) et n'est
+ * pas appelée. Aucune file de recours ni vérificateur de chaîne n'existe.
  */
 
 export const ADMIN_UNIT_GAPS: Record<string, readonly string[]> = {
@@ -216,5 +222,23 @@ export const ADMIN_UNIT_GAPS: Record<string, readonly string[]> = {
     'ADM-33 · le produit ne connaît aucun état « contesté » pour un Remplacement : aucune contestation n’est à trancher et aucun dossier n’est présenté comme tel.',
     'ADM-33 · aucune écriture financière, aucun ajustement de décompte et aucune correction de périmètre ne sont simulés : la fiche ne rend aucun formulaire. Le Paiement du travail validé reste rattaché au Contrat source.',
     'ADM-33 · la seule décision ADMIN du workflow est la décision REPLACE d’un Claim CONTRACT_INCIDENT en ADMIN_REVIEW (admin.claims.decision, incidents:arbitrate), qui ouvre le dossier et passe le Contrat source à REPLACED. Elle relève de la fiche de décision du Claim et n’est pas rendue par cette tranche.',
+  ],
+  /* ── P4E-2 · réputation ── */
+  'ADM-34': [
+    'ADM-34 · GET /admin/reputation/summary — absent : aucun bandeau 24 h, aucun délai médian, aucun total plateforme. Les repères affichés comptent uniquement la page réellement chargée de admin.reputation.entries.list.',
+    'ADM-34 · POST /admin/reputation/entries/corrections {subjectId, delta, motive, caseRef} — absent. La correction réelle est POST /api/v1/admin/reputation/entries/:reputationId/correct {action: REVERSE|RESTORE, reason} (permission incidents:arbitrate, idempotente, auditée). Aucun delta compensatoire, aucune valeur absolue et aucune note 0-100 ne sont saisis ni calculés.',
+    'ADM-34 · GET /api/v1/my/reputation (vue dérivée, impact net) est réservée au sujet (scope self) : l’ADMIN ne l’appelle pas et n’agrège pas un score dans le navigateur. Seuls l’impact, la direction, la catégorie, le statut et l’explication stockés sur chaque entrée sont affichés.',
+    'ADM-34 · double validation, notification du sujet, référence de dossier obligatoire et aperçu avant/après d’un score — absents. L’historique append-only de l’entrée (REVERSED / RESTORED) est le seul journal de correction exposé.',
+    'ADM-34 · sans persistance PostgreSQL durable, les handlers de réputation ne sont pas installés : la route répond 501 (état réel affiché), jamais un ledger simulé.',
+  ],
+  'ADM-35': [
+    'ADM-35 · fiche entière en BACKEND_GAP : GET /admin/reputation/contests et POST /admin/reputation/contests/:id/decide — absents du catalogue et sans handler. Aucune file de recours, aucun dossier comparatif, aucun taux d’acceptation et aucun SLA ne sont exposés.',
+    'ADM-35 · le produit ne connaît aucun objet « contestation d’entrée de réputation ». Ouvrir un Claim n’est pas une décision sur une entrée du ledger : aucune file n’est fabriquée à partir des Claims.',
+    'ADM-35 · aucun formulaire n’est rendu : une décision d’acceptation ou de rejet ne pourrait pas être exécutée. La correction d’une entrée existante, si elle est autorisée, relève de ADM-34 (REVERSE / RESTORE).',
+  ],
+  'ADM-36': [
+    'ADM-36 · fiche entière en BACKEND_GAP : POST /admin/audit/integrity/run, GET /admin/audit/integrity/runs et GET /admin/audit/integrity/report.pdf — absents du catalogue et sans handler. Aucune chaîne de hash, aucun rapport signé et aucune vérification d’intégrité ne sont exposés.',
+    'ADM-36 · GET /api/v1/admin/audit est une frontière de contrôle sans données métier : elle n’est pas utilisée comme vérificateur de ledger. POST /api/v1/admin/reputation/reconcile relit les faits déjà persistés d’un sujet (ADM-34) ; ce n’est pas une preuve d’intégrité de chaîne.',
+    'ADM-36 · aucun bouton « lancer une vérification » n’est proposé : aucune commande serveur ne la recevrait. Aucun résultat intègre / rupture n’est simulé.',
   ],
 };

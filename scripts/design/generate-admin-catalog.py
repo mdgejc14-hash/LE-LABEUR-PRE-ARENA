@@ -11,7 +11,11 @@ Tranches livrées :
   (regroupements exacts `ADM-26`, `ADM-27/28`, `ADM-29/30`) ;
   P4E-1-DESIGN-ADMIN-REPLACEMENTS : file, suivi détaillé et arbitrage des
   Remplacements (unité exacte `ADM — remplacements (file & arbitrage)` =
-  ADM-31 regroupant ADM-31/32/33).
+  ADM-31 regroupant ADM-31/32/33) ;
+  P4E-2-DESIGN-ADMIN-REPUTATION : ledger, corrections, contestations et
+  audit de réputation (unités exactes `ADM — réputation (ledger, corrections
+  & audit)` = ADM-34 regroupant ADM-34/36, et `ADM — réputation
+  (contestations)` = ADM-35).
 
 Ce générateur ne produit AUCUN libellé métier : les textes affichés par
 l'interface viennent de `src/admin/vocabulary.ts` (vocabulaire LE LABEUR).
@@ -47,7 +51,13 @@ Périmètre de la tranche P4E-1 (workflow de remplacement uniquement) :
   ADM-33 arbitrage (canon propre, même unité selon `units.py` ; capacité
          absente côté serveur, déclarée BACKEND_GAP par la tranche).
 
-Les écrans ADM suivants (réputation, documents, notifications, ops, sécurité
+Périmètre de la tranche P4E-2 (réputation uniquement) :
+  ADM-34 ledger global et corrections (canon « ledger & corrections ») ;
+  ADM-36 audit d'intégrité (même unité selon `units.py`) ;
+  ADM-35 file de contestations (canon propre, unité distincte selon
+         `units.py` ; aucune ressource serveur, BACKEND_GAP).
+
+Les écrans ADM suivants (documents, notifications, ops, sécurité
 avancée, infra, FIN) restent hors tranche et ne figurent PAS dans ce catalogue.
 """
 import json
@@ -61,7 +71,7 @@ sys.path.insert(0, str(ROOT / 'design'))
 from llab.content import load_all  # noqa: E402
 from llab.units import unit_of  # noqa: E402
 
-# Fiches ADM livrées par les tranches P4A, P4B-1, P4B-2, P4C, P4D et P4E-1 (périmètre strict).
+# Fiches ADM livrées par les tranches P4A, P4B-1, P4B-2, P4C, P4D, P4E-1 et P4E-2 (périmètre strict).
 TRANCHE_P4A = {
     'ADM-01', 'ADM-02', 'ADM-03', 'ADM-04', 'ADM-05',
     'ADM-06', 'ADM-07', 'ADM-08', 'ADM-09',
@@ -99,7 +109,15 @@ TRANCHE_P4E1 = {
     'ADM-31', 'ADM-32', 'ADM-33',
 }
 
-TRANCHE_ADMIN = TRANCHE_P4A | TRANCHE_P4B1 | TRANCHE_P4B2 | TRANCHE_P4C | TRANCHE_P4D | TRANCHE_P4E1
+# P4E-2-DESIGN-ADMIN-REPUTATION : unités exactes de `design/llab/units.py`
+# « ADM — réputation (ledger, corrections & audit) » = ADM-34 regroupe
+# ADM-34/36 ; « ADM — réputation (contestations) » = ADM-35 (canon orphelin
+# du GROUPS, donc unité propre).
+TRANCHE_P4E2 = {
+    'ADM-34', 'ADM-35', 'ADM-36',
+}
+
+TRANCHE_ADMIN = TRANCHE_P4A | TRANCHE_P4B1 | TRANCHE_P4B2 | TRANCHE_P4C | TRANCHE_P4D | TRANCHE_P4E1 | TRANCHE_P4E2
 
 families = load_all()
 SCREENS = [s for s in families['ADM'] if s.code in TRANCHE_ADMIN]
@@ -160,13 +178,14 @@ payload = (
     '// GÉNÉRÉ PAR scripts/design/generate-admin-catalog.py — NE PAS ÉDITER À LA MAIN.\n'
     '// Source : design/llab/content/adm_*.py, design/llab/units.py — tranches livrées :\n'
     '// P4A (ADM-01 → ADM-12), P4B-1 CONTRATS (ADM-13 → ADM-17), P4B-2 PAIEMENTS (ADM-18 → ADM-22)\n'
-    '// P4C SALAIRE (ADM-23 → ADM-24), P4D CLAIMS (ADM-26 → ADM-30), P4E-1 REMPLACEMENTS (ADM-31 → ADM-33).\n'
+    '// P4C SALAIRE (ADM-23 → ADM-24), P4D CLAIMS (ADM-26 → ADM-30), P4E-1 REMPLACEMENTS (ADM-31 → ADM-33),\n'
+    '// P4E-2 RÉPUTATION (ADM-34 → ADM-36).\n'
     '// Régénérer : npm run design:admin\n'
     '//\n'
     '// Référence de design UNIQUEMENT : aucun libellé de ce fichier n\'est affiché par\n'
     '// l\'interface. Les textes visibles viennent de src/admin/vocabulary.ts (vocabulaire\n'
     '// LE LABEUR : ADMIN, EMPLOYER, CANDIDATE, OFFER, APPLICATION, PROPOSAL, CONTRACT, CLAIM,\n'
-    '// PAYMENT, SALARY, REPLACEMENT, MATCHING, DOCUMENT, QUALIFICATION).\n'
+    '// PAYMENT, SALARY, REPLACEMENT, MATCHING, DOCUMENT, QUALIFICATION, REPUTATION).\n'
     '// Les routes sont celles du routeur P0 : elles ne sont ni renommées ni réécrites.\n\n'
     'export interface AdminDesignScreen {\n'
     '  readonly code: string;\n'
