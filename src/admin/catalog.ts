@@ -3,7 +3,7 @@
 // P4A (ADM-01 → ADM-12), P4B-1 CONTRATS (ADM-13 → ADM-17), P4B-2 PAIEMENTS (ADM-18 → ADM-22)
 // P4C SALAIRE (ADM-23 → ADM-24), P4D CLAIMS (ADM-26 → ADM-30), P4E-1 REMPLACEMENTS (ADM-31 → ADM-33),
 // P4E-2 RÉPUTATION (ADM-34 → ADM-36), P4F DOCUMENTS (ADM-37 → ADM-40),
-// P4F-2 NOTIFICATIONS (ADM-41 → ADM-43).
+// P4F-2 NOTIFICATIONS (ADM-41 → ADM-43), P4G-1 OPÉRATIONS (ADM-44 → ADM-46).
 // Régénérer : npm run design:admin
 //
 // Référence de design UNIQUEMENT : aucun libellé de ce fichier n'est affiché par
@@ -1249,6 +1249,72 @@ export const ADMIN_DESIGN_UNITS = [
       "GET /admin/notifications/otp-health",
       "POST /admin/notifications/failover {channel, scope}"
     ]
+  },
+  {
+    "id": "ADM-44",
+    "canon": "ADM — ops (queues, jobs & cron)",
+    "criticality": "P0",
+    "archetype": "Salle des machines",
+    "screenCodes": [
+      "ADM-44",
+      "ADM-45",
+      "ADM-46"
+    ],
+    "routes": [
+      "/admin/ops/queues",
+      "/admin/ops/queues/:name",
+      "/admin/ops/cron"
+    ],
+    "zoneKinds": [
+      "cta",
+      "doc",
+      "kpi",
+      "list",
+      "table",
+      "timeline"
+    ],
+    "componentRefs": [
+      "Contrôle",
+      "Courbe",
+      "Détecteur",
+      "Historique",
+      "Panneau",
+      "Rejeu",
+      "Table"
+    ],
+    "stateNames": [
+      "Nominal",
+      "Saturation",
+      "Blocage",
+      "Backlog historique",
+      "Fluide",
+      "Échecs concentrés",
+      "Rejeu en cours",
+      "Payload illisible",
+      "Nominal",
+      "Retard",
+      "Échec répété",
+      "Désactivée"
+    ],
+    "tokens": [
+      "--amber-500",
+      "--clay-500",
+      "--mono",
+      "--table",
+      "--violet-500"
+    ],
+    "designApi": [
+      "GET /admin/ops/queues",
+      "GET /admin/ops/queues/:name/series",
+      "POST /admin/ops/queues/:name/scale {workers, durationMin}",
+      "GET /admin/ops/queues/:name/jobs?cursor=",
+      "GET /admin/ops/jobs/:id",
+      "POST /admin/ops/jobs/:id/retry",
+      "POST /admin/ops/jobs/retry-batch {filter, limit}",
+      "GET /admin/ops/cron",
+      "POST /admin/ops/cron/:name/run",
+      "GET /admin/ops/cron/:name/history"
+    ]
   }
 ] as const;
 
@@ -2367,6 +2433,86 @@ export const ADMIN_DESIGN_SCREENS = [
       "--amber-500",
       "--emerald-500",
       "--mono",
+      "--table"
+    ]
+  },
+  {
+    "code": "ADM-44",
+    "unitId": "ADM — ops (queues, jobs & cron)",
+    "route": "/admin/ops/queues",
+    "canonicalRoute": "/admin/ops/queues",
+    "role": "ADMIN",
+    "criticality": "P0",
+    "zoneKinds": [
+      "kpi",
+      "table",
+      "timeline",
+      "cta"
+    ],
+    "variantOf": null,
+    "designApi": [
+      "GET /admin/ops/queues",
+      "GET /admin/ops/queues/:name/series",
+      "POST /admin/ops/queues/:name/scale {workers, durationMin}"
+    ],
+    "tokens": [
+      "--violet-500",
+      "--clay-500",
+      "--amber-500",
+      "--mono",
+      "--table"
+    ]
+  },
+  {
+    "code": "ADM-45",
+    "unitId": "ADM — ops (queues, jobs & cron)",
+    "route": "/admin/ops/queues/:name",
+    "canonicalRoute": "/admin/ops/queues/:name",
+    "role": "ADMIN",
+    "criticality": "P1",
+    "zoneKinds": [
+      "kpi",
+      "table",
+      "doc",
+      "cta"
+    ],
+    "variantOf": null,
+    "designApi": [
+      "GET /admin/ops/queues/:name/jobs?cursor=",
+      "GET /admin/ops/jobs/:id",
+      "POST /admin/ops/jobs/:id/retry",
+      "POST /admin/ops/jobs/retry-batch {filter, limit}"
+    ],
+    "tokens": [
+      "--mono",
+      "--violet-500",
+      "--clay-500",
+      "--table"
+    ]
+  },
+  {
+    "code": "ADM-46",
+    "unitId": "ADM — ops (queues, jobs & cron)",
+    "route": "/admin/ops/cron",
+    "canonicalRoute": "/admin/ops/cron",
+    "role": "ADMIN",
+    "criticality": "P1",
+    "zoneKinds": [
+      "table",
+      "kpi",
+      "list",
+      "cta"
+    ],
+    "variantOf": null,
+    "designApi": [
+      "GET /admin/ops/cron",
+      "POST /admin/ops/cron/:name/run",
+      "GET /admin/ops/cron/:name/history"
+    ],
+    "tokens": [
+      "--mono",
+      "--amber-500",
+      "--clay-500",
       "--table"
     ]
   }

@@ -22,7 +22,9 @@ Tranches livrées :
   quarantaine)` = ADM-38 regroupant ADM-38/39) ;
   P4F-2-DESIGN-ADMIN-NOTIFICATIONS : orchestration, gabarits et délivrabilité
   (unité exacte `ADM — notifications (orchestration, gabarits & délivrabilité)`
-  = ADM-41 regroupant ADM-41/42/43).
+  = ADM-41 regroupant ADM-41/42/43) ;
+  P4G-1-DESIGN-ADMIN-OPERATIONS : files, jobs et planifications (unité exacte
+  `ADM — ops (queues, jobs & cron)` = ADM-44 regroupant ADM-44/45/46).
 
 Ce générateur ne produit AUCUN libellé métier : les textes affichés par
 l'interface viennent de `src/admin/vocabulary.ts` (vocabulaire LE LABEUR).
@@ -70,7 +72,7 @@ Périmètre de la tranche P4F (documents uniquement) :
   ADM-38 vérification d'un Document (canon « ADM — documents (vérification & quarantaine) ») ;
   ADM-39 quarantaine (même unité selon `units.py` ; aucune route, BACKEND_GAP).
 
-Les écrans ADM suivants (ops, sécurité avancée, infra, FIN) restent hors
+Les écrans ADM suivants (SLO, dead-letter, incidents ops, sécurité, infra, FIN) restent hors
 tranche et ne figurent PAS dans ce catalogue.
 """
 import json
@@ -146,7 +148,10 @@ TRANCHE_P4F2 = {
     'ADM-41', 'ADM-42', 'ADM-43',
 }
 
-TRANCHE_ADMIN = TRANCHE_P4A | TRANCHE_P4B1 | TRANCHE_P4B2 | TRANCHE_P4C | TRANCHE_P4D | TRANCHE_P4E1 | TRANCHE_P4E2 | TRANCHE_P4F | TRANCHE_P4F2
+# P4G-1 : unité exacte de design/llab/units.py, aucune API ops serveur.
+TRANCHE_P4G1 = {'ADM-44', 'ADM-45', 'ADM-46'}
+
+TRANCHE_ADMIN = TRANCHE_P4G1 | TRANCHE_P4A | TRANCHE_P4B1 | TRANCHE_P4B2 | TRANCHE_P4C | TRANCHE_P4D | TRANCHE_P4E1 | TRANCHE_P4E2 | TRANCHE_P4F | TRANCHE_P4F2
 
 families = load_all()
 SCREENS = [s for s in families['ADM'] if s.code in TRANCHE_ADMIN]
@@ -209,7 +214,7 @@ payload = (
     '// P4A (ADM-01 → ADM-12), P4B-1 CONTRATS (ADM-13 → ADM-17), P4B-2 PAIEMENTS (ADM-18 → ADM-22)\n'
     '// P4C SALAIRE (ADM-23 → ADM-24), P4D CLAIMS (ADM-26 → ADM-30), P4E-1 REMPLACEMENTS (ADM-31 → ADM-33),\n'
     '// P4E-2 RÉPUTATION (ADM-34 → ADM-36), P4F DOCUMENTS (ADM-37 → ADM-40),\n'
-    '// P4F-2 NOTIFICATIONS (ADM-41 → ADM-43).\n'
+    '// P4F-2 NOTIFICATIONS (ADM-41 → ADM-43), P4G-1 OPÉRATIONS (ADM-44 → ADM-46).\n'
     '// Régénérer : npm run design:admin\n'
     '//\n'
     '// Référence de design UNIQUEMENT : aucun libellé de ce fichier n\'est affiché par\n'

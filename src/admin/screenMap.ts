@@ -5,7 +5,8 @@
  * `ADMIN_DESIGN_SCREENS`) : aucune route n'est créée, renommée ou réécrite
  * par ces tranches, dont les routes ADM-26 → ADM-30 ajoutées au catalogue P4D,
  * ADM-31 → ADM-33 ajoutées au catalogue P4E-1, ADM-34 → ADM-36 ajoutées au
- * catalogue P4E-2 et ADM-41 → ADM-43 ajoutées au catalogue P4F-2.
+ * catalogue P4E-2, ADM-41 → ADM-43 au catalogue P4F-2 et ADM-44 →
+ * ADM-46 au catalogue P4G-1.
  * Ce module ne contient AUCUN composant : il est importable par la résolution
  * de route sans embarquer l'interface.
  */
