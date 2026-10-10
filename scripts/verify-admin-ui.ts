@@ -1,12 +1,12 @@
 /**
  * P4B-2-DESIGN-ADMIN-PAYMENTS — vérification UI réelle (Chromium) de l'espace
- * supervision livré (P4A + P4B-1 contrats + P4B-2 paiements).
+ * supervision livré (P4A + P4B-1 contrats + P4B-2 paiements + P4C salaire).
  *
  * Comme le script P2, ce script n'affirme rien sur des données simulées dans
  * l'application : les fixtures HTTP vivent ICI et ne sont jamais activées dans
  * le produit. Ce qui est vérifié dans un navigateur réel :
  *
- *  1. AUCUNE source de données configurée : les 22 fiches ADM rendent leur
+ *  1. AUCUNE source de données configurée : les 24 fiches ADM rendent leur
  *     conteneur (`data-unit`, `data-screen`), la structure déclarée par le
  *     design (`data-sheet-frame`) et le BACKEND_GAP, sans débordement
  *     horizontal à 360 px comme à 1440 px ; aucun terme du Master Design ni
@@ -28,7 +28,11 @@
  *  7. P4B-2 : états/natures de Paiement, permissions, déclaration vs vérification
  *     vs PAID, rapprochement/revue, erreurs/vides, idempotence UI, 360/1440 px.
  *     Toutes les commandes de test sont interceptées par Playwright : aucun
- *     handler financier réel n'est appelé.
+ *     handler financier réel n'est appelé ;
+ *  8. P4C : confirmations de Salaire — file réelle des paiements SALARY,
+ *     confirmation du Candidat jamais déduite, distinction
+ *     déclaration/vérification/PAID/confirmation, fiche de preuve sans
+ *     formulaire ni secret, 360/1440 px.
  *
  * Exécution : `npm run verify:admin-ui`.
  */
@@ -650,7 +654,7 @@ try {
     assert.ok(!text.includes(SERVER_SECRET), `${label} : message serveur brut rendu`);
   };
 
-  /* ── 1. Aucune source de données configurée : 22 fiches, deux largeurs ── */
+  /* ── 1. Aucune source de données configurée : 24 fiches, deux largeurs ── */
   const demo = await startApp('demo');
   demoServer = demo.server;
   for (const width of [360, 1440]) {
@@ -935,6 +939,65 @@ try {
     assert.ok(says(incidentText, 'BACKEND_GAP') && says(incidentText, 'Aucun détail financier'), 'absence de handler d’incident non dite');
     assert.equal(await page.locator('[data-screen="ADM-22"] form').count(), 0, 'aucun formulaire sur la fiche d’incident absente');
     await assertNoForbiddenText('/admin/paiements/anomalies et incidents', `${anomalyText} ${incidentText}`);
+  });
+
+  await check('ADM-23/24 — confirmations de Salaire : paiements SALARY réels, confirmation jamais déduite, preuve sans formulaire ni secret', async () => {
+    sessionMode = 'admin';
+    resetPaymentFixtures();
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await page.goto(api.origin + '/admin/salaire/confirmations');
+    await page.locator('[data-screen="ADM-23"]').waitFor();
+    await page.getByText('pay-salary-e2e', { exact: true }).first().waitFor();
+    const detailCallsBefore = paymentDetailCalls;
+    let text = await screenText();
+    assert.ok(says(text, 'Confirmations de Salaire'), 'titre de la fiche absent');
+    assert.ok(text.includes('120000 XOF'), 'montant unitaire serveur absent');
+    assert.ok(!text.includes('30000 XOF'), 'les frais LE LABEUR ne font pas partie de la file Salaire');
+    assert.ok(!text.includes('pay-fee-e2e'), 'un Paiement hors nature Salaire ne doit pas figurer dans la file');
+    assert.ok(!text.includes('150000'), 'total monétaire recalculé rendu');
+    assert.ok(says(text, 'Non exposée'), 'confirmation du Candidat non dite');
+    assert.ok(says(text, 'BACKEND_GAP'), 'gaps ADM-23 non rendus');
+    assert.ok(text.includes('—'), 'repère d’absence « — » absent');
+    assert.ok(says(text, 'ne vaut jamais vérification') && says(text, 'VERIFIED ne vaut pas PAID'), 'distinctions déclaration/vérification/PAID absentes');
+    assert.ok(says(text, 'n’est jamais assimilée à un paiement non effectué'), 'règle d’absence de confirmation non affichée');
+    assert.equal(await page.locator('[data-screen="ADM-23"] form').count(), 0, 'aucune commande ne peut être proposée sans handler');
+    assert.equal(await page.locator('[data-screen="ADM-23"] table thead th[scope="col"]').count(), 10, 'en-têtes de colonnes non sémantiques');
+    await assertNoForbiddenText('/admin/salaire/confirmations', text);
+
+    // Consultation unitaire réelle (payments.read) : mêmes états, aucune confirmation inventée.
+    await page.getByRole('button', { name: 'Consulter le Paiement pay-salary-e2e' }).click();
+    const detail = page.locator('[data-payment-detail="pay-salary-e2e"]');
+    await detail.waitFor();
+    const detailText = await detail.innerText();
+    assert.ok(detailText.includes('Non exposée par le DTO Payment'), 'confirmation du Candidat inventée ou non déclarée');
+    assert.ok(says(detailText, 'Statut PAID du cycle'), 'état PAID non présenté comme distinct');
+    assert.equal(paymentDetailCalls, detailCallsBefore + 1, 'lecture unitaire payments.read attendue une fois');
+    await assertNoForbiddenText('/admin/salaire/confirmations (consultation)', detailText);
+
+    // Responsive 1440 px puis 360 px.
+    await page.locator('[data-screen="ADM-23"]').waitFor();
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'débordement horizontal ADM-23 à 1440 px');
+    await page.setViewportSize({ width: 360, height: 900 });
+    await page.waitForFunction(() => document.documentElement.scrollWidth <= innerWidth, null, { timeout: 5000 }).catch(() => undefined);
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'débordement horizontal ADM-23 à 360 px');
+
+    // ADM-24 : dossier de preuve absent — aucune saisie, aucun secret, aucun geste.
+    await page.goto(api.origin + '/admin/salaire/preuves/pay-salary-e2e');
+    await page.locator('[data-screen="ADM-24"]').waitFor();
+    const proofText = await screenText();
+    assert.ok(says(proofText, 'pay-salary-e2e'), 'référence technique de chemin non conservée');
+    assert.ok(says(proofText, 'BACKEND_GAP'), 'gap ADM-24 absent');
+    assert.ok(says(proofText, 'Aucun code'), 'interdiction d’afficher un secret OTP non dite');
+    assert.ok(proofText.includes('—'), 'repères d’absence « — » absents');
+    assert.equal(await page.locator('[data-screen="ADM-24"] form').count(), 0, 'aucun formulaire sur une fiche sans handler');
+    assert.equal(await page.locator('[data-screen="ADM-24"] input, [data-screen="ADM-24"] textarea, [data-screen="ADM-24"] select').count(), 0, 'aucune saisie sur une capacité absente');
+    await assertNoForbiddenText('/admin/salaire/preuves', proofText);
+    await page.setViewportSize({ width: 360, height: 900 });
+    await page.waitForFunction(() => document.documentElement.scrollWidth <= innerWidth, null, { timeout: 5000 }).catch(() => undefined);
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'débordement horizontal ADM-24 à 360 px');
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.waitForFunction(() => document.documentElement.scrollWidth <= innerWidth, null, { timeout: 5000 }).catch(() => undefined);
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'débordement horizontal ADM-24 à 1440 px');
   });
 
   await check('ADM — refus non-ADMIN sur la route Paiement : aucune lecture ADMIN ni accès partie contourné', async () => {

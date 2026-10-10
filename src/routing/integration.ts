@@ -27,9 +27,17 @@
  * P4B-2-DESIGN-ADMIN-PAYMENTS : ADM-18 (vue globale + rapprochement) et ADM-20
  * (anomalies + déclarations + incidents — 5 fiches ADM-18 → ADM-22) sont
  * livrées sur les routes du routeur P0 et les API de paiement/rapprochement
- * existantes ; leurs lacunes sont déclarées → statut PARTIEL. Les autres
- * unités ADM, litiges, salaires, remplacements, réputation, documents,
- * notifications, ops, sécurité avancée, infra, FIN et RTC restent non
+ * existantes ; leurs lacunes sont déclarées → statut PARTIEL.
+ *
+ * P4C-DESIGN-ADMIN-SALARY-PROOFS : ADM-23 (confirmations de Salaire + preuve
+ * de réception — 2 fiches ADM-23 → ADM-24) est livrée sur les routes du
+ * routeur P0 et les lectures de paiement existantes (admin.payments.list,
+ * payments.read) ; la confirmation OTP reste réservée au Candidat et toutes
+ * les capacités de confirmation/preuve non exposées sont déclarées
+ * BACKEND_GAP → statut PARTIEL.
+ *
+ * Les autres unités ADM (litiges, remplacements, réputation, documents,
+ * notifications, ops, sécurité avancée, infra), FIN et RTC restent non
  * intégrées.
  */
 
@@ -65,9 +73,9 @@ export const EMPLOYER_UNIT_IDS: readonly string[] = EMPLOYER_DESIGN_UNITS.map((u
 export const PRESTATAIRE_UNIT_IDS: readonly string[] = PRESTATAIRE_DESIGN_UNITS.map((unit) => unit.id);
 
 /**
- * Unités ADM livrées par P4A-DESIGN-ADMIN-CORE, P4B-1-DESIGN-ADMIN-CONTRACTS
- * et P4B-2-DESIGN-ADMIN-PAYMENTS (12 unités, 22 fiches, dérivées du catalogue
- * généré). Même règle : PARTIEL
+ * Unités ADM livrées par P4A-DESIGN-ADMIN-CORE, P4B-1-DESIGN-ADMIN-CONTRACTS,
+ * P4B-2-DESIGN-ADMIN-PAYMENTS et P4C-DESIGN-ADMIN-SALARY-PROOFS (13 unités,
+ * 24 fiches, dérivées du catalogue généré). Même règle : PARTIEL
  * dès qu'une fiche déclare une capacité absente.
  */
 export const ADMIN_UNIT_IDS: readonly string[] = ADMIN_DESIGN_UNITS.map((unit) => unit.id);

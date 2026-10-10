@@ -17,6 +17,11 @@
  *   fiche « Litige »       → produit CLAIM / « Claim »
  *   fiche « Paiement »     → produit PAYMENT / « Paiement »
  *   fiche « Salaire »      → produit SALARY / « Salaire »
+ *   fiche « Confirmations de salaire » → produit SALARY_CONFIRMATION /
+ *                            « confirmation de Salaire » (demande réservée à
+ *                            l’Employeur, confirmation OTP réservée au Candidat)
+ *   fiche « Preuves OTP »  → produit : preuve de réception du Salaire, examinée
+ *                            sans jamais exposer un secret (aucun renommage)
  *   fiche « Remplacement » → produit REPLACEMENT / « Remplacement »
  *   fiche « Matching »     → produit MATCHING / « Matching »
  *   fiche « Document »     → produit DOCUMENT / « Document »
@@ -412,4 +417,6 @@ export const ADMIN_UI_TERMS = {
   PAYMENT_ANOMALIES: 'Anomalies de paiement',
   EXTERNAL_PAYMENT_DECLARATIONS: 'Déclarations de paiement externe',
   PAYMENT_INCIDENT: 'Incident de paiement',
+  SALARY_CONFIRMATION_QUEUE: 'Confirmations de Salaire',
+  SALARY_PROOF_REVIEW: 'Preuve de réception du Salaire',
 } as const;

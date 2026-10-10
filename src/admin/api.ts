@@ -1,6 +1,11 @@
 /**
- * ADM — accès frontend aux routes BACKEND EXISTANTES (tranches P4A, P4B-1 et P4B-2).
+ * ADM — accès frontend aux routes BACKEND EXISTANTES (tranches P4A, P4B-1,
+ * P4B-2 et P4C).
  *
+ * P4C-DESIGN-ADMIN-SALARY-PROOFS : aucune route nouvelle. Les écrans salaire
+ * se limitent aux lectures déjà gardées (admin.payments.list, payments.read) ;
+ * aucune route réservée à l'Employeur ou au Candidat (confirmation OTP) n'est
+ * appelée ici.
  * Règles absolues :
  *  - aucun endpoint n'est créé, renommé ou contourné ; chaque chemin appelé ici
  *    existe déjà dans `src/backend/api/routeContracts.ts` (vérifié par test) ;

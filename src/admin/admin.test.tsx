@@ -6,7 +6,7 @@
  *  1. parité du catalogue généré avec la source de design (Python) ;
  *  2. résolution de route : chaque fiche ADM des tranches est atteignable et
  *     rattachée à son unité (regroupement `units.py`, pas une plage numérique) ;
- *  3. registre complet (12 unités / 22 fiches), selon les regroupements canoniques exacts ;
+ *  3. registre complet (13 unités / 24 fiches), selon les regroupements canoniques exacts ;
  *  4. API : chaque chemin appelé existe déjà dans `routeContracts.ts` ;
  *  5. GARDE-FOU DE VOCABULAIRE : aucun libellé métier du Master Design
  *     (Mission, Client, Prestataire, Litige) ne peut entrer dans l'interface,
@@ -29,6 +29,11 @@
  * 13. P4B-2 paiements : états/natures serveur exacts, séparation Salaire/frais,
  *     déclarations vs vérification vs PAID, permissions, rapprochement/revue,
  *     BACKEND_GAPs, idempotence, accessibilité et aucun calcul monétaire.
+ * 14. P4C salaire : routes ADM-23/ADM-24 de l'unité exacte du Master,
+ *     réservation serveur de la confirmation OTP (Employeur / Candidat),
+ *     aucune route ADMIN de confirmation ni de preuve, distinction
+ *     déclaration / vérification / PAID / confirmation du Candidat, aucun
+ *     secret OTP ni donnée simulée dans les écrans.
  */
 
 import React from 'react';
@@ -62,6 +67,7 @@ import {
   PAYMENT_RECONCILIATION_BATCH_STATUS_LABELS,
   PAYMENT_RECONCILIATION_ITEM_STATUS_LABELS,
   PAYMENT_RECONCILIATION_REVIEW_DECISION_LABELS,
+  ADMIN_UI_TERMS,
   formatContractAmount,
   formatPaymentAmount,
   maskEmail,
@@ -159,11 +165,11 @@ export async function runAdminTests(): Promise<{ name: string; success: boolean;
     execFileSync('python3', ['scripts/design/generate-admin-catalog.py', '--check']);
   });
 
-  check('ADM — 12 unités / 22 fiches, chaque fiche rattachée à une seule unité', () => {
-    assert.equal(ADMIN_DESIGN_UNITS.length, 12);
-    assert.equal(ADMIN_DESIGN_SCREENS.length, 22);
+  check('ADM — 13 unités / 24 fiches, chaque fiche rattachée à une seule unité', () => {
+    assert.equal(ADMIN_DESIGN_UNITS.length, 13);
+    assert.equal(ADMIN_DESIGN_SCREENS.length, 24);
     const codes = ADMIN_DESIGN_SCREENS.map((screen) => screen.code);
-    assert.equal(new Set(codes).size, 22);
+    assert.equal(new Set(codes).size, 24);
     for (const screen of ADMIN_DESIGN_SCREENS) {
       const unit = unitForScreen(screen.code);
       assert.ok(unit, `fiche sans unité : ${screen.code}`);
@@ -174,7 +180,8 @@ export async function runAdminTests(): Promise<{ name: string; success: boolean;
     // ajoute ADM-13 (registre, unité propre), ADM-14 = {fiche, incidents,
     // journal} (une seule unité de production) et ADM-16 (révision forcée,
     // unité propre) — exactement les regroupements de `design/llab/units.py`.
-    assert.deepEqual(ADMIN_DESIGN_UNITS.map((unit) => unit.id), ['ADM-01', 'ADM-02', 'ADM-04', 'ADM-06', 'ADM-08', 'ADM-10', 'ADM-11', 'ADM-13', 'ADM-14', 'ADM-16', 'ADM-18', 'ADM-20']);
+    // P4C ajoute ADM-23 = {confirmations, preuves OTP}, unité unique salaire.
+    assert.deepEqual(ADMIN_DESIGN_UNITS.map((unit) => unit.id), ['ADM-01', 'ADM-02', 'ADM-04', 'ADM-06', 'ADM-08', 'ADM-10', 'ADM-11', 'ADM-13', 'ADM-14', 'ADM-16', 'ADM-18', 'ADM-20', 'ADM-23']);
     assert.deepEqual(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-02')?.screenCodes, ['ADM-02', 'ADM-03']);
     assert.deepEqual(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-04')?.screenCodes, ['ADM-04', 'ADM-05']);
     assert.deepEqual(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-06')?.screenCodes, ['ADM-06', 'ADM-07']);
@@ -196,6 +203,13 @@ export async function runAdminTests(): Promise<{ name: string; success: boolean;
     ]);
     assert.equal(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-18')?.canon, 'ADM — paiements (vue globale & réconciliation)');
     assert.equal(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-20')?.canon, 'ADM — paiements (anomalies, déclarations & incidents)');
+    assert.deepEqual(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-23')?.screenCodes, ['ADM-23', 'ADM-24']);
+    assert.deepEqual(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-23')?.routes, [
+      '/admin/salaire/confirmations',
+      '/admin/salaire/preuves/:id',
+    ]);
+    assert.equal(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-23')?.canon, 'ADM — salaire (confirmations & preuves OTP)');
+    assert.equal(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-23')?.criticality, 'P0');
   });
 
   check('ADM — chaque route de fiche est résolue par le routeur P0 vers son unité', () => {
@@ -212,7 +226,7 @@ export async function runAdminTests(): Promise<{ name: string; success: boolean;
     assert.equal(index.kind === 'shell' && index.unitId, 'ADM-01', 'l’index /admin doit être le tableau de bord ADM-01');
   });
 
-  check('ADM — registre complet : les 22 fiches livrées ont un écran, aucun code inconnu', () => {
+  check('ADM — registre complet : les 24 fiches livrées ont un écran, aucun code inconnu', () => {
     const registered = Object.keys(ADMIN_SCREEN_COMPONENTS).sort();
     const expected = ADMIN_DESIGN_SCREENS.map((screen) => screen.code).sort();
     assert.deepEqual(registered, expected);
@@ -372,8 +386,8 @@ export async function runAdminTests(): Promise<{ name: string; success: boolean;
     }
   });
 
-  check('ADM — intégration : 12 unités ADM PARTIEL (P4A + P4B-1 + P4B-2), EMP/PRE/PUB/SYS inchangés, autres ADM/FIN/RTC non intégrées', () => {
-    assert.equal(ADMIN_UNIT_IDS.length, 12);
+  check('ADM — intégration : 13 unités ADM PARTIEL (P4A + P4B-1 + P4B-2 + P4C), EMP/PRE/PUB/SYS inchangés, autres ADM/FIN/RTC non intégrées', () => {
+    assert.equal(ADMIN_UNIT_IDS.length, 13);
     for (const unitId of ADMIN_UNIT_IDS) {
       assert.equal(integrationStatus(unitId), 'PARTIEL', `${unitId} doit être PARTIEL`);
       assert.ok(isAdminUnit(unitId), `${unitId} doit être reconnue comme unité ADM`);
@@ -392,6 +406,8 @@ export async function runAdminTests(): Promise<{ name: string; success: boolean;
     assert.equal(integrationStatus('ADM-16'), 'PARTIEL', 'ADM-16 (révision forcée — capacité absente déclarée) est livrée par P4B-1');
     assert.equal(integrationStatus('ADM-18'), 'PARTIEL', 'ADM-18 (Paiements et rapprochement) est livrée par P4B-2');
     assert.equal(integrationStatus('ADM-20'), 'PARTIEL', 'ADM-20 (anomalies, déclarations et incidents) est livrée par P4B-2');
+    assert.equal(integrationStatus('ADM-23'), 'PARTIEL', 'ADM-23 (confirmations de Salaire et preuves) est livrée par P4C');
+    assert.equal(integrationStatus('ADM-25'), 'NON_INTEGRE', 'ADM-25 (salaire — autre fiche) reste hors tranches livrées');
     assert.equal(integrationStatus('ADM-26'), 'NON_INTEGRE', 'ADM-26 (litiges — file de modération) reste hors tranches livrées');
   });
 
@@ -776,6 +792,125 @@ export async function runAdminTests(): Promise<{ name: string; success: boolean;
     assert.equal(formatPaymentAmount(30000, 'XOF'), '30000 XOF', 'montant de frais distinct, jamais additionné');
     assert.equal(formatPaymentAmount(120000, ''), '120000', 'devise absente : aucune devise ajoutée');
     assert.equal(formatPaymentAmount(12.75, 'XX-BOGUS'), '12.75 XX-BOGUS', 'devise inconnue affichée sans conversion');
+  });
+
+  /* ── P4C-DESIGN-ADMIN-SALARY-PROOFS — confirmations de Salaire et preuves ── */
+
+  check('ADM — P4C : routes canoniques des deux fiches, unité exacte (units.py), aucune route créée', () => {
+    const cases = [
+      ['/admin/salaire/confirmations', 'ADM-23', 'ADM-23', {}],
+      ['/admin/salaire/preuves/pay-1', 'ADM-24', 'ADM-23', { id: 'pay-1' }],
+    ] as const;
+    for (const [path, code, unitId, params] of cases) {
+      const resolved = resolveAdminScreen(path);
+      assert.equal(resolved?.code, code, `fiche P4C de ${path}`);
+      assert.equal(resolved?.unitId, unitId, `unité canonique de ${path}`);
+      assert.deepEqual(resolved?.params, params, `paramètres réels de ${path}`);
+      const production = resolveRoute(path);
+      assert.equal(production.kind, 'shell');
+      if (production.kind === 'shell') {
+        assert.equal(production.shell, 'ADMIN');
+        assert.equal(production.notFound, false);
+        assert.equal(production.unitId, unitId);
+      }
+    }
+    // Les routes du catalogue sont exactement celles du routeur P0.
+    const catalogUnit = ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-23');
+    const productionUnit = PRODUCTION_UNITS.find((unit) => unit.id === 'ADM-23');
+    assert.ok(catalogUnit && productionUnit, 'unité ADM-23 introuvable');
+    assert.deepEqual([...catalogUnit.routes].sort(), [...productionUnit.routes].sort(), 'ADM-23 : routes du catalogue = routes du routeur P0');
+    // Hors tranche : aucune fiche n'est inventée pour les autres écrans salaire.
+    assert.equal(resolveAdminScreen('/admin/salaire/litiges'), null, 'ADM-25 hors tranche : aucune fiche inventée');
+    assert.equal(resolveAdminScreen('/admin/salaire'), null, 'aucune fiche index salaire : aucune invention');
+  });
+
+  check('ADM — P4C : confirmation OTP strictement réservée (Employeur / Candidat), aucune route ADMIN de confirmation ni de preuve', () => {
+    const route = (key: string) => API_ROUTE_CONTRACTS.find((candidate) => candidate.key === key);
+    const request = route('payments.salary.confirmation.request');
+    assert.ok(request, 'payments.salary.confirmation.request absente du catalogue serveur');
+    assert.equal(request.path, '/api/v1/payments/:paymentId/salary-confirmation-request');
+    assert.equal(request.scope, 'owner', 'demande portée par son scope produit');
+    assert.deepEqual([...(request.roles ?? [])], ['EMPLOYER'], 'la demande de confirmation reste réservée à l’Employeur');
+    assert.equal(request.method, 'POST');
+    const confirm = route('payments.salary.confirmation.confirm');
+    assert.ok(confirm, 'payments.salary.confirmation.confirm absente du catalogue serveur');
+    assert.equal(confirm.path, '/api/v1/payments/:paymentId/salary-confirmation');
+    assert.equal(confirm.scope, 'owner');
+    assert.deepEqual([...(confirm.roles ?? [])], ['CANDIDATE'], 'la confirmation OTP reste réservée au Candidat');
+    assert.equal(confirm.method, 'POST');
+    // Aucune route ADMIN de confirmation, de statistique, de relance ou de preuve.
+    for (const forbidden of ['/api/v1/admin/salary', '/api/v1/admin/salaire']) {
+      assert.equal(
+        API_ROUTE_CONTRACTS.some((candidate) => candidate.path.startsWith(forbidden)),
+        false,
+        `une route ${forbidden}* existerait : le BACKEND_GAP ADM-23/24 serait faux`,
+      );
+    }
+    // L'interface ADMIN n'appelle aucune route réservée à l'Employeur ou au Candidat.
+    for (const path of ADMIN_API_PATHS) {
+      assert.ok(!path.includes('salary-confirmation'), `AdminApi appelle une route réservée d’une partie : ${path}`);
+      assert.ok(!path.startsWith('/api/v1/admin/salary'), `AdminApi appelle une route créée : ${path}`);
+    }
+    // Les mécanismes serveur réellement réutilisés existent et sont branchés.
+    const salarySource = readFileSync(new URL('../backend/payments/salaryConfirmation.ts', import.meta.url), 'utf8');
+    assert.ok(salarySource.includes('OTP is never returned by production endpoints'), 'règle serveur de non-retour de l’OTP absente : vérifier l’audit');
+    assert.ok(salarySource.includes('seul le travailleur bénéficiaire peut confirmer'), 'garde serveur Candidat absente sur la confirmation');
+    assert.ok(salarySource.includes('seul l’employeur du paiement peut demander'), 'garde serveur Employeur absente sur la demande');
+    const paymentsSource = readFileSync(new URL('../backend/repositories/paymentRepository.ts', import.meta.url), 'utf8');
+    assert.ok(paymentsSource.includes("'admin.payments.list': async context => repository.getAdminPayments("), 'handler admin.payments.list non branché');
+    assert.ok(paymentsSource.includes("'payments.read': async context =>"), 'handler payments.read non branché : la consultation ADM-23 n’aurait aucune source');
+    const identitySource = readFileSync(new URL('../backend/api/identityWorker.ts', import.meta.url), 'utf8');
+    assert.ok(identitySource.includes("'admin.payments.list': adminControl('payments')"), 'frontière de contrôle sans persistance absente : l’état affiché serait faux');
+    const entrySource = readFileSync(new URL('../backend/api/entry.ts', import.meta.url), 'utf8');
+    assert.ok(entrySource.includes('...paymentHandlers,'), 'composition n’installe pas les handlers paiement');
+    assert.ok(entrySource.includes('createSalaryConfirmationHandlers'), 'mécanisme OTP existant non retrouvé dans la composition');
+  });
+
+  check('ADM — P4C : écrans salaire — OTP non exposé, états distincts, aucune donnée simulée ni calcul monétaire', () => {
+    const source = stripComments(readFileSync(new URL('./screens/salary.tsx', import.meta.url), 'utf8'));
+    // Aucune donnée simulée, aucun appel réseau direct, aucune écriture navigateur.
+    assert.ok(!/mock/i.test(source), 'référence mock interdite dans un écran livré');
+    assert.ok(!/Math\.random/.test(source), 'aléatoire interdit : aucune valeur inventée');
+    assert.ok(!/\bfetch\s*\(/.test(source), 'aucun appel réseau direct : passer par AdminApi');
+    assert.ok(!/\/api\/v1/.test(source), 'aucun chemin d’API écrit dans l’écran');
+    assert.ok(!/VITE_/.test(source), 'aucune lecture d’environnement dans l’écran');
+    assert.ok(!/new Date\(\)/.test(source), 'aucune horloge locale injectée comme donnée métier');
+    assert.ok(!/localStorage|sessionStorage/.test(source), 'aucune source de vérité de navigateur');
+    assert.ok(source.includes("?? '—'"), 'le témoin d’absence « — » doit être utilisé');
+    assert.ok(source.includes("from '../api'"), 'les écrans doivent importer AdminApi depuis api.ts');
+    assert.ok(!/from '\.\.\/\.\.\/backend/.test(source), 'aucun import direct du backend par les écrans salaire');
+    // Aucun secret ni mécanisme OTP n'est manipulé côté interface.
+    assert.ok(!/otp_digest|confirm_key|request_key|body\.otp|padStart\(|nonce\s*:/.test(source), 'secret ou mécanisme OTP manipulé dans l’écran');
+    assert.ok(!/verifyPayment|markPaymentPaid|rejectPayment|blockUser|decideReview/.test(source), 'aucune mutation n’appartient à cette tranche');
+    // Distinctions obligatoires affichées (déclaration / vérification / PAID / confirmation).
+    assert.ok(source.includes('ne vaut jamais vérification'), 'distinction déclaration/vérification non affichée');
+    assert.ok(source.includes('VERIFIED ne vaut pas PAID'), 'distinction VERIFIED/PAID non affichée');
+    assert.ok(source.includes('Non exposée par le DTO Payment'), 'confirmation du Candidat non dite');
+    assert.ok(source.includes('n’est jamais assimilée à un paiement non effectué'), 'règle d’absence de confirmation non affichée');
+    assert.ok(source.includes('BACKEND_GAP'), 'aucun repère BACKEND_GAP dans les écrans');
+    // La fiche de preuve ne rend aucun formulaire (aucune commande serveur).
+    const proofStart = source.indexOf('function SalaryProofReview');
+    const proofSource = source.slice(proofStart);
+    assert.ok(!/<form/.test(proofSource), 'ADM-24 ne rend aucun formulaire sans handler');
+    assert.ok(!/NeoPressButton/.test(proofSource), 'ADM-24 ne propose aucune commande sans handler');
+  });
+
+  check('ADM — P4C : vocabulaire de la tranche et zones déclarées des deux fiches', () => {
+    assert.equal(ADMIN_UI_TERMS.SALARY_CONFIRMATION_QUEUE, 'Confirmations de Salaire');
+    assert.equal(ADMIN_UI_TERMS.SALARY_PROOF_REVIEW, 'Preuve de réception du Salaire');
+    const adm23 = ADMIN_DESIGN_SCREENS.find((screen) => screen.code === 'ADM-23');
+    const adm24 = ADMIN_DESIGN_SCREENS.find((screen) => screen.code === 'ADM-24');
+    assert.deepEqual([...(adm23?.zoneKinds ?? [])].sort(), ['cta', 'kpi', 'list', 'table']);
+    assert.deepEqual([...(adm24?.zoneKinds ?? [])].sort(), ['cta', 'hero', 'kpi', 'table']);
+    assert.equal(adm23?.route, '/admin/salaire/confirmations');
+    assert.equal(adm24?.route, '/admin/salaire/preuves/:id');
+    // Les gaps déclarés couvrent les capacités réellement absentes.
+    const gaps23 = ADMIN_UNIT_GAPS['ADM-23'] ?? [];
+    const gaps24 = ADMIN_UNIT_GAPS['ADM-24'] ?? [];
+    assert.ok(gaps23.length >= 4 && gaps24.length >= 4, 'au moins quatre lignes de gap par fiche');
+    assert.ok(gaps23.some((line) => line.includes('/admin/salary/confirmations')), 'la route fiche ADM-23 déclarée absente doit être nommée');
+    assert.ok(gaps24.some((line) => line.includes('/admin/salary/proofs/:id')), 'la route fiche ADM-24 déclarée absente doit être nommée');
+    assert.deepEqual(forbiddenTermsIn(stripTechnicalTokens([...gaps23, ...gaps24].join(' | '))), [], 'gaps P4C : termes interdits dans les lignes affichées');
   });
 
   return results;
