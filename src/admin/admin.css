@@ -425,3 +425,79 @@
   gap: var(--space-4);
   min-width: 0;
 }
+
+/* P4F · documents — registre, fiche et commandes réelles (mêmes jetons que P4E).
+ * Aucune transition ajoutée : les états sont statiques, donc rien à neutraliser
+ * en mouvement réduit. Les longs identifiants et empreintes passent à la ligne. */
+.lbm-admin__document-filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+  gap: var(--space-16);
+  min-width: 0;
+}
+
+.lbm-admin__document-filters > *,
+.lbm-admin__document-filters select,
+.lbm-admin__document-filters input,
+.lbm-admin__document-filters textarea {
+  min-width: 0;
+  max-width: 100%;
+  width: 100%;
+}
+
+.lbm-admin__document-status {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.lbm-admin__hash {
+  display: block;
+  max-width: 100%;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-all;
+}
+
+.lbm-admin__integrity {
+  display: grid;
+  gap: var(--space-12);
+  min-width: 0;
+}
+
+.lbm-admin__unavailable-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-8);
+  min-width: 0;
+}
+
+.lbm-admin__unavailable {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-4) var(--space-8);
+  min-width: 0;
+  padding-top: var(--space-8);
+  border-top: 1px solid var(--stroke-sub);
+}
+
+.lbm-admin__unavailable-label {
+  font-weight: 600;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.lbm-admin__unavailable code {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.lbm-admin__unavailable > .lbm-caption {
+  flex: 1 1 100%;
+  min-width: 0;
+}

@@ -67,6 +67,13 @@ import type {
 } from '../backend/reputation/reputationRepository';
 import type { ReputationReconciliationReport } from '../backend/reputation/reconciliationCore';
 import type { ReputationSourceEntityType, ReputationStatus } from '../domain/reputationRules';
+import type {
+  DocumentDetailView,
+  DocumentIntegrityReport,
+  DocumentSummaryView,
+} from '../backend/documents/documentRepository';
+import type { DocumentStatusValue } from './documentRules';
+import type { DocumentType } from '../domain/documentRules';
 import { ApiClientError, HttpApiClient } from '../repositories/apiClient';
 
 export type {
@@ -166,6 +173,16 @@ export const ADMIN_API_PATHS: readonly string[] = [
   '/api/v1/admin/payment-reconciliation/batches/:batchId/retry',
   '/api/v1/admin/payment-reconciliation/reviews/:reviewId/decision',
   '/api/v1/admin/payment-reconciliation/reviews/:reviewId/correction-attempts',
+  // P4F — registre et fiche ADMIN des Documents (métadonnées + versions + liens,
+  // jamais de contenu ni de clé d'objet). Commandes : révocation d'un Document
+  // ou d'une version (motif, Idempotency-Key) et contrôle d'intégrité technique
+  // d'une version (route déclarée `owner` ; l'accès ADMIN est tranché par le
+  // handler via documents:read:any — point ouvert documenté dans gaps.ts).
+  '/api/v1/admin/documents',
+  '/api/v1/admin/documents/:documentId',
+  '/api/v1/admin/documents/:documentId/revoke',
+  '/api/v1/admin/documents/:documentId/versions/:versionId/revoke',
+  '/api/v1/documents/:documentId/versions/:versionId/verify',
 ];
 
 /** Clé d'idempotence explicite (jamais réutilisée entre deux commandes). */
@@ -200,6 +217,13 @@ export interface ReputationListOptions extends ListOptions {
   readonly sourceEntityType?: ReputationSourceEntityType;
   readonly from?: string;
   readonly to?: string;
+}
+
+/** Filtres réellement acceptés par admin.documents.list (ACTIVE|REVOKED, type, propriétaire). */
+export interface DocumentListOptions extends ListOptions {
+  readonly ownerUserId?: string;
+  readonly documentType?: DocumentType;
+  readonly status?: DocumentStatusValue;
 }
 
 /** Décisions réellement acceptées par le serveur pour une revue humaine. */
@@ -551,6 +575,88 @@ export class AdminApi {
       {
         method: 'POST',
         body: input,
+        idempotencyKey,
+        signal,
+      },
+    );
+  }
+
+  /* ── P4F · Documents (registre, fiche, commandes réelles) ── */
+
+  /**
+   * `admin.documents.list` (GET /api/v1/admin/documents, documents:read:any).
+   * Projection métadonnées uniquement : aucun contenu, aucune clé d'objet.
+   */
+  documents(options: DocumentListOptions = {}): Promise<AdminPage<DocumentSummaryView>> {
+    return this.client
+      .request<unknown>('/admin/documents', {
+        query: {
+          limit: options.limit ?? 25,
+          cursor: options.cursor ?? null,
+          ownerUserId: options.ownerUserId ?? null,
+          documentType: options.documentType ?? null,
+          status: options.status ?? null,
+        },
+        signal: options.signal,
+      })
+      .then((payload) => page<DocumentSummaryView>(payload));
+  }
+
+  /** `admin.documents.read` : fiche, versions (empreintes SHA-256 enregistrées) et liens. */
+  document(documentId: string, signal?: AbortSignal): Promise<DocumentDetailView> {
+    return this.client.request<DocumentDetailView>(`/admin/documents/${encodeURIComponent(documentId)}`, { signal });
+  }
+
+  /** `admin.documents.revoke` : révocation motivée du Document (incidents:arbitrate, Idempotency-Key). */
+  revokeDocument(
+    documentId: string,
+    reason: string,
+    signal?: AbortSignal,
+    idempotencyKey = newIdempotencyKey(),
+  ): Promise<DocumentDetailView> {
+    return this.client.request<DocumentDetailView>(`/admin/documents/${encodeURIComponent(documentId)}/revoke`, {
+      method: 'POST',
+      body: { reason },
+      idempotencyKey,
+      signal,
+    });
+  }
+
+  /** `admin.documents.versions.revoke` : révocation motivée d'une version (incidents:arbitrate). */
+  revokeDocumentVersion(
+    documentId: string,
+    versionId: string,
+    reason: string,
+    signal?: AbortSignal,
+    idempotencyKey = newIdempotencyKey(),
+  ): Promise<DocumentDetailView['versions'][number]> {
+    return this.client.request<DocumentDetailView['versions'][number]>(
+      `/admin/documents/${encodeURIComponent(documentId)}/versions/${encodeURIComponent(versionId)}/revoke`,
+      {
+        method: 'POST',
+        body: { reason },
+        idempotencyKey,
+        signal,
+      },
+    );
+  }
+
+  /**
+   * `documents.versions.integrity.verify` : recalcul de l'empreinte SHA-256 du
+   * contenu stocké. Contrôle TECHNIQUE (scope TECHNICAL_INTEGRITY), idempotent,
+   * audité (DOCUMENT_INTEGRITY_VERIFIED). Ce n'est pas une validation de la pièce.
+   */
+  verifyDocumentVersionIntegrity(
+    documentId: string,
+    versionId: string,
+    signal?: AbortSignal,
+    idempotencyKey = newIdempotencyKey(),
+  ): Promise<DocumentIntegrityReport> {
+    return this.client.request<DocumentIntegrityReport>(
+      `/documents/${encodeURIComponent(documentId)}/versions/${encodeURIComponent(versionId)}/verify`,
+      {
+        method: 'POST',
+        body: {},
         idempotencyKey,
         signal,
       },

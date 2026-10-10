@@ -7,7 +7,7 @@
  * l'application : les fixtures HTTP vivent ICI et ne sont jamais activées dans
  * le produit. Ce qui est vérifié dans un navigateur réel :
  *
- *  1. AUCUNE source de données configurée : les 29 fiches ADM rendent leur
+ *  1. AUCUNE source de données configurée : les 39 fiches ADM rendent leur
  *     conteneur (`data-unit`, `data-screen`), la structure déclarée par le
  *     design (`data-sheet-frame`) et le BACKEND_GAP, sans débordement
  *     horizontal à 360 px comme à 1440 px ; aucun terme du Master Design ni
@@ -49,6 +49,10 @@
  *     sans score 0-100, correction REVERSE/RESTORE idempotente
  *     (incidents:arbitrate), réconciliation d'un sujet, ADM-35/36 BACKEND_GAP
  *     sans formulaire, 403/500/501, aucune vue self, 360/1440 px.
+ * 11. P4F Documents : registre réel (lignes, pagination, filtre clavier), 501/vide/
+ *     erreur/refus, contrôle d'intégrité technique (verdict serveur seul),
+ *     révocation motivée (motif 3–1000, confirmation, Idempotency-Key),
+ *     ADM-39/40 sans action ; aucun object_key rendu ; 360/1440 px.
  *
  * Exécution : `npm run verify:admin-ui`.
  */
@@ -665,6 +669,53 @@ try {
 
   /** Fixtures HTTP : session réelle et pages ADMIN réelles (jamais dans l'application). */
   let sessionMode: SessionMode = 'admin';
+
+  /* ── P4F · Documents (fixtures HTTP de vérification, jamais dans l'application) ── */
+  let documentReadPermission = true;
+  let documentListMode: 'ready' | 'empty' | 'not-installed' | 'error' = 'ready';
+  let documentListCalls = 0;
+  const documentListQueries: string[] = [];
+  let documentIntegrityMode: 'match' | 'absent' = 'match';
+  const documentCommandRequests: Array<{ command: string; key: string; body: Record<string, unknown>; path: string }> = [];
+  const FIXTURE_DOCUMENT_VERSION = {
+    versionId: 'ver-e2e-1',
+    versionNumber: 1,
+    contentType: 'application/pdf',
+    declaredSizeBytes: 1024,
+    sizeBytes: 1024,
+    cryptographicHash: 'a'.repeat(64),
+    hashAlgorithm: 'SHA-256',
+    provenance: 'USER_UPLOAD',
+    status: 'ACTIVE',
+    createdAt: '2026-10-01T10:00:00.000Z',
+    createdBy: 'usr-owner-e2e',
+    registeredAt: '2026-10-01T10:01:00.000Z',
+    retainUntil: null,
+  };
+  const FIXTURE_DOCUMENT_SUMMARY = {
+    documentId: 'doc-e2e-1',
+    ownerUserId: 'usr-owner-e2e',
+    title: 'Contrat signé de test',
+    fileName: 'contrat-e2e.pdf',
+    documentType: 'CONTRACT_DOCUMENT',
+    status: 'ACTIVE',
+    currentVersionNumber: 1,
+    retention: { retentionClass: 'CONTRACTUAL', durationStatus: 'PENDING_LEGAL_VALIDATION', retentionDays: null },
+    createdAt: '2026-10-01T10:00:00.000Z',
+    createdBy: 'usr-owner-e2e',
+  };
+  let fixtureDocument: Record<string, unknown> = { ...FIXTURE_DOCUMENT_SUMMARY };
+  const resetDocumentFixtures = () => {
+    documentReadPermission = true;
+    documentListMode = 'ready';
+    documentIntegrityMode = 'match';
+    documentListCalls = 0;
+    documentListQueries.length = 0;
+    documentCommandRequests.length = 0;
+    claimActionPermissions = 'all';
+    fixtureDocument = { ...FIXTURE_DOCUMENT_SUMMARY };
+  };
+  const documentDetail = () => ({ ...fixtureDocument, versions: [FIXTURE_DOCUMENT_VERSION], links: [] });
   let paymentListMode: PaymentListMode = 'ready';
   let paymentReadPermission = true;
   let paymentActionPermissions: 'all' | 'read-only' = 'all';
@@ -765,6 +816,50 @@ try {
   await page.route('**/api/v1/**', async (route) => {
     const url = new URL(route.request().url());
     const method = route.request().method();
+    if (url.pathname.startsWith('/api/v1/admin/documents') || /^\/api\/v1\/documents\/doc-e2e-1\/versions\/ver-e2e-1\/verify$/.test(url.pathname)) {
+      const json = (status: number, body: unknown) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
+      const errorBody = (code: string, message: string) => ({ error: { code, message, requestId: SERVER_REQUEST_ID } });
+      if (url.pathname === '/api/v1/admin/documents' && method === 'GET') {
+        documentListCalls += 1;
+        documentListQueries.push(url.search);
+        if (!documentReadPermission) return json(403, errorBody('FORBIDDEN', SERVER_SECRET));
+        if (documentListMode === 'not-installed') return json(501, errorBody('NOT_IMPLEMENTED', SERVER_SECRET));
+        if (documentListMode === 'error') return json(500, errorBody('INTERNAL', SERVER_SECRET));
+        const items = documentListMode === 'empty' ? [] : [{ ...fixtureDocument }];
+        return json(200, { items, cursor: null, limit: 50, hasMore: false });
+      }
+      if (url.pathname === '/api/v1/admin/documents/doc-e2e-1' && method === 'GET') {
+        if (!documentReadPermission) return json(403, errorBody('FORBIDDEN', SERVER_SECRET));
+        return json(200, documentDetail());
+      }
+      if (url.pathname === '/api/v1/admin/documents/doc-e2e-1/revoke' && method === 'POST') {
+        const key = route.request().headers()['idempotency-key'] ?? '';
+        const body = (route.request().postDataJSON() ?? {}) as Record<string, unknown>;
+        documentCommandRequests.push({ command: 'revoke', key, body, path: url.pathname });
+        if (sessionMode !== 'admin' || claimActionPermissions !== 'all') return json(403, errorBody('FORBIDDEN', SERVER_SECRET));
+        if (typeof body.reason !== 'string' || body.reason.trim().length < 3) return json(400, errorBody('VALIDATION_ERROR', 'Motif invalide.'));
+        if (fixtureDocument.status === 'REVOKED') return json(409, errorBody('BUSINESS_RULE_VIOLATION', 'Document déjà révoqué.'));
+        fixtureDocument = { ...fixtureDocument, status: 'REVOKED', revokedAt: '2026-10-10T09:00:00.000Z', revokedBy: 'usr-admin-e2e', revocationReason: body.reason.trim() };
+        return json(200, documentDetail());
+      }
+      if (url.pathname === '/api/v1/documents/doc-e2e-1/versions/ver-e2e-1/verify' && method === 'POST') {
+        const key = route.request().headers()['idempotency-key'] ?? '';
+        documentCommandRequests.push({ command: 'verify', key, body: {}, path: url.pathname });
+        const present = documentIntegrityMode === 'match';
+        return json(200, {
+          documentId: 'doc-e2e-1',
+          versionId: 'ver-e2e-1',
+          expectedHash: 'a'.repeat(64),
+          actualHash: present ? 'a'.repeat(64) : null,
+          objectPresent: present,
+          match: present,
+          verifiedAt: '2026-10-10T09:05:00.000Z',
+          scope: 'TECHNICAL_INTEGRITY',
+        });
+      }
+      await route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify(errorBody('NOT_FOUND', 'Ressource non attendue par la vérification.')) });
+      return;
+    }
     if (url.pathname.endsWith('/auth/session')) {
       if (sessionMode === 'anonymous') {
         await route.fulfill({ status: 401, contentType: 'application/json', body: JSON.stringify({ error: { code: 'UNAUTHENTICATED', message: SERVER_SECRET, requestId: SERVER_REQUEST_ID } }) });
@@ -796,6 +891,7 @@ try {
                 ...(replacementReadPermission ? ['replacements:read:any'] : []),
                 ...(proposalReadPermission ? ['applications:read:any'] : []),
                 ...(reputationReadPermission ? ['audit:read'] : []),
+                ...(documentReadPermission ? ['documents:read:any'] : []),
               ]
             : [],
         }),
@@ -1979,7 +2075,8 @@ try {
     await page.getByLabel('Identifiant du sujet à réconcilier').fill('usr-can-e2e');
     await page.getByText('Je confirme l’envoi de la réconciliation', { exact: false }).click();
     await page.getByRole('button', { name: 'Réconcilier le sujet' }).click();
-    await page.getByText('usr-can-e2e', { exact: false }).waitFor();
+    // Locator borné au rapport : le sujet figure aussi dans le ledger (strict mode Playwright).
+    await page.getByLabel('Rapport de réconciliation').getByText('usr-can-e2e', { exact: true }).waitFor();
     assert.equal(reputationCommandRequests.some((item) => item.command === 'reconcile'), true, 'réconciliation non envoyée');
     const reconcile = reputationCommandRequests.find((item) => item.command === 'reconcile')!;
     assert.deepEqual(reconcile.body, { subjectUserId: 'usr-can-e2e' });
@@ -2214,6 +2311,134 @@ try {
     assert.ok(says(text, 'Utilisateurs'), 'fiche ADM-02 non rendue');
     await assertNoForbiddenText('/admin/utilisateurs (non-régression)', text);
     assert.ok(await page.locator('[data-backend-gap="true"]').first().isVisible(), 'BACKEND_GAP de la fiche utilisateur perdu');
+  });
+
+  await check('ADM-37 — registre réel : lignes de la réponse, pagination serveur, filtre au clavier, aucun object_key, 360 et 1440 px', async () => {
+    sessionMode = 'admin';
+    resetDocumentFixtures();
+    for (const width of [360, 1440]) {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(api.origin + '/admin/documents');
+      await page.locator('[data-screen="ADM-37"]').waitFor();
+      await page.locator('a[href="/admin/documents/doc-e2e-1/verification"]').waitFor();
+      const text = await screenText();
+      assert.ok(says(text, 'doc-e2e-1') && says(text, 'usr-owner-e2e'), `registre : lignes réelles absentes (${width}px)`);
+      assert.ok(documentListQueries.at(-1)?.includes('limit=50'), `pagination serveur de 50 lignes attendue (${width}px)`);
+      const html = await page.locator('[data-unit]').first().innerHTML();
+      assert.ok(!/objectKey|object_key|storage\/|signed-download/i.test(html), `clé de stockage ou lien signé rendu (${width}px)`);
+      assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `débordement horizontal (${width}px)`);
+      await assertNoForbiddenText(`/admin/documents ${width}px`, text);
+    }
+    // Filtre serveur au clavier : Entrée dans le champ propriétaire relance la requête filtrée.
+    const owner = page.getByLabel('Identifiant du propriétaire du Document');
+    await owner.fill('usr-owner-e2e');
+    const filtered = page.waitForRequest((request) => request.url().includes('ownerUserId=usr-owner-e2e'));
+    await owner.press('Enter');
+    await filtered;
+    assert.ok(documentListQueries.some((query) => query.includes('ownerUserId=usr-owner-e2e')), 'filtre propriétaire non envoyé au serveur');
+  });
+
+  await check('ADM-37 — vide, non installé (501), erreur serveur et refus : états dits, aucune liste inventée', async () => {
+    sessionMode = 'admin';
+    resetDocumentFixtures();
+    await page.setViewportSize({ width: 360, height: 900 });
+    documentListMode = 'empty';
+    await page.goto(api.origin + '/admin/documents');
+    await page.getByText('Aucun Document n’est enregistré dans le registre.').waitFor();
+    assert.equal(await page.locator('a[href^="/admin/documents/doc-"]').count(), 0, 'ligne inventée dans le registre vide');
+    documentListMode = 'not-installed';
+    await page.reload();
+    await page.getByText('n’est pas installé dans cet environnement').waitFor();
+    assert.equal(await page.locator('a[href^="/admin/documents/doc-"]').count(), 0, 'liste affichée à la place du 501');
+    documentListMode = 'error';
+    await page.reload();
+    await page.locator('[data-state="500"]').waitFor();
+    const errorText = await page.locator('[data-state="500"]').innerText();
+    assert.ok(!errorText.includes(SERVER_SECRET), 'message serveur brut rendu');
+    assert.ok(errorText.includes(SERVER_REQUEST_ID), 'corrélation serveur absente');
+    documentListMode = 'ready';
+    documentReadPermission = false;
+    const callsBefore = documentListCalls;
+    await page.reload();
+    await page.locator('[data-state="403"]').waitFor();
+    assert.equal(documentListCalls, callsBefore, 'appel ADMIN sans permission documents:read:any');
+    resetDocumentFixtures();
+  });
+
+  await check('ADM-38 — contrôle d’intégrité : POST réel, verdict du serveur seul, jamais présenté comme preuve qualifiée', async () => {
+    sessionMode = 'admin';
+    resetDocumentFixtures();
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto(api.origin + '/admin/documents/doc-e2e-1/verification');
+    await page.locator('[data-screen="ADM-38"]').waitFor();
+    const recompute = page.getByRole('button', { name: 'Recalculer l’empreinte (contrôle technique)' });
+    await recompute.click();
+    await page.locator('[data-integrity-result="emerald"]').waitFor();
+    const verify = documentCommandRequests.find((item) => item.command === 'verify');
+    assert.ok(verify, 'contrôle d’intégrité non envoyé au serveur');
+    assert.ok(verify.key, 'clé d’idempotence absente');
+    const text = await screenText();
+    assert.ok(says(text, 'Concordance technique') && says(text, 'ni une certification juridique'), 'verdict technique absent');
+    assert.ok(!says(text, 'Document validé') && !says(text, 'horodatage qualifié attesté'), 'verdict présenté comme qualifié');
+    assert.ok(!/objectKey|object_key/.test(await page.locator('[data-unit]').first().innerHTML()), 'clé de stockage rendue');
+    documentCommandRequests.length = 0;
+    documentIntegrityMode = 'absent';
+    await page.reload();
+    await page.getByRole('button', { name: 'Recalculer l’empreinte (contrôle technique)' }).click();
+    await page.locator('[data-integrity-result="clay"]').waitFor();
+    assert.ok(says(await screenText(), 'Contenu absent du stockage'), 'contenu absent non dit');
+    resetDocumentFixtures();
+  });
+
+  await check('ADM-38 — révocation motivée : motif 3–1000, confirmation, clé idempotente, état relu ; sans permission, aucun formulaire', async () => {
+    sessionMode = 'admin';
+    resetDocumentFixtures();
+    await page.setViewportSize({ width: 360, height: 900 });
+    await page.goto(api.origin + '/admin/documents/doc-e2e-1/verification');
+    await page.locator('[data-screen="ADM-38"]').waitFor();
+    const form = page.locator('form[data-command-form="Révoquer le Document"]');
+    await form.waitFor();
+    const submit = form.getByRole('button', { name: 'Révoquer le Document' });
+    const reason = form.getByLabel('Motif : Révoquer le Document');
+    assert.equal(await submit.isDisabled(), true, 'bouton actif sans motif ni confirmation');
+    await reason.fill('ab');
+    await form.getByRole('checkbox').check();
+    assert.equal(await submit.isDisabled(), true, 'motif de 2 caractères accepté');
+    await reason.fill('Document hors périmètre');
+    assert.equal(await submit.isDisabled(), false, 'motif valide et confirmé : envoi impossible');
+    assert.ok(says(await form.innerText(), 'Aucune pièce n’est supprimée'), 'révocation présentée comme une suppression');
+    await submit.click();
+    await form.waitFor({ state: 'detached' });
+    const revoke = documentCommandRequests.find((item) => item.command === 'revoke');
+    assert.ok(revoke, 'révocation non envoyée');
+    assert.deepEqual(revoke.body, { reason: 'Document hors périmètre' }, 'motif envoyé tel quel (trim)');
+    assert.ok(revoke.key, 'clé d’idempotence absente');
+    const text = await screenText();
+    assert.ok(says(text, 'Révoqué'), 'état serveur non relu après révocation');
+    await assertNoForbiddenText('/admin/documents révocation', text);
+    // Sans incidents:arbitrate : aucun formulaire, une explication factuelle à la place.
+    resetDocumentFixtures();
+    claimActionPermissions = 'read-only';
+    await page.reload();
+    await page.locator('[data-screen="ADM-38"]').waitFor();
+    assert.equal(await page.locator('form[data-command-form="Révoquer le Document"]').count(), 0, 'formulaire de révocation sans permission');
+    assert.ok(await page.locator('[data-command-unavailable="true"]').first().isVisible(), 'explication de permission absente');
+    resetDocumentFixtures();
+  });
+
+  await check('ADM-39 / ADM-40 — quarantaine et audit : BACKEND_GAP visibles, aucune action, aucune liste inventée', async () => {
+    sessionMode = 'admin';
+    resetDocumentFixtures();
+    await page.setViewportSize({ width: 360, height: 900 });
+    for (const [path, code] of [['/admin/documents/quarantaine', 'ADM-39'], ['/admin/documents/audit', 'ADM-40']] as const) {
+      await page.goto(api.origin + path);
+      await page.locator(`[data-screen="${code}"]`).waitFor();
+      await page.locator('[data-backend-gap="true"]').first().waitFor();
+      assert.equal(await page.locator(`[data-screen="${code}"] form`).count(), 0, `${code} : formulaire rendu`);
+      assert.equal(await page.locator(`[data-screen="${code}"] button`).count(), 0, `${code} : bouton rendu sans handler`);
+      await assertNoForbiddenText(path, await screenText());
+    }
+    assert.equal(documentListCalls, 0, 'ADM-39/40 n’appellent aucune liste ADMIN');
   });
 
   assert.deepEqual(errors, [], `erreurs de page : ${errors.join(' · ')}`);

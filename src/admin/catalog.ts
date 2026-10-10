@@ -2,7 +2,7 @@
 // Source : design/llab/content/adm_*.py, design/llab/units.py — tranches livrées :
 // P4A (ADM-01 → ADM-12), P4B-1 CONTRATS (ADM-13 → ADM-17), P4B-2 PAIEMENTS (ADM-18 → ADM-22)
 // P4C SALAIRE (ADM-23 → ADM-24), P4D CLAIMS (ADM-26 → ADM-30), P4E-1 REMPLACEMENTS (ADM-31 → ADM-33),
-// P4E-2 RÉPUTATION (ADM-34 → ADM-36).
+// P4E-2 RÉPUTATION (ADM-34 → ADM-36), P4F DOCUMENTS (ADM-37 → ADM-40).
 // Régénérer : npm run design:admin
 //
 // Référence de design UNIQUEMENT : aucun libellé de ce fichier n'est affiché par
@@ -1071,6 +1071,114 @@ export const ADMIN_DESIGN_UNITS = [
       "GET /admin/reputation/contests?cursor=",
       "POST /admin/reputation/contests/:id/decide {outcome, motive, delta?}"
     ]
+  },
+  {
+    "id": "ADM-37",
+    "canon": "ADM — documents (registre & audit)",
+    "criticality": "P1",
+    "archetype": "Catalogue des pièces",
+    "screenCodes": [
+      "ADM-37",
+      "ADM-40"
+    ],
+    "routes": [
+      "/admin/documents",
+      "/admin/documents/audit"
+    ],
+    "zoneKinds": [
+      "cta",
+      "kpi",
+      "list",
+      "table"
+    ],
+    "componentRefs": [
+      "Bandeau",
+      "Compteur",
+      "Politiques",
+      "Table",
+      "Vue"
+    ],
+    "stateNames": [
+      "Nominal",
+      "Quarantaine",
+      "Pic de volume",
+      "Panne R2",
+      "Conforme",
+      "Accès inhabituel",
+      "Accès non autorisé tenté",
+      "Purge en cours"
+    ],
+    "tokens": [
+      "--amber-500",
+      "--clay-500",
+      "--emerald-500",
+      "--mono",
+      "--surface-1",
+      "--table"
+    ],
+    "designApi": [
+      "GET /admin/documents?cursor=&filters=",
+      "GET /admin/documents/storage",
+      "GET /admin/documents/quarantine",
+      "GET /admin/documents/access-log?cursor=",
+      "GET /admin/documents/retention/policies",
+      "POST /admin/documents/retention/purge"
+    ]
+  },
+  {
+    "id": "ADM-38",
+    "canon": "ADM — documents (vérification & quarantaine)",
+    "criticality": "P0",
+    "archetype": "Contrôler les pièces",
+    "screenCodes": [
+      "ADM-38",
+      "ADM-39"
+    ],
+    "routes": [
+      "/admin/documents/:id/verification",
+      "/admin/documents/quarantaine"
+    ],
+    "zoneKinds": [
+      "cta",
+      "doc",
+      "kpi",
+      "list"
+    ],
+    "componentRefs": [
+      "Carte",
+      "Comparateur",
+      "Décision",
+      "Grille",
+      "Journal",
+      "Motif",
+      "Sandbox",
+      "Visionneuse"
+    ],
+    "stateNames": [
+      "À vérifier",
+      "Validée",
+      "Rejetée",
+      "Complément demandé",
+      "Isolée",
+      "En examen",
+      "Levée",
+      "Fraude confirmée"
+    ],
+    "tokens": [
+      "--amber-500",
+      "--clay-500",
+      "--clay-600",
+      "--emerald-500",
+      "--glass-2",
+      "--mono"
+    ],
+    "designApi": [
+      "GET /admin/documents/:id/review",
+      "POST /admin/documents/:id/review/decide {criteria, outcome, rejectReason?}",
+      "GET /admin/documents/quarantine?cursor=",
+      "POST /admin/documents/:id/quarantine/lift",
+      "POST /admin/documents/:id/quarantine/confirm-fraud {motive}"
+    ]
   }
 ] as const;
 
@@ -2005,6 +2113,111 @@ export const ADMIN_DESIGN_SCREENS = [
       "--emerald-500",
       "--clay-500",
       "--mono",
+      "--table"
+    ]
+  },
+  {
+    "code": "ADM-37",
+    "unitId": "ADM — documents (registre & audit)",
+    "route": "/admin/documents",
+    "canonicalRoute": "/admin/documents",
+    "role": "ADMIN",
+    "criticality": "P1",
+    "zoneKinds": [
+      "kpi",
+      "table",
+      "list",
+      "cta"
+    ],
+    "variantOf": null,
+    "designApi": [
+      "GET /admin/documents?cursor=&filters=",
+      "GET /admin/documents/storage",
+      "GET /admin/documents/quarantine"
+    ],
+    "tokens": [
+      "--surface-1",
+      "--mono",
+      "--clay-500",
+      "--emerald-500",
+      "--table"
+    ]
+  },
+  {
+    "code": "ADM-38",
+    "unitId": "ADM — documents (vérification & quarantaine)",
+    "route": "/admin/documents/:id/verification",
+    "canonicalRoute": "/admin/documents/:id/verification",
+    "role": "ADMIN",
+    "criticality": "P0",
+    "zoneKinds": [
+      "doc",
+      "list",
+      "kpi",
+      "cta"
+    ],
+    "variantOf": null,
+    "designApi": [
+      "GET /admin/documents/:id/review",
+      "POST /admin/documents/:id/review/decide {criteria, outcome, rejectReason?}"
+    ],
+    "tokens": [
+      "--emerald-500",
+      "--clay-500",
+      "--amber-500",
+      "--mono",
+      "--glass-2"
+    ]
+  },
+  {
+    "code": "ADM-39",
+    "unitId": "ADM — documents (vérification & quarantaine)",
+    "route": "/admin/documents/quarantaine",
+    "canonicalRoute": "/admin/documents/quarantaine",
+    "role": "ADMIN",
+    "criticality": "P0",
+    "zoneKinds": [
+      "list",
+      "doc",
+      "kpi",
+      "cta"
+    ],
+    "variantOf": null,
+    "designApi": [
+      "GET /admin/documents/quarantine?cursor=",
+      "POST /admin/documents/:id/quarantine/lift",
+      "POST /admin/documents/:id/quarantine/confirm-fraud {motive}"
+    ],
+    "tokens": [
+      "--clay-600",
+      "--clay-500",
+      "--emerald-500",
+      "--mono"
+    ]
+  },
+  {
+    "code": "ADM-40",
+    "unitId": "ADM — documents (registre & audit)",
+    "route": "/admin/documents/audit",
+    "canonicalRoute": "/admin/documents/audit",
+    "role": "ADMIN",
+    "criticality": "P1",
+    "zoneKinds": [
+      "table",
+      "kpi",
+      "list",
+      "cta"
+    ],
+    "variantOf": null,
+    "designApi": [
+      "GET /admin/documents/access-log?cursor=",
+      "GET /admin/documents/retention/policies",
+      "POST /admin/documents/retention/purge"
+    ],
+    "tokens": [
+      "--mono",
+      "--amber-500",
+      "--clay-500",
       "--table"
     ]
   }

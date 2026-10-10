@@ -52,7 +52,13 @@
  * correct/reconcile existantes ; contestations et intégrité de chaîne
  * restent BACKEND_GAP → statut PARTIEL.
  *
- * Les autres unités ADM (documents, notifications, ops, sécurité
+ * P4F-DESIGN-ADMIN-DOCUMENTS : ADM-37 (registre R2 & audit — ADM-37/40) et
+ * ADM-38 (vérification & quarantaine — ADM-38/39) sont livrées sur
+ * admin.documents.list / read, les révocations ADMIN existantes et le contrôle
+ * d'intégrité technique ; la décision de vérification, la quarantaine, le
+ * journal d'accès, les politiques et la purge sont BACKEND_GAP → statut PARTIEL.
+ *
+ * Les autres unités ADM (notifications, ops, sécurité
  * avancée, infra), FIN et RTC restent non intégrées.
  */
 
@@ -91,8 +97,9 @@ export const PRESTATAIRE_UNIT_IDS: readonly string[] = PRESTATAIRE_DESIGN_UNITS.
  * Unités ADM livrées par P4A-DESIGN-ADMIN-CORE, P4B-1-DESIGN-ADMIN-CONTRACTS,
  * P4B-2-DESIGN-ADMIN-PAYMENTS, P4C-DESIGN-ADMIN-SALARY-PROOFS,
  * P4D-DESIGN-ADMIN-CLAIMS, P4E-1-DESIGN-ADMIN-REPLACEMENTS et
- * P4E-2-DESIGN-ADMIN-REPUTATION (19 unités, 35 fiches, dérivées du catalogue
- * généré). Même règle : PARTIEL dès qu'une fiche déclare une capacité absente.
+ * P4E-2-DESIGN-ADMIN-REPUTATION et P4F-DESIGN-ADMIN-DOCUMENTS (21 unités,
+ * 39 fiches, dérivées du catalogue généré). Même règle : PARTIEL dès qu'une
+ * fiche déclare une capacité absente.
  */
 export const ADMIN_UNIT_IDS: readonly string[] = ADMIN_DESIGN_UNITS.map((unit) => unit.id);
 
