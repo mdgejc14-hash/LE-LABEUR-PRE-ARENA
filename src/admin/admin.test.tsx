@@ -10,7 +10,7 @@
  *  1. parité du catalogue généré avec la source de design (Python) ;
  *  2. résolution de route : chaque fiche ADM des tranches est atteignable et
  *     rattachée à son unité (regroupement `units.py`, pas une plage numérique) ;
- *  3. registre complet (25 unités / 48 fiches), selon les regroupements canoniques exacts ;
+ *  3. registre complet (26 unités / 50 fiches), selon les regroupements canoniques exacts ;
  *  4. API : chaque chemin appelé existe déjà dans `routeContracts.ts` ;
  *  5. GARDE-FOU DE VOCABULAIRE : aucun libellé métier du Master Design
  *     (Mission, Client, Prestataire, Litige) ne peut entrer dans l'interface,
@@ -275,11 +275,11 @@ export async function runAdminTests(): Promise<{ name: string; success: boolean;
     execFileSync('python3', ['scripts/design/generate-admin-catalog.py', '--check']);
   });
 
-  check('ADM — 25 unités / 48 fiches, chaque fiche rattachée à une seule unité', () => {
-    assert.equal(ADMIN_DESIGN_UNITS.length, 25);
-    assert.equal(ADMIN_DESIGN_SCREENS.length, 48);
+  check('ADM — 26 unités / 50 fiches, chaque fiche rattachée à une seule unité', () => {
+    assert.equal(ADMIN_DESIGN_UNITS.length, 26);
+    assert.equal(ADMIN_DESIGN_SCREENS.length, 50);
     const codes = ADMIN_DESIGN_SCREENS.map((screen) => screen.code);
-    assert.equal(new Set(codes).size, 48);
+    assert.equal(new Set(codes).size, 50);
     for (const screen of ADMIN_DESIGN_SCREENS) {
       const unit = unitForScreen(screen.code);
       assert.ok(unit, `fiche sans unité : ${screen.code}`);
@@ -293,7 +293,7 @@ export async function runAdminTests(): Promise<{ name: string; success: boolean;
     // P4C ajoute ADM-23 = {confirmations, preuves OTP}, unité unique salaire.
     // P4D conserve les groupements du Master : ADM-27 = {fiche, pièces},
     // ADM-29 = {décision, historique}; ADM-26 reste une unité distincte.
-    assert.deepEqual(ADMIN_DESIGN_UNITS.map((unit) => unit.id), ['ADM-01', 'ADM-02', 'ADM-04', 'ADM-06', 'ADM-08', 'ADM-10', 'ADM-11', 'ADM-13', 'ADM-14', 'ADM-16', 'ADM-18', 'ADM-20', 'ADM-23', 'ADM-26', 'ADM-27', 'ADM-29', 'ADM-31', 'ADM-34', 'ADM-35', 'ADM-37', 'ADM-38', 'ADM-41', 'ADM-44', 'ADM-47', 'ADM-48']);
+    assert.deepEqual(ADMIN_DESIGN_UNITS.map((unit) => unit.id), ['ADM-01', 'ADM-02', 'ADM-04', 'ADM-06', 'ADM-08', 'ADM-10', 'ADM-11', 'ADM-13', 'ADM-14', 'ADM-16', 'ADM-18', 'ADM-20', 'ADM-23', 'ADM-26', 'ADM-27', 'ADM-29', 'ADM-31', 'ADM-34', 'ADM-35', 'ADM-37', 'ADM-38', 'ADM-41', 'ADM-44', 'ADM-47', 'ADM-48', 'ADM-50']);
     assert.deepEqual(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-02')?.screenCodes, ['ADM-02', 'ADM-03']);
     assert.deepEqual(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-04')?.screenCodes, ['ADM-04', 'ADM-05']);
     assert.deepEqual(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-06')?.screenCodes, ['ADM-06', 'ADM-07']);
@@ -361,6 +361,9 @@ export async function runAdminTests(): Promise<{ name: string; success: boolean;
     assert.deepEqual(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-48')?.screenCodes, ['ADM-48']);
     assert.deepEqual(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-48')?.routes, ['/admin/ops/dead-letter']);
     assert.equal(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-48')?.canon, 'ADM — ops (dead-letter)');
+    assert.deepEqual(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-50')?.screenCodes, ['ADM-50', 'ADM-51']);
+    assert.deepEqual(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-50')?.routes, ['/admin/securite', '/admin/securite/idor']);
+    assert.equal(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-50')?.canon, 'ADM — sécurité (dashboard & IDOR)');
   });
 
   check('ADM — chaque route de fiche est résolue par le routeur P0 vers son unité', () => {
@@ -377,7 +380,7 @@ export async function runAdminTests(): Promise<{ name: string; success: boolean;
     assert.equal(index.kind === 'shell' && index.unitId, 'ADM-01', 'l’index /admin doit être le tableau de bord ADM-01');
   });
 
-  check('ADM — registre complet : les 48 fiches livrées ont un écran, aucun code inconnu', () => {
+  check('ADM — registre complet : les 50 fiches livrées ont un écran, aucun code inconnu', () => {
     const registered = Object.keys(ADMIN_SCREEN_COMPONENTS).sort();
     const expected = ADMIN_DESIGN_SCREENS.map((screen) => screen.code).sort();
     assert.deepEqual(registered, expected);
@@ -540,8 +543,8 @@ export async function runAdminTests(): Promise<{ name: string; success: boolean;
     }
   });
 
-  check('ADM — intégration : 25 unités ADM PARTIEL (P4A → P4G-2), EMP/PRE/PUB/SYS inchangés, autres ADM/FIN/RTC non intégrées', () => {
-    assert.equal(ADMIN_UNIT_IDS.length, 25);
+  check('ADM — intégration : 26 unités ADM PARTIEL (P4A → P4G-3), EMP/PRE/PUB/SYS inchangés, autres ADM/FIN/RTC non intégrées', () => {
+    assert.equal(ADMIN_UNIT_IDS.length, 26);
     for (const unitId of ADMIN_UNIT_IDS) {
       assert.equal(integrationStatus(unitId), 'PARTIEL', `${unitId} doit être PARTIEL`);
       assert.ok(isAdminUnit(unitId), `${unitId} doit être reconnue comme unité ADM`);
@@ -574,6 +577,9 @@ export async function runAdminTests(): Promise<{ name: string; success: boolean;
     assert.equal(integrationStatus('ADM-44'), 'PARTIEL', 'ADM-44/45/46 : routes de design livrées, API ops absente');
     assert.equal(integrationStatus('ADM-47'), 'PARTIEL', 'ADM-47/49 : vues diagnostiques, données SLO et incidents ops absentes');
     assert.equal(integrationStatus('ADM-48'), 'PARTIEL', 'ADM-48 : vue diagnostique, lecture et actions dead-letter absentes');
+    assert.equal(integrationStatus('ADM-50'), 'PARTIEL', 'ADM-50/51 : sécurité en diagnostic, détections indisponibles');
+    assert.equal(integrationStatus('ADM-52'), 'NON_INTEGRE', 'replay/rate limits/webhooks reportés');
+    assert.equal(integrationStatus('ADM-55'), 'NON_INTEGRE', 'incidents/audit sécurité reportés');
   });
 
   check('ADM — erreurs : projection en états StateGuard, corrélation sûre uniquement', () => {
@@ -1624,7 +1630,7 @@ export async function runAdminTests(): Promise<{ name: string; success: boolean;
     assert.equal(typeof ADMIN_SCREEN_COMPONENTS['ADM-41'], 'function', 'notifications (ADM-41) enregistrées');
     assert.equal(typeof ADMIN_SCREEN_COMPONENTS['ADM-42'], 'function', 'gabarits (ADM-42) enregistrés');
     assert.equal(typeof ADMIN_SCREEN_COMPONENTS['ADM-43'], 'function', 'délivrabilité (ADM-43) enregistrée');
-    assert.equal(Object.keys(ADMIN_SCREEN_COMPONENTS).length, 48, '48 fiches livrées (P0 → P4G-2)');
+    assert.equal(Object.keys(ADMIN_SCREEN_COMPONENTS).length, 50, '50 fiches livrées (P0 → P4G-3)');
   });
 
   check('ADM — P4F-2 : notifications, gabarits et délivrabilité suivent les routes réelles et les gaps', () => {
@@ -2076,7 +2082,35 @@ export async function runAdminTests(): Promise<{ name: string; success: boolean;
     for (const code of ['ADM-47', 'ADM-48', 'ADM-49']) {
       assert.ok((ADMIN_UNIT_GAPS[code] ?? []).length > 0, `${code} : BACKEND_GAP obligatoire`);
     }
-    assert.equal(resolveAdminScreen('/admin/securite')?.code, undefined, 'écrans de sécurité hors périmètre');
+    assert.equal(resolveAdminScreen('/admin/securite/replay')?.code, undefined, 'replay hors périmètre');
+  });
+
+  check('ADM — P4G-3 : dashboard et IDOR diagnostiques, sans données ni geste de sécurité simulés', () => {
+    for (const [path, code] of [['/admin/securite', 'ADM-50'], ['/admin/securite/idor', 'ADM-51']] as const) {
+      assert.equal(resolveAdminScreen(path)?.code, code);
+      assert.equal(resolveAdminScreen(path)?.unitId, 'ADM-50');
+      const route = resolveRoute(path);
+      assert.equal(route.kind, 'shell');
+      if (route.kind === 'shell') assert.equal(route.unitId, 'ADM-50');
+      assert.ok(adminGapsFor('ADM-50', path).some((line) => line.startsWith(code)), `${code} : BACKEND_GAP`);
+      assert.equal(typeof ADMIN_SCREEN_COMPONENTS[code], 'function');
+    }
+    for (const path of ['/admin/securite/replay', '/admin/securite/rate-limits', '/admin/securite/webhooks', '/admin/securite/incidents', '/admin/securite/audit']) {
+      assert.equal(resolveAdminScreen(path), null, `${path} : reporté`);
+    }
+    assert.deepEqual(API_ROUTE_CONTRACTS.filter((route) => route.path.startsWith('/api/v1/admin/security/')), [], 'aucune API sécurité ADMIN');
+    assert.ok(!ADMIN_API_PATHS.some((path) => path.includes('/admin/security/')), 'aucune requête frontend vers une API absente');
+    assert.equal(API_ROUTE_CONTRACTS.find((route) => route.key === 'admin.audit.list')?.permission, 'audit:read');
+    assert.equal(API_ROUTE_CONTRACTS.find((route) => route.key === 'admin.incidents.list')?.permission, 'incidents:read:any');
+    const source = stripComments(readFileSync(new URL('./screens/security.tsx', import.meta.url), 'utf8'));
+    assert.ok(!/useAdminApi|useAdminResource|useAdminAction|fetch\(|AdminApi/.test(source), 'ni API supposée ni substitution par un journal générique');
+    assert.ok(!source.includes('<form') && !source.includes('onClick='), 'aucune action simulée');
+    assert.ok(source.includes('disabled') && source.includes('data-unavailable-action'), 'commandes absentes désactivées');
+    assert.ok(source.includes("value: '—'") && source.includes('data-no-invented-security'), 'aucune mesure inventée');
+    assert.deepEqual(forbiddenTermsIn(displayStringsIn(source).join(' ')), [], 'vocabulaire affiché');
+    for (const code of ['ADM-50', 'ADM-51']) {
+      assert.ok((ADMIN_UNIT_GAPS[code] ?? []).length > 0, `${code} : BACKEND_GAP requis`);
+    }
   });
 
   check('ADM — P4F : non-régression P0 → P4E-2 (routes et fiches précédentes inchangées, aucune fiche hors tranche)', () => {

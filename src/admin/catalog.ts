@@ -4,7 +4,7 @@
 // P4C SALAIRE (ADM-23 → ADM-24), P4D CLAIMS (ADM-26 → ADM-30), P4E-1 REMPLACEMENTS (ADM-31 → ADM-33),
 // P4E-2 RÉPUTATION (ADM-34 → ADM-36), P4F DOCUMENTS (ADM-37 → ADM-40),
 // P4F-2 NOTIFICATIONS (ADM-41 → ADM-43), P4G-1 OPÉRATIONS (ADM-44 → ADM-46),
-// P4G-2 SUPERVISION (ADM-47 → ADM-49).
+// P4G-2 SUPERVISION (ADM-47 → ADM-49), P4G-3 SÉCURITÉ (ADM-50 → ADM-51).
 // Régénérer : npm run design:admin
 //
 // Référence de design UNIQUEMENT : aucun libellé de ce fichier n'est affiché par
@@ -1414,6 +1414,60 @@ export const ADMIN_DESIGN_UNITS = [
       "POST /admin/ops/dlq/:id/retry",
       "POST /admin/ops/dlq/:id/abandon {compensation}"
     ]
+  },
+  {
+    "id": "ADM-50",
+    "canon": "ADM — sécurité (dashboard & IDOR)",
+    "criticality": "P0",
+    "archetype": "Muraille visible",
+    "screenCodes": [
+      "ADM-50",
+      "ADM-51"
+    ],
+    "routes": [
+      "/admin/securite",
+      "/admin/securite/idor"
+    ],
+    "zoneKinds": [
+      "cta",
+      "doc",
+      "kpi",
+      "list",
+      "table"
+    ],
+    "componentRefs": [
+      "Corrélateur",
+      "Marqueur",
+      "Qualification",
+      "Table",
+      "Tuiles"
+    ],
+    "stateNames": [
+      "Calme",
+      "Actif",
+      "Attaque",
+      "Post-incident",
+      "Refus systématique",
+      "Motif unique",
+      "Motif coordonné",
+      "Fuite suspectée"
+    ],
+    "tokens": [
+      "--clay-500",
+      "--clay-600",
+      "--emerald-500",
+      "--mono",
+      "--table",
+      "--violet-500"
+    ],
+    "designApi": [
+      "GET /admin/security/overview",
+      "GET /admin/security/detections?cursor=",
+      "POST /admin/security/detections/:id/qualify {verdict}",
+      "GET /admin/security/idor?cursor=",
+      "POST /admin/security/idor/:id/qualify {verdict, notes}",
+      "POST /admin/security/idor/:id/reinforce"
+    ]
   }
 ] as const;
 
@@ -2695,6 +2749,59 @@ export const ADMIN_DESIGN_SCREENS = [
       "--emerald-500",
       "--mono",
       "--glass-1"
+    ]
+  },
+  {
+    "code": "ADM-50",
+    "unitId": "ADM — sécurité (dashboard & IDOR)",
+    "route": "/admin/securite",
+    "canonicalRoute": "/admin/securite",
+    "role": "ADMIN",
+    "criticality": "P0",
+    "zoneKinds": [
+      "kpi",
+      "table",
+      "list",
+      "cta"
+    ],
+    "variantOf": null,
+    "designApi": [
+      "GET /admin/security/overview",
+      "GET /admin/security/detections?cursor=",
+      "POST /admin/security/detections/:id/qualify {verdict}"
+    ],
+    "tokens": [
+      "--clay-500",
+      "--violet-500",
+      "--mono",
+      "--table",
+      "--emerald-500"
+    ]
+  },
+  {
+    "code": "ADM-51",
+    "unitId": "ADM — sécurité (dashboard & IDOR)",
+    "route": "/admin/securite/idor",
+    "canonicalRoute": "/admin/securite/idor",
+    "role": "ADMIN",
+    "criticality": "P0",
+    "zoneKinds": [
+      "table",
+      "doc",
+      "kpi",
+      "cta"
+    ],
+    "variantOf": null,
+    "designApi": [
+      "GET /admin/security/idor?cursor=",
+      "POST /admin/security/idor/:id/qualify {verdict, notes}",
+      "POST /admin/security/idor/:id/reinforce"
+    ],
+    "tokens": [
+      "--clay-600",
+      "--clay-500",
+      "--emerald-500",
+      "--mono"
     ]
   }
 ] as const;

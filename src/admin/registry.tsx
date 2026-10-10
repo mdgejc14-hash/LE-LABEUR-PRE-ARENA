@@ -1,8 +1,8 @@
 /**
- * ADM —— registre des écrans livrés (25 unités, 48 fiches — tranches P4A,
- * P4B-1, P4B-2, P4C, P4D, P4E-1, P4E-2, P4F, P4F-2, P4G-1 et P4G-2).
+ * ADM —— registre des écrans livrés (26 unités, 50 fiches — tranches P4A,
+ * P4B-1, P4B-2, P4C, P4D, P4E-1, P4E-2, P4F, P4F-2, P4G-1, P4G-2 et P4G-3).
  *
- * Chaque code de fiche ADM-01 → ADM-24 et ADM-26 → ADM-49 livré par ces
+ * Chaque code de fiche ADM-01 → ADM-24 et ADM-26 → ADM-51 livré par ces
  * tranches est associé à l'écran qui le rend. Les variantes des fiches (mêmes
  * zones, état imposé par la route) réutilisent l'écran canonique, comme le
  * décrit le Master Design.
@@ -29,6 +29,7 @@
  * P4G-1 ajoute ADM-44/45/46 : files, jobs et planifications sans API ADMIN ops.
  * P4G-2 ajoute ADM-47/48/49 : SLO, dead-letter et détail d’incident sous forme
  * diagnostique BACKEND_GAP, sans API ni commande ops. Sécurité et infra restent hors tranche.
+ * P4G-3 ajoute ADM-50/51, diagnostic sécurité sans API de détection ADMIN.
  *
  * Ce module est le SEUL point d'entrée des routes `/admin/*` des tranches :
  * il résout la fiche depuis le chemin réel, applique la garde de session puis
@@ -45,6 +46,7 @@ import {
   Admin48DeadLetter,
   Admin49OpsIncident,
 } from './screens/operationsSupervision';
+import { Admin50SecurityOverview, Admin51AccessControls } from './screens/security';
 import { Admin01Dashboard } from './screens/overview';
 import { Admin02Users, Admin03UserSheet, Admin04Block, Admin05BlockJournal } from './screens/users';
 import {
@@ -150,6 +152,8 @@ export const ADMIN_SCREEN_COMPONENTS: Readonly<Record<string, AdminScreenCompone
   'ADM-47': Admin47ServiceLevels,
   'ADM-48': Admin48DeadLetter,
   'ADM-49': Admin49OpsIncident,
+  'ADM-50': Admin50SecurityOverview,
+  'ADM-51': Admin51AccessControls,
 };
 
 export function adminScreenCodes(): readonly string[] {
