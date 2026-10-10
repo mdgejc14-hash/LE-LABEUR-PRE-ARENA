@@ -13,6 +13,12 @@
  * Salaire reste strictement réservée au Candidat et sa demande à l'Employeur ;
  * aucune route ADMIN ne lit la confirmation ni le dossier de preuve, et aucun
  * secret OTP n'est exposé.
+ *
+ * P4E-1-DESIGN-ADMIN-REPLACEMENTS (ADM-31 → ADM-33) : le dossier de
+ * Remplacement est lu par admin.replacements.list / admin.replacements.read.
+ * Les commandes ADMIN historiques assign / transfer / finalize sont déclarées
+ * dans le catalogue mais SANS handler, volontairement : elles contourneraient
+ * la Candidature, la Proposition et la réponse explicite du Candidat.
  */
 
 export const ADMIN_UNIT_GAPS: Record<string, readonly string[]> = {
@@ -186,5 +192,29 @@ export const ADMIN_UNIT_GAPS: Record<string, readonly string[]> = {
     'ADM-30 · la page réutilise admin.claims.list et filtre localement les Claims terminés de la page réelle ; resolvedAt, resolvedBy, resolution et status ne sont affichés que lorsqu’ils sont présents dans ClaimView.',
     'ADM-30 · historique d’événements par Claim, motifs structurés, recours, analyses, comparaison et statistiques — aucune route/DTO consultable ne les fournit. GET /api/v1/admin/audit est une frontière de contrôle non filtrée par Claim ; aucun audit vide ou générique n’est présenté comme historique.',
     'ADM-30 · aucun filtrage serveur par statut ne permet d’affirmer que la page chargée contient l’historique complet ; charger davantage utilise seulement le curseur officiel admin.claims.list.',
+  ],
+  /* ── P4E-1 · workflow de Remplacement (lecture seule) ── */
+  'ADM-31': [
+    'ADM-31 · la file appelle admin.replacements.list (GET /api/v1/admin/replacements, permission replacements:read:any revérifiée par le repository) : les dossiers sont rendus par curseur, sans filtre serveur. Recherche, filtre d’état et repères portent uniquement sur les pages réellement chargées.',
+    'ADM-31 · GET /admin/replacements/stats — absent : aucun total global, aucune durée « sans Candidat depuis plus de 7 jours », aucun compte de dossiers contestés ni de réussites sur 30 jours. Aucune ancienneté n’est calculée dans le navigateur : seule la date d’ouverture renvoyée est affichée.',
+    'ADM-31 · POST /admin/replacements/:id/reassign — absent : aucune affectation d’agent ADMIN n’existe pour un Remplacement.',
+    'ADM-31 · les états de fiche « notification, contestation, recherche, bascule, clôturé » et les badges de motif (accord mutuel, défaillance, faute alléguée, force majeure) n’existent pas dans le produit : seuls les statuts serveur PENDING_OFFER, SOURCING_CANDIDATES, CANDIDATE_SELECTED, TRANSFERRED_TO_EMPLOYER et CONTRACT_FINALIZED sont affichés. Le motif réel est celui du Claim d’origine, consultable sur sa fiche.',
+    'ADM-31 · ReplacementDossier n’expose ni le Candidat du Contrat source ni le statut de l’Offre : ces colonnes de la fiche ne sont pas reconstituées.',
+    'ADM-31 · sans persistance durable configurée, admin.replacements.list répond sa frontière de contrôle (collection vide, persistence not-configured) : cet état est affiché tel quel, jamais une file présentée comme vide et saine.',
+  ],
+  'ADM-32': [
+    'ADM-32 · GET /admin/replacements/:id/full — absent. Le dossier est lu par admin.replacements.read ; le Claim d’origine par admin.claims.read (incidents:read:any) ; les Contrats source et successeur sont recherchés dans la page chargée de admin.contracts.list (contracts:read:any) ; la Proposition sélectionnée dans la page chargée de admin.proposals.list (applications:read:any) ; les Paiements de chaque Contrat dans la page chargée de admin.payments.list (payments:read:any). Chaque bloc affiche son propre état.',
+    'ADM-32 · POST /admin/replacements/:id/intervene — absent : aucune relance, médiation ou correction ADMIN. Les commandes déclarées admin.replacements.assign, admin.replacements.transfer et admin.replacements.finalize n’ont volontairement aucun handler : aucune assignation directe, aucun transfert direct de Candidat et aucune finalisation ADMIN ne sont proposés.',
+    'ADM-32 · le dossier ne porte qu’une date d’ouverture et une date de dernière mise à jour : aucune étape (Offre publiée, Candidature sélectionnée, Proposition émise, réponse du Candidat, Contrat successeur) n’est horodatée par l’API. Le déroulé indique l’état atteint, jamais une date reconstituée.',
+    'ADM-32 · l’audit REPLACEMENT_OFFER_PUBLISHED et l’événement REPLACEMENT_CREATED sont écrits par le serveur, mais GET /api/v1/admin/audit reste une frontière de contrôle non filtrée par dossier : aucun journal d’audit du Remplacement n’est lisible. Seul l’historique émis sur chaque Contrat (CONTRACT_REPLACED, REPLACEMENT_SUCCESSOR_LINKED…) est affiché lorsqu’il est servi.',
+    'ADM-32 · admin.applications.list et admin.offers.list sont des frontières de contrôle sans données métier : le statut de la Candidature sélectionnée et celui de l’Offre de remplacement ne sont pas lisibles ; seules leurs références et le titre de l’Offre renvoyés par le dossier sont affichés.',
+    'ADM-32 · aucune lecture ADMIN unitaire de Contrat ni de Proposition n’existe (contracts.read est réservée aux parties) : un élément hors de la page chargée est déclaré « hors page chargée », jamais rechargé par une route de partie.',
+    'ADM-32 · montants dus à chacun, priorité du Paiement du Candidat sortant et relance automatique — aucune route ne les fournit. Les Paiements restent rattachés à leur propre Contrat : aucun total, aucune fusion et aucun transfert entre Contrats ne sont calculés ou affichés.',
+  ],
+  'ADM-33': [
+    'ADM-33 · fiche entière en BACKEND_GAP : POST /admin/replacements/:id/arbitrate et GET /admin/replacements/:id/arbitrate/preview — absents du catalogue et sans handler. Aucun arbitrage, aucune motivation, aucune double validation et aucun recours ne peuvent être enregistrés.',
+    'ADM-33 · le produit ne connaît aucun état « contesté » pour un Remplacement : aucune contestation n’est à trancher et aucun dossier n’est présenté comme tel.',
+    'ADM-33 · aucune écriture financière, aucun ajustement de décompte et aucune correction de périmètre ne sont simulés : la fiche ne rend aucun formulaire. Le Paiement du travail validé reste rattaché au Contrat source.',
+    'ADM-33 · la seule décision ADMIN du workflow est la décision REPLACE d’un Claim CONTRACT_INCIDENT en ADMIN_REVIEW (admin.claims.decision, incidents:arbitrate), qui ouvre le dossier et passe le Contrat source à REPLACED. Elle relève de la fiche de décision du Claim et n’est pas rendue par cette tranche.',
   ],
 };

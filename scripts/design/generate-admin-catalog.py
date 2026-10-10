@@ -8,7 +8,10 @@ Tranches livrées :
   P4C-DESIGN-ADMIN-SALARY-PROOFS : confirmations de Salaire et preuves de
   réception (unité exacte `ADM — salaire (confirmations & preuves OTP)`) ;
   P4D-DESIGN-ADMIN-CLAIMS : file, dossier, pièces et décisions des Claims
-  (regroupements exacts `ADM-26`, `ADM-27/28`, `ADM-29/30`).
+  (regroupements exacts `ADM-26`, `ADM-27/28`, `ADM-29/30`) ;
+  P4E-1-DESIGN-ADMIN-REPLACEMENTS : file, suivi détaillé et arbitrage des
+  Remplacements (unité exacte `ADM — remplacements (file & arbitrage)` =
+  ADM-31 regroupant ADM-31/32/33).
 
 Ce générateur ne produit AUCUN libellé métier : les textes affichés par
 l'interface viennent de `src/admin/vocabulary.ts` (vocabulaire LE LABEUR).
@@ -38,10 +41,14 @@ Périmètre de la tranche P4C (supervision du Salaire uniquement) :
   ADM-23 confirmations de Salaire (file) ;
   ADM-24 preuves de réception (examen) — unité unique `ADM-23` selon `units.py`.
 
-Les écrans ADM suivants (remplacements, réputation, documents, notifications,
-ops, sécurité avancée, infra, FIN) restent hors tranche et ne figurent PAS dans
-ce catalogue. Seules les fiches P4D explicitement listées ci-dessus sont incluses
-pour les Claims ; les outils d’administration des Remplacements restent hors scope.
+Périmètre de la tranche P4E-1 (workflow de remplacement uniquement) :
+  ADM-31 file & suivi des Remplacements ;
+  ADM-32 suivi détaillé d'un Remplacement (variante d'ADM-31) ;
+  ADM-33 arbitrage (canon propre, même unité selon `units.py` ; capacité
+         absente côté serveur, déclarée BACKEND_GAP par la tranche).
+
+Les écrans ADM suivants (réputation, documents, notifications, ops, sécurité
+avancée, infra, FIN) restent hors tranche et ne figurent PAS dans ce catalogue.
 """
 import json
 import sys
@@ -54,7 +61,7 @@ sys.path.insert(0, str(ROOT / 'design'))
 from llab.content import load_all  # noqa: E402
 from llab.units import unit_of  # noqa: E402
 
-# Fiches ADM livrées par les tranches P4A, P4B-1, P4B-2, P4C et P4D (périmètre strict).
+# Fiches ADM livrées par les tranches P4A, P4B-1, P4B-2, P4C, P4D et P4E-1 (périmètre strict).
 TRANCHE_P4A = {
     'ADM-01', 'ADM-02', 'ADM-03', 'ADM-04', 'ADM-05',
     'ADM-06', 'ADM-07', 'ADM-08', 'ADM-09',
@@ -85,7 +92,14 @@ TRANCHE_P4D = {
     'ADM-26', 'ADM-27', 'ADM-28', 'ADM-29', 'ADM-30',
 }
 
-TRANCHE_ADMIN = TRANCHE_P4A | TRANCHE_P4B1 | TRANCHE_P4B2 | TRANCHE_P4C | TRANCHE_P4D
+# P4E-1-DESIGN-ADMIN-REPLACEMENTS : unité exacte de `design/llab/units.py`
+# « ADM — remplacements (file & arbitrage) » = ADM-31 regroupe ADM-31/32/33
+# (canons « ADM — remplacements (file) » et « ADM — remplacement (arbitrage) »).
+TRANCHE_P4E1 = {
+    'ADM-31', 'ADM-32', 'ADM-33',
+}
+
+TRANCHE_ADMIN = TRANCHE_P4A | TRANCHE_P4B1 | TRANCHE_P4B2 | TRANCHE_P4C | TRANCHE_P4D | TRANCHE_P4E1
 
 families = load_all()
 SCREENS = [s for s in families['ADM'] if s.code in TRANCHE_ADMIN]
@@ -146,7 +160,7 @@ payload = (
     '// GÉNÉRÉ PAR scripts/design/generate-admin-catalog.py — NE PAS ÉDITER À LA MAIN.\n'
     '// Source : design/llab/content/adm_*.py, design/llab/units.py — tranches livrées :\n'
     '// P4A (ADM-01 → ADM-12), P4B-1 CONTRATS (ADM-13 → ADM-17), P4B-2 PAIEMENTS (ADM-18 → ADM-22)\n'
-    '// P4C SALAIRE (ADM-23 → ADM-24), P4D CLAIMS (ADM-26 → ADM-30).\n'
+    '// P4C SALAIRE (ADM-23 → ADM-24), P4D CLAIMS (ADM-26 → ADM-30), P4E-1 REMPLACEMENTS (ADM-31 → ADM-33).\n'
     '// Régénérer : npm run design:admin\n'
     '//\n'
     '// Référence de design UNIQUEMENT : aucun libellé de ce fichier n\'est affiché par\n'

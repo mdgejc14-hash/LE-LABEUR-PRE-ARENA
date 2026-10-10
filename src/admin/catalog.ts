@@ -1,7 +1,7 @@
 // GÉNÉRÉ PAR scripts/design/generate-admin-catalog.py — NE PAS ÉDITER À LA MAIN.
 // Source : design/llab/content/adm_*.py, design/llab/units.py — tranches livrées :
 // P4A (ADM-01 → ADM-12), P4B-1 CONTRATS (ADM-13 → ADM-17), P4B-2 PAIEMENTS (ADM-18 → ADM-22)
-// P4C SALAIRE (ADM-23 → ADM-24), P4D CLAIMS (ADM-26 → ADM-30).
+// P4C SALAIRE (ADM-23 → ADM-24), P4D CLAIMS (ADM-26 → ADM-30), P4E-1 REMPLACEMENTS (ADM-31 → ADM-33).
 // Régénérer : npm run design:admin
 //
 // Référence de design UNIQUEMENT : aucun libellé de ce fichier n'est affiché par
@@ -905,6 +905,77 @@ export const ADMIN_DESIGN_UNITS = [
       "GET /admin/disputes/decisions/analytics",
       "GET /admin/disputes/decisions/compare?ids="
     ]
+  },
+  {
+    "id": "ADM-31",
+    "canon": "ADM — remplacements (file & arbitrage)",
+    "criticality": "P1",
+    "archetype": "Transition sous surveillance",
+    "screenCodes": [
+      "ADM-31",
+      "ADM-32",
+      "ADM-33"
+    ],
+    "routes": [
+      "/admin/remplacements",
+      "/admin/remplacements/:id",
+      "/admin/remplacements/:id/arbitrage"
+    ],
+    "zoneKinds": [
+      "cta",
+      "doc",
+      "hero",
+      "kpi",
+      "list",
+      "price",
+      "table",
+      "timeline",
+      "verdict"
+    ],
+    "componentRefs": [
+      "Alerte",
+      "Badge",
+      "C-06",
+      "Contestation",
+      "Double",
+      "Notification",
+      "Panneau",
+      "Simulateur",
+      "Table"
+    ],
+    "stateNames": [
+      "Fluide",
+      "Enlisé",
+      "Contesté",
+      "Échoué",
+      "Nominal",
+      "Contestation active",
+      "Paiement du sortant en retard",
+      "Clôturé",
+      "À trancher",
+      "Contre-signature",
+      "Rendu",
+      "Infirmé"
+    ],
+    "tokens": [
+      "--amber-500",
+      "--clay-500",
+      "--clay-600",
+      "--emerald-500",
+      "--glass-3",
+      "--gold-500",
+      "--mono",
+      "--table"
+    ],
+    "designApi": [
+      "GET /admin/replacements?cursor=",
+      "POST /admin/replacements/:id/reassign",
+      "GET /admin/replacements/stats",
+      "GET /admin/replacements/:id/full",
+      "POST /admin/replacements/:id/intervene",
+      "POST /admin/replacements/:id/arbitrate {causeFound, payoutCorrect, perimeterValid, motive, entries}",
+      "GET /admin/replacements/:id/arbitrate/preview"
+    ]
   }
 ] as const;
 
@@ -1686,6 +1757,82 @@ export const ADMIN_DESIGN_SCREENS = [
       "--violet-500",
       "--clay-500",
       "--table"
+    ]
+  },
+  {
+    "code": "ADM-31",
+    "unitId": "ADM — remplacements (file & arbitrage)",
+    "route": "/admin/remplacements",
+    "canonicalRoute": "/admin/remplacements",
+    "role": "ADMIN",
+    "criticality": "P1",
+    "zoneKinds": [
+      "kpi",
+      "table",
+      "list",
+      "cta"
+    ],
+    "variantOf": null,
+    "designApi": [
+      "GET /admin/replacements?cursor=",
+      "POST /admin/replacements/:id/reassign",
+      "GET /admin/replacements/stats"
+    ],
+    "tokens": [
+      "--clay-500",
+      "--amber-500",
+      "--mono",
+      "--table"
+    ]
+  },
+  {
+    "code": "ADM-32",
+    "unitId": "ADM — remplacements (file & arbitrage)",
+    "route": "/admin/remplacements/:id",
+    "canonicalRoute": "/admin/remplacements/:id",
+    "role": "ADMIN",
+    "criticality": "P1",
+    "zoneKinds": [
+      "hero",
+      "timeline",
+      "table",
+      "cta"
+    ],
+    "variantOf": "ADM-31",
+    "designApi": [
+      "GET /admin/replacements/:id/full",
+      "POST /admin/replacements/:id/intervene"
+    ],
+    "tokens": [
+      "--gold-500",
+      "--clay-500",
+      "--emerald-500",
+      "--mono"
+    ]
+  },
+  {
+    "code": "ADM-33",
+    "unitId": "ADM — remplacements (file & arbitrage)",
+    "route": "/admin/remplacements/:id/arbitrage",
+    "canonicalRoute": "/admin/remplacements/:id/arbitrage",
+    "role": "ADMIN",
+    "criticality": "P0",
+    "zoneKinds": [
+      "verdict",
+      "doc",
+      "price",
+      "cta"
+    ],
+    "variantOf": null,
+    "designApi": [
+      "POST /admin/replacements/:id/arbitrate {causeFound, payoutCorrect, perimeterValid, motive, entries}",
+      "GET /admin/replacements/:id/arbitrate/preview"
+    ],
+    "tokens": [
+      "--clay-600",
+      "--gold-500",
+      "--mono",
+      "--glass-3"
     ]
   }
 ] as const;
