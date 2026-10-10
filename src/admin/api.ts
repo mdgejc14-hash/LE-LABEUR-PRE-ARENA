@@ -19,6 +19,12 @@
  * sans handler (le consentement du Candidat passe par la Proposition) : elles ne
  * sont jamais appelées. `replacements.read` (Employeur/Candidat) et
  * `replacements.offer.create` (Employeur) ne sont pas détournées.
+ * P4E-2-DESIGN-ADMIN-REPUTATION : lectures `admin.reputation.entries.list/read`
+ * (audit:read) et commandes `admin.reputation.entries.correct` /
+ * `admin.reputation.reconcile` (incidents:arbitrate, Idempotency-Key). La vue
+ * dérivée `reputation.mine.read` (scope self) n'est jamais appelée. Aucune
+ * route de contestation ni d'intégrité de chaîne n'existe : elles ne sont pas
+ * inventées ici.
  * Règles absolues :
  *  - aucun endpoint n'est créé, renommé ou contourné ; chaque chemin appelé ici
  *    existe déjà dans `src/backend/api/routeContracts.ts` (vérifié par test) ;
@@ -54,6 +60,13 @@ import type {
   PaymentReconciliationReviewRecord,
 } from '../backend/persistence/paymentReconciliationRecords';
 import type { Contract, MissionProposal, ReplacementDossier } from '../types';
+import type {
+  ReputationCorrectionInput,
+  ReputationEntryDetail,
+  ReputationEntryView,
+} from '../backend/reputation/reputationRepository';
+import type { ReputationReconciliationReport } from '../backend/reputation/reconciliationCore';
+import type { ReputationSourceEntityType, ReputationStatus } from '../domain/reputationRules';
 import { ApiClientError, HttpApiClient } from '../repositories/apiClient';
 
 export type {
@@ -72,6 +85,10 @@ export type {
   PaymentReconciliationBatchReport,
   PaymentReconciliationReviewRecord,
   PaymentReconciliationCorrectionAttemptRecord,
+  ReputationCorrectionInput,
+  ReputationEntryDetail,
+  ReputationEntryView,
+  ReputationReconciliationReport,
 };
 
 /** Session serveur réelle : rôle, statut de compte et permissions dérivées serveur. */
@@ -133,6 +150,12 @@ export const ADMIN_API_PATHS: readonly string[] = [
   '/api/v1/admin/replacements',
   '/api/v1/admin/replacements/:replacementId',
   '/api/v1/admin/proposals',
+  // P4E-2 — ledger ADMIN réel. La vue dérivée /my/reputation (scope self)
+  // n'est pas listée : elle n'est jamais appelée par l'ADMIN.
+  '/api/v1/admin/reputation/entries',
+  '/api/v1/admin/reputation/entries/:reputationId',
+  '/api/v1/admin/reputation/entries/:reputationId/correct',
+  '/api/v1/admin/reputation/reconcile',
   // P4B-2 — lecture ADMIN des paiements et des lots de rapprochement déjà connus.
   '/api/v1/admin/payments',
   '/api/v1/payments/:paymentId',
@@ -168,6 +191,15 @@ export interface ListOptions {
   readonly limit?: number;
   readonly cursor?: string | null;
   readonly signal?: AbortSignal;
+}
+
+/** Filtres réellement acceptés par admin.reputation.entries.list. */
+export interface ReputationListOptions extends ListOptions {
+  readonly subjectUserId?: string;
+  readonly status?: ReputationStatus;
+  readonly sourceEntityType?: ReputationSourceEntityType;
+  readonly from?: string;
+  readonly to?: string;
 }
 
 /** Décisions réellement acceptées par le serveur pour une revue humaine. */
@@ -340,6 +372,79 @@ export class AdminApi {
    */
   proposals(options: ListOptions = {}): Promise<AdminPage<MissionProposal>> {
     return this.list<MissionProposal>('/admin/proposals', options);
+  }
+
+  /* ── Réputation (P4E-2 — ledger existant, aucune vue dérivée ADMIN) ── */
+
+  /**
+   * Ledger ADMIN `admin.reputation.entries.list` (GET /api/v1/admin/reputation/entries,
+   * permission `audit:read`). Filtres serveur : subjectUserId, status
+   * ACTIVE|REVERSED, sourceEntityType, from/to (date du fait). Sans
+   * persistance, le Worker n'installe pas le handler (501 réel).
+   */
+  reputationEntries(options: ReputationListOptions = {}): Promise<AdminPage<ReputationEntryView>> {
+    return this.client
+      .request<unknown>('/admin/reputation/entries', {
+        query: {
+          limit: options.limit ?? 25,
+          cursor: options.cursor ?? null,
+          subjectUserId: options.subjectUserId ?? null,
+          status: options.status ?? null,
+          sourceEntityType: options.sourceEntityType ?? null,
+          from: options.from ?? null,
+          to: options.to ?? null,
+        },
+        signal: options.signal,
+      })
+      .then((payload) => page<ReputationEntryView>(payload));
+  }
+
+  /** Détail `admin.reputation.entries.read` (même permission). */
+  reputationEntry(reputationId: string, signal?: AbortSignal): Promise<ReputationEntryDetail> {
+    return this.client.request<ReputationEntryDetail>(
+      `/admin/reputation/entries/${encodeURIComponent(reputationId)}`,
+      { signal },
+    );
+  }
+
+  /**
+   * Correction ADMIN réelle : REVERSE (ACTIVE → REVERSED) ou RESTORE
+   * (REVERSED → ACTIVE). Motif 3–1000 caractères. Idempotente, auditée
+   * (REPUTATION_ENTRY_REVERSED / RESTORED). Permission incidents:arbitrate.
+   */
+  correctReputationEntry(
+    reputationId: string,
+    input: ReputationCorrectionInput,
+    signal?: AbortSignal,
+    idempotencyKey = newIdempotencyKey(),
+  ): Promise<ReputationEntryDetail> {
+    return this.client.request<ReputationEntryDetail>(
+      `/admin/reputation/entries/${encodeURIComponent(reputationId)}/correct`,
+      {
+        method: 'POST',
+        body: { action: input.action, reason: input.reason },
+        idempotencyKey,
+        signal,
+      },
+    );
+  }
+
+  /**
+   * Réconciliation ADMIN d'un sujet : relit les faits déjà persistés et
+   * n'ajoute que les entrées manquantes. Ce n'est pas une vérification de
+   * chaîne et ce n'est pas un nouveau score.
+   */
+  reconcileReputation(
+    subjectUserId: string,
+    signal?: AbortSignal,
+    idempotencyKey = newIdempotencyKey(),
+  ): Promise<ReputationReconciliationReport> {
+    return this.client.request<ReputationReconciliationReport>('/admin/reputation/reconcile', {
+      method: 'POST',
+      body: { subjectUserId },
+      idempotencyKey,
+      signal,
+    });
   }
 
   /* ── Paiements et rapprochement (P4B-2 — routes réellement présentes) ── */

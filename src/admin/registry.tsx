@@ -1,6 +1,6 @@
 /**
- * ADM —— registre des écrans livrés (17 unités, 32 fiches — tranches P4A,
- * P4B-1, P4B-2, P4C, P4D et P4E-1).
+ * ADM —— registre des écrans livrés (19 unités, 35 fiches — tranches P4A,
+ * P4B-1, P4B-2, P4C, P4D, P4E-1 et P4E-2).
  *
  * Chaque code de fiche ADM-01 → ADM-24 et ADM-26 → ADM-33 livré par ces
  * tranches est associé à l'écran qui le rend. Les variantes des fiches (mêmes
@@ -18,7 +18,9 @@
  * P4E-1 ajoute l'unité « ADM — remplacements (file & arbitrage) » : ADM-31
  * (file), ADM-32 (suivi détaillé) et ADM-33 (arbitrage, BACKEND_GAP), en
  * lecture seule des routes admin.replacements.list/read existantes.
- * Les unités réputation, documents, ops, sécurité et infra restent hors
+ * P4E-2 ajoute les unités de réputation : ADM-34/36 (ledger, corrections
+ * REVERSE/RESTORE, réconciliation d'un sujet) et ADM-35 (recours,
+ * BACKEND_GAP). Les unités documents, ops, sécurité et infra restent hors
  * tranche.
  *
  * Ce module est le SEUL point d'entrée des routes `/admin/*` des tranches :
@@ -66,6 +68,11 @@ import {
   Admin32ReplacementSheet,
   Admin33ReplacementArbitration,
 } from './screens/replacements';
+import {
+  Admin34ReputationLedger,
+  Admin35ReputationContests,
+  Admin36ReputationAudit,
+} from './screens/reputation';
 
 type AdminScreenComponent = (props: AdminUnitProps) => ReactNode;
 
@@ -103,6 +110,9 @@ export const ADMIN_SCREEN_COMPONENTS: Readonly<Record<string, AdminScreenCompone
   'ADM-31': Admin31ReplacementRegistry,
   'ADM-32': Admin32ReplacementSheet,
   'ADM-33': Admin33ReplacementArbitration,
+  'ADM-34': Admin34ReputationLedger,
+  'ADM-35': Admin35ReputationContests,
+  'ADM-36': Admin36ReputationAudit,
 };
 
 export function adminScreenCodes(): readonly string[] {
@@ -114,7 +124,7 @@ export function adminScreenCodes(): readonly string[] {
  * chemin est résolu vers sa fiche ; sans fiche correspondante, l'appelant
  * garde la main (aucun écran n'est inventé pour une route non livrée). P4D
  * enregistre uniquement les routes ADM-26 à ADM-30 du Master exact ; P4E-1
- * uniquement ADM-31 à ADM-33.
+ * uniquement ADM-31 à ADM-33 ; P4E-2 uniquement ADM-34 à ADM-36.
  */
 export function AdminScreen({
   unitId,

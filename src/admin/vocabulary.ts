@@ -43,6 +43,11 @@
  *   fiche « Qualification »→ produit QUALIFICATION / « Qualification » (moteur
  *                            réel `matching.qualification.*`, décisions
  *                            ELIGIBLE_FOR_INDEPENDENT / HUMAN_REVIEW_REQUIRED / BLOCKED)
+ *   fiche « Réputation »   → produit REPUTATION / « Réputation » (ledger
+ *                            `reputation_entries`, impact stocké, statuts
+ *                            ACTIVE / REVERSED ; aucune note 0-100)
+ *   fiche « contestation de réputation » → AUCUN objet produit : non affiché
+ *                            comme file (BACKEND_GAP documenté)
  *   fiche « Utilisateur »  → compte produit (rôles EMPLOYER / CANDIDATE / ADMIN,
  *                            statuts ACTIVE / BLOCKED du modèle réel)
  *
@@ -68,6 +73,13 @@ import type {
   PaymentReconciliationVerdict,
 } from '../backend/persistence/paymentReconciliationRecords';
 import type { PaymentDeclarationRecord } from '../backend/persistence/paymentRecords';
+import type {
+  ReputationCategory,
+  ReputationDirection,
+  ReputationProvenance,
+  ReputationSourceEntityType,
+  ReputationStatus,
+} from '../domain/reputationRules';
 
 /** Objets métier canoniques du produit (noms de code stables, jamais traduits en UI). */
 export const PRODUCT_OBJECTS = {
@@ -85,6 +97,7 @@ export const PRODUCT_OBJECTS = {
   MATCHING: 'MATCHING',
   DOCUMENT: 'DOCUMENT',
   QUALIFICATION: 'QUALIFICATION',
+  REPUTATION: 'REPUTATION',
 } as const;
 
 export type ProductObject = (typeof PRODUCT_OBJECTS)[keyof typeof PRODUCT_OBJECTS];
@@ -105,6 +118,7 @@ export const PRODUCT_LABELS: Record<ProductObject, { singular: string; plural: s
   MATCHING: { singular: 'Matching', plural: 'Matchings' },
   DOCUMENT: { singular: 'Document', plural: 'Documents' },
   QUALIFICATION: { singular: 'Qualification', plural: 'Qualifications' },
+  REPUTATION: { singular: 'Réputation', plural: 'Réputations' },
 };
 
 /** Termes de fiche qui NE DOIVENT PAS devenir des libellés métier de l'interface. */
@@ -475,6 +489,64 @@ export const ADMIN_UI_TERMS = {
   REPLACEMENT_REGISTRY: PRODUCT_LABELS.REPLACEMENT.plural,
   REPLACEMENT_SHEET: `Dossier de ${PRODUCT_LABELS.REPLACEMENT.singular}`,
   REPLACEMENT_ARBITRATION: `Arbitrage du ${PRODUCT_LABELS.REPLACEMENT.singular}`,
+  REPUTATION_LEDGER: `Ledger de ${PRODUCT_LABELS.REPUTATION.singular.toLowerCase()}`,
+  REPUTATION_CONTESTS: `Recours sur une entrée de ${PRODUCT_LABELS.REPUTATION.singular.toLowerCase()}`,
+  REPUTATION_AUDIT: `Audit d’intégrité de ${PRODUCT_LABELS.REPUTATION.singular.toLowerCase()}`,
+} as const;
+
+/* ── P4E-2 · ledger de réputation ─────────────────────────────────────────
+ * Statuts, directions, catégories, provenances et types d'entité source
+ * RÉELS (`src/domain/reputationRules.ts`). Les codes serveur restent
+ * affichés. Aucune note 0-100 : l'impact est l'entier stocké sur l'entrée.
+ * La catégorie DISPUTE_OUTCOME désigne l'issue d'un Claim (jamais « litige »).
+ * MISSION_EXECUTION est le code serveur : le libellé affiché parle du Contrat.
+ */
+
+export const REPUTATION_STATUS_LABELS: Record<ReputationStatus, string> = {
+  ACTIVE: 'Active',
+  REVERSED: 'Révoquée',
+};
+
+export const REPUTATION_STATUS_TONES: Record<ReputationStatus, 'emerald' | 'slate'> = {
+  ACTIVE: 'emerald',
+  REVERSED: 'slate',
+};
+
+export const REPUTATION_DIRECTION_LABELS: Record<ReputationDirection, string> = {
+  POSITIVE: 'Positive',
+  NEGATIVE: 'Négative',
+  NEUTRAL: 'Neutre',
+};
+
+export const REPUTATION_DIRECTION_TONES: Record<ReputationDirection, 'emerald' | 'clay' | 'slate'> = {
+  POSITIVE: 'emerald',
+  NEGATIVE: 'clay',
+  NEUTRAL: 'slate',
+};
+
+export const REPUTATION_CATEGORY_LABELS: Record<ReputationCategory, string> = {
+  MISSION_EXECUTION: 'Exécution de Contrat',
+  PAYMENT_RELIABILITY: 'Fiabilité de paiement',
+  DISPUTE_OUTCOME: 'Issue de Claim',
+};
+
+export const REPUTATION_PROVENANCE_LABELS: Record<ReputationProvenance, string> = {
+  EVENT: 'Fait documenté',
+  RECONCILIATION: 'Réconciliation',
+  ADMIN_DECISION: 'Décision ADMIN',
+};
+
+export const REPUTATION_SOURCE_ENTITY_LABELS: Record<ReputationSourceEntityType, string> = {
+  CONTRACT: PRODUCT_LABELS.CONTRACT.singular,
+  CLAIM: PRODUCT_LABELS.CLAIM.singular,
+  PAYMENT: PRODUCT_LABELS.PAYMENT.singular,
+  REPLACEMENT: PRODUCT_LABELS.REPLACEMENT.singular,
+  ACCOUNT: 'Compte',
+};
+
+export const REPUTATION_CORRECTION_ACTION_LABELS = {
+  REVERSE: 'Révoquer l’entrée',
+  RESTORE: 'Rétablir l’entrée',
 } as const;
 
 /* ── P4E-1 · workflow de Remplacement (lecture seule) ─────────────────────

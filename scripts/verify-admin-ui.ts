@@ -1,6 +1,7 @@
 /**
- * P4D-DESIGN-ADMIN-CLAIMS — vérification UI réelle (Chromium) de l'espace
- * supervision livré (P4A + P4B-1 contrats + P4B-2 paiements + P4C salaire + P4D Claims).
+ * P4E-2-DESIGN-ADMIN-REPUTATION — vérification UI réelle (Chromium) de l'espace
+ * supervision livré (P4A + P4B-1 contrats + P4B-2 paiements + P4C salaire + P4D
+ * Claims + P4E-1 Remplacements + P4E-2 Réputation).
  *
  * Comme le script P2, ce script n'affirme rien sur des données simulées dans
  * l'application : les fixtures HTTP vivent ICI et ne sont jamais activées dans
@@ -44,6 +45,10 @@
  *     Proposition envoyée ≠ acceptée, Contrat successeur DRAFT ≠ actif, aucun
  *     transfert de Paiement, permissions par bloc, 403/404/500/not-configured,
  *     arbitrage sans formulaire, aucune commande envoyée, 360/1440 px.
+ * 11. P4E-2 : ledger réel admin.reputation.entries (audit:read), impact stocké
+ *     sans score 0-100, correction REVERSE/RESTORE idempotente
+ *     (incidents:arbitrate), réconciliation d'un sujet, ADM-35/36 BACKEND_GAP
+ *     sans formulaire, 403/500/501, aucune vue self, 360/1440 px.
  *
  * Exécution : `npm run verify:admin-ui`.
  */
@@ -530,6 +535,92 @@ const FIXTURE_RPL_CLAIM = {
   restrictions: [],
 };
 
+/* ── P4E-2 · Réputation (fixtures HTTP de vérification, jamais dans l'application) ── */
+const FIXTURE_REP_ACTIVE = {
+  reputationId: 'rpt-e2e-1',
+  subjectUserId: 'usr-can-e2e',
+  sourceEvent: 'CONTRACT_COMPLETED',
+  sourceEventId: 'hist-e2e-1',
+  sourceEntityType: 'CONTRACT',
+  sourceEntityId: 'ctr-e2e-1',
+  ruleCode: 'CONTRACT_COMPLETED_PARTY',
+  ruleVersion: 'P0-REPUTATION-1',
+  category: 'MISSION_EXECUTION',
+  direction: 'POSITIVE',
+  impact: 3,
+  explanation: 'Contrat mené jusqu’à sa fin (fait documenté, sans appréciation de qualité).',
+  actorId: 'SYSTEM',
+  provenance: 'EVENT',
+  occurredAt: '2026-09-15T10:00:00.000Z',
+  createdAt: '2026-09-15T10:05:00.000Z',
+  status: 'ACTIVE',
+  history: [] as Array<Record<string, string>>,
+  ruleStillInCatalog: true,
+};
+const FIXTURE_REP_REVERSED = {
+  reputationId: 'rpt-e2e-2',
+  subjectUserId: 'usr-emp-e2e',
+  sourceEvent: 'CLAIM_RESOLVED',
+  sourceEventId: 'outbox-e2e-2',
+  sourceEntityType: 'CLAIM',
+  sourceEntityId: 'clm-e2e-1',
+  ruleCode: 'ADMIN_DECISION_UNFAVORABLE_RESPONDENT',
+  ruleVersion: 'P0-REPUTATION-1',
+  category: 'DISPUTE_OUTCOME',
+  direction: 'NEGATIVE',
+  impact: -4,
+  explanation: 'Décision ADMIN rendue sur un Claim : les faits examinés ont été retenus après instruction.',
+  actorId: 'usr-admin-e2e',
+  provenance: 'EVENT',
+  occurredAt: '2026-09-18T10:00:00.000Z',
+  createdAt: '2026-09-18T10:05:00.000Z',
+  status: 'REVERSED',
+  reversedAt: '2026-09-19T08:00:00.000Z',
+  reversedBy: 'usr-admin-e2e',
+  reversalReason: 'Correction ADMIN de vérification',
+  history: [
+    {
+      at: '2026-09-19T08:00:00.000Z',
+      actorId: 'usr-admin-e2e',
+      action: 'REVERSED',
+      reason: 'Correction ADMIN de vérification',
+      fromStatus: 'ACTIVE',
+      toStatus: 'REVERSED',
+    },
+  ],
+  ruleStillInCatalog: true,
+};
+const FIXTURE_REP_NEXT_PAGE = {
+  ...FIXTURE_REP_ACTIVE,
+  reputationId: 'rpt-e2e-3',
+  subjectUserId: 'usr-can-next',
+  sourceEntityId: 'ctr-e2e-next',
+  impact: 2,
+  sourceEvent: 'EXECUTION_CONFIRMED',
+  ruleCode: 'EXECUTION_CONFIRMED_PARTY',
+  explanation: 'Fin d’exécution confirmée par une partie du Contrat (fait d’historique documenté).',
+};
+
+function reputationDetail(entry: typeof FIXTURE_REP_ACTIVE | typeof FIXTURE_REP_REVERSED | typeof FIXTURE_REP_NEXT_PAGE) {
+  return {
+    ...entry,
+    rule: {
+      code: entry.ruleCode,
+      version: entry.ruleVersion,
+      category: entry.category,
+      direction: entry.direction,
+      impact: entry.impact,
+      explanation: entry.explanation,
+    },
+    source: {
+      event: entry.sourceEvent,
+      eventId: entry.sourceEventId,
+      entityType: entry.sourceEntityType,
+      entityId: entry.sourceEntityId,
+    },
+  };
+}
+
 let fixturePaymentRows: Record<string, unknown>[] = [FIXTURE_SALARY_PAYMENT, FIXTURE_FEE_PAYMENT, FIXTURE_SCHEDULED_PAYMENT];
 let fixtureClaimRows: Record<string, unknown>[] = [FIXTURE_CLAIM, FIXTURE_DECISION_CLAIM, FIXTURE_TERMINAL_CLAIM];
 type PaymentListMode = 'ready' | 'empty' | 'not-configured' | 'error';
@@ -605,6 +696,31 @@ try {
     replacementCursors.length = 0;
     replacementMutations.length = 0;
   };
+  type ReputationMode = 'ready' | 'error' | 'closed';
+  let reputationReadPermission = true;
+  let reputationMode: ReputationMode = 'ready';
+  let reputationListCalls = 0;
+  let reputationDetailCalls = 0;
+  let reputationNextPageDelayMs = 0;
+  const reputationCursors: Array<string | null> = [];
+  const reputationCommandRequests: Array<{ command: string; key: string; body: Record<string, unknown>; path: string }> = [];
+  let fixtureReputationRows: Array<typeof FIXTURE_REP_ACTIVE | typeof FIXTURE_REP_REVERSED | typeof FIXTURE_REP_NEXT_PAGE> = [
+    { ...FIXTURE_REP_ACTIVE, history: [] },
+    { ...FIXTURE_REP_REVERSED, history: [...FIXTURE_REP_REVERSED.history] },
+  ];
+  const resetReputationFixtures = () => {
+    reputationReadPermission = true;
+    reputationMode = 'ready';
+    reputationListCalls = 0;
+    reputationDetailCalls = 0;
+    reputationNextPageDelayMs = 0;
+    reputationCursors.length = 0;
+    reputationCommandRequests.length = 0;
+    fixtureReputationRows = [
+      { ...FIXTURE_REP_ACTIVE, history: [] },
+      { ...FIXTURE_REP_REVERSED, history: [...FIXTURE_REP_REVERSED.history] },
+    ];
+  };
   let paymentListDelayMs = 0;
   let approveFailureCount = 0;
   let approveDelayMs = 0;
@@ -679,10 +795,130 @@ try {
                 ...(paymentActionPermissions === 'all' ? ['payments:approve', 'payments:reject'] : []),
                 ...(replacementReadPermission ? ['replacements:read:any'] : []),
                 ...(proposalReadPermission ? ['applications:read:any'] : []),
+                ...(reputationReadPermission ? ['audit:read'] : []),
               ]
             : [],
         }),
       });
+      return;
+    }
+    if (url.pathname === '/api/v1/admin/reputation/entries' && method === 'GET') {
+      reputationListCalls += 1;
+      reputationCursors.push(url.searchParams.get('cursor'));
+      if (!reputationReadPermission) {
+        await route.fulfill({ status: 403, contentType: 'application/json', body: JSON.stringify({ error: { code: 'FORBIDDEN', message: SERVER_SECRET, requestId: SERVER_REQUEST_ID } }) });
+        return;
+      }
+      if (reputationMode === 'closed') {
+        await route.fulfill({ status: 501, contentType: 'application/json', body: JSON.stringify({ error: { code: 'NOT_IMPLEMENTED', message: SERVER_SECRET, requestId: SERVER_REQUEST_ID } }) });
+        return;
+      }
+      if (reputationMode === 'error') {
+        await route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: { code: 'INTERNAL', message: SERVER_SECRET, requestId: SERVER_REQUEST_ID } }) });
+        return;
+      }
+      const cursor = url.searchParams.get('cursor');
+      if (cursor === 'rpt-e2e-2') {
+        if (reputationNextPageDelayMs > 0) await new Promise((resolveDelay) => setTimeout(resolveDelay, reputationNextPageDelayMs));
+        await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ items: [FIXTURE_REP_NEXT_PAGE], cursor: null, limit: 100, hasMore: false }) });
+        return;
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ items: fixtureReputationRows, cursor: 'rpt-e2e-2', limit: 100, hasMore: true }),
+      });
+      return;
+    }
+    if (url.pathname.startsWith('/api/v1/admin/reputation/entries/') && method === 'GET') {
+      reputationDetailCalls += 1;
+      const reputationId = decodeURIComponent(url.pathname.split('/')[6] ?? '');
+      if (!reputationReadPermission) {
+        await route.fulfill({ status: 403, contentType: 'application/json', body: JSON.stringify({ error: { code: 'FORBIDDEN', message: SERVER_SECRET, requestId: SERVER_REQUEST_ID } }) });
+        return;
+      }
+      if (reputationMode === 'error') {
+        await route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: { code: 'INTERNAL', message: SERVER_SECRET, requestId: SERVER_REQUEST_ID } }) });
+        return;
+      }
+      const entry = [...fixtureReputationRows, FIXTURE_REP_NEXT_PAGE].find((item) => item.reputationId === reputationId);
+      if (!entry) {
+        await route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ error: { code: 'NOT_FOUND', message: 'Entrée absente de la fixture.', requestId: SERVER_REQUEST_ID } }) });
+        return;
+      }
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(reputationDetail(entry)) });
+      return;
+    }
+    if (url.pathname.startsWith('/api/v1/admin/reputation/entries/') && url.pathname.endsWith('/correct') && method === 'POST') {
+      const reputationId = decodeURIComponent(url.pathname.split('/')[6] ?? '');
+      const key = route.request().headers()['idempotency-key'] ?? '';
+      const body = route.request().postDataJSON() as Record<string, unknown>;
+      reputationCommandRequests.push({ command: 'correct', key, body, path: url.pathname });
+      if (sessionMode !== 'admin' || claimActionPermissions !== 'all') {
+        await route.fulfill({ status: 403, contentType: 'application/json', body: JSON.stringify({ error: { code: 'FORBIDDEN', message: SERVER_SECRET, requestId: SERVER_REQUEST_ID } }) });
+        return;
+      }
+      const entry = fixtureReputationRows.find((item) => item.reputationId === reputationId);
+      if (!entry) {
+        await route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ error: { code: 'NOT_FOUND', message: 'Entrée absente.', requestId: SERVER_REQUEST_ID } }) });
+        return;
+      }
+      const action = body.action;
+      if (action !== 'REVERSE' && action !== 'RESTORE') {
+        await route.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ error: { code: 'VALIDATION_ERROR', message: 'Action invalide.', requestId: SERVER_REQUEST_ID } }) });
+        return;
+      }
+      if (action === 'REVERSE' && entry.status !== 'ACTIVE') {
+        await route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ error: { code: 'BUSINESS_RULE_VIOLATION', message: 'Déjà révoquée.', requestId: SERVER_REQUEST_ID } }) });
+        return;
+      }
+      const updated = {
+        ...entry,
+        status: action === 'REVERSE' ? 'REVERSED' : 'ACTIVE',
+        reversedAt: action === 'REVERSE' ? '2026-10-01T12:00:00.000Z' : undefined,
+        reversedBy: action === 'REVERSE' ? 'usr-admin-e2e' : undefined,
+        reversalReason: action === 'REVERSE' ? String(body.reason ?? '') : undefined,
+        history: [
+          ...entry.history,
+          {
+            at: '2026-10-01T12:00:00.000Z',
+            actorId: 'usr-admin-e2e',
+            action: action === 'REVERSE' ? 'REVERSED' : 'RESTORED',
+            reason: String(body.reason ?? ''),
+            fromStatus: entry.status,
+            toStatus: action === 'REVERSE' ? 'REVERSED' : 'ACTIVE',
+          },
+        ],
+      };
+      fixtureReputationRows = fixtureReputationRows.map((item) => item.reputationId === reputationId ? updated : item);
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(reputationDetail(updated as typeof FIXTURE_REP_ACTIVE)) });
+      return;
+    }
+    if (url.pathname === '/api/v1/admin/reputation/reconcile' && method === 'POST') {
+      const key = route.request().headers()['idempotency-key'] ?? '';
+      const body = route.request().postDataJSON() as Record<string, unknown>;
+      reputationCommandRequests.push({ command: 'reconcile', key, body, path: url.pathname });
+      if (sessionMode !== 'admin' || claimActionPermissions !== 'all') {
+        await route.fulfill({ status: 403, contentType: 'application/json', body: JSON.stringify({ error: { code: 'FORBIDDEN', message: SERVER_SECRET, requestId: SERVER_REQUEST_ID } }) });
+        return;
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          subjectUserId: body.subjectUserId,
+          scanned: 2,
+          appended: 0,
+          duplicates: 2,
+          rulesVersion: 'P0-REPUTATION-1',
+          reconciledAt: '2026-10-01T12:00:00.000Z',
+          purpose: 'Finalité : documenter une fiabilité de coopération à partir de faits déjà persistés.',
+        }),
+      });
+      return;
+    }
+    if (/\/api\/v1\/my\/reputation/.test(url.pathname)) {
+      await route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: { code: 'INTERNAL', message: 'self-route-must-not-be-called', requestId: SERVER_REQUEST_ID } }) });
       return;
     }
     // P4E-1 — toute écriture vers un Remplacement serait une commande inventée.
@@ -1507,6 +1743,7 @@ try {
     assert.deepEqual(replacementMutations, [], 'aucune commande Remplacement envoyée');
     await assertNoForbiddenText('/admin/remplacements', text);
     await page.setViewportSize({ width: 360, height: 900 });
+    await page.waitForFunction(() => document.documentElement.scrollWidth <= innerWidth, null, { timeout: 5000 }).catch(() => undefined);
     const overflowing = await page.evaluate(() =>
       [...document.querySelectorAll('[data-screen="ADM-31"] *')]
         .filter((element) => element.getBoundingClientRect().right > innerWidth + 1 && !element.closest('.lbm-admin__table-wrap'))
@@ -1549,6 +1786,7 @@ try {
     assert.deepEqual(replacementMutations, [], 'aucune commande Remplacement envoyée');
     await assertNoForbiddenText('/admin/remplacements/rpl-e2e-1', text);
     await page.setViewportSize({ width: 360, height: 900 });
+    await page.waitForFunction(() => document.documentElement.scrollWidth <= innerWidth, null, { timeout: 5000 }).catch(() => undefined);
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'débordement horizontal ADM-32 à 360 px');
     resetPaymentFixtures();
     resetReplacementFixtures();
@@ -1617,6 +1855,7 @@ try {
     assert.deepEqual(replacementMutations, [], 'aucune commande Remplacement envoyée');
     await assertNoForbiddenText('/admin/remplacements/rpl-e2e-2/arbitrage', text);
     await page.setViewportSize({ width: 360, height: 900 });
+    await page.waitForFunction(() => document.documentElement.scrollWidth <= innerWidth, null, { timeout: 5000 }).catch(() => undefined);
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'débordement horizontal ADM-33 à 360 px');
   });
 
@@ -1661,6 +1900,167 @@ try {
     await page.goto(api.origin + '/admin/remplacements/rpl-absent');
     await page.locator('[data-state="404"]').waitFor();
     resetReplacementFixtures();
+  });
+
+  /* ── P4E-2 · Réputation ── */
+
+  await check('ADM-34 — ledger réel : impact stocké, filtres serveur, curseur single-flight, aucun score inventé', async () => {
+    sessionMode = 'admin';
+    resetReputationFixtures();
+    resetClaimFixtures();
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await page.goto(api.origin + '/admin/reputation');
+    await page.reload();
+    await page.locator('[data-screen="ADM-34"]').waitFor();
+    await page.getByText('rpt-e2e-1', { exact: true }).first().waitFor();
+    let text = await screenText();
+    assert.equal(reputationListCalls, 1, 'une seule page réelle doit alimenter le ledger');
+    assert.deepEqual(reputationCursors, [null], 'premier appel sans curseur');
+    assert.ok(text.includes('ACTIVE') && text.includes('REVERSED'), 'statuts serveur absents');
+    assert.ok(text.includes('+3') && text.includes('-4'), 'impacts stockés absents');
+    assert.ok(says(text, 'aucun score 0-100') || says(text, 'aucun impact n’est additionné'), 'absence de score non dite');
+    assert.ok(await page.locator('[data-no-invented-score="true"]').count() > 0, 'marqueur d’absence de score manquant');
+    assert.ok(!/\b\d{1,3}\s*\/\s*100\b/.test(text), 'score 0-100 inventé');
+    await page.getByLabel('Recherche locale dans le ledger').fill('rpt-e2e-1');
+    assert.equal(await page.locator('[data-screen="ADM-34"] tbody tr').count(), 1, 'recherche locale');
+    await page.getByLabel('Recherche locale dans le ledger').fill('');
+    await page.getByRole('button', { name: 'Charger la page suivante' }).click();
+    await page.getByText('rpt-e2e-3', { exact: true }).first().waitFor();
+    assert.equal(reputationListCalls, 2, 'page suivante non demandée');
+    assert.deepEqual(reputationCursors, [null, 'rpt-e2e-2']);
+    text = await screenText();
+    await assertNoForbiddenText('/admin/reputation', text);
+    await page.setViewportSize({ width: 360, height: 900 });
+    await page.waitForFunction(() => document.documentElement.scrollWidth <= innerWidth, null, { timeout: 5000 }).catch(() => undefined);
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'débordement horizontal ADM-34 à 360 px');
+  });
+
+  await check('ADM-34 — correction REVERSE idempotente, permission incidents:arbitrate, historique append-only', async () => {
+    sessionMode = 'admin';
+    resetReputationFixtures();
+    resetClaimFixtures();
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await page.goto(api.origin + '/admin/reputation');
+    await page.locator('[data-screen="ADM-34"]').waitFor();
+    await page.getByRole('button', { name: 'rpt-e2e-1' }).click();
+    await page.getByText('Contrat mené jusqu’à sa fin', { exact: false }).waitFor();
+    assert.equal(reputationDetailCalls, 1, 'détail non lu');
+    assert.ok(await page.getByText('Ouvrir Contrat ctr-e2e-1').count() > 0, 'lien vers le Contrat source');
+    await page.getByLabel('Motif de correction de réputation').fill('Motif de révocation E2E consigné par le serveur');
+    await page.getByText('Je confirme l’envoi de REVERSE au serveur', { exact: false }).click();
+    await page.getByRole('button', { name: 'Envoyer REVERSE' }).click();
+    await page.getByRole('button', { name: 'Envoyer RESTORE' }).waitFor();
+    assert.equal(reputationCommandRequests.length, 1, 'commande de correction absente');
+    assert.equal(reputationCommandRequests[0].command, 'correct');
+    assert.deepEqual(reputationCommandRequests[0].body, { action: 'REVERSE', reason: 'Motif de révocation E2E consigné par le serveur' });
+    assert.ok(reputationCommandRequests[0].key, 'clé d’idempotence absente');
+    const text = await screenText();
+    assert.ok(says(text, 'REVERSED'), 'statut après correction absent');
+    await assertNoForbiddenText('/admin/reputation correction', text);
+
+    resetClaimFixtures();
+    claimActionPermissions = 'read-only';
+    resetReputationFixtures();
+    await page.reload();
+    await page.locator('[data-screen="ADM-34"]').waitFor();
+    await page.getByRole('button', { name: 'rpt-e2e-1' }).click();
+    await page.getByText(/incidents:arbitrate est absente/).first().waitFor();
+    assert.equal(await page.locator('[data-correction-form="true"]').count(), 0, 'formulaire de correction sans permission');
+    assert.equal(reputationCommandRequests.length, 0, 'aucune commande sans permission');
+  });
+
+  await check('ADM-34 — réconciliation d’un sujet : rapport réel, pas un score', async () => {
+    sessionMode = 'admin';
+    resetReputationFixtures();
+    resetClaimFixtures();
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto(api.origin + '/admin/reputation');
+    await page.locator('[data-screen="ADM-34"]').waitFor();
+    await page.getByLabel('Identifiant du sujet à réconcilier').fill('usr-can-e2e');
+    await page.getByText('Je confirme l’envoi de la réconciliation', { exact: false }).click();
+    await page.getByRole('button', { name: 'Réconcilier le sujet' }).click();
+    await page.getByText('usr-can-e2e', { exact: false }).waitFor();
+    assert.equal(reputationCommandRequests.some((item) => item.command === 'reconcile'), true, 'réconciliation non envoyée');
+    const reconcile = reputationCommandRequests.find((item) => item.command === 'reconcile')!;
+    assert.deepEqual(reconcile.body, { subjectUserId: 'usr-can-e2e' });
+    assert.ok(reconcile.key, 'clé d’idempotence de réconciliation absente');
+    const text = await screenText();
+    assert.ok(says(text, 'Faits parcourus') && says(text, 'Entrées ajoutées'), 'rapport réel absent');
+    assert.ok(says(text, 'n’est pas une vérification de chaîne'), 'distinction réconciliation / intégrité non dite');
+    await assertNoForbiddenText('/admin/reputation réconciliation', text);
+  });
+
+  await check('ADM-35 — recours : capacité absente, aucun formulaire ni file inventée', async () => {
+    sessionMode = 'admin';
+    resetReputationFixtures();
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto(api.origin + '/admin/reputation/contestations');
+    await page.locator('[data-screen="ADM-35"]').waitFor();
+    const text = await screenText();
+    assert.ok(says(text, 'indisponible') || says(text, 'BACKEND_GAP'), 'capacité absente non dite');
+    assert.equal(await page.locator('[data-screen="ADM-35"] form, [data-screen="ADM-35"] textarea').count(), 0, 'aucun formulaire de recours');
+    assert.ok(await page.locator('[data-backend-gap="true"]').first().isVisible(), 'BACKEND_GAP ADM-35 absent');
+    assert.equal(await page.locator('[data-screen="ADM-35"] tbody tr td').count() > 0, true, 'table vide attendue');
+    await assertNoForbiddenText('/admin/reputation/contestations', text);
+    await page.setViewportSize({ width: 360, height: 900 });
+    await page.waitForFunction(() => document.documentElement.scrollWidth <= innerWidth, null, { timeout: 5000 }).catch(() => undefined);
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'débordement horizontal ADM-35 à 360 px');
+  });
+
+  await check('ADM-36 — audit d’intégrité : capacité absente, aucune vérification lancée', async () => {
+    sessionMode = 'admin';
+    resetReputationFixtures();
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto(api.origin + '/admin/reputation/audit');
+    await page.locator('[data-screen="ADM-36"]').waitFor();
+    const text = await screenText();
+    assert.ok(says(text, 'indisponible'), 'capacité absente non dite');
+    assert.equal(await page.locator('[data-screen="ADM-36"] form, [data-screen="ADM-36"] button').filter({ hasNotText: /Actualiser/ }).count(), 0, 'aucun bouton de vérification');
+    assert.ok(await page.locator('[data-backend-gap="true"]').first().isVisible(), 'BACKEND_GAP ADM-36 absent');
+    assert.ok(says(text, 'n’est pas une preuve d’intégrité') || says(text, 'Aucune route serveur de vérification'), 'réconciliation ≠ intégrité non dite');
+    await assertNoForbiddenText('/admin/reputation/audit', text);
+    await page.setViewportSize({ width: 360, height: 900 });
+    await page.waitForFunction(() => document.documentElement.scrollWidth <= innerWidth, null, { timeout: 5000 }).catch(() => undefined);
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'débordement horizontal ADM-36 à 360 px');
+  });
+
+  await check('ADM-34/35/36 — refus : 403 sans audit:read et pour un Employeur, aucune lecture ADMIN appelée', async () => {
+    sessionMode = 'admin';
+    resetReputationFixtures();
+    reputationReadPermission = false;
+    await page.setViewportSize({ width: 1440, height: 900 });
+    for (const path of ['/admin/reputation', '/admin/reputation/contestations', '/admin/reputation/audit']) {
+      await page.goto(api.origin + path);
+      await page.reload();
+      await page.locator('[data-state="403"]').waitFor();
+      assert.equal(reputationListCalls, 0, `${path} : lecture malgré le refus`);
+    }
+    reputationReadPermission = true;
+    sessionMode = 'employer';
+    await page.goto(api.origin + '/admin/reputation');
+    await page.reload();
+    await page.locator('[data-state="403"]').waitFor();
+    assert.equal(reputationListCalls, 0, 'un Employeur ne doit pas appeler le ledger ADMIN');
+    await assertNoForbiddenText('/admin/reputation refusé', await page.locator('[data-state="403"]').innerText());
+    sessionMode = 'admin';
+    resetReputationFixtures();
+  });
+
+  await check('ADM-34 — erreur 500 (corrélation seule) et 501 : états honnêtes, aucune vue self', async () => {
+    sessionMode = 'admin';
+    resetReputationFixtures();
+    reputationMode = 'error';
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto(api.origin + '/admin/reputation');
+    await page.reload();
+    await page.locator('[data-state="500"]').waitFor();
+    const errorText = await page.locator('[data-state="500"]').innerText();
+    assert.ok(!errorText.includes(SERVER_SECRET), 'message serveur brut rendu');
+    assert.ok(errorText.includes(SERVER_REQUEST_ID), 'corrélation serveur absente');
+    reputationMode = 'closed';
+    await page.reload();
+    await page.locator('[data-state="500"], [data-state="501"]').waitFor();
+    resetReputationFixtures();
   });
 
   await check('ADM — refus non-ADMIN sur la route Paiement : aucune lecture ADMIN ni accès partie contourné', async () => {

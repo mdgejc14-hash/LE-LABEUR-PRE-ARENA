@@ -1,13 +1,14 @@
 // GÉNÉRÉ PAR scripts/design/generate-admin-catalog.py — NE PAS ÉDITER À LA MAIN.
 // Source : design/llab/content/adm_*.py, design/llab/units.py — tranches livrées :
 // P4A (ADM-01 → ADM-12), P4B-1 CONTRATS (ADM-13 → ADM-17), P4B-2 PAIEMENTS (ADM-18 → ADM-22)
-// P4C SALAIRE (ADM-23 → ADM-24), P4D CLAIMS (ADM-26 → ADM-30), P4E-1 REMPLACEMENTS (ADM-31 → ADM-33).
+// P4C SALAIRE (ADM-23 → ADM-24), P4D CLAIMS (ADM-26 → ADM-30), P4E-1 REMPLACEMENTS (ADM-31 → ADM-33),
+// P4E-2 RÉPUTATION (ADM-34 → ADM-36).
 // Régénérer : npm run design:admin
 //
 // Référence de design UNIQUEMENT : aucun libellé de ce fichier n'est affiché par
 // l'interface. Les textes visibles viennent de src/admin/vocabulary.ts (vocabulaire
 // LE LABEUR : ADMIN, EMPLOYER, CANDIDATE, OFFER, APPLICATION, PROPOSAL, CONTRACT, CLAIM,
-// PAYMENT, SALARY, REPLACEMENT, MATCHING, DOCUMENT, QUALIFICATION).
+// PAYMENT, SALARY, REPLACEMENT, MATCHING, DOCUMENT, QUALIFICATION, REPUTATION).
 // Les routes sont celles du routeur P0 : elles ne sont ni renommées ni réécrites.
 
 export interface AdminDesignScreen {
@@ -976,6 +977,100 @@ export const ADMIN_DESIGN_UNITS = [
       "POST /admin/replacements/:id/arbitrate {causeFound, payoutCorrect, perimeterValid, motive, entries}",
       "GET /admin/replacements/:id/arbitrate/preview"
     ]
+  },
+  {
+    "id": "ADM-34",
+    "canon": "ADM — réputation (ledger, corrections & audit)",
+    "criticality": "P0",
+    "archetype": "Grand livre de l'honneur",
+    "screenCodes": [
+      "ADM-34",
+      "ADM-36"
+    ],
+    "routes": [
+      "/admin/reputation",
+      "/admin/reputation/audit"
+    ],
+    "zoneKinds": [
+      "cta",
+      "form",
+      "kpi",
+      "list",
+      "table"
+    ],
+    "componentRefs": [
+      "Aperçu",
+      "Formulaire",
+      "Journal",
+      "Rapport",
+      "Table",
+      "Tableau",
+      "Vérificateur"
+    ],
+    "stateNames": [
+      "Nominal",
+      "Corrections élevées",
+      "Contestation en attente",
+      "Rupture de chaîne",
+      "Intègre",
+      "Anomalie",
+      "Vérification en cours",
+      "Non planifiée"
+    ],
+    "tokens": [
+      "--amber-500",
+      "--clay-500",
+      "--emerald-500",
+      "--mono",
+      "--table"
+    ],
+    "designApi": [
+      "GET /admin/reputation/entries?cursor=",
+      "POST /admin/reputation/entries/corrections {subjectId, delta, motive, caseRef}",
+      "GET /admin/reputation/summary",
+      "POST /admin/audit/integrity/run {scope}",
+      "GET /admin/audit/integrity/runs",
+      "GET /admin/audit/integrity/report.pdf"
+    ]
+  },
+  {
+    "id": "ADM-35",
+    "canon": "ADM — réputation (contestations)",
+    "criticality": "P1",
+    "archetype": "Écouter les recours",
+    "screenCodes": [
+      "ADM-35"
+    ],
+    "routes": [
+      "/admin/reputation/contestations"
+    ],
+    "zoneKinds": [
+      "cta",
+      "doc",
+      "kpi",
+      "table"
+    ],
+    "componentRefs": [
+      "Analyse",
+      "Dossier",
+      "Signal"
+    ],
+    "stateNames": [
+      "Dans les délais",
+      "Acceptée",
+      "Rejetée",
+      "SLA dépassé"
+    ],
+    "tokens": [
+      "--amber-500",
+      "--emerald-500",
+      "--mono",
+      "--table"
+    ],
+    "designApi": [
+      "GET /admin/reputation/contests?cursor=",
+      "POST /admin/reputation/contests/:id/decide {outcome, motive, delta?}"
+    ]
   }
 ] as const;
 
@@ -1833,6 +1928,84 @@ export const ADMIN_DESIGN_SCREENS = [
       "--gold-500",
       "--mono",
       "--glass-3"
+    ]
+  },
+  {
+    "code": "ADM-34",
+    "unitId": "ADM — réputation (ledger, corrections & audit)",
+    "route": "/admin/reputation",
+    "canonicalRoute": "/admin/reputation",
+    "role": "ADMIN",
+    "criticality": "P0",
+    "zoneKinds": [
+      "kpi",
+      "table",
+      "form",
+      "cta"
+    ],
+    "variantOf": null,
+    "designApi": [
+      "GET /admin/reputation/entries?cursor=",
+      "POST /admin/reputation/entries/corrections {subjectId, delta, motive, caseRef}",
+      "GET /admin/reputation/summary"
+    ],
+    "tokens": [
+      "--mono",
+      "--emerald-500",
+      "--clay-500",
+      "--amber-500",
+      "--table"
+    ]
+  },
+  {
+    "code": "ADM-35",
+    "unitId": "ADM — réputation (contestations)",
+    "route": "/admin/reputation/contestations",
+    "canonicalRoute": "/admin/reputation/contestations",
+    "role": "ADMIN",
+    "criticality": "P1",
+    "zoneKinds": [
+      "table",
+      "doc",
+      "kpi",
+      "cta"
+    ],
+    "variantOf": null,
+    "designApi": [
+      "GET /admin/reputation/contests?cursor=",
+      "POST /admin/reputation/contests/:id/decide {outcome, motive, delta?}"
+    ],
+    "tokens": [
+      "--amber-500",
+      "--emerald-500",
+      "--mono",
+      "--table"
+    ]
+  },
+  {
+    "code": "ADM-36",
+    "unitId": "ADM — réputation (ledger, corrections & audit)",
+    "route": "/admin/reputation/audit",
+    "canonicalRoute": "/admin/reputation/audit",
+    "role": "ADMIN",
+    "criticality": "P1",
+    "zoneKinds": [
+      "kpi",
+      "table",
+      "list",
+      "cta"
+    ],
+    "variantOf": null,
+    "designApi": [
+      "POST /admin/audit/integrity/run {scope}",
+      "GET /admin/audit/integrity/runs",
+      "GET /admin/audit/integrity/report.pdf"
+    ],
+    "tokens": [
+      "--emerald-500",
+      "--clay-500",
+      "--mono",
+      "--table"
     ]
   }
 ] as const;

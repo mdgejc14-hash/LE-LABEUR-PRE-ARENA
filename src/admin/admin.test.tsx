@@ -1,13 +1,14 @@
 /**
  * P4A-DESIGN-ADMIN-CORE + P4B-1-DESIGN-ADMIN-CONTRACTS +
  * P4B-2-DESIGN-ADMIN-PAYMENTS + P4C-DESIGN-ADMIN-SALARY-PROOFS + P4D-DESIGN-ADMIN-CLAIMS +
- * P4E-1-DESIGN-ADMIN-REPLACEMENTS — tests de l'espace supervision livré.
+ * P4E-1-DESIGN-ADMIN-REPLACEMENTS + P4E-2-DESIGN-ADMIN-REPUTATION — tests de
+ * l'espace supervision livré.
  *
  * Couverture :
  *  1. parité du catalogue généré avec la source de design (Python) ;
  *  2. résolution de route : chaque fiche ADM des tranches est atteignable et
  *     rattachée à son unité (regroupement `units.py`, pas une plage numérique) ;
- *  3. registre complet (17 unités / 32 fiches), selon les regroupements canoniques exacts ;
+ *  3. registre complet (19 unités / 35 fiches), selon les regroupements canoniques exacts ;
  *  4. API : chaque chemin appelé existe déjà dans `routeContracts.ts` ;
  *  5. GARDE-FOU DE VOCABULAIRE : aucun libellé métier du Master Design
  *     (Mission, Client, Prestataire, Litige) ne peut entrer dans l'interface,
@@ -20,8 +21,8 @@
  *     (QUALIFICATION_DECISIONS) et options de revue réelles ;
  *  9. garde de session : seul un compte ADMIN actif ouvre l'espace ;
  * 10. intégration : unités ADMIN livrées = PARTIEL, EMP/PRE/PUB/SYS inchangés,
- *     ADM-26 → ADM-30 Claims, ADM-31 → ADM-33 Remplacements seulement,
- *     autres ADM/FIN/RTC non intégrées ;
+ *     ADM-26 → ADM-30 Claims, ADM-31 → ADM-33 Remplacements, ADM-34 → ADM-36
+ *     Réputation seulement, autres ADM/FIN/RTC non intégrées ;
  * 11. responsive, accessibilité (table sémantique) et reduced-motion (CSS) ;
  * 12. P4B-1 contrats : routes ADM réelles du registre et des Claims, statuts
  *     et types de Claim en parité exacte avec le serveur, segments du registre
@@ -45,6 +46,11 @@
  *     assign/transfer/finalize/décision/Offre, Proposition envoyée ≠ acceptée,
  *     Contrat successeur DRAFT ≠ actif, aucun transfert ni total de Paiement,
  *     permissions par bloc, vocabulaire officiel et BACKEND_GAP explicites.
+ * 17. P4E-2 Réputation : unités exactes du Master (ADM-34/36 et ADM-35),
+ *     handlers ADMIN réels (list/read/correct/reconcile), permissions
+ *     audit:read et incidents:arbitrate, aucun score inventé, aucune vue
+ *     self, aucune contestation simulée, correction REVERSE/RESTORE
+ *     idempotente, vocabulaire officiel et BACKEND_GAP explicites.
  */
 
 import React from 'react';
@@ -57,6 +63,7 @@ import { ADMIN_UNIT_GAPS } from './gaps';
 import { adminGapsFor, resolveAdminScreen, unitForScreen } from './screenMap';
 import { ADMIN_SCREEN_COMPONENTS, AdminScreen } from './registry';
 import { replacementWorkflowSteps, REPLACEMENT_READ_PERMISSION } from './screens/replacements';
+import { REPUTATION_DECIDE_PERMISSION, REPUTATION_READ_PERMISSION } from './screens/reputation';
 import { AdminRouteFallback } from './RouteFallback';
 import { DataTable } from './components';
 import { DOCK_DEFINITIONS } from '../design-system/shells/shellNavigation';
@@ -88,6 +95,12 @@ import {
   REPLACEMENT_NEXT_STEP,
   REPLACEMENT_STATUS_LABELS,
   REPLACEMENT_STATUS_TONES,
+  REPUTATION_CATEGORY_LABELS,
+  REPUTATION_DIRECTION_LABELS,
+  REPUTATION_PROVENANCE_LABELS,
+  REPUTATION_SOURCE_ENTITY_LABELS,
+  REPUTATION_STATUS_LABELS,
+  REPUTATION_STATUS_TONES,
   ADMIN_UI_TERMS,
   formatContractAmount,
   formatPaymentAmount,
@@ -95,6 +108,13 @@ import {
 } from './vocabulary';
 import { CLAIM_EVIDENCE_STATUS_VALUES, CLAIM_EVIDENCE_TYPE_VALUES, CLAIM_STATUS_VALUES, CLAIM_TYPE_VALUES } from '../backend/disputes/records';
 import { REPLACEMENT_STATUS_VALUES } from '../backend/replacements/records';
+import {
+  REPUTATION_CATEGORY_VALUES,
+  REPUTATION_DIRECTION_VALUES,
+  REPUTATION_PROVENANCE_VALUES,
+  REPUTATION_SOURCE_ENTITY_TYPES,
+  REPUTATION_STATUS_VALUES,
+} from '../domain/reputationRules';
 import { ADMIN_PERMISSIONS } from '../backend/identity/permissions';
 import type { Contract, ReplacementDossier } from '../types';
 import { adminError } from './errors';
@@ -197,11 +217,11 @@ export async function runAdminTests(): Promise<{ name: string; success: boolean;
     execFileSync('python3', ['scripts/design/generate-admin-catalog.py', '--check']);
   });
 
-  check('ADM — 17 unités / 32 fiches, chaque fiche rattachée à une seule unité', () => {
-    assert.equal(ADMIN_DESIGN_UNITS.length, 17);
-    assert.equal(ADMIN_DESIGN_SCREENS.length, 32);
+  check('ADM — 19 unités / 35 fiches, chaque fiche rattachée à une seule unité', () => {
+    assert.equal(ADMIN_DESIGN_UNITS.length, 19);
+    assert.equal(ADMIN_DESIGN_SCREENS.length, 35);
     const codes = ADMIN_DESIGN_SCREENS.map((screen) => screen.code);
-    assert.equal(new Set(codes).size, 32);
+    assert.equal(new Set(codes).size, 35);
     for (const screen of ADMIN_DESIGN_SCREENS) {
       const unit = unitForScreen(screen.code);
       assert.ok(unit, `fiche sans unité : ${screen.code}`);
@@ -215,7 +235,7 @@ export async function runAdminTests(): Promise<{ name: string; success: boolean;
     // P4C ajoute ADM-23 = {confirmations, preuves OTP}, unité unique salaire.
     // P4D conserve les groupements du Master : ADM-27 = {fiche, pièces},
     // ADM-29 = {décision, historique}; ADM-26 reste une unité distincte.
-    assert.deepEqual(ADMIN_DESIGN_UNITS.map((unit) => unit.id), ['ADM-01', 'ADM-02', 'ADM-04', 'ADM-06', 'ADM-08', 'ADM-10', 'ADM-11', 'ADM-13', 'ADM-14', 'ADM-16', 'ADM-18', 'ADM-20', 'ADM-23', 'ADM-26', 'ADM-27', 'ADM-29', 'ADM-31']);
+    assert.deepEqual(ADMIN_DESIGN_UNITS.map((unit) => unit.id), ['ADM-01', 'ADM-02', 'ADM-04', 'ADM-06', 'ADM-08', 'ADM-10', 'ADM-11', 'ADM-13', 'ADM-14', 'ADM-16', 'ADM-18', 'ADM-20', 'ADM-23', 'ADM-26', 'ADM-27', 'ADM-29', 'ADM-31', 'ADM-34', 'ADM-35']);
     assert.deepEqual(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-02')?.screenCodes, ['ADM-02', 'ADM-03']);
     assert.deepEqual(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-04')?.screenCodes, ['ADM-04', 'ADM-05']);
     assert.deepEqual(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-06')?.screenCodes, ['ADM-06', 'ADM-07']);
@@ -260,6 +280,13 @@ export async function runAdminTests(): Promise<{ name: string; success: boolean;
       '/admin/remplacements/:id/arbitrage',
     ]);
     assert.equal(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-31')?.canon, 'ADM — remplacements (file & arbitrage)');
+    // P4E-2 : unités exactes de units.py (ledger+audit vs recours).
+    assert.deepEqual(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-34')?.screenCodes, ['ADM-34', 'ADM-36']);
+    assert.deepEqual(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-34')?.routes, ['/admin/reputation', '/admin/reputation/audit']);
+    assert.equal(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-34')?.canon, 'ADM — réputation (ledger, corrections & audit)');
+    assert.deepEqual(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-35')?.screenCodes, ['ADM-35']);
+    assert.deepEqual(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-35')?.routes, ['/admin/reputation/contestations']);
+    assert.equal(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-35')?.canon, 'ADM — réputation (contestations)');
   });
 
   check('ADM — chaque route de fiche est résolue par le routeur P0 vers son unité', () => {
@@ -436,8 +463,8 @@ export async function runAdminTests(): Promise<{ name: string; success: boolean;
     }
   });
 
-  check('ADM — intégration : 17 unités ADM PARTIEL (P4A + P4B-1 + P4B-2 + P4C + P4D + P4E-1), EMP/PRE/PUB/SYS inchangés, autres ADM/FIN/RTC non intégrées', () => {
-    assert.equal(ADMIN_UNIT_IDS.length, 17);
+  check('ADM — intégration : 19 unités ADM PARTIEL (P4A + P4B-1 + P4B-2 + P4C + P4D + P4E-1 + P4E-2), EMP/PRE/PUB/SYS inchangés, autres ADM/FIN/RTC non intégrées', () => {
+    assert.equal(ADMIN_UNIT_IDS.length, 19);
     for (const unitId of ADMIN_UNIT_IDS) {
       assert.equal(integrationStatus(unitId), 'PARTIEL', `${unitId} doit être PARTIEL`);
       assert.ok(isAdminUnit(unitId), `${unitId} doit être reconnue comme unité ADM`);
@@ -462,6 +489,9 @@ export async function runAdminTests(): Promise<{ name: string; success: boolean;
     assert.equal(integrationStatus('ADM-27'), 'PARTIEL', 'ADM-27/28 (dossier et justificatifs Claim) sont livrées par P4D');
     assert.equal(integrationStatus('ADM-29'), 'PARTIEL', 'ADM-29/30 (décision et Claims terminés) sont livrées par P4D');
     assert.equal(integrationStatus('ADM-31'), 'PARTIEL', 'ADM-31/32/33 (file, suivi et arbitrage des Remplacements) sont livrées par P4E-1');
+    assert.equal(integrationStatus('ADM-34'), 'PARTIEL', 'ADM-34/36 (ledger et audit de réputation) sont livrées par P4E-2');
+    assert.equal(integrationStatus('ADM-35'), 'PARTIEL', 'ADM-35 (recours de réputation) est livrée par P4E-2');
+    assert.equal(integrationStatus('ADM-37'), 'NON_INTEGRE', 'ADM-37 (documents) reste hors de cette tranche');
   });
 
   check('ADM — erreurs : projection en états StateGuard, corrélation sûre uniquement', () => {
@@ -513,6 +543,7 @@ export async function runAdminTests(): Promise<{ name: string; success: boolean;
     assert.equal(PRODUCT_LABELS.ADMIN.singular, 'Admin');
     assert.equal(PRODUCT_LABELS.QUALIFICATION.singular, 'Qualification');
     assert.equal(PRODUCT_LABELS.MATCHING.singular, 'Matching');
+    assert.equal(PRODUCT_LABELS.REPUTATION.singular, 'Réputation');
   });
 
   check('ADM — résolution d’écran : motif exact prioritaire, paramètres extraits, variantes regroupées', () => {
@@ -1298,6 +1329,173 @@ export async function runAdminTests(): Promise<{ name: string; success: boolean;
     }
     assert.ok(/assign[\s\S]*transfer[\s\S]*finalize/.test(allGaps), 'commandes sans handler déclarées');
     assert.ok(adminGapsFor('ADM-31', '/admin/remplacements/rpl-1/arbitrage').some((line) => line.startsWith('ADM-33')), 'les gaps ADM-33 sont servis sur sa route');
+  });
+
+  /* ── P4E-2-DESIGN-ADMIN-REPUTATION ── */
+
+  const REPUTATION_CODES = ['ADM-34', 'ADM-35', 'ADM-36'] as const;
+
+  check('ADM — P4E-2 : les trois routes P0 sont résolues vers les unités exactes du Master et rendues par leur écran', () => {
+    const cases: readonly [string, string, string, Record<string, string>][] = [
+      ['/admin/reputation', 'ADM-34', 'ADM-34', {}],
+      ['/admin/reputation/contestations', 'ADM-35', 'ADM-35', {}],
+      ['/admin/reputation/audit', 'ADM-36', 'ADM-34', {}],
+    ];
+    for (const [path, code, unitId, params] of cases) {
+      const resolved = resolveAdminScreen(path);
+      assert.equal(resolved?.code, code, `${path} → fiche`);
+      assert.equal(resolved?.unitId, unitId, `${path} → unité Master`);
+      assert.deepEqual(resolved?.params, params, `${path} → paramètres`);
+      const route = resolveRoute(path);
+      assert.equal(route.kind, 'shell', `${path} : shell`);
+      if (route.kind === 'shell') {
+        assert.equal(route.shell, 'ADMIN', `${path} : espace ADMIN`);
+        assert.equal(route.unitId, unitId, `${path} : unité P0`);
+      }
+      assert.ok(ADMIN_SCREEN_COMPONENTS[code], `${code} : écran absent du registre`);
+    }
+    const reputationRoutes = ADMIN_DESIGN_SCREENS.filter((screen) => screen.route.startsWith('/admin/reputation')).map((screen) => screen.route);
+    assert.deepEqual(reputationRoutes, ['/admin/reputation', '/admin/reputation/contestations', '/admin/reputation/audit']);
+    assert.ok(!reputationRoutes.some((route) => /contests|integrity|summary|corrections/.test(route)), 'aucune route inventée');
+    const catalogUnit = ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-34');
+    const productionUnit = PRODUCTION_UNITS.find((unit) => unit.id === 'ADM-34');
+    assert.ok(catalogUnit && productionUnit, 'ADM-34 : unité absente');
+    assert.deepEqual([...catalogUnit.routes].sort(), [...productionUnit.routes].sort(), 'ADM-34 : routes identiques au routeur P0');
+    const contestUnit = ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-35');
+    const contestProduction = PRODUCTION_UNITS.find((unit) => unit.id === 'ADM-35');
+    assert.ok(contestUnit && contestProduction, 'ADM-35 : unité absente');
+    assert.deepEqual([...contestUnit.routes].sort(), [...contestProduction.routes].sort(), 'ADM-35 : routes identiques au routeur P0');
+    const dock = DOCK_DEFINITIONS.ADM.map((item) => item.href);
+    assert.ok(!dock.some((href) => href.startsWith('/admin/reputation')), 'le dock ADM n’est pas modifié par P4E-2');
+  });
+
+  check('ADM — P4E-2 : handlers ADMIN réels, permissions serveur, aucune vue self ni contestation', () => {
+    const route = (key: string) => API_ROUTE_CONTRACTS.find((candidate) => candidate.key === key);
+    const reads = [
+      ['admin.reputation.entries.list', '/api/v1/admin/reputation/entries', 'audit:read'],
+      ['admin.reputation.entries.read', '/api/v1/admin/reputation/entries/:reputationId', 'audit:read'],
+    ] as const;
+    for (const [key, path, permission] of reads) {
+      const contract = route(key);
+      assert.ok(contract, `${key} absente du catalogue serveur`);
+      assert.equal(contract.method, 'GET', `${key} lecture`);
+      assert.equal(contract.path, path, `${key} chemin réel`);
+      assert.equal(contract.scope, 'admin', `${key} portée ADMIN`);
+      assert.equal(contract.permission, permission, `${key} permission existante`);
+      assert.ok(ADMIN_PERMISSIONS.includes(permission as never), `${permission} doit appartenir au rôle ADMIN`);
+      assert.ok(ADMIN_API_PATHS.includes(path), `${key} non utilisé par AdminApi`);
+    }
+    const commands = [
+      ['admin.reputation.entries.correct', '/api/v1/admin/reputation/entries/:reputationId/correct', 'incidents:arbitrate'],
+      ['admin.reputation.reconcile', '/api/v1/admin/reputation/reconcile', 'incidents:arbitrate'],
+    ] as const;
+    for (const [key, path, permission] of commands) {
+      const contract = route(key);
+      assert.ok(contract, `${key} absente du catalogue serveur`);
+      assert.equal(contract.method, 'POST', `${key} commande`);
+      assert.equal(contract.path, path);
+      assert.equal(contract.permission, permission);
+      assert.equal(contract.idempotency, true, `${key} doit exiger l’idempotence`);
+      assert.ok(ADMIN_API_PATHS.includes(path), `${key} non utilisé par AdminApi`);
+    }
+    const repositorySource = readFileSync(new URL('../backend/reputation/reputationRepository.ts', import.meta.url), 'utf8');
+    assert.ok(repositorySource.includes("'admin.reputation.entries.list': async context =>"), 'listAdmin réel');
+    assert.ok(repositorySource.includes("'admin.reputation.entries.read': async context =>"), 'getAdmin réel');
+    assert.ok(repositorySource.includes("'admin.reputation.entries.correct': async context =>"), 'correct réel');
+    assert.ok(repositorySource.includes("'admin.reputation.reconcile': async context =>"), 'reconcileAdmin réel');
+    assert.ok(repositorySource.includes("export const REPUTATION_ADMIN_READ_PERMISSION = 'audit:read'"), 'permission lecture');
+    assert.ok(repositorySource.includes("export const REPUTATION_ADMIN_DECIDE_PERMISSION = 'incidents:arbitrate'"), 'permission correction');
+    const mine = route('reputation.mine.read');
+    assert.ok(mine, 'reputation.mine.read existe (scope self)');
+    assert.equal(mine.scope, 'self');
+    assert.ok(!ADMIN_API_PATHS.includes(mine.path), 'la vue dérivée self n’est pas appelée par l’ADMIN');
+    assert.equal(route('admin.reputation.contests.list'), undefined, 'aucune route de contestation');
+    assert.equal(route('admin.audit.integrity.run'), undefined, 'aucune route d’intégrité');
+    assert.equal(REPUTATION_READ_PERMISSION, 'audit:read');
+    assert.equal(REPUTATION_DECIDE_PERMISSION, 'incidents:arbitrate');
+  });
+
+  await checkAsync('ADM — P4E-2 : appels AdminApi exacts, curseur, encodage, clé d’idempotence conservée', async () => {
+    const calls: { path: string; options?: Record<string, unknown> }[] = [];
+    const client = {
+      request: async (path: string, options?: Record<string, unknown>) => {
+        calls.push({ path, options });
+        if (path.includes('/correct') || path.match(/\/entries\/[^/]+$/)) {
+          return { reputationId: 'rpt/a', status: 'REVERSED', history: [] };
+        }
+        if (path.endsWith('/reconcile')) {
+          return { subjectUserId: 'usr-1', scanned: 0, appended: 0, duplicates: 0, rulesVersion: 'P0-REPUTATION-1', reconciledAt: '2026-10-01T00:00:00.000Z', purpose: 'test' };
+        }
+        return { items: [], hasMore: false, cursor: null };
+      },
+    };
+    const api = new AdminApi(client as never);
+    await api.reputationEntries({ limit: 100, status: 'ACTIVE', subjectUserId: 'usr-1' });
+    await api.reputationEntries({ limit: 100, cursor: 'rpt-9', sourceEntityType: 'CONTRACT' });
+    await api.reputationEntry('rpt/a');
+    await api.correctReputationEntry('rpt/a', { action: 'REVERSE', reason: 'motif serveur' }, undefined, 'rep-key-1');
+    await api.correctReputationEntry('rpt/a', { action: 'REVERSE', reason: 'motif serveur' }, undefined, 'rep-key-1');
+    await api.reconcileReputation('usr-1', undefined, 'rec-key-1');
+    assert.deepEqual(calls.map(({ path }) => path), [
+      '/admin/reputation/entries',
+      '/admin/reputation/entries',
+      '/admin/reputation/entries/rpt%2Fa',
+      '/admin/reputation/entries/rpt%2Fa/correct',
+      '/admin/reputation/entries/rpt%2Fa/correct',
+      '/admin/reputation/reconcile',
+    ]);
+    assert.deepEqual((calls[0].options?.query as Record<string, unknown>).status, 'ACTIVE');
+    assert.deepEqual((calls[1].options?.query as Record<string, unknown>).cursor, 'rpt-9');
+    assert.equal(calls[3].options?.method, 'POST');
+    assert.deepEqual(calls[3].options?.body, { action: 'REVERSE', reason: 'motif serveur' });
+    assert.equal(calls[3].options?.idempotencyKey, 'rep-key-1');
+    assert.equal(calls[4].options?.idempotencyKey, 'rep-key-1', 'rejeu d’interface : même clé');
+    assert.deepEqual(calls[5].options?.body, { subjectUserId: 'usr-1' });
+  });
+
+  check('ADM — P4E-2 : enums de réputation en parité exacte avec le serveur, aucun score 0-100', () => {
+    assert.deepEqual(Object.keys(REPUTATION_STATUS_LABELS).sort(), [...REPUTATION_STATUS_VALUES].sort());
+    assert.deepEqual(Object.keys(REPUTATION_STATUS_TONES).sort(), [...REPUTATION_STATUS_VALUES].sort());
+    assert.deepEqual(Object.keys(REPUTATION_DIRECTION_LABELS).sort(), [...REPUTATION_DIRECTION_VALUES].sort());
+    assert.deepEqual(Object.keys(REPUTATION_CATEGORY_LABELS).sort(), [...REPUTATION_CATEGORY_VALUES].sort());
+    assert.deepEqual(Object.keys(REPUTATION_PROVENANCE_LABELS).sort(), [...REPUTATION_PROVENANCE_VALUES].sort());
+    assert.deepEqual(Object.keys(REPUTATION_SOURCE_ENTITY_LABELS).sort(), [...REPUTATION_SOURCE_ENTITY_TYPES].sort());
+    assert.equal(REPUTATION_SOURCE_ENTITY_LABELS.CLAIM, 'Claim');
+    assert.equal(REPUTATION_CATEGORY_LABELS.DISPUTE_OUTCOME, 'Issue de Claim');
+    assert.ok(!/Mission/i.test(REPUTATION_CATEGORY_LABELS.MISSION_EXECUTION), 'libellé sans Mission');
+    assert.equal(ADMIN_UI_TERMS.REPUTATION_LEDGER, 'Ledger de réputation');
+  });
+
+  check('ADM — P4E-2 : aucun score inventé, aucune vue self, aucune mutation cliente, vocabulaire et BACKEND_GAP', () => {
+    const source = stripComments(readFileSync(new URL('./screens/reputation.tsx', import.meta.url), 'utf8'));
+    assert.ok(!/my\/reputation/.test(source), 'aucune vue self');
+    assert.ok(!/netImpact|scoreVersion|computeReputationView/.test(source), 'aucune vue dérivée calculée');
+    assert.ok(!/Math\.random|faker|lorem/i.test(source), 'aucune donnée simulée');
+    assert.ok(!/\.reduce\(|\+=/.test(source), 'aucun cumul d’impact');
+    assert.ok(source.includes('data-no-invented-score="true"'), 'l’absence de score inventé est affichée');
+    assert.ok(source.includes("'REVERSE'") && source.includes("'RESTORE'"), 'actions réelles');
+    assert.ok(!/\bdelta\b/.test(source), 'aucun delta compensatoire');
+    const contestsFn = source.slice(source.indexOf('function ReputationContestsContent'));
+    const auditFn = source.slice(source.indexOf('function ReputationAuditContent'));
+    assert.ok(!/<form\b/.test(contestsFn), 'ADM-35 sans formulaire');
+    assert.ok(!/<form\b/.test(auditFn), 'ADM-36 sans formulaire');
+    for (const field of ['idempotencyKey', 'metadata', 'payload', 'objectKey', 'secret', 'token', 'password', 'dedupeKey']) {
+      assert.ok(!source.includes(field), `${field} ne doit pas être lu par l’écran`);
+    }
+    const displayed = displayStringsIn(source).join(' ');
+    assert.deepEqual(forbiddenTermsIn(displayed), [], 'aucun terme du Master non officiel affiché');
+    for (const label of FORBIDDEN_FINANCE_LABELS) assert.ok(!displayed.includes(label), `libellé financier interdit : ${label}`);
+    for (const code of REPUTATION_CODES) {
+      const gaps = ADMIN_UNIT_GAPS[code] ?? [];
+      assert.ok(gaps.length > 0, `${code} doit déclarer son BACKEND_GAP`);
+      assert.deepEqual(forbiddenTermsIn(stripTechnicalTokens(gaps.join(' '))), [], `${code} : vocabulaire de gap`);
+    }
+    const allGaps = REPUTATION_CODES.flatMap((code) => ADMIN_UNIT_GAPS[code] ?? []).join(' ');
+    for (const capability of ['/admin/reputation/summary', '/admin/reputation/entries/corrections', '/admin/reputation/contests', '/admin/audit/integrity/run']) {
+      assert.ok(allGaps.includes(capability), `capacité absente non déclarée : ${capability}`);
+    }
+    assert.ok(adminGapsFor('ADM-34', '/admin/reputation/audit').some((line) => line.startsWith('ADM-36')), 'les gaps ADM-36 sont servis sur sa route');
+    assert.ok(source.includes('<SystemFeedback state="403" />'), 'accès refusé : état SYS 403');
   });
 
   return results;
