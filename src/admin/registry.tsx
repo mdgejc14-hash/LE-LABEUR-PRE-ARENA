@@ -1,15 +1,19 @@
 /**
- * ADM —— registre des écrans livrés (12 unités, 22 fiches — tranches P4A, P4B-1 et P4B-2).
+ * ADM —— registre des écrans livrés (13 unités, 24 fiches — tranches P4A,
+ * P4B-1, P4B-2 et P4C).
  *
- * Chaque code de fiche ADM-01 → ADM-22 livré par ces tranches est associé à
+ * Chaque code de fiche ADM-01 → ADM-24 livré par ces tranches est associé à
  * l'écran qui le rend. Les variantes des fiches (mêmes zones, état imposé par
  * la route) réutilisent l'écran canonique, comme le décrit le Master Design.
  * P4B-1 ajoute la supervision des contrats (ADM-13 → ADM-17). P4B-2 ajoute
  * ADM-18/19 Paiements et rapprochement, ADM-20 anomalies (BACKEND_GAP), ADM-21
  * déclarations externes depuis le DTO Payment et ADM-22 incident financier
- * (BACKEND_GAP), sur les routes canoniques déjà définies.
- * Les autres fiches (salaire en tant qu'écran dédié, litiges, remplacements,
- * réputation, documents, ops, sécurité, infra) restent hors tranche.
+ * (BACKEND_GAP), sur les routes canoniques déjà définies. P4C ajoute
+ * ADM-23/24 confirmations de Salaire et preuve de réception (unité unique
+ * « ADM — salaire (confirmations & preuves OTP) ») : la confirmation OTP
+ * reste réservée au Candidat et l'ADMIN n'y accède pas (BACKEND_GAP).
+ * Les autres fiches (litiges, remplacements, réputation, documents, ops,
+ * sécurité, infra) restent hors tranche.
  *
  * Ce module est le SEUL point d'entrée des routes `/admin/*` des tranches :
  * il résout la fiche depuis le chemin réel, applique la garde de session puis
@@ -43,6 +47,7 @@ import {
   Admin21ExternalDeclarationsScreen,
   Admin22PaymentIncidentScreen,
 } from './screens/payments';
+import { Admin23SalaryConfirmations, Admin24SalaryProofReview } from './screens/salary';
 
 type AdminScreenComponent = (props: AdminUnitProps) => ReactNode;
 
@@ -70,6 +75,8 @@ export const ADMIN_SCREEN_COMPONENTS: Readonly<Record<string, AdminScreenCompone
   'ADM-20': Admin20PaymentAnomaliesScreen,
   'ADM-21': Admin21ExternalDeclarationsScreen,
   'ADM-22': Admin22PaymentIncidentScreen,
+  'ADM-23': Admin23SalaryConfirmations,
+  'ADM-24': Admin24SalaryProofReview,
 };
 
 export function adminScreenCodes(): readonly string[] {

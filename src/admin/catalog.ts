@@ -1,6 +1,7 @@
 // GÉNÉRÉ PAR scripts/design/generate-admin-catalog.py — NE PAS ÉDITER À LA MAIN.
 // Source : design/llab/content/adm_*.py, design/llab/units.py — tranches livrées :
-// P4A (ADM-01 → ADM-12), P4B-1 CONTRATS (ADM-13 → ADM-17) et P4B-2 PAIEMENTS (ADM-18 → ADM-22).
+// P4A (ADM-01 → ADM-12), P4B-1 CONTRATS (ADM-13 → ADM-17), P4B-2 PAIEMENTS (ADM-18 → ADM-22)
+// et P4C SALAIRE (ADM-23 → ADM-24).
 // Régénérer : npm run design:admin
 //
 // Référence de design UNIQUEMENT : aucun libellé de ce fichier n'est affiché par
@@ -693,6 +694,60 @@ export const ADMIN_DESIGN_UNITS = [
       "POST /admin/payments/incidents/:id/resolve {option, entries}",
       "POST /admin/payments/incidents/:id/escalate"
     ]
+  },
+  {
+    "id": "ADM-23",
+    "canon": "ADM — salaire (confirmations & preuves OTP)",
+    "criticality": "P0",
+    "archetype": "Preuves de versement",
+    "screenCodes": [
+      "ADM-23",
+      "ADM-24"
+    ],
+    "routes": [
+      "/admin/salaire/confirmations",
+      "/admin/salaire/preuves/:id"
+    ],
+    "zoneKinds": [
+      "cta",
+      "hero",
+      "kpi",
+      "list",
+      "table"
+    ],
+    "componentRefs": [
+      "Bloc",
+      "Décision",
+      "Journal",
+      "Lien",
+      "Signaux",
+      "Table"
+    ],
+    "stateNames": [
+      "Nominal",
+      "Accumulation",
+      "OTP expirés",
+      "Blocage complet",
+      "Valide",
+      "Douteuse",
+      "Invalidée",
+      "Introuvable"
+    ],
+    "tokens": [
+      "--amber-500",
+      "--clay-500",
+      "--emerald-500",
+      "--mono",
+      "--table"
+    ],
+    "designApi": [
+      "GET /admin/salary/confirmations?cursor=",
+      "POST /admin/salary/confirmations/:id/remind",
+      "GET /admin/salary/confirmations/stats",
+      "GET /admin/salary/proofs/:id",
+      "POST /admin/salary/proofs/:id/validate",
+      "POST /admin/salary/proofs/:id/invalidate {motive}"
+    ]
   }
 ] as const;
 
@@ -1287,6 +1342,60 @@ export const ADMIN_DESIGN_SCREENS = [
       "--violet-500",
       "--mono",
       "--glass-2"
+    ]
+  },
+  {
+    "code": "ADM-23",
+    "unitId": "ADM — salaire (confirmations & preuves OTP)",
+    "route": "/admin/salaire/confirmations",
+    "canonicalRoute": "/admin/salaire/confirmations",
+    "role": "ADMIN",
+    "criticality": "P0",
+    "zoneKinds": [
+      "kpi",
+      "table",
+      "list",
+      "cta"
+    ],
+    "variantOf": null,
+    "designApi": [
+      "GET /admin/salary/confirmations?cursor=",
+      "POST /admin/salary/confirmations/:id/remind",
+      "GET /admin/salary/confirmations/stats"
+    ],
+    "tokens": [
+      "--emerald-500",
+      "--amber-500",
+      "--clay-500",
+      "--mono",
+      "--table"
+    ]
+  },
+  {
+    "code": "ADM-24",
+    "unitId": "ADM — salaire (confirmations & preuves OTP)",
+    "route": "/admin/salaire/preuves/:id",
+    "canonicalRoute": "/admin/salaire/preuves/:id",
+    "role": "ADMIN",
+    "criticality": "P0",
+    "zoneKinds": [
+      "hero",
+      "table",
+      "kpi",
+      "cta"
+    ],
+    "variantOf": null,
+    "designApi": [
+      "GET /admin/salary/proofs/:id",
+      "POST /admin/salary/proofs/:id/validate",
+      "POST /admin/salary/proofs/:id/invalidate {motive}"
+    ],
+    "tokens": [
+      "--mono",
+      "--emerald-500",
+      "--clay-500",
+      "--amber-500",
+      "--table"
     ]
   }
 ] as const;

@@ -173,7 +173,7 @@ export function runRoutingTests(): RoutingTestResult[] {
     return '15 entrées de dock ancrées dans les fiches';
   });
 
-  check('intégration : 0 / 120 intégrée ; PARTIEL = PUB + SYS + les 32 unités EMP (P2) + les 26 unités PRE (P3) + les 12 unités ADM des tranches P4A, P4B-1 et P4B-2 ; autres ADM/FIN/RTC non intégrées', () => {
+  check('intégration : 0 / 120 intégrée ; PARTIEL = PUB + SYS + les 32 unités EMP (P2) + les 26 unités PRE (P3) + les 13 unités ADM des tranches P4A, P4B-1, P4B-2 et P4C ; autres ADM/FIN/RTC non intégrées', () => {
     assertEqual(INTEGRATED_UNIT_IDS.length, 0, 'unités intégrées');
     const partialFamilies = ['PUB', 'SYS', 'EMP', 'PRE'];
     assert(
@@ -185,7 +185,7 @@ export function runRoutingTests(): RoutingTestResult[] {
     const summary = integrationSummary();
     assertEqual([summary.integrees, summary.total], [0, 120], 'synthèse');
     assertEqual(summary.parFamille, UNIT_COUNTS_BY_FAMILY, 'répartition');
-    return '0 / 120 intégrées ; PARTIEL = PUB (10) + SYS (10) + EMP (32) + PRE (26) + ADM tranches P4A, P4B-1 et P4B-2 (12)';
+    return '0 / 120 intégrées ; PARTIEL = PUB (10) + SYS (10) + EMP (32) + PRE (26) + ADM tranches P4A, P4B-1, P4B-2 et P4C (13)';
   });
 
   return results;

@@ -8,6 +8,11 @@
  * Aucune de ces lignes ne décrit une API que cette tranche aurait créée : le
  * backend métier n'est pas modifié. Les routes citées existent (ou non) dans
  * `src/backend/api/routeContracts.ts` ; l'état réel est vérifié par test.
+ *
+ * P4C-DESIGN-ADMIN-SALARY-PROOFS (ADM-23 → ADM-24) : la confirmation OTP du
+ * Salaire reste strictement réservée au Candidat et sa demande à l'Employeur ;
+ * aucune route ADMIN ne lit la confirmation ni le dossier de preuve, et aucun
+ * secret OTP n'est exposé.
  */
 
 export const ADMIN_UNIT_GAPS: Record<string, readonly string[]> = {
@@ -138,5 +143,21 @@ export const ADMIN_UNIT_GAPS: Record<string, readonly string[]> = {
   ],
   'ADM-22': [
     'ADM-22 · GET /admin/payments/incidents/:id, POST /admin/payments/incidents/:id/resolve et POST /admin/payments/incidents/:id/escalate — absents du catalogue et sans handler. Aucun remboursement, réémission, écriture compensatoire ou incident financier n’est inventé.',
+  ],
+  /* ── P4C · confirmations de Salaire et preuves de réception ── */
+  'ADM-23': [
+    'ADM-23 · fiche : GET /admin/salary/confirmations?cursor=, GET /admin/salary/confirmations/stats et POST /admin/salary/confirmations/:id/remind — absentes du catalogue de routes et sans handler : aucune file de confirmations, aucun agrégat serveur et aucune relance ADMIN n’existent.',
+    'ADM-23 · l’état de confirmation du Salaire (demandée, confirmée, expirée, contestée) n’est exposé par aucune route ADMIN : les repères « en attente d’OTP », « OTP expirés » et « confirmés par le Candidat » affichent « — », jamais un zéro présenté comme réel.',
+    'ADM-23 · la file est composée depuis admin.payments.list (permission serveur payments:read:any) : seuls les Paiements de nature SALARY de la page réellement chargée sont affichés, avec leurs états du cycle servis par le serveur ; aucun montant n’est additionné dans le navigateur.',
+    'ADM-23 · la demande de confirmation reste réservée à l’Employeur (payments.salary.confirmation.request) et la confirmation OTP au Candidat (payments.salary.confirmation.confirm) : l’ADMIN consulte les états du cycle, il ne demande ni ne confirme un Salaire à la place d’une partie.',
+    'ADM-23 · aucune voie d’envoi (SMS, e-mail ou autre) n’est installée par le produit : cette interface n’annonce aucun envoi, aucune relance et aucun code délivré.',
+    'ADM-23 · le journal des envois et des relances horodatées de la fiche — absent : aucun événement de délivrance ni de cadence de relance n’est lisible côté ADMIN.',
+    'ADM-23 · sans persistance durable configurée, admin.payments.list répond sa frontière de contrôle (collection vide, persistence not-configured) : cet état réel est affiché tel quel, jamais une file présentée comme saine.',
+  ],
+  'ADM-24': [
+    'ADM-24 · fiche entière en BACKEND_GAP : GET /admin/salary/proofs/:id, POST /admin/salary/proofs/:id/validate et POST /admin/salary/proofs/:id/invalidate {motive} — absentes du catalogue et sans handler : aucun dossier de preuve n’est lisible et aucune décision (validation, invalidation motivée, contre-preuve) n’est possible côté ADMIN.',
+    'ADM-24 · l’empreinte de preuve, son horodatage, la voie d’acheminement du code, les tentatives de saisie et les signaux de fraude sont produits côté serveur de confirmation et jamais exposés à l’ADMIN : les repères de la fiche affichent « — ».',
+    'ADM-24 · AUCUN secret n’est affiché — ni code, ni empreinte de code, ni graine, ni nonce — et aucun écran ne contourne la confirmation réservée au Candidat.',
+    'ADM-24 · la référence affichée vient du chemin ; aucune trace, aucun versement et aucune décision ne sont chargés faute de handler : la fiche ne rend aucun formulaire, aucune commande ne pouvant être exécutée.',
   ],
 };
