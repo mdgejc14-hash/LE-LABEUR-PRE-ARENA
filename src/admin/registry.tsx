@@ -1,10 +1,11 @@
 /**
- * ADM —— registre des écrans livrés (13 unités, 24 fiches — tranches P4A,
- * P4B-1, P4B-2 et P4C).
+ * ADM —— registre des écrans livrés (16 unités, 29 fiches — tranches P4A,
+ * P4B-1, P4B-2, P4C et P4D).
  *
- * Chaque code de fiche ADM-01 → ADM-24 livré par ces tranches est associé à
- * l'écran qui le rend. Les variantes des fiches (mêmes zones, état imposé par
- * la route) réutilisent l'écran canonique, comme le décrit le Master Design.
+ * Chaque code de fiche ADM-01 → ADM-24 et ADM-26 → ADM-30 livré par ces
+ * tranches est associé à l'écran qui le rend. Les variantes des fiches (mêmes
+ * zones, état imposé par la route) réutilisent l'écran canonique, comme le
+ * décrit le Master Design.
  * P4B-1 ajoute la supervision des contrats (ADM-13 → ADM-17). P4B-2 ajoute
  * ADM-18/19 Paiements et rapprochement, ADM-20 anomalies (BACKEND_GAP), ADM-21
  * déclarations externes depuis le DTO Payment et ADM-22 incident financier
@@ -12,8 +13,10 @@
  * ADM-23/24 confirmations de Salaire et preuve de réception (unité unique
  * « ADM — salaire (confirmations & preuves OTP) ») : la confirmation OTP
  * reste réservée au Candidat et l'ADMIN n'y accède pas (BACKEND_GAP).
- * Les autres fiches (litiges, remplacements, réputation, documents, ops,
- * sécurité, infra) restent hors tranche.
+ * P4D ajoute ADM-26 (file), ADM-27/28 (fiche & justificatifs) et ADM-29/30
+ * (décision & consultation des Claims terminés), sans créer de route serveur.
+ * Les unités Remplacements, réputation, documents, ops, sécurité et infra
+ * restent hors tranche.
  *
  * Ce module est le SEUL point d'entrée des routes `/admin/*` des tranches :
  * il résout la fiche depuis le chemin réel, applique la garde de session puis
@@ -48,6 +51,13 @@ import {
   Admin22PaymentIncidentScreen,
 } from './screens/payments';
 import { Admin23SalaryConfirmations, Admin24SalaryProofReview } from './screens/salary';
+import {
+  Admin26ClaimRegistry,
+  Admin27ClaimSheet,
+  Admin28ClaimEvidence,
+  Admin29ClaimDecision,
+  Admin30ClaimDecisionHistory,
+} from './screens/claims';
 
 type AdminScreenComponent = (props: AdminUnitProps) => ReactNode;
 
@@ -77,6 +87,11 @@ export const ADMIN_SCREEN_COMPONENTS: Readonly<Record<string, AdminScreenCompone
   'ADM-22': Admin22PaymentIncidentScreen,
   'ADM-23': Admin23SalaryConfirmations,
   'ADM-24': Admin24SalaryProofReview,
+  'ADM-26': Admin26ClaimRegistry,
+  'ADM-27': Admin27ClaimSheet,
+  'ADM-28': Admin28ClaimEvidence,
+  'ADM-29': Admin29ClaimDecision,
+  'ADM-30': Admin30ClaimDecisionHistory,
 };
 
 export function adminScreenCodes(): readonly string[] {
@@ -86,7 +101,8 @@ export function adminScreenCodes(): readonly string[] {
 /**
  * Rendu d'une route `/admin/*` rattachée à une unité ADM de la tranche. Le
  * chemin est résolu vers sa fiche ; sans fiche correspondante, l'appelant
- * garde la main (aucun écran n'est inventé pour une route non livrée).
+ * garde la main (aucun écran n'est inventé pour une route non livrée). P4D
+ * enregistre uniquement les routes ADM-26 à ADM-30 du Master exact.
  */
 export function AdminScreen({
   unitId,

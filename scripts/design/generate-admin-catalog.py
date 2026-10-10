@@ -6,7 +6,9 @@ Tranches livrées :
   P4B-1-DESIGN-ADMIN-CONTRACTS : supervision des contrats ;
   P4B-2-DESIGN-ADMIN-PAYMENTS : paiements, déclarations et rapprochement ;
   P4C-DESIGN-ADMIN-SALARY-PROOFS : confirmations de Salaire et preuves de
-  réception (unité exacte `ADM — salaire (confirmations & preuves OTP)`).
+  réception (unité exacte `ADM — salaire (confirmations & preuves OTP)`) ;
+  P4D-DESIGN-ADMIN-CLAIMS : file, dossier, pièces et décisions des Claims
+  (regroupements exacts `ADM-26`, `ADM-27/28`, `ADM-29/30`).
 
 Ce générateur ne produit AUCUN libellé métier : les textes affichés par
 l'interface viennent de `src/admin/vocabulary.ts` (vocabulaire LE LABEUR).
@@ -36,9 +38,10 @@ Périmètre de la tranche P4C (supervision du Salaire uniquement) :
   ADM-23 confirmations de Salaire (file) ;
   ADM-24 preuves de réception (examen) — unité unique `ADM-23` selon `units.py`.
 
-Les écrans ADM suivants (litiges, remplacements, réputation, documents,
-notifications, ops, sécurité avancée, infra, FIN) restent hors tranche et ne figurent
-PAS dans ce catalogue.
+Les écrans ADM suivants (remplacements, réputation, documents, notifications,
+ops, sécurité avancée, infra, FIN) restent hors tranche et ne figurent PAS dans
+ce catalogue. Seules les fiches P4D explicitement listées ci-dessus sont incluses
+pour les Claims ; les outils d’administration des Remplacements restent hors scope.
 """
 import json
 import sys
@@ -51,7 +54,7 @@ sys.path.insert(0, str(ROOT / 'design'))
 from llab.content import load_all  # noqa: E402
 from llab.units import unit_of  # noqa: E402
 
-# Fiches ADM livrées par les tranches P4A, P4B-1, P4B-2 et P4C (périmètre strict).
+# Fiches ADM livrées par les tranches P4A, P4B-1, P4B-2, P4C et P4D (périmètre strict).
 TRANCHE_P4A = {
     'ADM-01', 'ADM-02', 'ADM-03', 'ADM-04', 'ADM-05',
     'ADM-06', 'ADM-07', 'ADM-08', 'ADM-09',
@@ -75,7 +78,14 @@ TRANCHE_P4C = {
     'ADM-23', 'ADM-24',
 }
 
-TRANCHE_ADMIN = TRANCHE_P4A | TRANCHE_P4B1 | TRANCHE_P4B2 | TRANCHE_P4C
+# P4D-DESIGN-ADMIN-CLAIMS : trois unités exactes de `design/llab/units.py` :
+# ADM-26 seul (file), ADM-27 regroupe ADM-27/28 (fiche & pièces),
+# ADM-29 regroupe ADM-29/30 (décision & journal des décisions).
+TRANCHE_P4D = {
+    'ADM-26', 'ADM-27', 'ADM-28', 'ADM-29', 'ADM-30',
+}
+
+TRANCHE_ADMIN = TRANCHE_P4A | TRANCHE_P4B1 | TRANCHE_P4B2 | TRANCHE_P4C | TRANCHE_P4D
 
 families = load_all()
 SCREENS = [s for s in families['ADM'] if s.code in TRANCHE_ADMIN]
@@ -136,7 +146,7 @@ payload = (
     '// GÉNÉRÉ PAR scripts/design/generate-admin-catalog.py — NE PAS ÉDITER À LA MAIN.\n'
     '// Source : design/llab/content/adm_*.py, design/llab/units.py — tranches livrées :\n'
     '// P4A (ADM-01 → ADM-12), P4B-1 CONTRATS (ADM-13 → ADM-17), P4B-2 PAIEMENTS (ADM-18 → ADM-22)\n'
-    '// et P4C SALAIRE (ADM-23 → ADM-24).\n'
+    '// P4C SALAIRE (ADM-23 → ADM-24), P4D CLAIMS (ADM-26 → ADM-30).\n'
     '// Régénérer : npm run design:admin\n'
     '//\n'
     '// Référence de design UNIQUEMENT : aucun libellé de ce fichier n\'est affiché par\n'

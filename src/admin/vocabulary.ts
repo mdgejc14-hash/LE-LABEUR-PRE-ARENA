@@ -1,7 +1,7 @@
 /**
  * ADM —— VOCABULAIRE LE LABEUR (source de vérité des textes affichés).
  *
- * Règle absolue de la tranche P4A-DESIGN-ADMIN-CORE : les fiches du Master
+ * Règle absolue des tranches P4A → P4D : les fiches du Master
  * Design nomment parfois autrement des objets qui EXISTENT déjà dans LE LABEUR.
  * La structure visuelle des fiches est reprise ; les noms affichés restent ceux
  * du produit. Aucun objet, aucune route, aucun statut, aucun type, aucun
@@ -39,7 +39,12 @@
 import type { ContractStatus, UserRole } from '../types';
 import type { ServerUserRecord } from '../backend/identity/stores';
 import type { QualificationDecision, QualificationReasonSeverity } from '../backend/matching/records';
-import type { ClaimStatus, ClaimType } from '../backend/disputes/records';
+import type {
+  ClaimEvidenceStatus,
+  ClaimEvidenceType,
+  ClaimStatus,
+  ClaimType,
+} from '../backend/disputes/records';
 import type { PaymentLifecycleStatus, PaymentType } from '../domain/paymentLifecycle';
 import type {
   PaymentReconciliationBatchStatus,
@@ -262,6 +267,34 @@ export const CLAIM_STATUS_TONES: Record<ClaimStatus, 'emerald' | 'amber' | 'clay
   CLOSED: 'slate',
 };
 
+/** Justificatifs réellement acceptés par le backend Claim. */
+export const CLAIM_EVIDENCE_TYPE_LABELS: Record<ClaimEvidenceType, string> = {
+  PAYMENT_PROOF: 'Justificatif de paiement',
+  CONTRACT_EVIDENCE: 'Justificatif lié au contrat',
+  SUPPORTING_EVIDENCE: 'Justificatif complémentaire',
+};
+
+export const CLAIM_EVIDENCE_STATUS_LABELS: Record<ClaimEvidenceStatus, string> = {
+  PENDING: 'En attente',
+  SUBMITTED: 'Transmis',
+  CANCELLED: 'Annulé',
+  EXPIRED: 'Échu',
+};
+
+export const CLAIM_EVIDENCE_STATUS_TONES: Record<ClaimEvidenceStatus, 'emerald' | 'amber' | 'clay' | 'slate'> = {
+  PENDING: 'amber',
+  SUBMITTED: 'emerald',
+  CANCELLED: 'slate',
+  EXPIRED: 'clay',
+};
+
+/** Options réellement choisies dans cette tranche (la décision REPLACE reste hors scope). */
+export const ADMIN_CLAIM_DECISION_OPTIONS = ['RESOLVE', 'REJECT'] as const;
+export const CLAIM_DECISION_LABELS: Record<(typeof ADMIN_CLAIM_DECISION_OPTIONS)[number], string> = {
+  RESOLVE: 'Résoudre le Claim',
+  REJECT: 'Rejeter le Claim',
+};
+
 /* ── P4B-2 · Paiement, échéance, déclaration et rapprochement ──────────── */
 
 /** Statuts strictement identiques au domaine Payment (`PAYMENT_LIFECYCLE_STATUS_VALUES`). */
@@ -419,4 +452,9 @@ export const ADMIN_UI_TERMS = {
   PAYMENT_INCIDENT: 'Incident de paiement',
   SALARY_CONFIRMATION_QUEUE: 'Confirmations de Salaire',
   SALARY_PROOF_REVIEW: 'Preuve de réception du Salaire',
+  CLAIM_REGISTRY: PRODUCT_LABELS.CLAIM.plural,
+  CLAIM_SHEET: `Fiche ${PRODUCT_LABELS.CLAIM.singular}`,
+  CLAIM_EVIDENCE: `Justificatifs du ${PRODUCT_LABELS.CLAIM.singular.toLowerCase()}`,
+  CLAIM_DECISION: `Décision ADMIN du ${PRODUCT_LABELS.CLAIM.singular.toLowerCase()}`,
+  CLAIM_DECISION_HISTORY: `Décisions des ${PRODUCT_LABELS.CLAIM.plural.toLowerCase()}`,
 } as const;

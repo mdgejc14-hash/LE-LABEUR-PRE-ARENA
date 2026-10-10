@@ -3,15 +3,16 @@
  *
  * Les routes sont celles du routeur P0 (`productionUnits.ts` /
  * `ADMIN_DESIGN_SCREENS`) : aucune route n'est créée, renommée ou réécrite
- * par ces tranches. Ce module ne contient AUCUN composant : il est importable
- * par la résolution de route sans embarquer l'interface.
+ * par ces tranches, dont les routes ADM-26 → ADM-30 ajoutées au catalogue P4D.
+ * Ce module ne contient AUCUN composant : il est importable par la résolution
+ * de route sans embarquer l'interface.
  */
 
 import { ADMIN_DESIGN_SCREENS, ADMIN_DESIGN_UNITS } from './catalog';
 import { ADMIN_UNIT_GAPS } from './gaps';
 
 export interface ResolvedAdminScreen {
-  /** Code de fiche ADM livré par P4A, P4B-1 ou P4B-2. */
+  /** Code de fiche ADM livré par l'une des tranches P4A à P4D. */
   readonly code: string;
   /** Unité de production qui contient cette fiche (regroupement `units.py`). */
   readonly unitId: string;
