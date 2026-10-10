@@ -3,7 +3,8 @@
 // P4A (ADM-01 → ADM-12), P4B-1 CONTRATS (ADM-13 → ADM-17), P4B-2 PAIEMENTS (ADM-18 → ADM-22)
 // P4C SALAIRE (ADM-23 → ADM-24), P4D CLAIMS (ADM-26 → ADM-30), P4E-1 REMPLACEMENTS (ADM-31 → ADM-33),
 // P4E-2 RÉPUTATION (ADM-34 → ADM-36), P4F DOCUMENTS (ADM-37 → ADM-40),
-// P4F-2 NOTIFICATIONS (ADM-41 → ADM-43), P4G-1 OPÉRATIONS (ADM-44 → ADM-46).
+// P4F-2 NOTIFICATIONS (ADM-41 → ADM-43), P4G-1 OPÉRATIONS (ADM-44 → ADM-46),
+// P4G-2 SUPERVISION (ADM-47 → ADM-49).
 // Régénérer : npm run design:admin
 //
 // Référence de design UNIQUEMENT : aucun libellé de ce fichier n'est affiché par
@@ -1315,6 +1316,104 @@ export const ADMIN_DESIGN_UNITS = [
       "POST /admin/ops/cron/:name/run",
       "GET /admin/ops/cron/:name/history"
     ]
+  },
+  {
+    "id": "ADM-47",
+    "canon": "ADM — ops (SLO & incident)",
+    "criticality": "P1",
+    "archetype": "Tenir la promesse",
+    "screenCodes": [
+      "ADM-47",
+      "ADM-49"
+    ],
+    "routes": [
+      "/admin/ops/slo",
+      "/admin/ops/incidents/:id"
+    ],
+    "zoneKinds": [
+      "cta",
+      "hero",
+      "kpi",
+      "list",
+      "table",
+      "timeline"
+    ],
+    "componentRefs": [
+      "Barres",
+      "Chronologie",
+      "Gabarits",
+      "Post-mortem",
+      "Règles",
+      "Table"
+    ],
+    "stateNames": [
+      "Sain",
+      "Tendu",
+      "Épuisé",
+      "En rétablissement",
+      "Détecté",
+      "Atténué",
+      "Résolu",
+      "Post-mortem"
+    ],
+    "tokens": [
+      "--amber-500",
+      "--clay-500",
+      "--emerald-500",
+      "--glass-1",
+      "--mono",
+      "--table"
+    ],
+    "designApi": [
+      "GET /admin/ops/slo",
+      "GET /admin/ops/slo/:id/history",
+      "GET /admin/ops/slo/report.pdf",
+      "GET /admin/ops/incidents/:id",
+      "POST /admin/ops/incidents/:id/entries",
+      "POST /admin/ops/incidents/:id/broadcast {template, channels}"
+    ]
+  },
+  {
+    "id": "ADM-48",
+    "canon": "ADM — ops (dead-letter)",
+    "criticality": "P0",
+    "archetype": "Là où les messages meurent",
+    "screenCodes": [
+      "ADM-48"
+    ],
+    "routes": [
+      "/admin/ops/dead-letter"
+    ],
+    "zoneKinds": [
+      "cta",
+      "doc",
+      "kpi",
+      "table"
+    ],
+    "componentRefs": [
+      "Abandon",
+      "Analyse",
+      "Table"
+    ],
+    "stateNames": [
+      "Vide",
+      "Charge",
+      "Cause systémique",
+      "Résorbée"
+    ],
+    "tokens": [
+      "--amber-500",
+      "--clay-500",
+      "--clay-600",
+      "--mono",
+      "--table"
+    ],
+    "designApi": [
+      "GET /admin/ops/dlq?cursor=",
+      "GET /admin/ops/dlq/:id/analysis",
+      "POST /admin/ops/dlq/:id/retry",
+      "POST /admin/ops/dlq/:id/abandon {compensation}"
+    ]
   }
 ] as const;
 
@@ -2514,6 +2613,88 @@ export const ADMIN_DESIGN_SCREENS = [
       "--amber-500",
       "--clay-500",
       "--table"
+    ]
+  },
+  {
+    "code": "ADM-47",
+    "unitId": "ADM — ops (SLO & incident)",
+    "route": "/admin/ops/slo",
+    "canonicalRoute": "/admin/ops/slo",
+    "role": "ADMIN",
+    "criticality": "P1",
+    "zoneKinds": [
+      "kpi",
+      "table",
+      "list",
+      "cta"
+    ],
+    "variantOf": null,
+    "designApi": [
+      "GET /admin/ops/slo",
+      "GET /admin/ops/slo/:id/history",
+      "GET /admin/ops/slo/report.pdf"
+    ],
+    "tokens": [
+      "--emerald-500",
+      "--amber-500",
+      "--clay-500",
+      "--mono",
+      "--table"
+    ]
+  },
+  {
+    "code": "ADM-48",
+    "unitId": "ADM — ops (dead-letter)",
+    "route": "/admin/ops/dead-letter",
+    "canonicalRoute": "/admin/ops/dead-letter",
+    "role": "ADMIN",
+    "criticality": "P0",
+    "zoneKinds": [
+      "kpi",
+      "table",
+      "doc",
+      "cta"
+    ],
+    "variantOf": null,
+    "designApi": [
+      "GET /admin/ops/dlq?cursor=",
+      "GET /admin/ops/dlq/:id/analysis",
+      "POST /admin/ops/dlq/:id/retry",
+      "POST /admin/ops/dlq/:id/abandon {compensation}"
+    ],
+    "tokens": [
+      "--clay-600",
+      "--clay-500",
+      "--amber-500",
+      "--mono",
+      "--table"
+    ]
+  },
+  {
+    "code": "ADM-49",
+    "unitId": "ADM — ops (SLO & incident)",
+    "route": "/admin/ops/incidents/:id",
+    "canonicalRoute": "/admin/ops/incidents/:id",
+    "role": "ADMIN",
+    "criticality": "P0",
+    "zoneKinds": [
+      "hero",
+      "timeline",
+      "list",
+      "cta"
+    ],
+    "variantOf": null,
+    "designApi": [
+      "GET /admin/ops/incidents/:id",
+      "POST /admin/ops/incidents/:id/entries",
+      "POST /admin/ops/incidents/:id/broadcast {template, channels}"
+    ],
+    "tokens": [
+      "--clay-500",
+      "--amber-500",
+      "--emerald-500",
+      "--mono",
+      "--glass-1"
     ]
   }
 ] as const;

@@ -29,7 +29,11 @@ export function Admin44Queues(props: AdminUnitProps) {
     <DataTable caption="Files lisibles côté ADMIN" head={['File', 'Profondeur', 'Débit', 'Latence', 'Échecs', 'État']} rows={[]} empty={noSource} />
     <Panel title="Profondeur dans le temps" zone="timeline">{noSource}</Panel>
     <Panel title="Interventions" zone="cta"><p>Augmenter les workers et consulter la dead-letter ne sont pas disponibles : aucune commande ADMIN ne les prend en charge (BACKEND_GAP).</p></Panel>
-    <ActionRow><Link href="/admin/ops/cron" className="lbm-admin__link">Planifications</Link></ActionRow>
+    <ActionRow>
+      <Link href="/admin/ops/cron" className="lbm-admin__link">Planifications</Link>
+      <Link href="/admin/ops/slo" className="lbm-admin__link">Engagements de service · BACKEND_GAP</Link>
+      <Link href="/admin/ops/dead-letter" className="lbm-admin__link">Dead-letter · BACKEND_GAP</Link>
+    </ActionRow>
     <Gaps {...props} />
   </>;
 }
