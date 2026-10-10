@@ -1,6 +1,6 @@
 /**
- * ADM —— registre des écrans livrés (19 unités, 35 fiches — tranches P4A,
- * P4B-1, P4B-2, P4C, P4D, P4E-1 et P4E-2).
+ * ADM —— registre des écrans livrés (21 unités, 39 fiches — tranches P4A,
+ * P4B-1, P4B-2, P4C, P4D, P4E-1, P4E-2 et P4F).
  *
  * Chaque code de fiche ADM-01 → ADM-24 et ADM-26 → ADM-33 livré par ces
  * tranches est associé à l'écran qui le rend. Les variantes des fiches (mêmes
@@ -20,8 +20,10 @@
  * lecture seule des routes admin.replacements.list/read existantes.
  * P4E-2 ajoute les unités de réputation : ADM-34/36 (ledger, corrections
  * REVERSE/RESTORE, réconciliation d'un sujet) et ADM-35 (recours,
- * BACKEND_GAP). Les unités documents, ops, sécurité et infra restent hors
- * tranche.
+ * BACKEND_GAP). P4F ajoute les unités documents : ADM-37/40 (registre R2 et
+ * audit & rétention) et ADM-38/39 (vérification et quarantaine, BACKEND_GAP),
+ * sur admin.documents.list / read et les commandes de révocation existantes.
+ * Les unités notifications, ops, sécurité et infra restent hors tranche.
  *
  * Ce module est le SEUL point d'entrée des routes `/admin/*` des tranches :
  * il résout la fiche depuis le chemin réel, applique la garde de session puis
@@ -73,6 +75,12 @@ import {
   Admin35ReputationContests,
   Admin36ReputationAudit,
 } from './screens/reputation';
+import {
+  Admin37DocumentRegistry,
+  Admin38DocumentVerification,
+  Admin39DocumentQuarantine,
+  Admin40DocumentAudit,
+} from './screens/documents';
 
 type AdminScreenComponent = (props: AdminUnitProps) => ReactNode;
 
@@ -113,6 +121,10 @@ export const ADMIN_SCREEN_COMPONENTS: Readonly<Record<string, AdminScreenCompone
   'ADM-34': Admin34ReputationLedger,
   'ADM-35': Admin35ReputationContests,
   'ADM-36': Admin36ReputationAudit,
+  'ADM-37': Admin37DocumentRegistry,
+  'ADM-38': Admin38DocumentVerification,
+  'ADM-39': Admin39DocumentQuarantine,
+  'ADM-40': Admin40DocumentAudit,
 };
 
 export function adminScreenCodes(): readonly string[] {

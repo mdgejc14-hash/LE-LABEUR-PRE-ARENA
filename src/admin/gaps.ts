@@ -25,6 +25,17 @@
  * REVERSE / RESTORE (incidents:arbitrate), jamais un delta compensatoire. La
  * vue dérivée GET /my/reputation est réservée au sujet (scope self) et n'est
  * pas appelée. Aucune file de recours ni vérificateur de chaîne n'existe.
+ *
+ * P4F-DESIGN-ADMIN-DOCUMENTS (ADM-37 → ADM-40) : le registre et la fiche sont
+ * lus par admin.documents.list / read (documents:read:any) ; la révocation du
+ * Document ou d'une version est admin.documents.revoke / versions.revoke
+ * (incidents:arbitrate, motif, Idempotency-Key). Le contrôle d'intégrité
+ * technique est documents.versions.integrity.verify : route déclarée `scope:
+ * owner`, dont le handler accepte l'ADMIN porteur de documents:read:any —
+ * POINT OUVERT pour le backend (aucune modification faite par cette tranche).
+ * Aucune route de décision de vérification, de quarantaine, de journal d'accès,
+ * de politique ou de purge n'existe : chaque capacité est BACKEND_GAP, jamais
+ * simulée. Les BACKEND_GAP ci-dessous nomment ces capacités absentes.
  */
 
 export const ADMIN_UNIT_GAPS: Record<string, readonly string[]> = {
@@ -240,5 +251,38 @@ export const ADMIN_UNIT_GAPS: Record<string, readonly string[]> = {
     'ADM-36 · fiche entière en BACKEND_GAP : POST /admin/audit/integrity/run, GET /admin/audit/integrity/runs et GET /admin/audit/integrity/report.pdf — absents du catalogue et sans handler. Aucune chaîne de hash, aucun rapport signé et aucune vérification d’intégrité ne sont exposés.',
     'ADM-36 · GET /api/v1/admin/audit est une frontière de contrôle sans données métier : elle n’est pas utilisée comme vérificateur de ledger. POST /api/v1/admin/reputation/reconcile relit les faits déjà persistés d’un sujet (ADM-34) ; ce n’est pas une preuve d’intégrité de chaîne.',
     'ADM-36 · aucun bouton « lancer une vérification » n’est proposé : aucune commande serveur ne la recevrait. Aucun résultat intègre / rupture n’est simulé.',
+  ],
+  'ADM-37': [
+    'ADM-37 · GET /admin/documents/storage (volume stocké, mini-graphe 30 j, panne R2) — absent : aucune route ADMIN de volume. Les repères de volume restent « — ».',
+    'ADM-37 · GET /admin/documents/quarantine — absent : aucun statut « en quarantaine » n’existe côté serveur. Le compteur de quarantaine reste « — » ; aucune pièce n’est déduite.',
+    'ADM-37 · filtres taille, pays et période de dépôt — absents de admin.documents.list. Seuls le type, le statut ACTIVE|REVOKED et l’identifiant du propriétaire sont acceptés.',
+    'ADM-37 · colonnes date de vérification, taille et empreinte courte dans le registre — absentes du DTO de liste. La fiche (ADM-38) affiche les empreintes SHA-256 réellement enregistrées.',
+    'ADM-37 · « rétention respectée » et bandeau de minimisation — aucune donnée de conformité de rétention n’est exposée. Les durées restent PENDING_LEGAL_VALIDATION tant que la validation juridique n’est pas acquise.',
+    'ADM-37 · sans persistance PostgreSQL durable ou sans stockage objet configuré, admin.documents.list n’est pas installé : la route répond 501 et l’écran affiche « Source de données non configurée », jamais une liste simulée.',
+  ],
+  'ADM-38': [
+    'ADM-38 · GET /admin/documents/:id/review et POST /admin/documents/:id/review/decide {criteria, outcome, rejectReason?} — absents. Aucune décision Valider, Rejeter ou Demander un complément n’existe côté serveur : aucun bouton correspondant n’est proposé.',
+    'ADM-38 · visionneuse sécurisée (contenu, zoom, rotation, filigrane nominatif, comparaison de versions) — absente. Aucune route ADMIN ne livre un contenu : aucun binaire n’est affiché ni téléchargé depuis l’ADMIN.',
+    'ADM-38 · grille de contrôle standardisée (lisibilité, validité des dates, cohérence d’identité, conformité) — absente. Aucun critère n’est versionné côté serveur ; aucune case n’est rendue.',
+    'ADM-38 · journal de consultation au nom de l’agent et motif de rejet gabarité — absents. Aucune trace de consultation ADMIN n’est écrite par une route dédiée.',
+    'ADM-38 · délai de décision de 48 h et historique des rejets antérieurs du titulaire — absents. Aucune échéance de décision ni historique de décision n’existe côté serveur.',
+    'ADM-38 · le contrôle d’intégrité technique (recalcul de l’empreinte SHA-256 enregistrée) est une capacité serveur réelle. Il ne valide ni ne rejette la pièce, et n’est pas une certification juridique.',
+    'ADM-38 · sans persistance durable ou stockage objet, les routes de documents répondent 501 : la fiche affiche « Source de données non configurée », jamais une vérification simulée.',
+  ],
+  'ADM-39': [
+    'ADM-39 · GET /admin/documents/quarantine?cursor= (file de quarantaine) — absent. Aucune file n’est lisible : l’écran n’affiche ni liste vide ni liste simulée.',
+    'ADM-39 · POST /admin/documents/:id/quarantine/lift — absent. Aucune levée d’isolement n’est exécutable depuis l’ADMIN.',
+    'ADM-39 · POST /admin/documents/:id/quarantine/confirm-fraud {motive} — absent. Aucune confirmation de fraude n’est exécutable, et aucun renvoi vers une fiche de compte n’est déduit de la pièce.',
+    'ADM-39 · détection (analyse statique, anti-malware, comparateur de doublons), gravité et délai de traitement — absents. Aucun pipeline de détection n’est branché à l’ADMIN.',
+    'ADM-39 · demande de pièce alternative — absente. Aucun statut « complément demandé » n’existe pour un Document.',
+    'ADM-39 · isolement immédiat appliqué aux candidatures — absent. Aucun effet d’isolement n’est lu ni affiché : aucun état « isolée » n’est déduit des données existantes.',
+  ],
+  'ADM-40': [
+    'ADM-40 · GET /admin/documents/access-log?cursor= (journal d’accès : agent, document, type d’accès, motif, IP tronquée) — absent. admin.audit.list reste une frontière de contrôle sans données métier et n’est pas utilisée comme journal documentaire.',
+    'ADM-40 · GET /admin/documents/retention/policies — absent. Aucune politique n’est lue. La classe de conservation affichée provient des règles de domaine ; chaque durée reste en attente de validation juridique, aucune durée n’est inventée.',
+    'ADM-40 · POST /admin/documents/retention/purge — absent. Aucune purge n’est proposée, et la rétention n’est pas modifiée tant que la validation juridique n’est pas acquise.',
+    'ADM-40 · compteurs « purgés ce mois », « prochaine purge planifiée » et « conservation légale prolongée » — absents. Aucun compteur n’est calculé dans le navigateur.',
+    'ADM-40 · export du journal d’accès (journalisé) — absent. Aucune route d’export n’existe.',
+    'ADM-40 · sans persistance durable ou stockage objet, les routes de documents répondent 501 : l’écran affiche « Source de données non configurée », jamais un journal simulé.',
   ],
 };

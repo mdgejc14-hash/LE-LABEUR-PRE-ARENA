@@ -57,6 +57,7 @@
  */
 
 import type { ContractStatus, ProposalStatus, ReplacementDossier, UserRole } from '../types';
+import type { DocumentEntityType, DocumentLinkPurpose, DocumentType, RetentionClass } from '../domain/documentRules';
 import type { ServerUserRecord } from '../backend/identity/stores';
 import type { QualificationDecision, QualificationReasonSeverity } from '../backend/matching/records';
 import type {
@@ -492,6 +493,11 @@ export const ADMIN_UI_TERMS = {
   REPUTATION_LEDGER: `Ledger de ${PRODUCT_LABELS.REPUTATION.singular.toLowerCase()}`,
   REPUTATION_CONTESTS: `Recours sur une entrée de ${PRODUCT_LABELS.REPUTATION.singular.toLowerCase()}`,
   REPUTATION_AUDIT: `Audit d’intégrité de ${PRODUCT_LABELS.REPUTATION.singular.toLowerCase()}`,
+  DOCUMENT_REGISTRY: `Registre des ${PRODUCT_LABELS.DOCUMENT.plural}`,
+  DOCUMENT_SHEET: `Fiche ${PRODUCT_LABELS.DOCUMENT.singular.toLowerCase()}`,
+  DOCUMENT_VERIFICATION: `Vérification du ${PRODUCT_LABELS.DOCUMENT.singular}`,
+  DOCUMENT_QUARANTINE: `Quarantaine des ${PRODUCT_LABELS.DOCUMENT.plural}`,
+  DOCUMENT_AUDIT: `Audit et rétention des ${PRODUCT_LABELS.DOCUMENT.plural}`,
 } as const;
 
 /* ── P4E-2 · ledger de réputation ─────────────────────────────────────────
@@ -613,4 +619,85 @@ export const PROPOSAL_STATUS_TONES: Record<ProposalStatus, 'slate' | 'violet' | 
   ACCEPTED: 'emerald',
   DECLINED: 'clay',
   EXPIRED: 'slate',
+};
+
+/* ── P4F · documents (registre, audit, vérification, quarantaine) ─────────
+ * Statuts, types, classes de conservation, types d'entité liée et finalités
+ * RÉELS (`src/domain/documentRules.ts`, `src/backend/documents/documentRepository.ts`).
+ * Les codes serveur restent affichés à côté des libellés.
+ *
+ * Écarts documentés (jamais affichés comme nouveaux concepts) :
+ *   fiche « Pièce » / « pièce examinée » / « pièces » → produit DOCUMENT / « Document » ;
+ *   fiche « mission » d'un justificatif → produit OFFRE / « Offre » (le code
+ *     MISSION_JUSTIFICATION reste affiché tel quel, son libellé parle d'Offre) ;
+ *   fiche « Vérifié / Validée / Rejetée / Complément demandé » → AUCUN statut
+ *     produit : seule l'empreinte est recalculée (contrôle technique) ;
+ *   fiche « quarantaine / isolée / levée / fraude confirmée » → AUCUN statut
+ *     ni route serveur : BACKEND_GAP documenté (ADM-39) ;
+ *   fiche « purge / politique / journal d'accès » → AUCUNE route ADMIN : durées
+ *     PENDING_LEGAL_VALIDATION non modifiées, aucune purge proposée (ADM-40) ;
+ *   fiche « visionneuse filigranée » → AUCUNE route ADMIN de contenu : aucun
+ *     binaire n'est affiché ni téléchargé depuis l'ADMIN (ADM-38).
+ */
+
+export const DOCUMENT_STATUS_LABELS: Record<'ACTIVE' | 'REVOKED', string> = {
+  ACTIVE: 'Actif',
+  REVOKED: 'Révoqué',
+};
+
+export const DOCUMENT_STATUS_TONES: Record<'ACTIVE' | 'REVOKED', 'emerald' | 'clay'> = {
+  ACTIVE: 'emerald',
+  REVOKED: 'clay',
+};
+
+export const DOCUMENT_VERSION_STATUS_LABELS: Record<'PENDING_UPLOAD' | 'ACTIVE' | 'REVOKED', string> = {
+  PENDING_UPLOAD: 'Contenu non enregistré',
+  ACTIVE: 'Active',
+  REVOKED: 'Révoquée',
+};
+
+export const DOCUMENT_VERSION_STATUS_TONES: Record<'PENDING_UPLOAD' | 'ACTIVE' | 'REVOKED', 'amber' | 'emerald' | 'clay'> = {
+  PENDING_UPLOAD: 'amber',
+  ACTIVE: 'emerald',
+  REVOKED: 'clay',
+};
+
+export const DOCUMENT_TYPE_LABELS: Record<DocumentType, string> = {
+  CONTRACT_DOCUMENT: 'Document contractuel',
+  ACCEPTANCE_PROOF: 'Preuve d’acceptation',
+  MISSION_JUSTIFICATION: 'Justificatif d’Offre',
+  EXECUTION_PROOF: 'Preuve d’exécution',
+  WORKFLOW_SUPPORT: 'Support de workflow',
+  TRACEABILITY_ATTESTATION: 'Attestation de traçabilité',
+  VERIFICATION_DOCUMENT: 'Document de vérification',
+  TEMPORARY: 'Document temporaire',
+};
+
+export const DOCUMENT_RETENTION_CLASS_LABELS: Record<RetentionClass, string> = {
+  CONTRACTUAL: 'Contractuelle',
+  TRACEABILITY: 'Traçabilité',
+  MISSION: 'Liée à l’Offre',
+  VERIFICATION: 'Vérification',
+  TEMPORARY: 'Temporaire',
+};
+
+export const DOCUMENT_ENTITY_LABELS: Record<DocumentEntityType, string> = {
+  CONTRACT: 'Contrat',
+  PROPOSAL: 'Proposition',
+  CLAIM: 'Claim',
+  REPLACEMENT: 'Remplacement',
+  PAYMENT: 'Paiement',
+  SALARY_CONFIRMATION: 'Confirmation de Salaire',
+  USER: 'Compte utilisateur',
+};
+
+export const DOCUMENT_LINK_PURPOSE_LABELS: Record<DocumentLinkPurpose, string> = {
+  CONTRACT_VERSION: 'Version de Contrat',
+  ACCEPTANCE_PROOF: 'Preuve d’acceptation',
+  EXECUTION_PROOF: 'Preuve d’exécution',
+  JUSTIFICATION: 'Justificatif',
+  EVIDENCE: 'Élément probant',
+  ATTESTATION: 'Attestation',
+  VERIFICATION: 'Vérification',
+  SUPPORTING: 'Appui',
 };

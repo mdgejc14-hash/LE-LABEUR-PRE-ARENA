@@ -8,7 +8,7 @@
  *  1. parité du catalogue généré avec la source de design (Python) ;
  *  2. résolution de route : chaque fiche ADM des tranches est atteignable et
  *     rattachée à son unité (regroupement `units.py`, pas une plage numérique) ;
- *  3. registre complet (19 unités / 35 fiches), selon les regroupements canoniques exacts ;
+ *  3. registre complet (21 unités / 39 fiches), selon les regroupements canoniques exacts ;
  *  4. API : chaque chemin appelé existe déjà dans `routeContracts.ts` ;
  *  5. GARDE-FOU DE VOCABULAIRE : aucun libellé métier du Master Design
  *     (Mission, Client, Prestataire, Litige) ne peut entrer dans l'interface,
@@ -51,6 +51,11 @@
  *     audit:read et incidents:arbitrate, aucun score inventé, aucune vue
  *     self, aucune contestation simulée, correction REVERSE/RESTORE
  *     idempotente, vocabulaire officiel et BACKEND_GAP explicites.
+ * 18. P4F Documents : unités exactes du Master (ADM-37/40 et ADM-38/39),
+ *     registre R2 en métadonnées, fiche, révocations motivées (permissions
+ *     documents:read:any et incidents:arbitrate), contrôle d'intégrité
+ *     technique sans preuve qualifiée, quarantaine et audit en BACKEND_GAP,
+ *     aucun object_key, aucun contenu, aucune action simulée.
  */
 
 import React from 'react';
@@ -64,6 +69,37 @@ import { adminGapsFor, resolveAdminScreen, unitForScreen } from './screenMap';
 import { ADMIN_SCREEN_COMPONENTS, AdminScreen } from './registry';
 import { replacementWorkflowSteps, REPLACEMENT_READ_PERMISSION } from './screens/replacements';
 import { REPUTATION_DECIDE_PERMISSION, REPUTATION_READ_PERMISSION } from './screens/reputation';
+import {
+  isDocumentsUnavailable,
+  loadDocumentRegistryPage,
+  unavailableWhenNotInstalled,
+} from './screens/documents';
+import {
+  DOCUMENT_CORRECT_PERMISSION,
+  DOCUMENT_READ_PERMISSION,
+  DOCUMENT_REASON_MAX_LENGTH,
+  DOCUMENT_REASON_MIN_LENGTH,
+  EMPTY_DOCUMENT_FILTERS,
+  canReadDocuments,
+  canRevokeDocument,
+  canRevokeVersion,
+  canVerifyVersionIntegrity,
+  entityHref,
+  integrityVerdict,
+  registryQuery,
+  retentionSummary,
+  revocationReasonProblem,
+  summarizeStatuses,
+} from './documentRules';
+import { createDocumentApiHandlers, DOCUMENTS_ADMIN_CORRECT_PERMISSION, DOCUMENTS_ADMIN_READ_PERMISSION } from '../backend/documents/documentRepository';
+import {
+  DOCUMENT_TYPES,
+  DOCUMENT_ENTITY_TYPES,
+  DOCUMENT_LINK_PURPOSES,
+  RETENTION_CLASSES,
+  DOCUMENT_RETENTION_CLASS_BY_TYPE,
+  retentionClassForDocumentType,
+} from '../domain/documentRules';
 import { AdminRouteFallback } from './RouteFallback';
 import { DataTable } from './components';
 import { DOCK_DEFINITIONS } from '../design-system/shells/shellNavigation';
@@ -102,6 +138,14 @@ import {
   REPUTATION_STATUS_LABELS,
   REPUTATION_STATUS_TONES,
   ADMIN_UI_TERMS,
+  DOCUMENT_ENTITY_LABELS,
+  DOCUMENT_LINK_PURPOSE_LABELS,
+  DOCUMENT_RETENTION_CLASS_LABELS,
+  DOCUMENT_STATUS_LABELS,
+  DOCUMENT_STATUS_TONES,
+  DOCUMENT_TYPE_LABELS,
+  DOCUMENT_VERSION_STATUS_LABELS,
+  DOCUMENT_VERSION_STATUS_TONES,
   formatContractAmount,
   formatPaymentAmount,
   maskEmail,
@@ -217,11 +261,11 @@ export async function runAdminTests(): Promise<{ name: string; success: boolean;
     execFileSync('python3', ['scripts/design/generate-admin-catalog.py', '--check']);
   });
 
-  check('ADM — 19 unités / 35 fiches, chaque fiche rattachée à une seule unité', () => {
-    assert.equal(ADMIN_DESIGN_UNITS.length, 19);
-    assert.equal(ADMIN_DESIGN_SCREENS.length, 35);
+  check('ADM — 21 unités / 39 fiches, chaque fiche rattachée à une seule unité', () => {
+    assert.equal(ADMIN_DESIGN_UNITS.length, 21);
+    assert.equal(ADMIN_DESIGN_SCREENS.length, 39);
     const codes = ADMIN_DESIGN_SCREENS.map((screen) => screen.code);
-    assert.equal(new Set(codes).size, 35);
+    assert.equal(new Set(codes).size, 39);
     for (const screen of ADMIN_DESIGN_SCREENS) {
       const unit = unitForScreen(screen.code);
       assert.ok(unit, `fiche sans unité : ${screen.code}`);
@@ -235,7 +279,7 @@ export async function runAdminTests(): Promise<{ name: string; success: boolean;
     // P4C ajoute ADM-23 = {confirmations, preuves OTP}, unité unique salaire.
     // P4D conserve les groupements du Master : ADM-27 = {fiche, pièces},
     // ADM-29 = {décision, historique}; ADM-26 reste une unité distincte.
-    assert.deepEqual(ADMIN_DESIGN_UNITS.map((unit) => unit.id), ['ADM-01', 'ADM-02', 'ADM-04', 'ADM-06', 'ADM-08', 'ADM-10', 'ADM-11', 'ADM-13', 'ADM-14', 'ADM-16', 'ADM-18', 'ADM-20', 'ADM-23', 'ADM-26', 'ADM-27', 'ADM-29', 'ADM-31', 'ADM-34', 'ADM-35']);
+    assert.deepEqual(ADMIN_DESIGN_UNITS.map((unit) => unit.id), ['ADM-01', 'ADM-02', 'ADM-04', 'ADM-06', 'ADM-08', 'ADM-10', 'ADM-11', 'ADM-13', 'ADM-14', 'ADM-16', 'ADM-18', 'ADM-20', 'ADM-23', 'ADM-26', 'ADM-27', 'ADM-29', 'ADM-31', 'ADM-34', 'ADM-35', 'ADM-37', 'ADM-38']);
     assert.deepEqual(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-02')?.screenCodes, ['ADM-02', 'ADM-03']);
     assert.deepEqual(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-04')?.screenCodes, ['ADM-04', 'ADM-05']);
     assert.deepEqual(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-06')?.screenCodes, ['ADM-06', 'ADM-07']);
@@ -303,7 +347,7 @@ export async function runAdminTests(): Promise<{ name: string; success: boolean;
     assert.equal(index.kind === 'shell' && index.unitId, 'ADM-01', 'l’index /admin doit être le tableau de bord ADM-01');
   });
 
-  check('ADM — registre complet : les 29 fiches livrées ont un écran, aucun code inconnu', () => {
+  check('ADM — registre complet : les 39 fiches livrées ont un écran, aucun code inconnu', () => {
     const registered = Object.keys(ADMIN_SCREEN_COMPONENTS).sort();
     const expected = ADMIN_DESIGN_SCREENS.map((screen) => screen.code).sort();
     assert.deepEqual(registered, expected);
@@ -353,7 +397,10 @@ export async function runAdminTests(): Promise<{ name: string; success: boolean;
     const body = stripComments(vocabulary);
     const listStart = body.indexOf('DESIGN_ONLY_TERMS_NOT_RENDERED');
     const listEnd = body.indexOf('] as const;', listStart);
-    const outsideList = stripTechnicalTokens(body.slice(0, listStart) + body.slice(listEnd));
+    // Clés de codes serveur (ex. `MISSION:` d'une classe de conservation réelle) :
+    // ce sont des identifiants, jamais des libellés. Seules les valeurs affichées sont scannées.
+    const serverCodeKeys = (text: string) => text.replace(/^\s*[A-Z][A-Z0-9_]*(?=\s*:)/gm, ' ');
+    const outsideList = stripTechnicalTokens(serverCodeKeys(body.slice(0, listStart) + body.slice(listEnd)));
     assert.deepEqual(forbiddenTermsIn(outsideList), [], 'vocabulary.ts : termes interdits hors du tableau de référence');
     assert.ok(DESIGN_ONLY_TERMS_NOT_RENDERED.includes('Mission' as never) && DESIGN_ONLY_TERMS_NOT_RENDERED.includes('Prestataire' as never), 'le tableau de référence doit lister les termes');
   });
@@ -463,8 +510,8 @@ export async function runAdminTests(): Promise<{ name: string; success: boolean;
     }
   });
 
-  check('ADM — intégration : 19 unités ADM PARTIEL (P4A + P4B-1 + P4B-2 + P4C + P4D + P4E-1 + P4E-2), EMP/PRE/PUB/SYS inchangés, autres ADM/FIN/RTC non intégrées', () => {
-    assert.equal(ADMIN_UNIT_IDS.length, 19);
+  check('ADM — intégration : 21 unités ADM PARTIEL (P4A + P4B-1 + P4B-2 + P4C + P4D + P4E-1 + P4E-2 + P4F), EMP/PRE/PUB/SYS inchangés, autres ADM/FIN/RTC non intégrées', () => {
+    assert.equal(ADMIN_UNIT_IDS.length, 21);
     for (const unitId of ADMIN_UNIT_IDS) {
       assert.equal(integrationStatus(unitId), 'PARTIEL', `${unitId} doit être PARTIEL`);
       assert.ok(isAdminUnit(unitId), `${unitId} doit être reconnue comme unité ADM`);
@@ -491,7 +538,9 @@ export async function runAdminTests(): Promise<{ name: string; success: boolean;
     assert.equal(integrationStatus('ADM-31'), 'PARTIEL', 'ADM-31/32/33 (file, suivi et arbitrage des Remplacements) sont livrées par P4E-1');
     assert.equal(integrationStatus('ADM-34'), 'PARTIEL', 'ADM-34/36 (ledger et audit de réputation) sont livrées par P4E-2');
     assert.equal(integrationStatus('ADM-35'), 'PARTIEL', 'ADM-35 (recours de réputation) est livrée par P4E-2');
-    assert.equal(integrationStatus('ADM-37'), 'NON_INTEGRE', 'ADM-37 (documents) reste hors de cette tranche');
+    assert.equal(integrationStatus('ADM-37'), 'PARTIEL', 'ADM-37/40 (registre R2 et audit des Documents) sont livrées par P4F');
+    assert.equal(integrationStatus('ADM-38'), 'PARTIEL', 'ADM-38/39 (vérification et quarantaine des Documents) sont livrées par P4F');
+    assert.equal(integrationStatus('ADM-41'), 'NON_INTEGRE', 'ADM-41 (notifications) reste hors tranche');
   });
 
   check('ADM — erreurs : projection en états StateGuard, corrélation sûre uniquement', () => {
@@ -1496,6 +1545,382 @@ export async function runAdminTests(): Promise<{ name: string; success: boolean;
     }
     assert.ok(adminGapsFor('ADM-34', '/admin/reputation/audit').some((line) => line.startsWith('ADM-36')), 'les gaps ADM-36 sont servis sur sa route');
     assert.ok(source.includes('<SystemFeedback state="403" />'), 'accès refusé : état SYS 403');
+  });
+
+  /* ── P4F-DESIGN-ADMIN-DOCUMENTS : registre, fiche, vérification, quarantaine, audit ── */
+
+  const DOCUMENT_CODES = ['ADM-37', 'ADM-38', 'ADM-39', 'ADM-40'] as const;
+  const DOCUMENT_SCREEN_FILE = new URL('./screens/documents.tsx', import.meta.url);
+  const documentsRoute = (key: string) => API_ROUTE_CONTRACTS.find((candidate) => candidate.key === key);
+
+  check('ADM — P4F : routes résolues vers les unités exactes du Master et rendues par leur écran', () => {
+    const cases: readonly [string, string, string, Record<string, string>][] = [
+      ['/admin/documents', 'ADM-37', 'ADM-37', {}],
+      ['/admin/documents/audit', 'ADM-40', 'ADM-37', {}],
+      ['/admin/documents/doc-1/verification', 'ADM-38', 'ADM-38', { id: 'doc-1' }],
+      ['/admin/documents/quarantaine', 'ADM-39', 'ADM-38', {}],
+    ];
+    for (const [path, code, unitId, params] of cases) {
+      const resolved = resolveAdminScreen(path);
+      assert.equal(resolved?.code, code, `${path} → fiche`);
+      assert.equal(resolved?.unitId, unitId, `${path} → unité Master`);
+      assert.deepEqual(resolved?.params, params, `${path} → paramètres`);
+      const route = resolveRoute(path);
+      assert.equal(route.kind, 'shell', `${path} : shell`);
+      if (route.kind === 'shell') {
+        assert.equal(route.shell, 'ADMIN', `${path} : espace ADMIN`);
+        assert.equal(route.unitId, unitId, `${path} : unité P0`);
+      }
+      assert.ok(ADMIN_SCREEN_COMPONENTS[code], `${code} : écran absent du registre`);
+    }
+    const documentRoutes = ADMIN_DESIGN_SCREENS.filter((screen) => screen.route.startsWith('/admin/documents')).map((screen) => screen.route);
+    assert.deepEqual(documentRoutes, ['/admin/documents', '/admin/documents/:id/verification', '/admin/documents/quarantaine', '/admin/documents/audit']);
+    assert.ok(!documentRoutes.some((route) => /storage|access-log|retention|review|purge|upload|lift|confirm-fraud|quarantine\b/.test(route)), 'aucune route documentaire inventée');
+    for (const unitId of ['ADM-37', 'ADM-38']) {
+      const catalogUnit = ADMIN_DESIGN_UNITS.find((unit) => unit.id === unitId);
+      const productionUnit = PRODUCTION_UNITS.find((unit) => unit.id === unitId);
+      assert.ok(catalogUnit && productionUnit, `${unitId} : unité absente`);
+      assert.deepEqual([...catalogUnit.routes].sort(), [...productionUnit.routes].sort(), `${unitId} : routes identiques au routeur P0`);
+    }
+    assert.deepEqual(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-37')?.screenCodes, ['ADM-37', 'ADM-40'], 'unité registre & audit');
+    assert.deepEqual(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-38')?.screenCodes, ['ADM-38', 'ADM-39'], 'unité vérification & quarantaine');
+    assert.equal(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-37')?.canon, 'ADM — documents (registre & audit)');
+    assert.equal(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-38')?.canon, 'ADM — documents (vérification & quarantaine)');
+    const dock = DOCK_DEFINITIONS.ADM.map((item) => item.href);
+    assert.ok(!dock.some((href) => href.startsWith('/admin/documents')), 'le dock ADM n’est pas modifié par P4F');
+    assert.equal(ADMIN_SCREEN_COMPONENTS['ADM-41'], undefined, 'notifications (ADM-41) hors tranche');
+    assert.equal(Object.keys(ADMIN_SCREEN_COMPONENTS).length, 39, '39 fiches livrées (P0 → P4F)');
+  });
+
+  check('ADM — P4F : handlers réellement installés, permissions serveur, aucune route absente déclarée', () => {
+    const reads = [
+      ['admin.documents.list', 'GET', '/api/v1/admin/documents', 'documents:read:any'],
+      ['admin.documents.read', 'GET', '/api/v1/admin/documents/:documentId', 'documents:read:any'],
+    ] as const;
+    for (const [key, method, path, permission] of reads) {
+      const contract = documentsRoute(key);
+      assert.ok(contract, `${key} absente du catalogue serveur`);
+      assert.equal(contract.method, method, `${key} méthode`);
+      assert.equal(contract.path, path, `${key} chemin réel`);
+      assert.equal(contract.scope, 'admin', `${key} portée ADMIN`);
+      assert.equal(contract.permission, permission, `${key} permission existante`);
+      assert.ok(ADMIN_PERMISSIONS.includes(permission as never), `${permission} doit appartenir au rôle ADMIN`);
+      assert.ok(ADMIN_API_PATHS.includes(path), `${key} non utilisé par AdminApi`);
+    }
+    const commands = [
+      ['admin.documents.revoke', '/api/v1/admin/documents/:documentId/revoke'],
+      ['admin.documents.versions.revoke', '/api/v1/admin/documents/:documentId/versions/:versionId/revoke'],
+    ] as const;
+    for (const [key, path] of commands) {
+      const contract = documentsRoute(key);
+      assert.ok(contract, `${key} absente du catalogue serveur`);
+      assert.equal(contract.method, 'POST', `${key} commande`);
+      assert.equal(contract.path, path, `${key} chemin réel`);
+      assert.equal(contract.permission, 'incidents:arbitrate', `${key} permission de correction`);
+      assert.equal(contract.idempotency, true, `${key} doit exiger l’idempotence`);
+      assert.equal(contract.auditOnMutation, true, `${key} doit être audité`);
+      assert.ok(ADMIN_API_PATHS.includes(path), `${key} non utilisé par AdminApi`);
+    }
+    // Contrôle d'intégrité : route déclarée `owner` (point ouvert documenté dans gaps.ts).
+    // Le test fige ce constat : si le contrat change, il faut revoir la décision UI.
+    const verify = documentsRoute('documents.versions.integrity.verify');
+    assert.ok(verify, 'contrôle d’intégrité présent au catalogue');
+    assert.equal(verify.method, 'POST');
+    assert.equal(verify.scope, 'owner', 'contrat déclaré owner : accès ADMIN tranché par le handler');
+    assert.equal((verify as { idempotency?: boolean }).idempotency, true, 'contrôle d’intégrité idempotent');
+    assert.ok(ADMIN_API_PATHS.includes('/api/v1/documents/:documentId/versions/:versionId/verify'), 'contrôle d’intégrité appelé par AdminApi');
+
+    const repositorySource = readFileSync(new URL('../backend/documents/documentRepository.ts', import.meta.url), 'utf8');
+    for (const handler of ["'admin.documents.list': async context =>", "'admin.documents.read': async context =>", "'admin.documents.revoke': async context =>", "'admin.documents.versions.revoke': async context =>", "'documents.versions.integrity.verify': async context =>"]) {
+      assert.ok(repositorySource.includes(handler), `handler réel absent : ${handler}`);
+    }
+    assert.ok(repositorySource.includes("export const DOCUMENTS_ADMIN_READ_PERMISSION = 'documents:read:any'"), 'permission lecture');
+    assert.ok(repositorySource.includes("export const DOCUMENTS_ADMIN_CORRECT_PERMISSION = 'incidents:arbitrate'"), 'permission correction');
+    assert.ok(repositorySource.includes("actor.role === 'ADMIN' && actor.permissions.includes(DOCUMENTS_ADMIN_READ_PERMISSION"), 'accès ADMIN réel par permission');
+    assert.equal(DOCUMENT_READ_PERMISSION, DOCUMENTS_ADMIN_READ_PERMISSION, 'parité permission lecture');
+    assert.equal(DOCUMENT_CORRECT_PERMISSION, DOCUMENTS_ADMIN_CORRECT_PERMISSION, 'parité permission correction');
+    assert.ok(ADMIN_PERMISSIONS.includes(DOCUMENT_READ_PERMISSION as never) && ADMIN_PERMISSIONS.includes(DOCUMENT_CORRECT_PERMISSION as never), 'permissions ADMIN réelles');
+
+    // Handlers réellement construits par la fabrique serveur (aucun appel, seulement les clés).
+    const handlerKeys = Object.keys(createDocumentApiHandlers({} as never));
+    for (const key of ['admin.documents.list', 'admin.documents.read', 'admin.documents.revoke', 'admin.documents.versions.revoke', 'documents.versions.integrity.verify']) {
+      assert.ok(handlerKeys.includes(key), `fabrique : handler ${key} absent`);
+    }
+    assert.deepEqual(handlerKeys.filter((key) => /review|quarantin|access|retention|purge|storage|upload-admin|audit\.documents/.test(key)), [], 'aucun handler de capacité absente');
+
+    // Capacités absentes : aucune route, aucun handler, aucun chemin d'API.
+    for (const key of ['admin.documents.review.read', 'admin.documents.review.decide', 'admin.documents.quarantine.list', 'admin.documents.quarantine.lift', 'admin.documents.quarantine.confirm-fraud', 'admin.documents.access-log.list', 'admin.documents.retention.policies', 'admin.documents.retention.purge', 'admin.documents.storage.read']) {
+      assert.equal(documentsRoute(key), undefined, `${key} ne doit pas exister`);
+    }
+    assert.ok(!API_ROUTE_CONTRACTS.some((candidate) => /\/admin\/documents\/(storage|quarantine|access-log|retention|review)/.test(candidate.path)), 'aucun chemin documentaire absent déclaré');
+    assert.ok(!ADMIN_API_PATHS.some((path) => /\/admin\/documents\/(storage|quarantine|access-log|retention|review)|\/quarantine\/|\/review\/decide/.test(path)), 'AdminApi n’appelle aucune capacité absente');
+  });
+
+  check('ADM — P4F : fabrique et routes documentaires — bucket absent, 501 réel, aucune route ADMIN de contenu', () => {
+    const entrySource = readFileSync(new URL('../backend/api/entry.ts', import.meta.url), 'utf8');
+    assert.ok(entrySource.includes('DOCUMENTS_BUCKET') || entrySource.includes('documents'), 'branchement documentaire présent');
+    const contentRoutes = API_ROUTE_CONTRACTS.filter((candidate) => candidate.path.startsWith('/api/v1/admin/documents'));
+    for (const route of contentRoutes) {
+      assert.ok(!/content|download|signed|upload/.test(route.path), `route ADMIN de contenu interdite : ${route.path}`);
+    }
+    assert.equal(contentRoutes.length, 4, 'quatre routes ADMIN documentaires (liste, fiche, deux révocations)');
+  });
+
+  check('ADM — P4F : règles pures — permissions, états réels, motif, liens, verdict d’intégrité, conservation', () => {
+    const hash = 'a'.repeat(64);
+    const readOnly = ['documents:read:any'];
+    const corrector = ['incidents:arbitrate'];
+    assert.equal(canReadDocuments(readOnly), true);
+    assert.equal(canReadDocuments([]), false);
+    assert.equal(canVerifyVersionIntegrity(readOnly, { status: 'ACTIVE', cryptographicHash: hash }).allowed, true, 'intégrité : version active avec empreinte');
+    assert.equal(canVerifyVersionIntegrity(readOnly, { status: 'REVOKED', cryptographicHash: hash }).allowed, true, 'intégrité : version révoquée avec empreinte (lecture)');
+    assert.equal(canVerifyVersionIntegrity(readOnly, { status: 'PENDING_UPLOAD' }).allowed, false, 'intégrité refusée sans contenu');
+    assert.equal(canVerifyVersionIntegrity(readOnly, { status: 'ACTIVE' }).allowed, false, 'intégrité refusée sans empreinte');
+    assert.equal(canVerifyVersionIntegrity([], { status: 'ACTIVE', cryptographicHash: hash }).allowed, false, 'intégrité refusée sans permission');
+    assert.equal(canRevokeVersion(corrector, { status: 'ACTIVE' }).allowed, true, 'révocation version active');
+    assert.equal(canRevokeVersion(corrector, { status: 'REVOKED' }).allowed, false, 'pas de double révocation de version');
+    assert.equal(canRevokeVersion(corrector, { status: 'PENDING_UPLOAD' }).allowed, false, 'pas de révocation sans contenu');
+    assert.equal(canRevokeVersion(readOnly, { status: 'ACTIVE' }).allowed, false, 'lecture seule : aucune révocation');
+    assert.equal(canRevokeDocument(corrector, { status: 'ACTIVE' }).allowed, true, 'révocation document actif');
+    assert.equal(canRevokeDocument(corrector, { status: 'REVOKED' }).allowed, false, 'pas de double révocation de Document');
+    assert.equal(canRevokeDocument(readOnly, { status: 'ACTIVE' }).allowed, false, 'lecture seule : aucune révocation de Document');
+    assert.equal(DOCUMENT_REASON_MIN_LENGTH, 3);
+    assert.equal(DOCUMENT_REASON_MAX_LENGTH, 1000);
+    assert.notEqual(revocationReasonProblem('ab'), null, 'motif trop court');
+    assert.notEqual(revocationReasonProblem('   '), null, 'motif vide après trim');
+    assert.equal(revocationReasonProblem('  abc  '), null, 'motif valide après trim');
+    assert.equal(revocationReasonProblem('x'.repeat(1000)), null, 'motif de 1000 caractères accepté');
+    assert.notEqual(revocationReasonProblem('x'.repeat(1001)), null, 'motif trop long refusé');
+    assert.equal(entityHref('CONTRACT', 'c/1'), '/admin/contrats/c%2F1');
+    assert.equal(entityHref('CLAIM', 'clm-1'), '/admin/litiges/clm-1');
+    assert.equal(entityHref('REPLACEMENT', 'rep-1'), '/admin/remplacements/rep-1');
+    assert.equal(entityHref('USER', 'usr-1'), '/admin/utilisateurs/usr-1');
+    for (const entityType of ['PROPOSAL', 'PAYMENT', 'SALARY_CONFIRMATION']) {
+      assert.equal(entityHref(entityType, 'x-1'), null, `${entityType} : aucune fiche ADMIN unitaire, aucun lien fabriqué`);
+    }
+    const absent = integrityVerdict({ objectPresent: false, expectedHash: hash, match: false });
+    assert.equal(absent.tone, 'clay');
+    const noReference = integrityVerdict({ objectPresent: true, expectedHash: null, match: false });
+    assert.equal(noReference.tone, 'amber');
+    const match = integrityVerdict({ objectPresent: true, expectedHash: hash, match: true });
+    assert.equal(match.tone, 'emerald');
+    assert.ok(match.detail.includes('ni une certification juridique ni un horodatage qualifié'), 'concordance : jamais présentée comme preuve qualifiée');
+    assert.ok(!/horodatage qualifié (attesté|garanti)|preuve qualifiée (attestée|garantie)/i.test(match.label + ' ' + match.detail), 'aucune preuve qualifiée affirmée');
+    const mismatch = integrityVerdict({ objectPresent: true, expectedHash: hash, match: false });
+    assert.equal(mismatch.tone, 'clay');
+    assert.ok(mismatch.detail.includes('n’est pas modifié automatiquement'), 'écart : aucune réparation automatique affichée');
+    assert.ok(retentionSummary({ durationStatus: 'PENDING_LEGAL_VALIDATION', retentionDays: null }).includes('validation juridique'), 'conservation non validée : aucune échéance inventée');
+    assert.equal(retentionSummary({ durationStatus: 'CONFIGURED', retentionDays: 30 }), 'Configurée : 30 jours');
+    assert.deepEqual(registryQuery(EMPTY_DOCUMENT_FILTERS, null), { limit: 50, cursor: null }, 'aucun filtre vide envoyé');
+    assert.deepEqual(
+      registryQuery({ ownerUserId: ' usr-1 ', documentType: 'CONTRACT_DOCUMENT', status: 'REVOKED' }, 'doc-9'),
+      { limit: 50, cursor: 'doc-9', ownerUserId: 'usr-1', documentType: 'CONTRACT_DOCUMENT', status: 'REVOKED' },
+      'filtres réels, espaces de bord retirés',
+    );
+    assert.deepEqual(summarizeStatuses([{ status: 'ACTIVE' }, { status: 'REVOKED' }, { status: 'ACTIVE' }]), { total: 3, active: 2, revoked: 1 });
+  });
+
+  check('ADM — P4F : enums documentaires en parité exacte avec le domaine réel', () => {
+    assert.deepEqual(Object.keys(DOCUMENT_TYPE_LABELS).sort(), [...DOCUMENT_TYPES].sort());
+    assert.deepEqual(Object.keys(DOCUMENT_RETENTION_CLASS_LABELS).sort(), [...RETENTION_CLASSES].sort());
+    assert.deepEqual(Object.keys(DOCUMENT_ENTITY_LABELS).sort(), [...DOCUMENT_ENTITY_TYPES].sort());
+    assert.deepEqual(Object.keys(DOCUMENT_LINK_PURPOSE_LABELS).sort(), [...DOCUMENT_LINK_PURPOSES].sort());
+    assert.deepEqual(Object.keys(DOCUMENT_STATUS_LABELS).sort(), ['ACTIVE', 'REVOKED']);
+    assert.deepEqual(Object.keys(DOCUMENT_STATUS_TONES).sort(), ['ACTIVE', 'REVOKED']);
+    assert.deepEqual(Object.keys(DOCUMENT_VERSION_STATUS_LABELS).sort(), ['ACTIVE', 'PENDING_UPLOAD', 'REVOKED']);
+    assert.deepEqual(Object.keys(DOCUMENT_VERSION_STATUS_TONES).sort(), ['ACTIVE', 'PENDING_UPLOAD', 'REVOKED']);
+    assert.deepEqual(Object.keys(DOCUMENT_RETENTION_CLASS_BY_TYPE).sort(), [...DOCUMENT_TYPES].sort(), 'classe de conservation par type réelle');
+    for (const type of DOCUMENT_TYPES) assert.ok(retentionClassForDocumentType(type), `classe absente pour ${type}`);
+    assert.equal(DOCUMENT_TYPE_LABELS.MISSION_JUSTIFICATION, 'Justificatif d’Offre', 'fiche « mission » → produit Offre');
+    assert.equal(DOCUMENT_VERSION_STATUS_LABELS.PENDING_UPLOAD, 'Contenu non enregistré', 'aucun statut « en attente de vérification » inventé');
+    assert.equal(ADMIN_UI_TERMS.DOCUMENT_REGISTRY, 'Registre des Documents');
+    assert.equal(ADMIN_UI_TERMS.DOCUMENT_VERIFICATION, 'Vérification du Document');
+    assert.equal(ADMIN_UI_TERMS.DOCUMENT_QUARANTINE, 'Quarantaine des Documents');
+    assert.equal(ADMIN_UI_TERMS.DOCUMENT_AUDIT, 'Audit et rétention des Documents');
+  });
+
+  await checkAsync('ADM — P4F : appels AdminApi exacts (registre, fiche, révocations, intégrité), encodage, clé d’idempotence conservée', async () => {
+    const calls: { path: string; options?: Record<string, unknown> }[] = [];
+    const client = {
+      request: async (path: string, options?: Record<string, unknown>) => {
+        calls.push({ path, options });
+        if (path.endsWith('/verify')) {
+          return { documentId: 'doc/a', versionId: 'ver/1', expectedHash: null, actualHash: null, objectPresent: false, match: false, verifiedAt: '2026-10-10T00:00:00.000Z', scope: 'TECHNICAL_INTEGRITY' };
+        }
+        if (path.endsWith('/revoke')) return { documentId: 'doc/a', status: 'REVOKED', versions: [], links: [] };
+        if (path.includes('/versions/') && path.endsWith('/revoke')) return { versionId: 'ver/1', status: 'REVOKED' };
+        if (path.match(/\/admin\/documents\/[^/]+$/)) return { documentId: 'doc/a', versions: [], links: [] };
+        return { items: [], hasMore: false, cursor: null };
+      },
+    };
+    const api = new AdminApi(client as never);
+    await api.documents({ limit: 50, ownerUserId: 'usr 1', documentType: 'CONTRACT_DOCUMENT', status: 'REVOKED', cursor: 'doc-9' });
+    await api.document('doc/a');
+    await api.revokeDocument('doc/a', 'motif serveur', undefined, 'doc-key-1');
+    await api.revokeDocument('doc/a', 'motif serveur', undefined, 'doc-key-1');
+    await api.revokeDocumentVersion('doc/a', 'ver/1', 'motif serveur', undefined, 'ver-key-1');
+    await api.verifyDocumentVersionIntegrity('doc/a', 'ver/1', undefined, 'int-key-1');
+    assert.deepEqual(calls.map(({ path }) => path), [
+      '/admin/documents',
+      '/admin/documents/doc%2Fa',
+      '/admin/documents/doc%2Fa/revoke',
+      '/admin/documents/doc%2Fa/revoke',
+      '/admin/documents/doc%2Fa/versions/ver%2F1/revoke',
+      '/documents/doc%2Fa/versions/ver%2F1/verify',
+    ]);
+    assert.deepEqual(calls[0].options?.query, { limit: 50, cursor: 'doc-9', ownerUserId: 'usr 1', documentType: 'CONTRACT_DOCUMENT', status: 'REVOKED' });
+    assert.equal(calls[1].options?.method, undefined, 'lecture de fiche : GET implicite');
+    assert.equal(calls[2].options?.method, 'POST');
+    assert.deepEqual(calls[2].options?.body, { reason: 'motif serveur' });
+    assert.equal(calls[2].options?.idempotencyKey, 'doc-key-1');
+    assert.equal(calls[3].options?.idempotencyKey, 'doc-key-1', 'rejeu d’interface : même clé');
+    assert.deepEqual(calls[4].options?.body, { reason: 'motif serveur' });
+    assert.equal(calls[4].options?.idempotencyKey, 'ver-key-1');
+    assert.equal(calls[5].options?.method, 'POST');
+    assert.deepEqual(calls[5].options?.body, {}, 'contrôle d’intégrité : aucun verdict envoyé par le client');
+    assert.equal(calls[5].options?.idempotencyKey, 'int-key-1');
+    const nonDocumentPaths = calls.filter(({ path }) => /review|quarantine|retention|purge|storage|access-log|decide|lift/.test(path));
+    assert.deepEqual(nonDocumentPaths, [], 'aucune capacité absente appelée');
+  });
+
+  check('ADM — P4F : DTO exposés sans object_key (source du repository) et aucun contenu lu par l’écran', () => {
+    const repositorySource = readFileSync(new URL('../backend/documents/documentRepository.ts', import.meta.url), 'utf8');
+    const viewsStart = repositorySource.indexOf('const toRetentionView');
+    const viewsEnd = repositorySource.indexOf("/* ---------------- Contrôle d'accès");
+    assert.ok(viewsStart > 0 && viewsEnd > viewsStart, 'projections API localisées');
+    const views = repositorySource.slice(viewsStart, viewsEnd);
+    assert.ok(!views.includes('objectKey'), 'les projections API n’exposent jamais objectKey');
+    assert.ok(!/\.\.\.(version|document|link)\b/.test(views), 'aucune diffusion d’enregistrement brut dans les DTO');
+    const screenSource = stripComments(readFileSync(DOCUMENT_SCREEN_FILE, 'utf8'));
+    for (const forbidden of ['objectKey', 'object_key', 'signed-download', 'signedDownload', 'downloadUrl', 'presign', 'secret', 'password', 'payload', 'metadata', 'dedupeKey', 'idempotencyKey']) {
+      assert.ok(!screenSource.includes(forbidden), `${forbidden} ne doit pas être lu par l’écran documentaire`);
+    }
+    assert.ok(!/href=\{?[`'"][^`'"]*\/content/.test(screenSource), 'aucun lien vers le contenu binaire');
+    assert.ok(!/type=["']file["']|multipart|enctype/.test(screenSource), 'aucun formulaire d’upload ADMIN');
+  });
+
+  check('ADM — P4F : aucune action simulée, aucune décision de vérification, appels d’API limités au contrat réel', () => {
+    const source = stripComments(readFileSync(DOCUMENT_SCREEN_FILE, 'utf8'));
+    const called = new Set([...source.matchAll(/api\.([A-Za-z]+)\(/g)].map((match) => match[1]));
+    assert.deepEqual([...called].sort(), ['document', 'documents', 'revokeDocument', 'revokeDocumentVersion', 'verifyDocumentVersionIntegrity'].sort(), 'appels AdminApi réels uniquement');
+    assert.ok(!/Math\.random|faker|lorem|setTimeout\(\s*\(\)\s*=>\s*setResult/i.test(source), 'aucune donnée ni transition simulée');
+    assert.ok(!/\b48\s*h\b/.test(source), 'aucun délai de décision inventé');
+    // Les blocs indisponibles ne contiennent ni bouton ni formulaire.
+    const unavailable = source.slice(source.indexOf('function UnavailableActions'), source.indexOf('function UnavailableActions') + 900);
+    assert.ok(!/<button|NeoPressButton|<form/.test(unavailable), 'UnavailableActions : jamais de bouton actif');
+    const quarantine = source.slice(source.indexOf('function DocumentQuarantineContent'), source.indexOf('function DocumentAuditContent'));
+    const audit = source.slice(source.indexOf('function DocumentAuditContent'));
+    assert.ok(!/<NeoPressButton|<button|<form/.test(quarantine), 'ADM-39 : aucune action active');
+    assert.ok(!/<NeoPressButton|<button|<form/.test(audit), 'ADM-40 : aucune action active');
+    // Le contrôle d'intégrité n'affiche aucun verdict sans appel serveur.
+    assert.ok(source.includes('verifyDocumentVersionIntegrity(documentId, versionId, signal, commandKey.get())'), 'intégrité : appel serveur réel');
+    assert.ok(source.includes('IntegrityResult') && source.includes('integrityVerdict(report)'), 'verdict affiché uniquement depuis le rapport serveur');
+    assert.ok(!/status:\s*['"](VERIFIED|VALIDATED|REJECTED|QUARANTINED|LIFTED)/.test(source), 'aucun statut inventé');
+    assert.ok(source.includes('data-no-invented-count="true"'), 'les compteurs non disponibles ne sont jamais des zéros');
+  });
+
+  check('ADM — P4F : formulaires de révocation — permission, motif 3–1000, confirmation, idempotence, rafraîchissement', () => {
+    const source = stripComments(readFileSync(DOCUMENT_SCREEN_FILE, 'utf8'));
+    assert.ok(source.includes("minLength={3}") && source.includes("maxLength={1000}"), 'bornes du motif sur le champ');
+    assert.ok(source.includes('revocationReasonProblem(reason)'), 'motif validé par la règle partagée');
+    assert.ok(source.includes('setConfirmed(event.target.checked)'), 'confirmation explicite requise');
+    assert.ok(source.includes('onEdit={commandKey.reset}'), 'clé d’idempotence réinitialisée à toute édition');
+    assert.ok(source.includes('canRevokeDocument(actor?.permissions, detail)'), 'révocation du Document conditionnée par les règles');
+    assert.ok(source.includes('canRevokeVersion(actor?.permissions, version)'), 'révocation de version conditionnée par les règles');
+    assert.ok(source.includes('canCorrectDocuments(actor?.permissions)'), 'révocation conditionnée par incidents:arbitrate');
+    assert.ok(source.includes('onChanged()'), 'état relu après commande');
+    assert.ok(source.includes('Aucune pièce n’est supprimée') || source.includes('aucune suppression'), 'révocation : aucune suppression annoncée');
+  });
+
+  check('ADM — P4F : accès refusé, chargement, erreur, vide, non installé — états StateGuard explicites', () => {
+    const source = stripComments(readFileSync(DOCUMENT_SCREEN_FILE, 'utf8'));
+    const denied = [...source.matchAll(/export function (Admin3[7-9]\w+|Admin40\w+)\(props: AdminUnitProps\)/g)].map((match) => match[1]);
+    assert.deepEqual(denied, ['Admin37DocumentRegistry', 'Admin38DocumentVerification', 'Admin39DocumentQuarantine', 'Admin40DocumentAudit'], 'quatre écrans exportés');
+    assert.equal((source.match(/if \(!canReadDocuments\(actor\?\.permissions\)\) return <AccessDenied \/>;/g) ?? []).length, 4, 'garde documents:read:any sur les quatre écrans');
+    assert.ok(source.includes('<SystemFeedback state="403" />'), 'accès refusé : état SYS 403');
+    assert.ok(source.includes('<LoadingBlock label="Chargement du registre des Documents"'), 'chargement du registre');
+    assert.ok(source.includes('<LoadingBlock label="Chargement du Document"'), 'chargement de la fiche');
+    assert.ok(source.includes('status === \'error\'') && source.includes('retry={registry.reload}') && source.includes('retry={resource.reload}'), 'erreurs : SystemFeedback avec relance');
+    assert.ok(source.includes('<EmptyNotice>') && source.includes('Aucun Document n’est enregistré dans le registre.'), 'état vide réel, sans liste simulée');
+    assert.ok(source.includes('isDocumentsUnavailable') && source.includes('Source de données non configurée'), 'état non installé (501) explicite');
+    assert.ok(source.includes('data-backend-gap="true"'), 'ADM-39/40 : liste absente marquée BACKEND_GAP');
+  });
+
+  await checkAsync('ADM — P4F : bucket absent / route non installée (501) → sentinelle explicite, autres erreurs relancées', async () => {
+    const notInstalled = new AdminApi({ request: async () => { throw new ApiClientError('Non disponible.', 501, 'NOT_IMPLEMENTED'); } } as never);
+    const registry = await loadDocumentRegistryPage(notInstalled, EMPTY_DOCUMENT_FILTERS, null);
+    assert.equal(isDocumentsUnavailable(registry), true, 'registre non installé → indisponible, pas une liste vide');
+    const forbidden = new AdminApi({ request: async () => { throw new ApiClientError('Refus.', 403, 'FORBIDDEN'); } } as never);
+    await assert.rejects(() => loadDocumentRegistryPage(forbidden, EMPTY_DOCUMENT_FILTERS, null), (error: unknown) => error instanceof ApiClientError && error.status === 403, '403 relancé');
+    const missing = await unavailableWhenNotInstalled(async () => { throw new ApiClientError('Introuvable.', 404, 'NOT_FOUND'); }).catch((error: unknown) => error);
+    assert.ok(missing instanceof ApiClientError && missing.status === 404, '404 relancé (pas de sentinelle)');
+    const ok = await unavailableWhenNotInstalled(async () => ({ documentId: 'doc-1' }));
+    assert.deepEqual(ok, { documentId: 'doc-1' }, 'réponse réelle transmise');
+  });
+
+  check('ADM — P4F : vocabulaire — aucun terme interdit, finances absentes, BACKEND_GAP déclarés et servis', () => {
+    const source = readFileSync(DOCUMENT_SCREEN_FILE, 'utf8');
+    const displayed = displayStringsIn(source).join(' ');
+    assert.deepEqual(forbiddenTermsIn(displayed), [], 'aucun terme du Master non officiel affiché');
+    for (const label of FORBIDDEN_FINANCE_LABELS) assert.ok(!displayed.includes(label), `libellé financier interdit : ${label}`);
+    const labels = [
+      ...Object.values(DOCUMENT_TYPE_LABELS),
+      ...Object.values(DOCUMENT_RETENTION_CLASS_LABELS),
+      ...Object.values(DOCUMENT_ENTITY_LABELS),
+      ...Object.values(DOCUMENT_LINK_PURPOSE_LABELS),
+      ...Object.values(DOCUMENT_STATUS_LABELS),
+      ...Object.values(DOCUMENT_VERSION_STATUS_LABELS),
+      ADMIN_UI_TERMS.DOCUMENT_REGISTRY,
+      ADMIN_UI_TERMS.DOCUMENT_SHEET,
+      ADMIN_UI_TERMS.DOCUMENT_VERIFICATION,
+      ADMIN_UI_TERMS.DOCUMENT_QUARANTINE,
+      ADMIN_UI_TERMS.DOCUMENT_AUDIT,
+    ];
+    assert.deepEqual(forbiddenTermsIn(labels.join(' ')), [], 'libellés documentaires : vocabulaire officiel');
+    const allGaps: string[] = [];
+    for (const code of DOCUMENT_CODES) {
+      const gaps = ADMIN_UNIT_GAPS[code] ?? [];
+      assert.ok(gaps.length > 0, `${code} doit déclarer son BACKEND_GAP`);
+      assert.deepEqual(forbiddenTermsIn(stripTechnicalTokens(gaps.join(' '))), [], `${code} : vocabulaire de gap`);
+      allGaps.push(...gaps);
+    }
+    const joined = allGaps.join(' ');
+    for (const capability of ['/admin/documents/storage', '/admin/documents/quarantine', '/admin/documents/access-log', '/admin/documents/retention/policies', '/admin/documents/retention/purge', '/review/decide', '/quarantine/lift', '/quarantine/confirm-fraud']) {
+      assert.ok(joined.includes(capability), `capacité absente non déclarée : ${capability}`);
+    }
+    assert.ok(adminGapsFor('ADM-37', '/admin/documents').some((line) => line.startsWith('ADM-37')), 'gaps ADM-37 servis sur sa route');
+    assert.ok(adminGapsFor('ADM-38', '/admin/documents/doc-1/verification').some((line) => line.startsWith('ADM-38')), 'gaps ADM-38 servis sur sa route');
+    assert.ok(adminGapsFor('ADM-38', '/admin/documents/quarantaine').some((line) => line.startsWith('ADM-39')), 'gaps ADM-39 servis sur sa route');
+    assert.ok(adminGapsFor('ADM-37', '/admin/documents/audit').some((line) => line.startsWith('ADM-40')), 'gaps ADM-40 servis sur sa route');
+  });
+
+  check('ADM — P4F : clavier, focus, 360 px et 1440 px, reduced-motion (CSS et sémantique)', () => {
+    const source = stripComments(readFileSync(DOCUMENT_SCREEN_FILE, 'utf8'));
+    assert.ok(!/<(div|span|li)[^>]*\sonClick=/.test(source), 'aucune action sur élément non interactif');
+    assert.ok(source.includes('<DataTable') && source.includes('caption='), 'tableaux sémantiques légendés');
+    assert.ok(source.includes('aria-label="Actions indisponibles"'), 'liste des actions indisponibles étiquetée');
+    assert.ok(source.includes('role="status"'), 'résultats annoncés');
+    const css = readFileSync(new URL('./admin.css', import.meta.url), 'utf8');
+    assert.ok(css.includes('.lbm-admin__hash') && css.includes('overflow-wrap: anywhere'), 'empreintes : pas de débordement à 360 px');
+    assert.ok(css.includes('.lbm-admin__document-filters') && css.includes('minmax(min(100%, 240px), 1fr)'), 'filtres : colonnes fluides');
+    assert.ok(css.includes('.lbm-admin__unavailable-list') && css.includes('.lbm-admin__unavailable'), 'actions indisponibles : mise en forme dédiée');
+    assert.ok(css.includes('@media (prefers-reduced-motion: reduce)'), 'mouvement réduit couvert');
+    assert.ok(!/@keyframes|transition:/.test(css.slice(css.indexOf('P4F · documents'))), 'aucune animation ajoutée par P4F');
+  });
+
+  check('ADM — P4F : non-régression P0 → P4E-2 (routes et fiches précédentes inchangées, aucune fiche hors tranche)', () => {
+    const previous: readonly [string, string][] = [
+      ['/admin/reputation', 'ADM-34'],
+      ['/admin/reputation/contestations', 'ADM-35'],
+      ['/admin/remplacements', 'ADM-31'],
+      ['/admin/litiges', 'ADM-26'],
+      ['/admin/utilisateurs', 'ADM-02'],
+    ];
+    for (const [path, code] of previous) {
+      assert.equal(resolveAdminScreen(path)?.code, code, `${path} : fiche P0-P4E inchangée`);
+    }
+    assert.equal(resolveAdminScreen('/admin/notifications')?.code, undefined, 'notifications : hors tranche, aucune fiche');
+    assert.equal(resolveAdminScreen('/admin/infra')?.code, undefined, 'infra : hors tranche');
   });
 
   return results;
