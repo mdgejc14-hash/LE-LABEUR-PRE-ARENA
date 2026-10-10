@@ -72,6 +72,7 @@ import type {
   DocumentIntegrityReport,
   DocumentSummaryView,
 } from '../backend/documents/documentRepository';
+import type { NotificationView } from '../backend/notifications/notificationService';
 import type { DocumentStatusValue } from './documentRules';
 import type { DocumentType } from '../domain/documentRules';
 import { ApiClientError, HttpApiClient } from '../repositories/apiClient';
@@ -96,6 +97,7 @@ export type {
   ReputationEntryDetail,
   ReputationEntryView,
   ReputationReconciliationReport,
+  NotificationView,
 };
 
 /** Session serveur réelle : rôle, statut de compte et permissions dérivées serveur. */
@@ -183,6 +185,10 @@ export const ADMIN_API_PATHS: readonly string[] = [
   '/api/v1/admin/documents/:documentId/revoke',
   '/api/v1/admin/documents/:documentId/versions/:versionId/revoke',
   '/api/v1/documents/:documentId/versions/:versionId/verify',
+  // P4F-2 — seule capacité ADMIN de cette tranche : lecture paginée de la
+  // boîte In-App, sous notifications:read:any. Les routes de lecture/marquage
+  // `notifications.*` restent au scope self et ne sont jamais détournées.
+  '/api/v1/admin/notifications',
 ];
 
 /** Clé d'idempotence explicite (jamais réutilisée entre deux commandes). */
@@ -661,6 +667,19 @@ export class AdminApi {
         signal,
       },
     );
+  }
+
+  /* ── Notifications ADMIN (P4F-2 — lecture In-App réelle) ── */
+
+  /**
+   * Registre ADMIN `admin.notifications.list` (GET /api/v1/admin/notifications,
+   * permission serveur `notifications:read:any`). La réponse contient les
+   * notifications réellement persistées, leur état de lecture et les états
+   * réels des canaux Push/Email. Aucun contenu de `payload` n'est interprété
+   * par l'interface.
+   */
+  notifications(options: ListOptions = {}): Promise<AdminPage<NotificationView>> {
+    return this.list<NotificationView>('/admin/notifications', options);
   }
 
   /* ── Frontières de contrôle ADMIN (réponses réelles, sans données métier) ── */

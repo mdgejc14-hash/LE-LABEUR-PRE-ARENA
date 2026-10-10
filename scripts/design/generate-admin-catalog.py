@@ -19,7 +19,10 @@ Tranches livrées :
   P4F-DESIGN-ADMIN-DOCUMENTS : registre, audit, vérification et quarantaine
   des Documents (unités exactes `ADM — documents (registre & audit)` =
   ADM-37 regroupant ADM-37/40, et `ADM — documents (vérification &
-  quarantaine)` = ADM-38 regroupant ADM-38/39).
+  quarantaine)` = ADM-38 regroupant ADM-38/39) ;
+  P4F-2-DESIGN-ADMIN-NOTIFICATIONS : orchestration, gabarits et délivrabilité
+  (unité exacte `ADM — notifications (orchestration, gabarits & délivrabilité)`
+  = ADM-41 regroupant ADM-41/42/43).
 
 Ce générateur ne produit AUCUN libellé métier : les textes affichés par
 l'interface viennent de `src/admin/vocabulary.ts` (vocabulaire LE LABEUR).
@@ -67,8 +70,8 @@ Périmètre de la tranche P4F (documents uniquement) :
   ADM-38 vérification d'un Document (canon « ADM — documents (vérification & quarantaine) ») ;
   ADM-39 quarantaine (même unité selon `units.py` ; aucune route, BACKEND_GAP).
 
-Les écrans ADM suivants (notifications, ops, sécurité
-avancée, infra, FIN) restent hors tranche et ne figurent PAS dans ce catalogue.
+Les écrans ADM suivants (ops, sécurité avancée, infra, FIN) restent hors
+tranche et ne figurent PAS dans ce catalogue.
 """
 import json
 import sys
@@ -81,7 +84,7 @@ sys.path.insert(0, str(ROOT / 'design'))
 from llab.content import load_all  # noqa: E402
 from llab.units import unit_of  # noqa: E402
 
-# Fiches ADM livrées par les tranches P4A, P4B-1, P4B-2, P4C, P4D, P4E-1, P4E-2 et P4F (périmètre strict).
+# Fiches ADM livrées par les tranches P4A, P4B-1, P4B-2, P4C, P4D, P4E-1, P4E-2, P4F et P4F-2 (périmètre strict).
 TRANCHE_P4A = {
     'ADM-01', 'ADM-02', 'ADM-03', 'ADM-04', 'ADM-05',
     'ADM-06', 'ADM-07', 'ADM-08', 'ADM-09',
@@ -134,7 +137,16 @@ TRANCHE_P4F = {
     'ADM-37', 'ADM-38', 'ADM-39', 'ADM-40',
 }
 
-TRANCHE_ADMIN = TRANCHE_P4A | TRANCHE_P4B1 | TRANCHE_P4B2 | TRANCHE_P4C | TRANCHE_P4D | TRANCHE_P4E1 | TRANCHE_P4E2 | TRANCHE_P4F
+# P4F-2-DESIGN-ADMIN-NOTIFICATIONS : unité exacte de `design/llab/units.py`.
+# « ADM — notifications (orchestration, gabarits & délivrabilité) » = ADM-41
+# regroupe ADM-41/42/43. Les capacités serveur absentes restent BACKEND_GAP
+# dans l’interface ; le générateur ne transforme pas les API de la fiche en
+# contrats actifs.
+TRANCHE_P4F2 = {
+    'ADM-41', 'ADM-42', 'ADM-43',
+}
+
+TRANCHE_ADMIN = TRANCHE_P4A | TRANCHE_P4B1 | TRANCHE_P4B2 | TRANCHE_P4C | TRANCHE_P4D | TRANCHE_P4E1 | TRANCHE_P4E2 | TRANCHE_P4F | TRANCHE_P4F2
 
 families = load_all()
 SCREENS = [s for s in families['ADM'] if s.code in TRANCHE_ADMIN]
@@ -196,7 +208,8 @@ payload = (
     '// Source : design/llab/content/adm_*.py, design/llab/units.py — tranches livrées :\n'
     '// P4A (ADM-01 → ADM-12), P4B-1 CONTRATS (ADM-13 → ADM-17), P4B-2 PAIEMENTS (ADM-18 → ADM-22)\n'
     '// P4C SALAIRE (ADM-23 → ADM-24), P4D CLAIMS (ADM-26 → ADM-30), P4E-1 REMPLACEMENTS (ADM-31 → ADM-33),\n'
-    '// P4E-2 RÉPUTATION (ADM-34 → ADM-36), P4F DOCUMENTS (ADM-37 → ADM-40).\n'
+    '// P4E-2 RÉPUTATION (ADM-34 → ADM-36), P4F DOCUMENTS (ADM-37 → ADM-40),\n'
+    '// P4F-2 NOTIFICATIONS (ADM-41 → ADM-43).\n'
     '// Régénérer : npm run design:admin\n'
     '//\n'
     '// Référence de design UNIQUEMENT : aucun libellé de ce fichier n\'est affiché par\n'

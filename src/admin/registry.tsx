@@ -1,6 +1,6 @@
 /**
- * ADM —— registre des écrans livrés (21 unités, 39 fiches — tranches P4A,
- * P4B-1, P4B-2, P4C, P4D, P4E-1, P4E-2 et P4F).
+ * ADM —— registre des écrans livrés (22 unités, 42 fiches — tranches P4A,
+ * P4B-1, P4B-2, P4C, P4D, P4E-1, P4E-2, P4F et P4F-2).
  *
  * Chaque code de fiche ADM-01 → ADM-24 et ADM-26 → ADM-33 livré par ces
  * tranches est associé à l'écran qui le rend. Les variantes des fiches (mêmes
@@ -23,7 +23,10 @@
  * BACKEND_GAP). P4F ajoute les unités documents : ADM-37/40 (registre R2 et
  * audit & rétention) et ADM-38/39 (vérification et quarantaine, BACKEND_GAP),
  * sur admin.documents.list / read et les commandes de révocation existantes.
- * Les unités notifications, ops, sécurité et infra restent hors tranche.
+ * P4F-2 ajoute ADM-41/42/43 : lecture de la boîte In-App par
+ * admin.notifications.list ; agrégats, gabarits et délivrabilité restent
+ * BACKEND_GAP.
+ * Les unités ops, sécurité et infra restent hors tranche.
  *
  * Ce module est le SEUL point d'entrée des routes `/admin/*` des tranches :
  * il résout la fiche depuis le chemin réel, applique la garde de session puis
@@ -81,6 +84,11 @@ import {
   Admin39DocumentQuarantine,
   Admin40DocumentAudit,
 } from './screens/documents';
+import {
+  Admin41NotificationOrchestration,
+  Admin42NotificationTemplates,
+  Admin43NotificationDeliverability,
+} from './screens/notifications';
 
 type AdminScreenComponent = (props: AdminUnitProps) => ReactNode;
 
@@ -125,6 +133,9 @@ export const ADMIN_SCREEN_COMPONENTS: Readonly<Record<string, AdminScreenCompone
   'ADM-38': Admin38DocumentVerification,
   'ADM-39': Admin39DocumentQuarantine,
   'ADM-40': Admin40DocumentAudit,
+  'ADM-41': Admin41NotificationOrchestration,
+  'ADM-42': Admin42NotificationTemplates,
+  'ADM-43': Admin43NotificationDeliverability,
 };
 
 export function adminScreenCodes(): readonly string[] {

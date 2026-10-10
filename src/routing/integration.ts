@@ -58,8 +58,14 @@
  * d'intégrité technique ; la décision de vérification, la quarantaine, le
  * journal d'accès, les politiques et la purge sont BACKEND_GAP → statut PARTIEL.
  *
- * Les autres unités ADM (notifications, ops, sécurité
- * avancée, infra), FIN et RTC restent non intégrées.
+ * P4F-2-DESIGN-ADMIN-NOTIFICATIONS : ADM-41 (orchestration, gabarits &
+ * délivrabilité — ADM-41/42/43) est livrée sur la seule lecture ADMIN réelle
+ * admin.notifications.list (notifications:read:any) ; les agrégats, gabarits,
+ * fournisseurs, métriques, test d'envoi et bascule restent BACKEND_GAP →
+ * statut PARTIEL.
+ *
+ * Les autres unités ADM (ops, sécurité avancée, infra), FIN et RTC restent non
+ * intégrées.
  */
 
 import { PRODUCTION_UNITS, TOTAL_UNITS, UNIT_COUNTS_BY_FAMILY, type ProductionUnit } from '../design-system/generated/productionUnits';
@@ -96,9 +102,10 @@ export const PRESTATAIRE_UNIT_IDS: readonly string[] = PRESTATAIRE_DESIGN_UNITS.
 /**
  * Unités ADM livrées par P4A-DESIGN-ADMIN-CORE, P4B-1-DESIGN-ADMIN-CONTRACTS,
  * P4B-2-DESIGN-ADMIN-PAYMENTS, P4C-DESIGN-ADMIN-SALARY-PROOFS,
- * P4D-DESIGN-ADMIN-CLAIMS, P4E-1-DESIGN-ADMIN-REPLACEMENTS et
- * P4E-2-DESIGN-ADMIN-REPUTATION et P4F-DESIGN-ADMIN-DOCUMENTS (21 unités,
- * 39 fiches, dérivées du catalogue généré). Même règle : PARTIEL dès qu'une
+ * P4D-DESIGN-ADMIN-CLAIMS, P4E-1-DESIGN-ADMIN-REPLACEMENTS,
+ * P4E-2-DESIGN-ADMIN-REPUTATION, P4F-DESIGN-ADMIN-DOCUMENTS et
+ * P4F-2-DESIGN-ADMIN-NOTIFICATIONS (22 unités, 42 fiches, dérivées du
+ * catalogue généré). Même règle : PARTIEL dès qu'une
  * fiche déclare une capacité absente.
  */
 export const ADMIN_UNIT_IDS: readonly string[] = ADMIN_DESIGN_UNITS.map((unit) => unit.id);

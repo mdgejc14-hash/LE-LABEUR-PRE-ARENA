@@ -56,7 +56,7 @@
  * restent ceux du produit (`ACTIVE`, `BLOCKED`, `HUMAN_REVIEW_REQUIRED`…).
  */
 
-import type { ContractStatus, ProposalStatus, ReplacementDossier, UserRole } from '../types';
+import type { ContractStatus, NotificationType, ProposalStatus, ReplacementDossier, UserRole } from '../types';
 import type { DocumentEntityType, DocumentLinkPurpose, DocumentType, RetentionClass } from '../domain/documentRules';
 import type { ServerUserRecord } from '../backend/identity/stores';
 import type { QualificationDecision, QualificationReasonSeverity } from '../backend/matching/records';
@@ -498,6 +498,75 @@ export const ADMIN_UI_TERMS = {
   DOCUMENT_VERIFICATION: `Vérification du ${PRODUCT_LABELS.DOCUMENT.singular}`,
   DOCUMENT_QUARANTINE: `Quarantaine des ${PRODUCT_LABELS.DOCUMENT.plural}`,
   DOCUMENT_AUDIT: `Audit et rétention des ${PRODUCT_LABELS.DOCUMENT.plural}`,
+  NOTIFICATION_ORCHESTRATION: 'Orchestration des notifications',
+  NOTIFICATION_TEMPLATES: 'Gabarits de notifications',
+  NOTIFICATION_DELIVERABILITY: 'Délivrabilité des notifications',
+} as const;
+
+/**
+ * P4F-2 — types et états réellement déclarés par le modèle AppNotification.
+ * Les textes de titre et de message viennent du serveur ; cette table ne fait
+ * que donner un libellé LE LABEUR aux types déjà autorisés par le contrat.
+ */
+export const NOTIFICATION_TYPE_LABELS: Record<NotificationType, string> = {
+  NEW_APPLICATION: 'Nouvelle Candidature',
+  APPLICATION_SHORTLISTED: 'Candidature sélectionnée',
+  APPLICATION_REJECTED: 'Mise à jour de Candidature',
+  APPLICATION_WITHDRAWN: 'Candidature retirée',
+  NEW_MESSAGE: 'Nouveau message',
+  VOICE_MESSAGE: 'Message vocal',
+  INCOMING_CALL: 'Invitation à un appel',
+  MISSED_CALL: 'Appel manqué',
+  PROPOSAL_RECEIVED: 'Nouvelle Proposition',
+  PROPOSAL_ACCEPTED: 'Proposition acceptée',
+  PROPOSAL_DECLINED: 'Proposition déclinée',
+  PROPOSAL_REVISION_REQUESTED: 'Révision de Proposition demandée',
+  CONTRACT_PENDING_SIGNATURE: 'Contrat à signer',
+  CONTRACT_SIGNED: 'Contrat signé',
+  CONTRACT_ACTIVE: 'Contrat actif',
+  MISSION_START_REQUIRED: 'Démarrage requis',
+  MISSION_CONFIRMED: 'Démarrage confirmé',
+  MISSION_DIVERGENCE: 'Divergence de démarrage',
+  MONTHLY_CHECKPOINT: 'Échéance de Salaire',
+  SALARY_DECLARED: 'Déclaration de Salaire',
+  SALARY_CONFIRMED: 'Salaire confirmé',
+  SALARY_CONTESTED: 'Salaire contesté',
+  COMMISSION_DUE: 'Échéance de commission LE LABEUR',
+  COMMISSION_DECLARED: 'Déclaration de commission LE LABEUR',
+  COMMISSION_VERIFIED: 'Commission LE LABEUR vérifiée',
+  COMMISSION_REJECTED: 'Commission LE LABEUR à régulariser',
+  PAYMENT_OVERDUE_J3: 'Régularisation requise à J+3',
+  ACCOUNT_BLOCKED: 'Compte bloqué',
+  ACCOUNT_UNBLOCKED: 'Compte débloqué',
+  INCIDENT_REPORTED: 'Claim signalé',
+  INCIDENT_DECIDED: 'Décision du Claim',
+  REPLACEMENT_INITIATED: 'Remplacement initié',
+  URGENT_JOB_PUBLISHED: 'Offre urgente publiée',
+  CANDIDATE_TRANSFERRED: 'Candidat transféré',
+};
+
+export const NOTIFICATION_READ_STATE_LABELS = {
+  READ: 'Lue',
+  UNREAD: 'Non lue',
+} as const;
+
+export const NOTIFICATION_READ_STATE_TONES = {
+  READ: 'slate',
+  UNREAD: 'amber',
+} as const;
+
+export const NOTIFICATION_CHANNEL_STATUS_LABELS = {
+  NOT_AVAILABLE: 'Non disponible',
+  SKIPPED: 'Non ciblé',
+  DELIVERED: 'Livré',
+  FAILED: 'Échec',
+} as const;
+
+export const NOTIFICATION_CHANNEL_STATUS_TONES = {
+  NOT_AVAILABLE: 'slate',
+  SKIPPED: 'amber',
+  DELIVERED: 'emerald',
+  FAILED: 'clay',
 } as const;
 
 /* ── P4E-2 · ledger de réputation ─────────────────────────────────────────

@@ -1,13 +1,14 @@
 /**
- * P4E-2-DESIGN-ADMIN-REPUTATION — vérification UI réelle (Chromium) de l'espace
- * supervision livré (P4A + P4B-1 contrats + P4B-2 paiements + P4C salaire + P4D
- * Claims + P4E-1 Remplacements + P4E-2 Réputation).
+ * P4F-2-DESIGN-ADMIN-NOTIFICATIONS — vérification UI réelle (Chromium) de
+ * l'espace supervision livré (P4A + P4B-1 contrats + P4B-2 paiements + P4C
+ * salaire + P4D Claims + P4E-1 Remplacements + P4E-2 Réputation + P4F
+ * Documents + P4F-2 Notifications).
  *
  * Comme le script P2, ce script n'affirme rien sur des données simulées dans
  * l'application : les fixtures HTTP vivent ICI et ne sont jamais activées dans
  * le produit. Ce qui est vérifié dans un navigateur réel :
  *
- *  1. AUCUNE source de données configurée : les 39 fiches ADM rendent leur
+ *  1. AUCUNE source de données configurée : les 42 fiches ADM rendent leur
  *     conteneur (`data-unit`, `data-screen`), la structure déclarée par le
  *     design (`data-sheet-frame`) et le BACKEND_GAP, sans débordement
  *     horizontal à 360 px comme à 1440 px ; aucun terme du Master Design ni
@@ -605,6 +606,48 @@ const FIXTURE_REP_NEXT_PAGE = {
   explanation: 'Fin d’exécution confirmée par une partie du Contrat (fait d’historique documenté).',
 };
 
+/* ── P4F-2 · Notifications (fixture HTTP d'une réponse ADMIN réelle) ── */
+const FIXTURE_NOTIFICATION = {
+  id: 'ntf-e2e-1',
+  recipientId: 'usr-admin-e2e',
+  recipientRole: 'ADMIN',
+  type: 'NEW_APPLICATION',
+  title: 'Nouvelle Candidature à examiner',
+  message: 'Une nouvelle Candidature est disponible dans la file ADMIN.',
+  linkRef: { screen: 'ADM-06' },
+  sourceEventId: 'evt-notification-e2e-1',
+  sourceEventType: 'APPLICATION_SUBMITTED',
+  aggregateType: 'APPLICATION',
+  aggregateId: 'app-e2e-1',
+  payload: { secret: SERVER_SECRET },
+  dedupeKey: 'private-dedupe-key-e2e',
+  isRead: false,
+  readState: 'UNREAD',
+  pushStatus: 'NOT_AVAILABLE',
+  emailStatus: 'SKIPPED',
+  createdAt: '2026-10-10T09:00:00.000Z',
+  updatedAt: '2026-10-10T09:00:00.000Z',
+};
+const FIXTURE_NOTIFICATION_READ = {
+  ...FIXTURE_NOTIFICATION,
+  id: 'ntf-e2e-2',
+  type: 'ACCOUNT_UNBLOCKED',
+  title: 'Compte rétabli',
+  message: 'Le compte est de nouveau accessible.',
+  isRead: true,
+  readState: 'READ',
+  pushStatus: 'NOT_AVAILABLE',
+  emailStatus: 'NOT_AVAILABLE',
+};
+const FIXTURE_NOTIFICATION_NEXT_PAGE = {
+  ...FIXTURE_NOTIFICATION,
+  id: 'ntf-e2e-3',
+  title: 'Notification de la page suivante',
+  message: 'Ligne suivante fournie par la réponse serveur.',
+  isRead: false,
+  readState: 'UNREAD',
+};
+
 function reputationDetail(entry: typeof FIXTURE_REP_ACTIVE | typeof FIXTURE_REP_REVERSED | typeof FIXTURE_REP_NEXT_PAGE) {
   return {
     ...entry,
@@ -627,6 +670,11 @@ function reputationDetail(entry: typeof FIXTURE_REP_ACTIVE | typeof FIXTURE_REP_
 
 let fixturePaymentRows: Record<string, unknown>[] = [FIXTURE_SALARY_PAYMENT, FIXTURE_FEE_PAYMENT, FIXTURE_SCHEDULED_PAYMENT];
 let fixtureClaimRows: Record<string, unknown>[] = [FIXTURE_CLAIM, FIXTURE_DECISION_CLAIM, FIXTURE_TERMINAL_CLAIM];
+type NotificationListMode = 'ready' | 'empty' | 'not-installed' | 'error';
+let notificationListMode: NotificationListMode = 'ready';
+let notificationReadPermission = true;
+let notificationListCalls = 0;
+const notificationCursors: Array<string | null> = [];
 type PaymentListMode = 'ready' | 'empty' | 'not-configured' | 'error';
 type SessionMode = 'admin' | 'employer' | 'anonymous' | 'error';
 
@@ -772,6 +820,12 @@ try {
       { ...FIXTURE_REP_REVERSED, history: [...FIXTURE_REP_REVERSED.history] },
     ];
   };
+  const resetNotificationFixtures = () => {
+    notificationListMode = 'ready';
+    notificationReadPermission = true;
+    notificationListCalls = 0;
+    notificationCursors.length = 0;
+  };
   let paymentListDelayMs = 0;
   let approveFailureCount = 0;
   let approveDelayMs = 0;
@@ -860,6 +914,20 @@ try {
       await route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify(errorBody('NOT_FOUND', 'Ressource non attendue par la vérification.')) });
       return;
     }
+    if (url.pathname === '/api/v1/admin/notifications' && method === 'GET') {
+      notificationListCalls += 1;
+      notificationCursors.push(url.searchParams.get('cursor'));
+      const json = (status: number, body: unknown) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
+      const errorBody = (code: string, message: string) => ({ error: { code, message, requestId: SERVER_REQUEST_ID } });
+      if (!notificationReadPermission) return json(403, errorBody('FORBIDDEN', SERVER_SECRET));
+      if (notificationListMode === 'not-installed') return json(501, errorBody('NOT_IMPLEMENTED', SERVER_SECRET));
+      if (notificationListMode === 'error') return json(500, errorBody('INTERNAL', SERVER_SECRET));
+      if (notificationListMode === 'empty') return json(200, { items: [], cursor: null, limit: 100, hasMore: false });
+      if (url.searchParams.get('cursor') === 'ntf-e2e-2') {
+        return json(200, { items: [FIXTURE_NOTIFICATION_NEXT_PAGE], cursor: null, limit: 100, hasMore: false });
+      }
+      return json(200, { items: [FIXTURE_NOTIFICATION, FIXTURE_NOTIFICATION_READ], cursor: 'ntf-e2e-2', limit: 100, hasMore: true });
+    }
     if (url.pathname.endsWith('/auth/session')) {
       if (sessionMode === 'anonymous') {
         await route.fulfill({ status: 401, contentType: 'application/json', body: JSON.stringify({ error: { code: 'UNAUTHENTICATED', message: SERVER_SECRET, requestId: SERVER_REQUEST_ID } }) });
@@ -892,6 +960,7 @@ try {
                 ...(proposalReadPermission ? ['applications:read:any'] : []),
                 ...(reputationReadPermission ? ['audit:read'] : []),
                 ...(documentReadPermission ? ['documents:read:any'] : []),
+                ...(notificationReadPermission ? ['notifications:read:any'] : []),
               ]
             : [],
         }),
@@ -2439,6 +2508,69 @@ try {
       await assertNoForbiddenText(path, await screenText());
     }
     assert.equal(documentListCalls, 0, 'ADM-39/40 n’appellent aucune liste ADMIN');
+  });
+
+  await check('ADM-41 — notification réelle : lecture In-App, curseur, états de canaux et payload opaque non rendu', async () => {
+    sessionMode = 'admin';
+    resetNotificationFixtures();
+    for (const width of [360, 1440]) {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(api.origin + '/admin/notifications');
+      await page.locator('[data-screen="ADM-41"]').waitFor();
+      await page.getByText('Nouvelle Candidature à examiner').waitFor();
+      const text = await screenText();
+      assert.ok(says(text, 'ntf-e2e-1') && says(text, 'Non lue'), `notification réelle absente (${width}px)`);
+      assert.ok(says(text, 'Non disponible') && says(text, 'Non ciblé'), `états Push/Email réels absents (${width}px)`);
+      assert.ok(!text.includes(SERVER_SECRET), `payload secret rendu (${width}px)`);
+      assert.ok(notificationCursors[0] === null, 'première page sans curseur');
+      assert.ok(new URL(page.url()).pathname === '/admin/notifications');
+      assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `débordement horizontal (${width}px)`);
+      const html = await page.locator('[data-screen="ADM-41"]').innerHTML();
+      assert.ok(!/payload|dedupeKey|sourceEvent|SECRET_MUST_NOT_RENDER/i.test(html), `données techniques de notification rendues (${width}px)`);
+      await assertNoForbiddenText(`/admin/notifications ${width}px`, text);
+    }
+    const next = page.getByRole('button', { name: 'Charger la page suivante' });
+    await next.click();
+    await page.getByText('Notification de la page suivante').waitFor();
+    assert.ok(notificationCursors.includes('ntf-e2e-2'), 'curseur serveur non rejoué');
+    assert.equal(await page.getByRole('button', { name: 'Charger la page suivante' }).count(), 0, 'bouton de pagination conservé sans page suivante');
+    assert.equal(await page.locator('button').filter({ hasText: 'Tester un envoi' }).count(), 0, 'commande d’envoi inventée');
+  });
+
+  await check('ADM-41 / ADM-42 / ADM-43 — 501, erreur, permission et gaps sans contrôles indisponibles', async () => {
+    sessionMode = 'admin';
+    resetNotificationFixtures();
+    notificationListMode = 'empty';
+    await page.setViewportSize({ width: 360, height: 900 });
+    await page.goto(api.origin + '/admin/notifications');
+    await page.getByText('Aucune notification In-App n’est présente').waitFor();
+    assert.equal(await page.getByText('ntf-e2e-1').count(), 0, 'ligne inventée dans la page vide');
+    notificationListMode = 'not-installed';
+    await page.reload();
+    await page.getByText('n’est pas installée dans cet environnement').first().waitFor();
+    assert.equal(await page.getByText('ntf-e2e-1').count(), 0, 'liste affichée à la place du 501');
+    notificationListMode = 'error';
+    await page.reload();
+    await page.locator('[data-state="500"]').waitFor();
+    assert.ok(!(await page.locator('[data-state="500"]').innerText()).includes(SERVER_SECRET), 'message brut de notification rendu');
+
+    resetNotificationFixtures();
+    notificationReadPermission = false;
+    const callsBeforePermission = notificationListCalls;
+    await page.reload();
+    await page.locator('[data-state="403"]').waitFor();
+    assert.equal(notificationListCalls, callsBeforePermission, 'appel notification sans notifications:read:any');
+
+    resetNotificationFixtures();
+    for (const [path, code] of [['/admin/notifications/gabarits', 'ADM-42'], ['/admin/notifications/delivrabilite', 'ADM-43']] as const) {
+      await page.goto(api.origin + path);
+      await page.locator(`[data-screen="${code}"]`).waitFor();
+      await page.locator('[data-backend-gap="true"]').first().waitFor();
+      assert.equal(await page.locator(`[data-screen="${code}"] form`).count(), 0, `${code} : formulaire indisponible rendu`);
+      assert.equal(await page.locator(`[data-screen="${code}"] button`).count(), 0, `${code} : bouton indisponible rendu`);
+      await assertNoForbiddenText(path, await screenText());
+    }
+    assert.equal(notificationListCalls, 0, 'ADM-42/43 n’appellent pas la seule lecture notification');
   });
 
   assert.deepEqual(errors, [], `erreurs de page : ${errors.join(' · ')}`);

@@ -285,4 +285,24 @@ export const ADMIN_UNIT_GAPS: Record<string, readonly string[]> = {
     'ADM-40 · export du journal d’accès (journalisé) — absent. Aucune route d’export n’existe.',
     'ADM-40 · sans persistance durable ou stockage objet, les routes de documents répondent 501 : l’écran affiche « Source de données non configurée », jamais un journal simulé.',
   ],
+  /* ── P4F-2 · notifications administratives ── */
+  'ADM-41': [
+    'ADM-41 · GET /api/v1/admin/notifications (admin.notifications.list, permission notifications:read:any) est la seule lecture ADMIN installée : elle renvoie la page réelle des notifications In-App, avec curseur, état de lecture et états de canaux retournés par le serveur.',
+    'ADM-41 · GET /admin/notifications/overview et GET /admin/notifications/templates/health — absents : volumes 24 h, taux d’ouverture, files, santé par gabarit et histogramme global ne sont pas exposés. Les repères affichés sont bornés à la page réellement chargée.',
+    'ADM-41 · POST /admin/notifications/test-send — absent : aucun envoi de test, aucune notification n’est créée depuis l’interface. Les canaux Push et Email restent des abstractions sans fournisseur réel ; leur état NOT_AVAILABLE est affiché tel que renvoyé.',
+    'ADM-41 · filtres serveur par gabarit, canal, période ou destinataire — absents de admin.notifications.list. Aucun filtrage local n’est présenté comme une requête plateforme.',
+    'ADM-41 · marquer une notification lue ou toutes les notifications lues relève des routes scope self (`notifications.read`, `notifications.read-all`) : l’ADMIN ne les détourne pas pour agir sur la boîte d’un autre compte.',
+    'ADM-41 · sans persistance PostgreSQL durable, le handler ADMIN n’est pas installé : la route répond 501 et l’écran affiche « Source de données non configurée », jamais une boîte vide simulée.',
+  ],
+  'ADM-42': [
+    'ADM-42 · GET /admin/notifications/templates, PUT /admin/notifications/templates/:id et POST /admin/notifications/templates/:id/validate — absents du catalogue et sans handler. Aucun gabarit, version, variable, langue ou statut n’est rendu.',
+    'ADM-42 · enregistrement d’une version, contrôle de conformité financière et prévisualisation multi-canal — absents. Aucun formulaire, éditeur, aperçu ni bouton actif n’est proposé.',
+    'ADM-42 · la notification persistée contient un titre et un message issus du serveur, mais cela ne constitue pas une ressource de gabarit administrable : aucune version n’est déduite depuis les notifications.',
+  ],
+  'ADM-43': [
+    'ADM-43 · GET /admin/notifications/deliverability et GET /admin/notifications/otp-health — absents. Aucun volume fournisseur, taux de livraison, latence, incident ou série horaire n’est exposé.',
+    'ADM-43 · POST /admin/notifications/failover {channel, scope} — absent : aucune bascule de canal ne peut être forcée depuis l’ADMIN et aucun fournisseur externe n’est configuré.',
+    'ADM-43 · les champs pushStatus et emailStatus d’une notification réelle peuvent valoir NOT_AVAILABLE, SKIPPED, DELIVERED ou FAILED ; ils ne remplacent pas une agrégation par fournisseur et ne sont pas transformés en taux dans le navigateur.',
+    'ADM-43 · numéros, adresses, webhooks, accusés de livraison et règles de backoff — absents de la capacité serveur exposée. Aucun canal externe n’est simulé.',
+  ],
 };
