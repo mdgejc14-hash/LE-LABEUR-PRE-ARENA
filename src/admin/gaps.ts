@@ -318,4 +318,19 @@ export const ADMIN_UNIT_GAPS: Record<string, readonly string[]> = {
     'ADM-46 · GET /admin/ops/cron et GET /admin/ops/cron/:name/history — absents : le déclencheur interne du worker n’expose ni registre ADMIN de planifications, ni historique, ni mesure de dérive.',
     'ADM-46 · POST /admin/ops/cron/:name/run — absent : aucune exécution manuelle, aucun bouton actif et aucun horaire futur déduit de la configuration interne.',
   ],
+  /* ── P4G-2 · SLO, dead-letter et incidents d’exploitation ── */
+  'ADM-47': [
+    'ADM-47 · GET /admin/ops/slo, GET /admin/ops/slo/:id/history et GET /admin/ops/slo/report.pdf — routes décrites par la fiche mais absentes de routeContracts.ts et sans handler : aucune cible, mesure sur 7/30 jours, série, consommation de budget, incident imputé ou rapport n’est exposé.',
+    'ADM-47 · politiques d’épuisement, propriétaire SLO, règle de gel des déploiements, revue obligatoire et plan de rétablissement — aucun contrat serveur ni mécanisme ADMIN consultable ne les confirme. Aucune conséquence automatique n’est présentée comme active.',
+  ],
+  'ADM-48': [
+    'ADM-48 · GET /admin/ops/dlq, GET /admin/ops/dlq/:id/analysis, POST /admin/ops/dlq/:id/retry et POST /admin/ops/dlq/:id/abandon — références de design absentes de routeContracts.ts et sans handler ADMIN : aucune liste, analyse, tentative de rejeu ou compensation n’est disponible.',
+    'ADM-48 · le worker contient un résultat interne « dead-letter », mais aucun contrat de lecture ou permission de supervision ne l’expose à l’ADMIN. Les tables et résultats internes ne sont pas traités comme une API ; aucun compteur ni état vide n’est déduit.',
+  ],
+  'ADM-49': [
+    'ADM-49 · GET /admin/ops/incidents/:id, POST /admin/ops/incidents/:id/entries et POST /admin/ops/incidents/:id/broadcast — références de design absentes de routeContracts.ts et sans handler : aucune chronologie, communication, sévérité, portée, statut ou propriétaire n’est lisible ni modifiable.',
+    'ADM-49 · aucune route de liste GET /admin/ops/incidents n’est définie ; le paramètre de /admin/ops/incidents/:id est une référence non vérifiée et ne crée pas de dossier consultable.',
+    'ADM-49 · GET /api/v1/admin/incidents (admin.incidents.list, incidents:read:any) renvoie la frontière de contrôle avec items vides et persistence=not-configured ; elle ne contient pas d’incident ops et ne prouve pas qu’il n’en existe aucun. Cette route n’est pas utilisée par ADM-49.',
+    'ADM-49 · POST /api/v1/admin/incidents/:incidentId/arbitrate (incidents:arbitrate) est déclaré mais aucun handler n’est installé dans la composition du worker : la commande répond 501 et ne fournit ni chronologie, ni publication, ni clôture ops. Elle n’est pas appelée.',
+  ],
 };

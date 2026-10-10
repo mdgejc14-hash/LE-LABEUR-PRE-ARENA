@@ -1,14 +1,14 @@
 /**
- * P4F-2-DESIGN-ADMIN-NOTIFICATIONS — vérification UI réelle (Chromium) de
+ * P4G-2-DESIGN-ADMIN-SUPERVISION — vérification UI réelle (Chromium) de
  * l'espace supervision livré (P4A + P4B-1 contrats + P4B-2 paiements + P4C
  * salaire + P4D Claims + P4E-1 Remplacements + P4E-2 Réputation + P4F
- * Documents + P4F-2 Notifications).
+ * Documents + P4F-2 Notifications + P4G-1 operations + P4G-2 SLO/DLQ/incidents).
  *
  * Comme le script P2, ce script n'affirme rien sur des données simulées dans
  * l'application : les fixtures HTTP vivent ICI et ne sont jamais activées dans
  * le produit. Ce qui est vérifié dans un navigateur réel :
  *
- *  1. AUCUNE source de données configurée : les 45 fiches ADM rendent leur
+ *  1. AUCUNE source de données configurée : les 48 fiches ADM rendent leur
  *     conteneur (`data-unit`, `data-screen`), la structure déclarée par le
  *     design (`data-sheet-frame`) et le BACKEND_GAP, sans débordement
  *     horizontal à 360 px comme à 1440 px ; aucun terme du Master Design ni
@@ -54,6 +54,9 @@
  *     erreur/refus, contrôle d'intégrité technique (verdict serveur seul),
  *     révocation motivée (motif 3–1000, confirmation, Idempotency-Key),
  *     ADM-39/40 sans action ; aucun object_key rendu ; 360/1440 px.
+ * 12. P4G-2 : routes ADM-47/48/49, aucune requête ops, mesures absentes en « — »,
+ * aucune liste de DLQ/incidents assimilée à zéro, référence incident non vérifiée,
+ * actions non implémentées désactivées, navigation, refus 401/403 et erreur 500.
  *
  * Exécution : `npm run verify:admin-ui`.
  */
@@ -2610,6 +2613,80 @@ try {
       assert.deepEqual(opsRequests, [], 'aucun appel ops après refus');
     } finally {
       page.off('request', trackOps);
+      sessionMode = 'admin';
+    }
+  });
+
+  await check('ADM-47/48/49 — données indisponibles, actions désactivées, routes, navigation et garde de session (360/1440 px)', async () => {
+    sessionMode = 'admin';
+    const unavailableRequests: string[] = [];
+    const trackUnavailableRequests = (request: { url(): string }) => {
+      const url = request.url();
+      if (url.includes('/api/v1/admin/ops/') || url.endsWith('/api/v1/admin/incidents')) unavailableRequests.push(url);
+    };
+    page.on('request', trackUnavailableRequests);
+    const paths = [
+      ['/admin/ops/slo', 'ADM-47'],
+      ['/admin/ops/dead-letter', 'ADM-48'],
+      ['/admin/ops/incidents/inc-e2e-unverified', 'ADM-49'],
+    ] as const;
+    try {
+      for (const width of [360, 1440]) {
+        await page.setViewportSize({ width, height: 900 });
+        for (const [path, code] of paths) {
+          await page.goto(api.origin + path);
+          const screen = page.locator(`[data-screen="${code}"]`);
+          await screen.waitFor();
+          await screen.locator('[data-backend-gap="true"]').last().waitFor();
+          const text = await screen.innerText();
+          assert.ok(says(text, 'BACKEND_GAP'), `${code} : écart serveur non signalé`);
+          assert.ok(says(text, 'Indisponible'), `${code} : action absente non explicitée`);
+          assert.equal(await screen.locator('form').count(), 0, `${code} : formulaire sans handler`);
+          assert.ok(await screen.locator('button').count() > 0, `${code} : actions prévues non représentées`);
+          assert.equal(await screen.locator('button:not([disabled])').count(), 0, `${code} : une action absente est activable`);
+          assert.ok(await screen.locator('button[data-unavailable-action]').count() > 0, `${code} : contrôle indisponible non identifié`);
+          if (code === 'ADM-47' || code === 'ADM-48') {
+            const values = (await screen.locator('.lbm-admin__kpi-value').allTextContents()).map((value) => value.trim());
+            assert.ok(values.length > 0, `${code} : repères absents`);
+            assert.ok(values.every((value) => value === '—'), `${code} : valeur de métrique fictive (${values.join(', ')})`);
+            assert.equal(await screen.locator('table tbody tr').count(), 1, `${code} : aucune ligne serveur ne doit être suggérée`);
+            const emptyText = await screen.locator('table tbody tr').innerText();
+            assert.ok(says(emptyText, 'Aucune'), `${code} : indisponibilité de la liste non dite`);
+          }
+          if (code === 'ADM-49') {
+            assert.equal(await screen.locator('[data-unverified-reference]').innerText(), 'inc-e2e-unverified', 'la référence de chemin doit rester non vérifiée');
+            assert.ok(says(text, 'non vérifiée'), 'statut de la référence non expliqué');
+            const unknownFacts = (await screen.locator('[aria-label="Champs d’incident non disponibles"] dd').allTextContents()).map((value) => value.trim());
+            assert.deepEqual(unknownFacts, ['—', '—', '—', '—', '—'], 'sévérité/portée/statut/propriétaire/durée ne doivent pas être déduits');
+          }
+          assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${code} : débordement à ${width}px`);
+          await assertNoForbiddenText(path, text);
+        }
+      }
+      assert.deepEqual(unavailableRequests, [], 'aucune API ops ni liste métier générique utilisée comme substitut');
+
+      await page.goto(api.origin + '/admin/ops/queues');
+      const queueScreen = page.locator('[data-screen="ADM-44"]');
+      await queueScreen.waitFor();
+      assert.equal(await queueScreen.locator('a[href="/admin/ops/slo"]').count(), 1, 'lien depuis les files vers le diagnostic SLO absent');
+      assert.equal(await queueScreen.locator('a[href="/admin/ops/dead-letter"]').count(), 1, 'lien depuis les files vers la dead-letter absent');
+
+      sessionMode = 'employer';
+      for (const [path, code] of paths) {
+        await page.goto(api.origin + path);
+        await page.locator('[data-state="403"]').waitFor();
+        assert.equal(await page.locator(`[data-screen="${code}"]`).count(), 0, `${code} : écran rendu sans session ADMIN`);
+      }
+      sessionMode = 'anonymous';
+      await page.goto(api.origin + '/admin/ops/slo');
+      await page.locator('[data-state="401"]').waitFor();
+      sessionMode = 'error';
+      await page.goto(api.origin + '/admin/ops/dead-letter');
+      await page.locator('[data-state="500"]').waitFor();
+      assert.ok(!(await page.locator('[data-state="500"]').innerText()).includes(SERVER_SECRET), 'erreur de session brute rendue');
+      assert.deepEqual(unavailableRequests, [], 'aucune donnée ops après refus ou erreur de session');
+    } finally {
+      page.off('request', trackUnavailableRequests);
       sessionMode = 'admin';
     }
   });

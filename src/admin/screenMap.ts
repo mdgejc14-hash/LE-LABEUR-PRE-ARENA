@@ -5,8 +5,8 @@
  * `ADMIN_DESIGN_SCREENS`) : aucune route n'est créée, renommée ou réécrite
  * par ces tranches, dont les routes ADM-26 → ADM-30 ajoutées au catalogue P4D,
  * ADM-31 → ADM-33 ajoutées au catalogue P4E-1, ADM-34 → ADM-36 ajoutées au
- * catalogue P4E-2, ADM-41 → ADM-43 au catalogue P4F-2 et ADM-44 →
- * ADM-46 au catalogue P4G-1.
+ * catalogue P4E-2, ADM-41 → ADM-43 au catalogue P4F-2, ADM-44 → ADM-46
+ * au catalogue P4G-1 et ADM-47 → ADM-49 au catalogue P4G-2.
  * Ce module ne contient AUCUN composant : il est importable par la résolution
  * de route sans embarquer l'interface.
  */
@@ -15,7 +15,7 @@ import { ADMIN_DESIGN_SCREENS, ADMIN_DESIGN_UNITS } from './catalog';
 import { ADMIN_UNIT_GAPS } from './gaps';
 
 export interface ResolvedAdminScreen {
-  /** Code de fiche ADM livré par l'une des tranches P4A à P4F-2. */
+  /** Code de fiche ADM livré par l'une des tranches P4A à P4G-2. */
   readonly code: string;
   /** Unité de production qui contient cette fiche (regroupement `units.py`). */
   readonly unitId: string;

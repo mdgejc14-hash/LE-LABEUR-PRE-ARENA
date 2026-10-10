@@ -104,9 +104,11 @@ export const PRESTATAIRE_UNIT_IDS: readonly string[] = PRESTATAIRE_DESIGN_UNITS.
  * P4B-2-DESIGN-ADMIN-PAYMENTS, P4C-DESIGN-ADMIN-SALARY-PROOFS,
  * P4D-DESIGN-ADMIN-CLAIMS, P4E-1-DESIGN-ADMIN-REPLACEMENTS,
  * P4E-2-DESIGN-ADMIN-REPUTATION, P4F-DESIGN-ADMIN-DOCUMENTS,
- * P4F-2-DESIGN-ADMIN-NOTIFICATIONS et P4G-1-DESIGN-ADMIN-OPERATIONS (23 unités, 45 fiches, dérivées du
- * catalogue généré). Même règle : PARTIEL dès qu'une
- * fiche déclare une capacité absente.
+ * P4F-2-DESIGN-ADMIN-NOTIFICATIONS, P4G-1-DESIGN-ADMIN-OPERATIONS et
+ * P4G-2-DESIGN-ADMIN-SUPERVISION (25 unités, 48 fiches, dérivées du catalogue
+ * généré). P4G-2 rend ADM-47/48/49 diagnostiques : les capacités SLO,
+ * dead-letter et incidents d’exploitation sont absentes du backend.
+ * Même règle : PARTIEL dès qu'une fiche déclare une capacité absente.
  */
 export const ADMIN_UNIT_IDS: readonly string[] = ADMIN_DESIGN_UNITS.map((unit) => unit.id);
 
