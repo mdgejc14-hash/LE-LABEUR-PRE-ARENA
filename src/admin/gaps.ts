@@ -333,4 +333,16 @@ export const ADMIN_UNIT_GAPS: Record<string, readonly string[]> = {
     'ADM-49 · GET /api/v1/admin/incidents (admin.incidents.list, incidents:read:any) renvoie la frontière de contrôle avec items vides et persistence=not-configured ; elle ne contient pas d’incident ops et ne prouve pas qu’il n’en existe aucun. Cette route n’est pas utilisée par ADM-49.',
     'ADM-49 · POST /api/v1/admin/incidents/:incidentId/arbitrate (incidents:arbitrate) est déclaré mais aucun handler n’est installé dans la composition du worker : la commande répond 501 et ne fournit ni chronologie, ni publication, ni clôture ops. Elle n’est pas appelée.',
   ],
+  /* ── P4G-3 · sécurité : dashboard & contrôles d’accès ── */
+  'ADM-50': [
+    'ADM-50 · GET /admin/security/overview et GET /admin/security/detections?cursor= — références de design sans contrat ni handler ADMIN : aucune détection, tendance, posture, verrou de sécurité, incident ouvert ou dernier audit n’est consultable.',
+    'ADM-50 · POST /admin/security/detections/:id/qualify — absent. Aucun faux positif n’est qualifiable et aucune action automatique n’est réversible depuis cette vue.',
+    'ADM-50 · admin.audit.list (audit:read) et admin.incidents.list (incidents:read:any) renvoient une frontière de contrôle persistence=not-configured ; leurs items vides ne prouvent ni absence de détection ni absence d’incident. Le statut BLOCKED d’un compte ne représente pas un verrou de sécurité.',
+  ],
+  'ADM-51': [
+    'ADM-51 · GET /admin/security/idor?cursor= — absent : aucun refus structuré, politique d’autorisation appliquée, récurrence, acteur expurgé ou indice de fuite n’est exposé côté ADMIN.',
+    'ADM-51 · POST /admin/security/idor/:id/qualify et POST /admin/security/idor/:id/reinforce — absents : ni qualification ni renforcement possible. Aucun refus n’est interprété comme tentative IDOR, aucun résultat « refusé » ou « fuite » n’est présumé.',
+    'ADM-51 · les protections et traces serveur internes ne constituent pas une API de supervision. Aucun endpoint, paramètre manipulé, contexte de session ni identifiant sensible n’est affiché.',
+  ],
+
 };

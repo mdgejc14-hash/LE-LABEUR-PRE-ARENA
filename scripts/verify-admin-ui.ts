@@ -2691,6 +2691,57 @@ try {
     }
   });
 
+  await check('ADM-50/51 — sécurité diagnostique sans détection inventée, garde et actions inertes (360/1440 px)', async () => {
+    const paths = [['/admin/securite', 'ADM-50'], ['/admin/securite/idor', 'ADM-51']] as const;
+    const securityRequests: string[] = [];
+    const trackSecurityRequests = (request: { url(): string }) => {
+      if (request.url().includes('/api/v1/admin/security/') || request.url().endsWith('/api/v1/admin/audit') || request.url().endsWith('/api/v1/admin/incidents')) securityRequests.push(request.url());
+    };
+    page.on('request', trackSecurityRequests);
+    try {
+      sessionMode = 'admin';
+      for (const width of [360, 1440]) {
+        await page.setViewportSize({ width, height: 900 });
+        for (const [path, code] of paths) {
+          await page.goto(api.origin + path);
+          const screen = page.locator(`[data-screen="${code}"]`);
+          await screen.waitFor();
+          await screen.locator('[data-backend-gap="true"]').last().waitFor();
+          const text = await screen.innerText();
+          assert.ok(says(text, 'BACKEND_GAP') && says(text, 'Indisponible'), `${code} : absence de source/action non dite`);
+          assert.ok(await screen.locator('[data-no-invented-security]').count() > 0, `${code} : absence de mesures non explicitée`);
+          const values = (await screen.locator('.lbm-admin__kpi-value').allTextContents()).map((value) => value.trim());
+          assert.ok(values.length > 0 && values.every((value) => value === '—'), `${code} : métrique fictive`);
+          assert.equal(await screen.locator('table tbody tr').count(), 1, `${code} : liste factice`);
+          assert.ok(says(await screen.locator('table tbody tr').innerText(), 'aucune'), `${code} : source absente non dite`);
+          assert.equal(await screen.locator('form').count(), 0, `${code} : formulaire sans handler`);
+          assert.ok(await screen.locator('button[data-unavailable-action]').count() > 0, `${code} : commande absente non identifiée`);
+          assert.equal(await screen.locator('button:not([disabled])').count(), 0, `${code} : commande absente activable`);
+          assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${code} : débordement à ${width}px`);
+          await assertNoForbiddenText(path, text);
+        }
+      }
+      assert.deepEqual(securityRequests, [], 'aucune lecture de sécurité inventée ou collection de contrôle utilisée comme substitut');
+      sessionMode = 'employer';
+      for (const [path, code] of paths) {
+        await page.goto(api.origin + path);
+        await page.locator('[data-state="403"]').waitFor();
+        assert.equal(await page.locator(`[data-screen="${code}"]`).count(), 0, `${code} : écran sans autorisation`);
+      }
+      sessionMode = 'anonymous';
+      await page.goto(api.origin + paths[0][0]);
+      await page.locator('[data-state="401"]').waitFor();
+      sessionMode = 'error';
+      await page.goto(api.origin + paths[1][0]);
+      await page.locator('[data-state="500"]').waitFor();
+      assert.ok(!(await page.locator('[data-state="500"]').innerText()).includes(SERVER_SECRET), 'détail de session divulgué');
+      assert.deepEqual(securityRequests, [], 'aucune lecture sensible après refus ou erreur');
+    } finally {
+      page.off('request', trackSecurityRequests);
+      sessionMode = 'admin';
+    }
+  });
+
   assert.deepEqual(errors, [], `erreurs de page : ${errors.join(' · ')}`);
   console.log(`Total: ${passed}/${passed} vérifications navigateur PASS (fixtures HTTP locales ; aucune donnée de démonstration dans l’application).`);
 } finally {
