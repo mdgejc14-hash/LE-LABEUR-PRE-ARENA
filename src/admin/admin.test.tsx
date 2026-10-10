@@ -8,7 +8,7 @@
  *  1. parité du catalogue généré avec la source de design (Python) ;
  *  2. résolution de route : chaque fiche ADM des tranches est atteignable et
  *     rattachée à son unité (regroupement `units.py`, pas une plage numérique) ;
- *  3. registre complet (21 unités / 39 fiches), selon les regroupements canoniques exacts ;
+ *  3. registre complet (22 unités / 42 fiches), selon les regroupements canoniques exacts ;
  *  4. API : chaque chemin appelé existe déjà dans `routeContracts.ts` ;
  *  5. GARDE-FOU DE VOCABULAIRE : aucun libellé métier du Master Design
  *     (Mission, Client, Prestataire, Litige) ne peut entrer dans l'interface,
@@ -22,7 +22,7 @@
  *  9. garde de session : seul un compte ADMIN actif ouvre l'espace ;
  * 10. intégration : unités ADMIN livrées = PARTIEL, EMP/PRE/PUB/SYS inchangés,
  *     ADM-26 → ADM-30 Claims, ADM-31 → ADM-33 Remplacements, ADM-34 → ADM-36
- *     Réputation seulement, autres ADM/FIN/RTC non intégrées ;
+ *     Réputation, ADM-41 → ADM-43 Notifications, autres ADM/FIN/RTC non intégrées ;
  * 11. responsive, accessibilité (table sémantique) et reduced-motion (CSS) ;
  * 12. P4B-1 contrats : routes ADM réelles du registre et des Claims, statuts
  *     et types de Claim en parité exacte avec le serveur, segments du registre
@@ -74,6 +74,12 @@ import {
   loadDocumentRegistryPage,
   unavailableWhenNotInstalled,
 } from './screens/documents';
+import {
+  Admin41NotificationOrchestration,
+  isNotificationsUnavailable,
+  loadNotificationRegistryPage,
+  unavailableWhenNotificationsNotInstalled,
+} from './screens/notifications';
 import {
   DOCUMENT_CORRECT_PERMISSION,
   DOCUMENT_READ_PERMISSION,
@@ -138,6 +144,11 @@ import {
   REPUTATION_STATUS_LABELS,
   REPUTATION_STATUS_TONES,
   ADMIN_UI_TERMS,
+  NOTIFICATION_CHANNEL_STATUS_LABELS,
+  NOTIFICATION_CHANNEL_STATUS_TONES,
+  NOTIFICATION_READ_STATE_LABELS,
+  NOTIFICATION_READ_STATE_TONES,
+  NOTIFICATION_TYPE_LABELS,
   DOCUMENT_ENTITY_LABELS,
   DOCUMENT_LINK_PURPOSE_LABELS,
   DOCUMENT_RETENTION_CLASS_LABELS,
@@ -151,6 +162,7 @@ import {
   maskEmail,
 } from './vocabulary';
 import { CLAIM_EVIDENCE_STATUS_VALUES, CLAIM_EVIDENCE_TYPE_VALUES, CLAIM_STATUS_VALUES, CLAIM_TYPE_VALUES } from '../backend/disputes/records';
+import { NOTIFICATION_CHANNEL_STATUSES } from '../backend/notifications/records';
 import { REPLACEMENT_STATUS_VALUES } from '../backend/replacements/records';
 import {
   REPUTATION_CATEGORY_VALUES,
@@ -261,11 +273,11 @@ export async function runAdminTests(): Promise<{ name: string; success: boolean;
     execFileSync('python3', ['scripts/design/generate-admin-catalog.py', '--check']);
   });
 
-  check('ADM — 21 unités / 39 fiches, chaque fiche rattachée à une seule unité', () => {
-    assert.equal(ADMIN_DESIGN_UNITS.length, 21);
-    assert.equal(ADMIN_DESIGN_SCREENS.length, 39);
+  check('ADM — 22 unités / 42 fiches, chaque fiche rattachée à une seule unité', () => {
+    assert.equal(ADMIN_DESIGN_UNITS.length, 22);
+    assert.equal(ADMIN_DESIGN_SCREENS.length, 42);
     const codes = ADMIN_DESIGN_SCREENS.map((screen) => screen.code);
-    assert.equal(new Set(codes).size, 39);
+    assert.equal(new Set(codes).size, 42);
     for (const screen of ADMIN_DESIGN_SCREENS) {
       const unit = unitForScreen(screen.code);
       assert.ok(unit, `fiche sans unité : ${screen.code}`);
@@ -279,7 +291,7 @@ export async function runAdminTests(): Promise<{ name: string; success: boolean;
     // P4C ajoute ADM-23 = {confirmations, preuves OTP}, unité unique salaire.
     // P4D conserve les groupements du Master : ADM-27 = {fiche, pièces},
     // ADM-29 = {décision, historique}; ADM-26 reste une unité distincte.
-    assert.deepEqual(ADMIN_DESIGN_UNITS.map((unit) => unit.id), ['ADM-01', 'ADM-02', 'ADM-04', 'ADM-06', 'ADM-08', 'ADM-10', 'ADM-11', 'ADM-13', 'ADM-14', 'ADM-16', 'ADM-18', 'ADM-20', 'ADM-23', 'ADM-26', 'ADM-27', 'ADM-29', 'ADM-31', 'ADM-34', 'ADM-35', 'ADM-37', 'ADM-38']);
+    assert.deepEqual(ADMIN_DESIGN_UNITS.map((unit) => unit.id), ['ADM-01', 'ADM-02', 'ADM-04', 'ADM-06', 'ADM-08', 'ADM-10', 'ADM-11', 'ADM-13', 'ADM-14', 'ADM-16', 'ADM-18', 'ADM-20', 'ADM-23', 'ADM-26', 'ADM-27', 'ADM-29', 'ADM-31', 'ADM-34', 'ADM-35', 'ADM-37', 'ADM-38', 'ADM-41']);
     assert.deepEqual(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-02')?.screenCodes, ['ADM-02', 'ADM-03']);
     assert.deepEqual(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-04')?.screenCodes, ['ADM-04', 'ADM-05']);
     assert.deepEqual(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-06')?.screenCodes, ['ADM-06', 'ADM-07']);
@@ -331,6 +343,13 @@ export async function runAdminTests(): Promise<{ name: string; success: boolean;
     assert.deepEqual(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-35')?.screenCodes, ['ADM-35']);
     assert.deepEqual(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-35')?.routes, ['/admin/reputation/contestations']);
     assert.equal(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-35')?.canon, 'ADM — réputation (contestations)');
+    assert.deepEqual(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-41')?.screenCodes, ['ADM-41', 'ADM-42', 'ADM-43']);
+    assert.deepEqual(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-41')?.routes, [
+      '/admin/notifications',
+      '/admin/notifications/gabarits',
+      '/admin/notifications/delivrabilite',
+    ]);
+    assert.equal(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-41')?.canon, 'ADM — notifications (orchestration, gabarits & délivrabilité)');
   });
 
   check('ADM — chaque route de fiche est résolue par le routeur P0 vers son unité', () => {
@@ -347,7 +366,7 @@ export async function runAdminTests(): Promise<{ name: string; success: boolean;
     assert.equal(index.kind === 'shell' && index.unitId, 'ADM-01', 'l’index /admin doit être le tableau de bord ADM-01');
   });
 
-  check('ADM — registre complet : les 39 fiches livrées ont un écran, aucun code inconnu', () => {
+  check('ADM — registre complet : les 42 fiches livrées ont un écran, aucun code inconnu', () => {
     const registered = Object.keys(ADMIN_SCREEN_COMPONENTS).sort();
     const expected = ADMIN_DESIGN_SCREENS.map((screen) => screen.code).sort();
     assert.deepEqual(registered, expected);
@@ -510,8 +529,8 @@ export async function runAdminTests(): Promise<{ name: string; success: boolean;
     }
   });
 
-  check('ADM — intégration : 21 unités ADM PARTIEL (P4A + P4B-1 + P4B-2 + P4C + P4D + P4E-1 + P4E-2 + P4F), EMP/PRE/PUB/SYS inchangés, autres ADM/FIN/RTC non intégrées', () => {
-    assert.equal(ADMIN_UNIT_IDS.length, 21);
+  check('ADM — intégration : 22 unités ADM PARTIEL (P4A + P4B-1 + P4B-2 + P4C + P4D + P4E-1 + P4E-2 + P4F + P4F-2), EMP/PRE/PUB/SYS inchangés, autres ADM/FIN/RTC non intégrées', () => {
+    assert.equal(ADMIN_UNIT_IDS.length, 22);
     for (const unitId of ADMIN_UNIT_IDS) {
       assert.equal(integrationStatus(unitId), 'PARTIEL', `${unitId} doit être PARTIEL`);
       assert.ok(isAdminUnit(unitId), `${unitId} doit être reconnue comme unité ADM`);
@@ -540,7 +559,7 @@ export async function runAdminTests(): Promise<{ name: string; success: boolean;
     assert.equal(integrationStatus('ADM-35'), 'PARTIEL', 'ADM-35 (recours de réputation) est livrée par P4E-2');
     assert.equal(integrationStatus('ADM-37'), 'PARTIEL', 'ADM-37/40 (registre R2 et audit des Documents) sont livrées par P4F');
     assert.equal(integrationStatus('ADM-38'), 'PARTIEL', 'ADM-38/39 (vérification et quarantaine des Documents) sont livrées par P4F');
-    assert.equal(integrationStatus('ADM-41'), 'NON_INTEGRE', 'ADM-41 (notifications) reste hors tranche');
+    assert.equal(integrationStatus('ADM-41'), 'PARTIEL', 'ADM-41/42/43 (notifications) sont livrées avec les seuls contrats réels');
   });
 
   check('ADM — erreurs : projection en états StateGuard, corrélation sûre uniquement', () => {
@@ -1588,8 +1607,69 @@ export async function runAdminTests(): Promise<{ name: string; success: boolean;
     assert.equal(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-38')?.canon, 'ADM — documents (vérification & quarantaine)');
     const dock = DOCK_DEFINITIONS.ADM.map((item) => item.href);
     assert.ok(!dock.some((href) => href.startsWith('/admin/documents')), 'le dock ADM n’est pas modifié par P4F');
-    assert.equal(ADMIN_SCREEN_COMPONENTS['ADM-41'], undefined, 'notifications (ADM-41) hors tranche');
-    assert.equal(Object.keys(ADMIN_SCREEN_COMPONENTS).length, 39, '39 fiches livrées (P0 → P4F)');
+    assert.equal(typeof ADMIN_SCREEN_COMPONENTS['ADM-41'], 'function', 'notifications (ADM-41) enregistrées');
+    assert.equal(typeof ADMIN_SCREEN_COMPONENTS['ADM-42'], 'function', 'gabarits (ADM-42) enregistrés');
+    assert.equal(typeof ADMIN_SCREEN_COMPONENTS['ADM-43'], 'function', 'délivrabilité (ADM-43) enregistrée');
+    assert.equal(Object.keys(ADMIN_SCREEN_COMPONENTS).length, 42, '42 fiches livrées (P0 → P4F-2)');
+  });
+
+  check('ADM — P4F-2 : notifications, gabarits et délivrabilité suivent les routes réelles et les gaps', () => {
+    const cases: readonly [string, string, string, Record<string, string>][] = [
+      ['/admin/notifications', 'ADM-41', 'ADM-41', {}],
+      ['/admin/notifications/gabarits', 'ADM-42', 'ADM-41', {}],
+      ['/admin/notifications/delivrabilite', 'ADM-43', 'ADM-41', {}],
+    ];
+    for (const [path, code, unitId, params] of cases) {
+      const resolved = resolveAdminScreen(path);
+      assert.equal(resolved?.code, code, `${path} → fiche`);
+      assert.equal(resolved?.unitId, unitId, `${path} → unité Master`);
+      assert.deepEqual(resolved?.params, params, `${path} → paramètres`);
+      const route = resolveRoute(path);
+      assert.equal(route.kind, 'shell', `${path} : shell`);
+      if (route.kind === 'shell') {
+        assert.equal(route.shell, 'ADMIN', `${path} : espace ADMIN`);
+        assert.equal(route.unitId, unitId, `${path} : unité ADM`);
+      }
+      assert.equal(typeof ADMIN_SCREEN_COMPONENTS[code], 'function', `${code} : écran absent du registre`);
+    }
+    const routes = ADMIN_DESIGN_SCREENS.filter((screen) => screen.route.startsWith('/admin/notifications')).map((screen) => screen.route);
+    assert.deepEqual(routes, ['/admin/notifications', '/admin/notifications/gabarits', '/admin/notifications/delivrabilite']);
+    assert.deepEqual(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-41')?.screenCodes, ['ADM-41', 'ADM-42', 'ADM-43']);
+    assert.deepEqual(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-41')?.routes, routes);
+    const contract = API_ROUTE_CONTRACTS.find((candidate) => candidate.key === 'admin.notifications.list');
+    assert.ok(contract, 'admin.notifications.list absent du catalogue serveur');
+    assert.equal(contract.method, 'GET');
+    assert.equal(contract.path, '/api/v1/admin/notifications');
+    assert.equal(contract.permission, 'notifications:read:any');
+    assert.ok(ADMIN_API_PATHS.includes('/api/v1/admin/notifications'), 'route notifications non appelée par AdminApi');
+    assert.deepEqual(Object.keys(NOTIFICATION_CHANNEL_STATUS_LABELS).sort(), [...NOTIFICATION_CHANNEL_STATUSES].sort(), 'états de canaux incomplets');
+    assert.deepEqual(Object.keys(NOTIFICATION_CHANNEL_STATUS_TONES).sort(), [...NOTIFICATION_CHANNEL_STATUSES].sort(), 'tons de canaux incomplets');
+    assert.deepEqual(Object.keys(NOTIFICATION_READ_STATE_LABELS).sort(), ['READ', 'UNREAD']);
+    assert.deepEqual(Object.keys(NOTIFICATION_READ_STATE_TONES).sort(), ['READ', 'UNREAD']);
+    assert.ok(Object.keys(NOTIFICATION_TYPE_LABELS).length > 0, 'types de notification non libellés');
+
+    const source = stripComments(readFileSync(new URL('./screens/notifications.tsx', import.meta.url), 'utf8'));
+    assert.ok(source.includes('loadNotificationRegistryPage'), 'lecture réelle non raccordée');
+    assert.ok(source.includes('isNotificationsUnavailable'), 'sentinelle 501 absente');
+    assert.ok(!source.includes('.payload'), 'payload brut lu par l’écran');
+    const templates = source.slice(source.indexOf('export function Admin42NotificationTemplates'), source.indexOf('export function Admin43NotificationDeliverability'));
+    const deliverability = source.slice(source.indexOf('export function Admin43NotificationDeliverability'));
+    assert.ok(!/<form\b|<button\b|NeoPressButton/.test(templates), 'ADM-42 : contrôle actif sans handler');
+    assert.ok(!/<form\b|<button\b|NeoPressButton/.test(deliverability), 'ADM-43 : contrôle actif sans handler');
+    assert.ok(source.includes('data-no-invented-count="true"'), 'absence de métriques inventées non signalée');
+    const displayed = displayStringsIn(source).join(' ');
+    assert.deepEqual(forbiddenTermsIn(displayed), [], 'vocabulaire du Master interdit dans notifications');
+    for (const code of ['ADM-41', 'ADM-42', 'ADM-43']) {
+      const gaps = ADMIN_UNIT_GAPS[code] ?? [];
+      assert.ok(gaps.length > 0, `${code} doit déclarer son BACKEND_GAP`);
+      assert.deepEqual(forbiddenTermsIn(stripTechnicalTokens(gaps.join(' '))), [], `${code} : vocabulaire de gap`);
+    }
+    const allGaps = ['ADM-41', 'ADM-42', 'ADM-43'].flatMap((code) => ADMIN_UNIT_GAPS[code] ?? []).join(' ');
+    for (const capability of ['/admin/notifications/overview', '/admin/notifications/templates', '/admin/notifications/deliverability', '/admin/notifications/failover']) {
+      assert.ok(allGaps.includes(capability), `capacité notifications non déclarée : ${capability}`);
+    }
+    assert.ok(adminGapsFor('ADM-41', '/admin/notifications/gabarits').some((line) => line.startsWith('ADM-42')), 'gaps ADM-42 servis sur sa route');
+    assert.ok(adminGapsFor('ADM-41', '/admin/notifications/delivrabilite').some((line) => line.startsWith('ADM-43')), 'gaps ADM-43 servis sur sa route');
   });
 
   check('ADM — P4F : handlers réellement installés, permissions serveur, aucune route absente déclarée', () => {
@@ -1919,7 +1999,7 @@ export async function runAdminTests(): Promise<{ name: string; success: boolean;
     for (const [path, code] of previous) {
       assert.equal(resolveAdminScreen(path)?.code, code, `${path} : fiche P0-P4E inchangée`);
     }
-    assert.equal(resolveAdminScreen('/admin/notifications')?.code, undefined, 'notifications : hors tranche, aucune fiche');
+    assert.equal(resolveAdminScreen('/admin/notifications')?.code, 'ADM-41', 'notifications : fiche P4F-2 résolue');
     assert.equal(resolveAdminScreen('/admin/infra')?.code, undefined, 'infra : hors tranche');
   });
 

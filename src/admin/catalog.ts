@@ -2,7 +2,8 @@
 // Source : design/llab/content/adm_*.py, design/llab/units.py — tranches livrées :
 // P4A (ADM-01 → ADM-12), P4B-1 CONTRATS (ADM-13 → ADM-17), P4B-2 PAIEMENTS (ADM-18 → ADM-22)
 // P4C SALAIRE (ADM-23 → ADM-24), P4D CLAIMS (ADM-26 → ADM-30), P4E-1 REMPLACEMENTS (ADM-31 → ADM-33),
-// P4E-2 RÉPUTATION (ADM-34 → ADM-36), P4F DOCUMENTS (ADM-37 → ADM-40).
+// P4E-2 RÉPUTATION (ADM-34 → ADM-36), P4F DOCUMENTS (ADM-37 → ADM-40),
+// P4F-2 NOTIFICATIONS (ADM-41 → ADM-43).
 // Régénérer : npm run design:admin
 //
 // Référence de design UNIQUEMENT : aucun libellé de ce fichier n'est affiché par
@@ -1179,6 +1180,75 @@ export const ADMIN_DESIGN_UNITS = [
       "POST /admin/documents/:id/quarantine/lift",
       "POST /admin/documents/:id/quarantine/confirm-fraud {motive}"
     ]
+  },
+  {
+    "id": "ADM-41",
+    "canon": "ADM — notifications (orchestration, gabarits & délivrabilité)",
+    "criticality": "P1",
+    "archetype": "Chef d'orchestre des messages",
+    "screenCodes": [
+      "ADM-41",
+      "ADM-42",
+      "ADM-43"
+    ],
+    "routes": [
+      "/admin/notifications",
+      "/admin/notifications/gabarits",
+      "/admin/notifications/delivrabilite"
+    ],
+    "zoneKinds": [
+      "cta",
+      "form",
+      "kpi",
+      "list",
+      "table",
+      "timeline"
+    ],
+    "componentRefs": [
+      "Bascule",
+      "Contrôle",
+      "Courbe",
+      "Histogramme",
+      "Prévisualisation",
+      "Table",
+      "Test",
+      "Éditeur"
+    ],
+    "stateNames": [
+      "Nominal",
+      "Échec fournisseur",
+      "Pic",
+      "Quiet hours actives",
+      "Valide",
+      "Non conforme",
+      "En test",
+      "Obsolète",
+      "Nominal",
+      "Dégradé",
+      "Incident",
+      "Résolu"
+    ],
+    "tokens": [
+      "--amber-500",
+      "--clay-500",
+      "--emerald-500",
+      "--gold-500",
+      "--mono",
+      "--surface-1",
+      "--table",
+      "--violet-500"
+    ],
+    "designApi": [
+      "GET /admin/notifications/overview",
+      "GET /admin/notifications/templates/health",
+      "POST /admin/notifications/test-send",
+      "GET /admin/notifications/templates",
+      "PUT /admin/notifications/templates/:id",
+      "POST /admin/notifications/templates/:id/validate",
+      "GET /admin/notifications/deliverability",
+      "GET /admin/notifications/otp-health",
+      "POST /admin/notifications/failover {channel, scope}"
+    ]
   }
 ] as const;
 
@@ -2218,6 +2288,85 @@ export const ADMIN_DESIGN_SCREENS = [
       "--mono",
       "--amber-500",
       "--clay-500",
+      "--table"
+    ]
+  },
+  {
+    "code": "ADM-41",
+    "unitId": "ADM — notifications (orchestration, gabarits & délivrabilité)",
+    "route": "/admin/notifications",
+    "canonicalRoute": "/admin/notifications",
+    "role": "ADMIN",
+    "criticality": "P1",
+    "zoneKinds": [
+      "kpi",
+      "table",
+      "timeline",
+      "cta"
+    ],
+    "variantOf": null,
+    "designApi": [
+      "GET /admin/notifications/overview",
+      "GET /admin/notifications/templates/health",
+      "POST /admin/notifications/test-send"
+    ],
+    "tokens": [
+      "--violet-500",
+      "--clay-500",
+      "--mono",
+      "--table"
+    ]
+  },
+  {
+    "code": "ADM-42",
+    "unitId": "ADM — notifications (orchestration, gabarits & délivrabilité)",
+    "route": "/admin/notifications/gabarits",
+    "canonicalRoute": "/admin/notifications/gabarits",
+    "role": "ADMIN",
+    "criticality": "P2",
+    "zoneKinds": [
+      "list",
+      "form",
+      "kpi",
+      "cta"
+    ],
+    "variantOf": null,
+    "designApi": [
+      "GET /admin/notifications/templates",
+      "PUT /admin/notifications/templates/:id",
+      "POST /admin/notifications/templates/:id/validate"
+    ],
+    "tokens": [
+      "--surface-1",
+      "--gold-500",
+      "--clay-500",
+      "--mono"
+    ]
+  },
+  {
+    "code": "ADM-43",
+    "unitId": "ADM — notifications (orchestration, gabarits & délivrabilité)",
+    "route": "/admin/notifications/delivrabilite",
+    "canonicalRoute": "/admin/notifications/delivrabilite",
+    "role": "ADMIN",
+    "criticality": "P1",
+    "zoneKinds": [
+      "table",
+      "kpi",
+      "timeline",
+      "cta"
+    ],
+    "variantOf": null,
+    "designApi": [
+      "GET /admin/notifications/deliverability",
+      "GET /admin/notifications/otp-health",
+      "POST /admin/notifications/failover {channel, scope}"
+    ],
+    "tokens": [
+      "--clay-500",
+      "--amber-500",
+      "--emerald-500",
+      "--mono",
       "--table"
     ]
   }

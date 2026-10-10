@@ -112,10 +112,10 @@ export function resolveRoute(pathname: string): ResolvedRoute {
   }
 
   /**
-   * Espace supervision livré (P4A-DESIGN-ADMIN-CORE) : les fiches ADM de la
-   * tranche portent leur unité (`ADM-xx`) et l'index `/admin` est le tableau de
-   * bord ADM-01. Les autres unités ADM (tranches suivantes) gardent la réponse
-   * de la fondation (écran non intégré).
+   * Espace supervision livré (P4A → P4F-2) : les fiches ADM de la tranche
+   * portent leur unité (`ADM-xx`) et l'index `/admin` est le tableau de bord
+   * ADM-01. Les autres unités ADM (tranches suivantes) gardent la réponse de
+   * la fondation (écran non intégré).
    */
   if (definition.id === 'admin') {
     const screen = resolveAdminScreen(match.pathname);
