@@ -64,8 +64,8 @@
  * fournisseurs, métriques, test d'envoi et bascule restent BACKEND_GAP →
  * statut PARTIEL.
  *
- * Les autres unités ADM (ops, sécurité avancée, infra), FIN et RTC restent non
- * intégrées.
+ * Les unités ADM de sécurité restantes (ADM-52 → ADM-56) et d’infrastructure
+ * restantes (ADM-59 → ADM-63), ainsi que FIN et RTC, restent non intégrées.
  */
 
 import { PRODUCTION_UNITS, TOTAL_UNITS, UNIT_COUNTS_BY_FAMILY, type ProductionUnit } from '../design-system/generated/productionUnits';
@@ -105,12 +105,15 @@ export const PRESTATAIRE_UNIT_IDS: readonly string[] = PRESTATAIRE_DESIGN_UNITS.
  * P4D-DESIGN-ADMIN-CLAIMS, P4E-1-DESIGN-ADMIN-REPLACEMENTS,
  * P4E-2-DESIGN-ADMIN-REPUTATION, P4F-DESIGN-ADMIN-DOCUMENTS,
  * P4F-2-DESIGN-ADMIN-NOTIFICATIONS, P4G-1-DESIGN-ADMIN-OPERATIONS et
- * P4G-2-DESIGN-ADMIN-SUPERVISION et P4G-3-DESIGN-ADMIN-SECURITY
- * (26 unités, 50 fiches, dérivées du catalogue
- * généré). P4G-2 rend ADM-47/48/49 diagnostiques : les capacités SLO,
+ * P4G-2-DESIGN-ADMIN-SUPERVISION, P4G-3-DESIGN-ADMIN-SECURITY et
+ * P4G-4-DESIGN-ADMIN-INFRASTRUCTURE (27 unités, 52 fiches, dérivées du
+ * catalogue généré). P4G-2 rend ADM-47/48/49 diagnostiques : les capacités SLO,
  * dead-letter et incidents d’exploitation sont absentes du backend.
  * P4G-3 rend ADM-50/51 diagnostiques : aucune API ADMIN de détection IDOR.
- * Même règle : PARTIEL dès qu'une fiche déclare une capacité absente.
+ * P4G-4 rend ADM-57/58 diagnostiques : aucune API ADMIN de topologie, métriques
+ * Edge, déploiements ou actions n’est installée. ADM-59 → ADM-63 et ADM-52 →
+ * ADM-56 restent non intégrées. Même règle : PARTIEL dès qu'une fiche déclare
+ * une capacité absente.
  */
 export const ADMIN_UNIT_IDS: readonly string[] = ADMIN_DESIGN_UNITS.map((unit) => unit.id);
 

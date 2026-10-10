@@ -4,7 +4,8 @@
 // P4C SALAIRE (ADM-23 → ADM-24), P4D CLAIMS (ADM-26 → ADM-30), P4E-1 REMPLACEMENTS (ADM-31 → ADM-33),
 // P4E-2 RÉPUTATION (ADM-34 → ADM-36), P4F DOCUMENTS (ADM-37 → ADM-40),
 // P4F-2 NOTIFICATIONS (ADM-41 → ADM-43), P4G-1 OPÉRATIONS (ADM-44 → ADM-46),
-// P4G-2 SUPERVISION (ADM-47 → ADM-49), P4G-3 SÉCURITÉ (ADM-50 → ADM-51).
+// P4G-2 SUPERVISION (ADM-47 → ADM-49), P4G-3 SÉCURITÉ (ADM-50 → ADM-51),
+// P4G-4 INFRASTRUCTURE (ADM-57 → ADM-58).
 // Régénérer : npm run design:admin
 //
 // Référence de design UNIQUEMENT : aucun libellé de ce fichier n'est affiché par
@@ -1468,6 +1469,62 @@ export const ADMIN_DESIGN_UNITS = [
       "POST /admin/security/idor/:id/qualify {verdict, notes}",
       "POST /admin/security/idor/:id/reinforce"
     ]
+  },
+  {
+    "id": "ADM-57",
+    "canon": "ADM — infra (topologie & bord)",
+    "criticality": "P0",
+    "archetype": "Carte du système",
+    "screenCodes": [
+      "ADM-57",
+      "ADM-58"
+    ],
+    "routes": [
+      "/admin/infra",
+      "/admin/infra/worker"
+    ],
+    "zoneKinds": [
+      "cta",
+      "kpi",
+      "list",
+      "node",
+      "table"
+    ],
+    "componentRefs": [
+      "Actions",
+      "Bord",
+      "Schéma",
+      "Table",
+      "Tuiles",
+      "États"
+    ],
+    "stateNames": [
+      "Nominal",
+      "Dégradé",
+      "Incident bord",
+      "Mode dégradé assumé",
+      "Nominal",
+      "Déploiement en cours",
+      "Erreurs en hausse",
+      "Retour arrière"
+    ],
+    "tokens": [
+      "--clay-500",
+      "--cyan-500",
+      "--emerald-500",
+      "--glass-1",
+      "--mono",
+      "--violet-500"
+    ],
+    "designApi": [
+      "GET /admin/infra/topology",
+      "GET /admin/infra/nodes/:id/health",
+      "GET /admin/infra/edge/metrics",
+      "GET /admin/infra/worker",
+      "GET /admin/infra/worker/deployments",
+      "POST /admin/infra/worker/rollback {deploymentId}",
+      "POST /admin/infra/worker/deployments/:id/countersign"
+    ]
   }
 ] as const;
 
@@ -2801,6 +2858,60 @@ export const ADMIN_DESIGN_SCREENS = [
       "--clay-600",
       "--clay-500",
       "--emerald-500",
+      "--mono"
+    ]
+  },
+  {
+    "code": "ADM-57",
+    "unitId": "ADM — infra (topologie & bord)",
+    "route": "/admin/infra",
+    "canonicalRoute": "/admin/infra",
+    "role": "ADMIN",
+    "criticality": "P0",
+    "zoneKinds": [
+      "node",
+      "kpi",
+      "list",
+      "cta"
+    ],
+    "variantOf": null,
+    "designApi": [
+      "GET /admin/infra/topology",
+      "GET /admin/infra/nodes/:id/health",
+      "GET /admin/infra/edge/metrics"
+    ],
+    "tokens": [
+      "--cyan-500",
+      "--emerald-500",
+      "--clay-500",
+      "--mono",
+      "--glass-1"
+    ]
+  },
+  {
+    "code": "ADM-58",
+    "unitId": "ADM — infra (topologie & bord)",
+    "route": "/admin/infra/worker",
+    "canonicalRoute": "/admin/infra/worker",
+    "role": "ADMIN",
+    "criticality": "P1",
+    "zoneKinds": [
+      "kpi",
+      "table",
+      "list",
+      "cta"
+    ],
+    "variantOf": null,
+    "designApi": [
+      "GET /admin/infra/worker",
+      "GET /admin/infra/worker/deployments",
+      "POST /admin/infra/worker/rollback {deploymentId}",
+      "POST /admin/infra/worker/deployments/:id/countersign"
+    ],
+    "tokens": [
+      "--cyan-500",
+      "--violet-500",
+      "--clay-500",
       "--mono"
     ]
   }

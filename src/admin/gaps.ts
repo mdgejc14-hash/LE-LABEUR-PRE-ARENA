@@ -344,5 +344,16 @@ export const ADMIN_UNIT_GAPS: Record<string, readonly string[]> = {
     'ADM-51 · POST /admin/security/idor/:id/qualify et POST /admin/security/idor/:id/reinforce — absents : ni qualification ni renforcement possible. Aucun refus n’est interprété comme tentative IDOR, aucun résultat « refusé » ou « fuite » n’est présumé.',
     'ADM-51 · les protections et traces serveur internes ne constituent pas une API de supervision. Aucun endpoint, paramètre manipulé, contexte de session ni identifiant sensible n’est affiché.',
   ],
+  /* ── P4G-4 · infrastructure : topologie & Worker edge ── */
+  'ADM-57': [
+    'ADM-57 · GET /admin/infra/topology, GET /admin/infra/nodes/:id/health et GET /admin/infra/edge/metrics — références de design absentes de routeContracts.ts et sans handler ADMIN : aucune topologie déployée, aucun état de nœud, aucune latence ni métrique Edge n’est exposé.',
+    'ADM-57 · le handler public /healthz existant rapporte uniquement le runtime et l’état de persistance observés ; il ne décrit pas une topologie, le WAF, le cache ou les services externes et n’est pas utilisé comme substitut.',
+    'ADM-57 · aucune permission ADMIN d’infrastructure n’est déclarée. La garde de session ADMIN existante protège l’écran ; aucune autorisation métier ni route serveur n’est ajoutée.',
+  ],
+  'ADM-58': [
+    'ADM-58 · GET /admin/infra/worker et GET /admin/infra/worker/deployments — absents du catalogue de routes et sans handler : invocations, latences, erreurs 5xx, cache, règles effectives, liste et part de trafic des déploiements restent inconnus.',
+    'ADM-58 · POST /admin/infra/worker/rollback et POST /admin/infra/worker/deployments/:id/countersign — absents : aucun retour arrière ni contre-signature ne peut être exécuté depuis l’interface.',
+    'ADM-58 · /healthz ne renvoie pas les métriques Edge ni un état de déploiement. Les fichiers de configuration et le code du Worker ne prouvent pas qu’un Worker est déployé ou sain en production.',
+  ],
 
 };
