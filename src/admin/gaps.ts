@@ -305,4 +305,17 @@ export const ADMIN_UNIT_GAPS: Record<string, readonly string[]> = {
     'ADM-43 · les champs pushStatus et emailStatus d’une notification réelle peuvent valoir NOT_AVAILABLE, SKIPPED, DELIVERED ou FAILED ; ils ne remplacent pas une agrégation par fournisseur et ne sont pas transformés en taux dans le navigateur.',
     'ADM-43 · numéros, adresses, webhooks, accusés de livraison et règles de backoff — absents de la capacité serveur exposée. Aucun canal externe n’est simulé.',
   ],
+  /* ── P4G-1 · exploitation : aucune API ADMIN ops ── */
+  'ADM-44': [
+    'ADM-44 · GET /admin/ops/queues et GET /admin/ops/queues/:name/series — absents du catalogue de routes et sans handler : aucune profondeur, aucun débit, aucune latence, aucun échec ni série temporelle n’est lisible. Les tables du worker ne sont pas exposées au navigateur.',
+    'ADM-44 · POST /admin/ops/queues/:name/scale {workers, durationMin} — absent : aucune augmentation des workers, aucune alerte automatique ni action de mise à l’échelle depuis la console.',
+  ],
+  'ADM-45': [
+    'ADM-45 · GET /admin/ops/queues/:name/jobs?cursor= et GET /admin/ops/jobs/:id — absents : ni liste, ni payload expurgé, ni historique des tentatives. Le nom dans le chemin n’est qu’une référence non vérifiée.',
+    'ADM-45 · POST /admin/ops/jobs/:id/retry et POST /admin/ops/jobs/retry-batch {filter, limit} — absents : aucune relance, aucun rejeu de lot ni reprise des échecs depuis l’ADMIN.',
+  ],
+  'ADM-46': [
+    'ADM-46 · GET /admin/ops/cron et GET /admin/ops/cron/:name/history — absents : le déclencheur interne du worker n’expose ni registre ADMIN de planifications, ni historique, ni mesure de dérive.',
+    'ADM-46 · POST /admin/ops/cron/:name/run — absent : aucune exécution manuelle, aucun bouton actif et aucun horaire futur déduit de la configuration interne.',
+  ],
 };

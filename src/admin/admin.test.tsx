@@ -8,7 +8,7 @@
  *  1. parité du catalogue généré avec la source de design (Python) ;
  *  2. résolution de route : chaque fiche ADM des tranches est atteignable et
  *     rattachée à son unité (regroupement `units.py`, pas une plage numérique) ;
- *  3. registre complet (22 unités / 42 fiches), selon les regroupements canoniques exacts ;
+ *  3. registre complet (23 unités / 45 fiches), selon les regroupements canoniques exacts ;
  *  4. API : chaque chemin appelé existe déjà dans `routeContracts.ts` ;
  *  5. GARDE-FOU DE VOCABULAIRE : aucun libellé métier du Master Design
  *     (Mission, Client, Prestataire, Litige) ne peut entrer dans l'interface,
@@ -273,11 +273,11 @@ export async function runAdminTests(): Promise<{ name: string; success: boolean;
     execFileSync('python3', ['scripts/design/generate-admin-catalog.py', '--check']);
   });
 
-  check('ADM — 22 unités / 42 fiches, chaque fiche rattachée à une seule unité', () => {
-    assert.equal(ADMIN_DESIGN_UNITS.length, 22);
-    assert.equal(ADMIN_DESIGN_SCREENS.length, 42);
+  check('ADM — 23 unités / 45 fiches, chaque fiche rattachée à une seule unité', () => {
+    assert.equal(ADMIN_DESIGN_UNITS.length, 23);
+    assert.equal(ADMIN_DESIGN_SCREENS.length, 45);
     const codes = ADMIN_DESIGN_SCREENS.map((screen) => screen.code);
-    assert.equal(new Set(codes).size, 42);
+    assert.equal(new Set(codes).size, 45);
     for (const screen of ADMIN_DESIGN_SCREENS) {
       const unit = unitForScreen(screen.code);
       assert.ok(unit, `fiche sans unité : ${screen.code}`);
@@ -291,7 +291,7 @@ export async function runAdminTests(): Promise<{ name: string; success: boolean;
     // P4C ajoute ADM-23 = {confirmations, preuves OTP}, unité unique salaire.
     // P4D conserve les groupements du Master : ADM-27 = {fiche, pièces},
     // ADM-29 = {décision, historique}; ADM-26 reste une unité distincte.
-    assert.deepEqual(ADMIN_DESIGN_UNITS.map((unit) => unit.id), ['ADM-01', 'ADM-02', 'ADM-04', 'ADM-06', 'ADM-08', 'ADM-10', 'ADM-11', 'ADM-13', 'ADM-14', 'ADM-16', 'ADM-18', 'ADM-20', 'ADM-23', 'ADM-26', 'ADM-27', 'ADM-29', 'ADM-31', 'ADM-34', 'ADM-35', 'ADM-37', 'ADM-38', 'ADM-41']);
+    assert.deepEqual(ADMIN_DESIGN_UNITS.map((unit) => unit.id), ['ADM-01', 'ADM-02', 'ADM-04', 'ADM-06', 'ADM-08', 'ADM-10', 'ADM-11', 'ADM-13', 'ADM-14', 'ADM-16', 'ADM-18', 'ADM-20', 'ADM-23', 'ADM-26', 'ADM-27', 'ADM-29', 'ADM-31', 'ADM-34', 'ADM-35', 'ADM-37', 'ADM-38', 'ADM-41', 'ADM-44']);
     assert.deepEqual(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-02')?.screenCodes, ['ADM-02', 'ADM-03']);
     assert.deepEqual(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-04')?.screenCodes, ['ADM-04', 'ADM-05']);
     assert.deepEqual(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-06')?.screenCodes, ['ADM-06', 'ADM-07']);
@@ -366,7 +366,7 @@ export async function runAdminTests(): Promise<{ name: string; success: boolean;
     assert.equal(index.kind === 'shell' && index.unitId, 'ADM-01', 'l’index /admin doit être le tableau de bord ADM-01');
   });
 
-  check('ADM — registre complet : les 42 fiches livrées ont un écran, aucun code inconnu', () => {
+  check('ADM — registre complet : les 45 fiches livrées ont un écran, aucun code inconnu', () => {
     const registered = Object.keys(ADMIN_SCREEN_COMPONENTS).sort();
     const expected = ADMIN_DESIGN_SCREENS.map((screen) => screen.code).sort();
     assert.deepEqual(registered, expected);
@@ -529,8 +529,8 @@ export async function runAdminTests(): Promise<{ name: string; success: boolean;
     }
   });
 
-  check('ADM — intégration : 22 unités ADM PARTIEL (P4A + P4B-1 + P4B-2 + P4C + P4D + P4E-1 + P4E-2 + P4F + P4F-2), EMP/PRE/PUB/SYS inchangés, autres ADM/FIN/RTC non intégrées', () => {
-    assert.equal(ADMIN_UNIT_IDS.length, 22);
+  check('ADM — intégration : 23 unités ADM PARTIEL (P4A + P4B-1 + P4B-2 + P4C + P4D + P4E-1 + P4E-2 + P4F + P4F-2), EMP/PRE/PUB/SYS inchangés, autres ADM/FIN/RTC non intégrées', () => {
+    assert.equal(ADMIN_UNIT_IDS.length, 23);
     for (const unitId of ADMIN_UNIT_IDS) {
       assert.equal(integrationStatus(unitId), 'PARTIEL', `${unitId} doit être PARTIEL`);
       assert.ok(isAdminUnit(unitId), `${unitId} doit être reconnue comme unité ADM`);
@@ -560,6 +560,7 @@ export async function runAdminTests(): Promise<{ name: string; success: boolean;
     assert.equal(integrationStatus('ADM-37'), 'PARTIEL', 'ADM-37/40 (registre R2 et audit des Documents) sont livrées par P4F');
     assert.equal(integrationStatus('ADM-38'), 'PARTIEL', 'ADM-38/39 (vérification et quarantaine des Documents) sont livrées par P4F');
     assert.equal(integrationStatus('ADM-41'), 'PARTIEL', 'ADM-41/42/43 (notifications) sont livrées avec les seuls contrats réels');
+    assert.equal(integrationStatus('ADM-44'), 'PARTIEL', 'ADM-44/45/46 : routes de design livrées, API ops absente');
   });
 
   check('ADM — erreurs : projection en états StateGuard, corrélation sûre uniquement', () => {
@@ -1610,7 +1611,7 @@ export async function runAdminTests(): Promise<{ name: string; success: boolean;
     assert.equal(typeof ADMIN_SCREEN_COMPONENTS['ADM-41'], 'function', 'notifications (ADM-41) enregistrées');
     assert.equal(typeof ADMIN_SCREEN_COMPONENTS['ADM-42'], 'function', 'gabarits (ADM-42) enregistrés');
     assert.equal(typeof ADMIN_SCREEN_COMPONENTS['ADM-43'], 'function', 'délivrabilité (ADM-43) enregistrée');
-    assert.equal(Object.keys(ADMIN_SCREEN_COMPONENTS).length, 42, '42 fiches livrées (P0 → P4F-2)');
+    assert.equal(Object.keys(ADMIN_SCREEN_COMPONENTS).length, 45, '45 fiches livrées (P0 → P4G-1)');
   });
 
   check('ADM — P4F-2 : notifications, gabarits et délivrabilité suivent les routes réelles et les gaps', () => {
@@ -1986,6 +1987,34 @@ export async function runAdminTests(): Promise<{ name: string; success: boolean;
     assert.ok(css.includes('.lbm-admin__unavailable-list') && css.includes('.lbm-admin__unavailable'), 'actions indisponibles : mise en forme dédiée');
     assert.ok(css.includes('@media (prefers-reduced-motion: reduce)'), 'mouvement réduit couvert');
     assert.ok(!/@keyframes|transition:/.test(css.slice(css.indexOf('P4F · documents'))), 'aucune animation ajoutée par P4F');
+  });
+
+  check('ADM — P4G-1 : unité files/jobs/cron exacte, aucune API ni action non supportée', () => {
+    const unit = ADMIN_DESIGN_UNITS.find((candidate) => candidate.id === 'ADM-44');
+    assert.equal(unit?.canon, 'ADM — ops (queues, jobs & cron)');
+    assert.deepEqual(unit?.screenCodes, ['ADM-44', 'ADM-45', 'ADM-46']);
+    assert.deepEqual(unit?.routes, ['/admin/ops/queues', '/admin/ops/queues/:name', '/admin/ops/cron']);
+    for (const [path, code, params] of [
+      ['/admin/ops/queues', 'ADM-44', {}],
+      ['/admin/ops/queues/email', 'ADM-45', { name: 'email' }],
+      ['/admin/ops/cron', 'ADM-46', {}],
+    ] as const) {
+      assert.equal(resolveAdminScreen(path)?.code, code);
+      assert.deepEqual(resolveAdminScreen(path)?.params, params);
+      assert.equal(resolveRoute(path).kind, 'shell');
+      assert.equal(typeof ADMIN_SCREEN_COMPONENTS[code], 'function');
+      assert.ok(adminGapsFor('ADM-44', path).some((line) => line.startsWith(code)));
+    }
+    assert.equal(resolveAdminScreen('/admin/ops/slo'), null, 'SLO reste hors tranche');
+    assert.equal(resolveAdminScreen('/admin/ops/dead-letter'), null, 'dead-letter reste hors tranche');
+    const routes = API_ROUTE_CONTRACTS.filter((route) => route.path.startsWith('/api/v1/admin/ops/'));
+    assert.deepEqual(routes, [], 'aucun contrat serveur ops ne doit être supposé');
+    const source = readFileSync(new URL('./screens/operations.tsx', import.meta.url), 'utf8');
+    assert.ok(!/useAdminApi|useAdminResource|fetch\(|<button\b|<form\b|NeoPressButton/.test(source), 'ni appel sans API, ni commande fictive');
+    assert.ok(source.includes('BACKEND_GAP') && source.includes("value: '—'"), 'absence de métrique explicitée');
+    assert.deepEqual(forbiddenTermsIn(displayStringsIn(stripComments(source)).join(' ')), [], 'vocabulaire affiché');
+    for (const code of ['ADM-44', 'ADM-45', 'ADM-46']) assert.ok((ADMIN_UNIT_GAPS[code] ?? []).length > 0, `${code} : BACKEND_GAP requis`);
+    assert.equal(resolveAdminScreen('/admin/notifications')?.code, 'ADM-41', 'tranche précédente préservée');
   });
 
   check('ADM — P4F : non-régression P0 → P4E-2 (routes et fiches précédentes inchangées, aucune fiche hors tranche)', () => {

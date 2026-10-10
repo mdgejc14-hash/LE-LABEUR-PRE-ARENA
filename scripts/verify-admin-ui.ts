@@ -8,7 +8,7 @@
  * l'application : les fixtures HTTP vivent ICI et ne sont jamais activées dans
  * le produit. Ce qui est vérifié dans un navigateur réel :
  *
- *  1. AUCUNE source de données configurée : les 42 fiches ADM rendent leur
+ *  1. AUCUNE source de données configurée : les 45 fiches ADM rendent leur
  *     conteneur (`data-unit`, `data-screen`), la structure déclarée par le
  *     design (`data-sheet-frame`) et le BACKEND_GAP, sans débordement
  *     horizontal à 360 px comme à 1440 px ; aucun terme du Master Design ni
@@ -2571,6 +2571,47 @@ try {
       await assertNoForbiddenText(path, await screenText());
     }
     assert.equal(notificationListCalls, 0, 'ADM-42/43 n’appellent pas la seule lecture notification');
+  });
+
+  await check('ADM-44/45/46 — session réelle, absence d’API ops, valeurs inconnues et aucun geste fictif (360/1440 px)', async () => {
+    sessionMode = 'admin';
+    const opsRequests: string[] = [];
+    const trackOps = (request: { url(): string }) => {
+      if (request.url().includes('/api/v1/admin/ops/')) opsRequests.push(request.url());
+    };
+    page.on('request', trackOps);
+    try {
+      for (const width of [360, 1440]) {
+        await page.setViewportSize({ width, height: 900 });
+        for (const [path, code] of [
+          ['/admin/ops/queues', 'ADM-44'],
+          ['/admin/ops/queues/file-inconnue', 'ADM-45'],
+          ['/admin/ops/cron', 'ADM-46'],
+        ] as const) {
+          await page.goto(api.origin + path);
+          const screen = page.locator(`[data-screen="${code}"]`);
+          await screen.waitFor();
+          await screen.locator('[data-backend-gap="true"]').waitFor();
+          const text = await screen.innerText();
+          assert.ok(text.includes('—') && says(text, 'Source absente'), `${code} : absence de valeur non annoncée`);
+          assert.ok(says(text, 'BACKEND_GAP'), `${code} : capacité absente non signalée`);
+          assert.equal(await screen.locator('form, button').count(), 0, `${code} : action sans handler`);
+          assert.equal(await screen.locator('tbody tr').count(), 1, `${code} : seule la ligne d’état vide doit être rendue`);
+          assert.ok(says(await screen.locator('tbody tr').innerText(), 'Source de supervision indisponible'), `${code} : la ligne vide ne doit pas suggérer une file saine`);
+          assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${code} : débordement à ${width}px`);
+          await assertNoForbiddenText(path, text);
+        }
+      }
+      assert.deepEqual(opsRequests, [], 'aucun appel vers une API ops inexistante');
+      sessionMode = 'employer';
+      await page.goto(api.origin + '/admin/ops/queues');
+      await page.locator('[data-state="403"]').waitFor();
+      assert.equal(await page.locator('[data-screen="ADM-44"]').count(), 0, 'ADMIN seul');
+      assert.deepEqual(opsRequests, [], 'aucun appel ops après refus');
+    } finally {
+      page.off('request', trackOps);
+      sessionMode = 'admin';
+    }
   });
 
   assert.deepEqual(errors, [], `erreurs de page : ${errors.join(' · ')}`);
