@@ -296,7 +296,7 @@ export async function runEmployerTests(): Promise<{ name: string; success: boole
     }
   });
 
-  check('EMP — intégration : 32 unités EMP PARTIEL, PRE livré en P3 et 13 unités ADM livrées en P4A/P4B-1/P4B-2/P4C, FIN/RTC inchangés', () => {
+  check('EMP — intégration : 32 unités EMP PARTIEL, PRE livré en P3 et 16 unités ADM livrées en P4A/P4B-1/P4B-2/P4C/P4D, FIN/RTC inchangés', () => {
     assert.equal(EMPLOYER_UNIT_IDS.length, 32);
     for (const unitId of EMPLOYER_UNIT_IDS) {
       assert.equal(integrationStatus(unitId), 'PARTIEL', `${unitId} doit être PARTIEL`);
@@ -304,7 +304,7 @@ export async function runEmployerTests(): Promise<{ name: string; success: boole
     }
     for (const unit of PRODUCTION_UNITS) {
       // P3-DESIGN-PRESTATAIRE a livré les 26 unités PRE depuis cette tranche EMP,
-      // et les tranches P4A, P4B-1, P4B-2 et P4C ont livré 13 unités ADM : elles sont
+      // et les tranches P4A, P4B-1, P4B-2, P4C et P4D ont livré 16 unités ADM : elles sont
       // PARTIEL, comme PUB/SYS/EMP. Seules les autres ADM, FIN et RTC restent non intégrées.
       if (unit.family === 'EMP' || unit.family === 'PUB' || unit.family === 'SYS' || unit.family === 'PRE') continue;
       if (ADMIN_UNIT_IDS.includes(unit.id)) continue;

@@ -1,12 +1,12 @@
 /**
  * P4A-DESIGN-ADMIN-CORE + P4B-1-DESIGN-ADMIN-CONTRACTS +
- * P4B-2-DESIGN-ADMIN-PAYMENTS — tests de l'espace supervision livré.
+ * P4B-2-DESIGN-ADMIN-PAYMENTS + P4C-DESIGN-ADMIN-SALARY-PROOFS + P4D-DESIGN-ADMIN-CLAIMS — tests de l'espace supervision livré.
  *
  * Couverture :
  *  1. parité du catalogue généré avec la source de design (Python) ;
  *  2. résolution de route : chaque fiche ADM des tranches est atteignable et
  *     rattachée à son unité (regroupement `units.py`, pas une plage numérique) ;
- *  3. registre complet (13 unités / 24 fiches), selon les regroupements canoniques exacts ;
+ *  3. registre complet (16 unités / 29 fiches), selon les regroupements canoniques exacts ;
  *  4. API : chaque chemin appelé existe déjà dans `routeContracts.ts` ;
  *  5. GARDE-FOU DE VOCABULAIRE : aucun libellé métier du Master Design
  *     (Mission, Client, Prestataire, Litige) ne peut entrer dans l'interface,
@@ -19,7 +19,7 @@
  *     (QUALIFICATION_DECISIONS) et options de revue réelles ;
  *  9. garde de session : seul un compte ADMIN actif ouvre l'espace ;
  * 10. intégration : unités ADMIN livrées = PARTIEL, EMP/PRE/PUB/SYS inchangés,
- *     autres ADM (litiges, …)/FIN/RTC non intégrées ;
+ *     ADM-26 → ADM-30 Claims seulement, autres ADM/FIN/RTC non intégrées ;
  * 11. responsive, accessibilité (table sémantique) et reduced-motion (CSS) ;
  * 12. P4B-1 contrats : routes ADM réelles du registre et des Claims, statuts
  *     et types de Claim en parité exacte avec le serveur, segments du registre
@@ -34,6 +34,9 @@
  *     aucune route ADMIN de confirmation ni de preuve, distinction
  *     déclaration / vérification / PAID / confirmation du Candidat, aucun
  *     secret OTP ni donnée simulée dans les écrans.
+ * 15. P4D Claims : parité exacte des 5 routes, unités Master, permissions,
+ *     enums serveur, commande idempotente, seuls RESOLVE/REJECT, aucun champ
+ *     probatoire opaque ni restriction hors scope dans l’interface.
  */
 
 import React from 'react';
@@ -49,9 +52,13 @@ import { AdminRouteFallback } from './RouteFallback';
 import { DataTable } from './components';
 import { DOCK_DEFINITIONS } from '../design-system/shells/shellNavigation';
 import { deliveredScreensForUnit } from './screenMap';
-import { ADMIN_API_PATHS, REVIEW_DECISION_OPTIONS, type PaymentDeclarationRecord } from './api';
+import { AdminApi, ADMIN_API_PATHS, REVIEW_DECISION_OPTIONS, type PaymentDeclarationRecord } from './api';
 import {
   CLAIM_STATUS_LABELS,
+  CLAIM_EVIDENCE_STATUS_LABELS,
+  CLAIM_EVIDENCE_TYPE_LABELS,
+  ADMIN_CLAIM_DECISION_OPTIONS,
+  CLAIM_DECISION_LABELS,
   CLAIM_TYPE_LABELS,
   CONTRACT_REGISTRY_SEGMENTS,
   CONTRACT_STATUS_LABELS,
@@ -72,7 +79,7 @@ import {
   formatPaymentAmount,
   maskEmail,
 } from './vocabulary';
-import { CLAIM_STATUS_VALUES, CLAIM_TYPE_VALUES } from '../backend/disputes/records';
+import { CLAIM_EVIDENCE_STATUS_VALUES, CLAIM_EVIDENCE_TYPE_VALUES, CLAIM_STATUS_VALUES, CLAIM_TYPE_VALUES } from '../backend/disputes/records';
 import { adminError } from './errors';
 import { adminGuard, type AdminSessionState } from './hooks';
 import { API_ROUTE_CONTRACTS } from '../backend/api/routeContracts';
@@ -160,16 +167,24 @@ export async function runAdminTests(): Promise<{ name: string; success: boolean;
       results.push({ name, success: false, detail: String(error) });
     }
   };
+  const checkAsync = async (name: string, run: () => Promise<unknown>) => {
+    try {
+      await run();
+      results.push({ name, success: true });
+    } catch (error) {
+      results.push({ name, success: false, detail: String(error) });
+    }
+  };
 
   check('ADM — catalogue généré identique à la source de design (python --check)', () => {
     execFileSync('python3', ['scripts/design/generate-admin-catalog.py', '--check']);
   });
 
-  check('ADM — 13 unités / 24 fiches, chaque fiche rattachée à une seule unité', () => {
-    assert.equal(ADMIN_DESIGN_UNITS.length, 13);
-    assert.equal(ADMIN_DESIGN_SCREENS.length, 24);
+  check('ADM — 16 unités / 29 fiches, chaque fiche rattachée à une seule unité', () => {
+    assert.equal(ADMIN_DESIGN_UNITS.length, 16);
+    assert.equal(ADMIN_DESIGN_SCREENS.length, 29);
     const codes = ADMIN_DESIGN_SCREENS.map((screen) => screen.code);
-    assert.equal(new Set(codes).size, 24);
+    assert.equal(new Set(codes).size, 29);
     for (const screen of ADMIN_DESIGN_SCREENS) {
       const unit = unitForScreen(screen.code);
       assert.ok(unit, `fiche sans unité : ${screen.code}`);
@@ -181,7 +196,9 @@ export async function runAdminTests(): Promise<{ name: string; success: boolean;
     // journal} (une seule unité de production) et ADM-16 (révision forcée,
     // unité propre) — exactement les regroupements de `design/llab/units.py`.
     // P4C ajoute ADM-23 = {confirmations, preuves OTP}, unité unique salaire.
-    assert.deepEqual(ADMIN_DESIGN_UNITS.map((unit) => unit.id), ['ADM-01', 'ADM-02', 'ADM-04', 'ADM-06', 'ADM-08', 'ADM-10', 'ADM-11', 'ADM-13', 'ADM-14', 'ADM-16', 'ADM-18', 'ADM-20', 'ADM-23']);
+    // P4D conserve les groupements du Master : ADM-27 = {fiche, pièces},
+    // ADM-29 = {décision, historique}; ADM-26 reste une unité distincte.
+    assert.deepEqual(ADMIN_DESIGN_UNITS.map((unit) => unit.id), ['ADM-01', 'ADM-02', 'ADM-04', 'ADM-06', 'ADM-08', 'ADM-10', 'ADM-11', 'ADM-13', 'ADM-14', 'ADM-16', 'ADM-18', 'ADM-20', 'ADM-23', 'ADM-26', 'ADM-27', 'ADM-29']);
     assert.deepEqual(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-02')?.screenCodes, ['ADM-02', 'ADM-03']);
     assert.deepEqual(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-04')?.screenCodes, ['ADM-04', 'ADM-05']);
     assert.deepEqual(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-06')?.screenCodes, ['ADM-06', 'ADM-07']);
@@ -210,6 +227,14 @@ export async function runAdminTests(): Promise<{ name: string; success: boolean;
     ]);
     assert.equal(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-23')?.canon, 'ADM — salaire (confirmations & preuves OTP)');
     assert.equal(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-23')?.criticality, 'P0');
+    assert.deepEqual(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-26')?.screenCodes, ['ADM-26']);
+    assert.deepEqual(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-26')?.routes, ['/admin/litiges']);
+    assert.deepEqual(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-27')?.screenCodes, ['ADM-27', 'ADM-28']);
+    assert.deepEqual(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-27')?.routes, ['/admin/litiges/:id', '/admin/litiges/:id/pieces']);
+    assert.equal(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-27')?.canon, 'ADM — litige (fiche & pièces)');
+    assert.deepEqual(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-29')?.screenCodes, ['ADM-29', 'ADM-30']);
+    assert.deepEqual(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-29')?.routes, ['/admin/litiges/:id/decision', '/admin/litiges/decisions']);
+    assert.equal(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-29')?.canon, 'ADM — litige (décision)');
   });
 
   check('ADM — chaque route de fiche est résolue par le routeur P0 vers son unité', () => {
@@ -226,7 +251,7 @@ export async function runAdminTests(): Promise<{ name: string; success: boolean;
     assert.equal(index.kind === 'shell' && index.unitId, 'ADM-01', 'l’index /admin doit être le tableau de bord ADM-01');
   });
 
-  check('ADM — registre complet : les 24 fiches livrées ont un écran, aucun code inconnu', () => {
+  check('ADM — registre complet : les 29 fiches livrées ont un écran, aucun code inconnu', () => {
     const registered = Object.keys(ADMIN_SCREEN_COMPONENTS).sort();
     const expected = ADMIN_DESIGN_SCREENS.map((screen) => screen.code).sort();
     assert.deepEqual(registered, expected);
@@ -386,8 +411,8 @@ export async function runAdminTests(): Promise<{ name: string; success: boolean;
     }
   });
 
-  check('ADM — intégration : 13 unités ADM PARTIEL (P4A + P4B-1 + P4B-2 + P4C), EMP/PRE/PUB/SYS inchangés, autres ADM/FIN/RTC non intégrées', () => {
-    assert.equal(ADMIN_UNIT_IDS.length, 13);
+  check('ADM — intégration : 16 unités ADM PARTIEL (P4A + P4B-1 + P4B-2 + P4C + P4D), EMP/PRE/PUB/SYS inchangés, autres ADM/FIN/RTC non intégrées', () => {
+    assert.equal(ADMIN_UNIT_IDS.length, 16);
     for (const unitId of ADMIN_UNIT_IDS) {
       assert.equal(integrationStatus(unitId), 'PARTIEL', `${unitId} doit être PARTIEL`);
       assert.ok(isAdminUnit(unitId), `${unitId} doit être reconnue comme unité ADM`);
@@ -408,7 +433,9 @@ export async function runAdminTests(): Promise<{ name: string; success: boolean;
     assert.equal(integrationStatus('ADM-20'), 'PARTIEL', 'ADM-20 (anomalies, déclarations et incidents) est livrée par P4B-2');
     assert.equal(integrationStatus('ADM-23'), 'PARTIEL', 'ADM-23 (confirmations de Salaire et preuves) est livrée par P4C');
     assert.equal(integrationStatus('ADM-25'), 'NON_INTEGRE', 'ADM-25 (salaire — autre fiche) reste hors tranches livrées');
-    assert.equal(integrationStatus('ADM-26'), 'NON_INTEGRE', 'ADM-26 (litiges — file de modération) reste hors tranches livrées');
+    assert.equal(integrationStatus('ADM-26'), 'PARTIEL', 'ADM-26 (file Claim) est livrée par P4D');
+    assert.equal(integrationStatus('ADM-27'), 'PARTIEL', 'ADM-27/28 (dossier et justificatifs Claim) sont livrées par P4D');
+    assert.equal(integrationStatus('ADM-29'), 'PARTIEL', 'ADM-29/30 (décision et Claims terminés) sont livrées par P4D');
   });
 
   check('ADM — erreurs : projection en états StateGuard, corrélation sûre uniquement', () => {
@@ -911,6 +938,143 @@ export async function runAdminTests(): Promise<{ name: string; success: boolean;
     assert.ok(gaps23.some((line) => line.includes('/admin/salary/confirmations')), 'la route fiche ADM-23 déclarée absente doit être nommée');
     assert.ok(gaps24.some((line) => line.includes('/admin/salary/proofs/:id')), 'la route fiche ADM-24 déclarée absente doit être nommée');
     assert.deepEqual(forbiddenTermsIn(stripTechnicalTokens([...gaps23, ...gaps24].join(' | '))), [], 'gaps P4C : termes interdits dans les lignes affichées');
+  });
+
+  check('ADM — P4D : les cinq routes P0 sont résolues vers les unités exactes du Master', () => {
+    const cases: readonly [string, string, string, Record<string, string>][] = [
+      ['/admin/litiges', 'ADM-26', 'ADM-26', {}],
+      ['/admin/litiges/clm-42', 'ADM-27', 'ADM-27', { id: 'clm-42' }],
+      ['/admin/litiges/clm-42/pieces', 'ADM-28', 'ADM-27', { id: 'clm-42' }],
+      ['/admin/litiges/clm-42/decision', 'ADM-29', 'ADM-29', { id: 'clm-42' }],
+      ['/admin/litiges/decisions', 'ADM-30', 'ADM-29', {}],
+    ];
+    for (const [path, code, unitId, params] of cases) {
+      const resolved = resolveAdminScreen(path);
+      assert.equal(resolved?.code, code, `${path} → fiche`);
+      assert.equal(resolved?.unitId, unitId, `${path} → unité Master`);
+      assert.deepEqual(resolved?.params, params, `${path} → paramètres`);
+      const route = resolveRoute(path);
+      assert.equal(route.kind, 'shell', `${path} : shell`);
+      if (route.kind === 'shell') {
+        assert.equal(route.shell, 'ADMIN', `${path} : espace ADMIN`);
+        assert.equal(route.unitId, unitId, `${path} : unité P0`);
+      }
+    }
+    for (const path of [
+      '/admin/litiges/clm-42/recuse',
+      '/admin/litiges/clm-42/evidence',
+      '/admin/litiges/clm-42/restrictions',
+      '/admin/litiges/decisions/analytics',
+      '/admin/remplacements',
+    ]) {
+      assert.equal(resolveAdminScreen(path), null, `${path} : aucun écran non livré ne doit être créé`);
+    }
+    for (const unitId of ['ADM-26', 'ADM-27', 'ADM-29']) {
+      const catalogUnit = ADMIN_DESIGN_UNITS.find((unit) => unit.id === unitId);
+      const productionUnit = PRODUCTION_UNITS.find((unit) => unit.id === unitId);
+      assert.ok(catalogUnit && productionUnit, `${unitId} : unité absente`);
+      assert.deepEqual([...catalogUnit.routes].sort(), [...productionUnit.routes].sort(), `${unitId} : route identique au routeur P0`);
+    }
+  });
+
+  check('ADM — P4D : types, statuts de Claim/justificatif et décisions sont ceux du serveur', () => {
+    assert.deepEqual(Object.keys(CLAIM_TYPE_LABELS).sort(), [...CLAIM_TYPE_VALUES].sort());
+    assert.deepEqual(Object.keys(CLAIM_STATUS_LABELS).sort(), [...CLAIM_STATUS_VALUES].sort());
+    assert.deepEqual(Object.keys(CLAIM_EVIDENCE_TYPE_LABELS).sort(), [...CLAIM_EVIDENCE_TYPE_VALUES].sort());
+    assert.deepEqual(Object.keys(CLAIM_EVIDENCE_STATUS_LABELS).sort(), [...CLAIM_EVIDENCE_STATUS_VALUES].sort());
+    assert.deepEqual(ADMIN_CLAIM_DECISION_OPTIONS, ['RESOLVE', 'REJECT']);
+    assert.deepEqual(Object.keys(CLAIM_DECISION_LABELS).sort(), ['REJECT', 'RESOLVE']);
+    assert.ok(!('REPLACE' in CLAIM_DECISION_LABELS), 'REPLACE ne doit pas être proposé dans cette tranche');
+    assert.equal(PRODUCT_LABELS.CLAIM.singular, 'Claim');
+    assert.equal(ADMIN_UI_TERMS.CLAIM_REGISTRY, 'Claims');
+  });
+
+  check('ADM — P4D : handlers réels, permissions ADMIN, idempotence et audit vérifiés', () => {
+    const route = (key: string) => API_ROUTE_CONTRACTS.find((candidate) => candidate.key === key);
+    const routes = [
+      ['admin.claims.list', 'GET', '/api/v1/admin/claims', 'incidents:read:any', false],
+      ['admin.claims.read', 'GET', '/api/v1/admin/claims/:claimId', 'incidents:read:any', false],
+      ['admin.claims.review', 'POST', '/api/v1/admin/claims/:claimId/review', 'incidents:arbitrate', true],
+      ['admin.claims.evidence.request', 'POST', '/api/v1/admin/claims/:claimId/evidence-requests', 'incidents:arbitrate', true],
+      ['admin.claims.decision', 'POST', '/api/v1/admin/claims/:claimId/decision', 'incidents:arbitrate', true],
+    ] as const;
+    for (const [key, method, path, permission, idempotent] of routes) {
+      const contract = route(key);
+      assert.ok(contract, `${key} absente du catalogue serveur`);
+      assert.equal(contract.method, method, `${key} méthode réelle`);
+      assert.equal(contract.path, path, `${key} chemin réel`);
+      assert.equal(contract.scope, 'admin', `${key} portée ADMIN serveur`);
+      assert.equal(contract.permission, permission, `${key} permission existante`);
+      assert.equal(Boolean('idempotency' in contract && contract.idempotency), idempotent, `${key} idempotence`);
+      if (idempotent) assert.equal('auditOnMutation' in contract && contract.auditOnMutation, true, `${key} audit serveur`);
+      assert.ok(ADMIN_API_PATHS.includes(path), `${key} non utilisé par AdminApi`);
+    }
+    const apiSource = readFileSync(new URL('./api.ts', import.meta.url), 'utf8');
+    const claimSource = readFileSync(new URL('./screens/claims.tsx', import.meta.url), 'utf8');
+    const claimGaps = ['ADM-26', 'ADM-27', 'ADM-28', 'ADM-29', 'ADM-30'].flatMap((code) => ADMIN_UNIT_GAPS[code] ?? []).join(' ');
+    assert.ok(!ADMIN_API_PATHS.some((path) => /admin\/claims\/:claimId\/restrictions/.test(path)), 'les handlers de restriction ne sont pas exposés par AdminApi');
+    assert.ok(!apiSource.includes('applyClaimRestriction') && !apiSource.includes('releaseClaimRestriction'), 'les wrappers apply/release sont hors scope');
+    assert.ok(!claimSource.includes('RestrictionControls') && !/CONTRACT_TERMINATE|restriction/i.test(claimSource), 'aucun contrôle de restriction ne doit apparaître dans l’écran');
+    assert.ok(!/apply\/release des restrictions|restrictions? sont des commandes/i.test(claimGaps), 'les gaps P4D ne doivent pas présenter ces contrôles');
+    assert.ok(apiSource.includes("'/api/v1/admin/claims/:claimId/decision'"), 'la commande de décision réelle doit rester exposée');
+    const entrySource = readFileSync(new URL('../backend/api/entry.ts', import.meta.url), 'utf8');
+    const repositorySource = readFileSync(new URL('../backend/disputes/claimRepository.ts', import.meta.url), 'utf8');
+    assert.ok(entrySource.includes('...claimHandlers,'), 'les handlers Claim doivent être branchés dans le Worker réel');
+    assert.ok(repositorySource.includes("'admin.claims.list': async context => repository.listAdmin"), 'la file doit appeler listAdmin réel');
+    assert.ok(repositorySource.includes("'admin.claims.read': async context => repository.getAdmin"), 'la fiche doit appeler getAdmin réel');
+    for (const key of ['admin.claims.review', 'admin.claims.evidence.request', 'admin.claims.decision']) {
+      assert.ok(repositorySource.includes(`'${key}': async context =>`), `${key} handler réel absent`);
+    }
+    assert.ok(!ADMIN_API_PATHS.some((path) => path.startsWith('/api/v1/claims/')), 'aucune route réservée aux parties n’est détournée');
+  });
+
+  await checkAsync('ADM — P4D : appels AdminApi utilisent les routes exactes et des clés d’idempotence', async () => {
+    const calls: { path: string; options?: Record<string, unknown> }[] = [];
+    const client = {
+      request: async (path: string, options?: Record<string, unknown>) => {
+        calls.push({ path, options });
+        return path === '/admin/claims'
+          ? { items: [], hasMore: false, cursor: null }
+          : { claimId: 'clm-42', evidenceRequests: [], status: 'ADMIN_REVIEW' };
+      },
+    };
+    const api = new AdminApi(client as never);
+    await api.claims({ limit: 100 });
+    await api.claim('clm/a');
+    await api.reviewClaim('clm/a', 'note', undefined, 'review-key');
+    await api.requestClaimEvidence('clm/a', { requestedType: 'PAYMENT_PROOF', requestedFrom: 'usr-1' }, undefined, 'evidence-key');
+    await api.decideClaim('clm/a', { decision: 'RESOLVE', resolution: 'Motif serveur' }, undefined, 'decision-key');
+    assert.deepEqual(calls.map(({ path }) => path), [
+      '/admin/claims',
+      '/admin/claims/clm%2Fa',
+      '/admin/claims/clm%2Fa/review',
+      '/admin/claims/clm%2Fa/evidence-requests',
+      '/admin/claims/clm%2Fa/decision',
+    ]);
+    assert.deepEqual(calls[0].options?.query, { limit: 100, cursor: null });
+    assert.equal(calls[2].options?.method, 'POST');
+    assert.deepEqual(calls[2].options?.body, { note: 'note' });
+    assert.equal(calls[2].options?.idempotencyKey, 'review-key');
+    assert.deepEqual(calls[3].options?.body, { requestedType: 'PAYMENT_PROOF', requestedFrom: 'usr-1' });
+    assert.equal(calls[3].options?.idempotencyKey, 'evidence-key');
+    assert.deepEqual(calls[4].options?.body, { decision: 'RESOLVE', resolution: 'Motif serveur' });
+    assert.equal(calls[4].options?.idempotencyKey, 'decision-key');
+  });
+
+  check('ADM — P4D : aucun champ sensible/référence de preuve n’est rendu et les gaps restent explicites', () => {
+    const source = readFileSync(new URL('./screens/claims.tsx', import.meta.url), 'utf8');
+    const claimGaps = ['ADM-26', 'ADM-27', 'ADM-28', 'ADM-29', 'ADM-30'].flatMap((code) => ADMIN_UNIT_GAPS[code] ?? []).join(' ');
+    assert.ok(source.includes('claim.evidenceReference ?'), 'présence de référence initiale rendue uniquement comme booléen');
+    assert.ok(source.includes('request.evidenceReference ?'), 'présence de référence soumise rendue uniquement comme booléen');
+    for (const secretField of ['claim.metadata', 'claim.salaryConfirmationId', 'claim.idempotencyKey', 'claim.evidenceReference}', 'request.evidenceReference}']) {
+      assert.ok(!source.includes(secretField), `${secretField} ne doit pas être affiché brut`);
+    }
+    assert.ok(source.includes('Les champs techniques `metadata`, `idempotencyKey`, `salaryConfirmationId`'), 'les champs omis doivent être explicités');
+    assert.ok(source.includes('aucun contenu de Document n’est consulté'), 'aucun accès Document ne doit être affiché');
+    for (const code of ['ADM-26', 'ADM-27', 'ADM-28', 'ADM-29', 'ADM-30']) {
+      assert.ok((ADMIN_UNIT_GAPS[code] ?? []).length > 0, `${code} doit conserver son BACKEND_GAP exact`);
+    }
+    assert.deepEqual(forbiddenTermsIn(stripTechnicalTokens(claimGaps)), [], 'vocabulaire de gap P4D');
   });
 
   return results;

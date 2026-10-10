@@ -160,4 +160,31 @@ export const ADMIN_UNIT_GAPS: Record<string, readonly string[]> = {
     'ADM-24 · AUCUN secret n’est affiché — ni code, ni empreinte de code, ni graine, ni nonce — et aucun écran ne contourne la confirmation réservée au Candidat.',
     'ADM-24 · la référence affichée vient du chemin ; aucune trace, aucun versement et aucune décision ne sont chargés faute de handler : la fiche ne rend aucun formulaire, aucune commande ne pouvant être exécutée.',
   ],
+  /* ── P4D · workflow Claim réellement disponible ── */
+  'ADM-26': [
+    'ADM-26 · la file appelle admin.claims.list (GET /api/v1/admin/claims, permission incidents:read:any) : la route rend toutes les Claims par curseur, sans filtre serveur ni résumé de file. Les segments, la recherche et les comptes indiquent uniquement la page effectivement chargée.',
+    'ADM-26 · filtres queue/type, indicateurs SLA, ancienneté opposable, montants en jeu et verrou de prise en charge — absents du DTO et des handlers ; aucun score, montant, priorité ou verrou n’est calculé dans le navigateur.',
+    'ADM-26 · POST /api/v1/admin/claims/:claimId/claim et GET /api/v1/admin/claims/sla — absents. La prise en charge dédiée et les échéances globales restent BACKEND_GAP.',
+  ],
+  'ADM-27': [
+    'ADM-27 · fiche lue exclusivement par admin.claims.read (GET /api/v1/admin/claims/:claimId, permission incidents:read:any) : ClaimView expose les champs Claim et demandes de justificatif réellement renvoyés. Les échanges des parties, une chronologie d’événements, les notes d’agent et une extraction factuelle ne sont pas dans ce DTO.',
+    'ADM-27 · les comptes auteur et répondant sont des identifiants réellement présents ; aucun nom de personne, rôle de partie ou contexte complémentaire n’est déduit depuis une route réservée aux participants.',
+    'ADM-27 · pour SALARY_NOT_RECEIVED, ClaimView n’expose pas le statut du Paiement ni la confirmation du Salaire par le Candidat. La référence de Paiement seule ne prouve ni déclaration, ni vérification, ni PAID, ni confirmation ; aucun accès OTP n’est ajouté.',
+  ],
+  'ADM-28': [
+    'ADM-28 · les demandes de justificatif lisibles dans ClaimView exposent type, destinataire, statut et horodatages réels ; dueAt n’est affiché que s’il est renvoyé par le serveur. Aucune durée, échéance ou relance n’est inventée.',
+    'ADM-28 · l’API Claim conserve une evidenceReference opaque, sans association Claim→Document ni route ADMIN de contenu. Visionneuse, téléchargement, métadonnées de fichier, EXIF, recevabilité et contradictions — absents ; aucune référence brute, clé d’objet ou pièce simulée n’est rendue.',
+    'ADM-28 · POST /api/v1/admin/claims/:claimId/evidence-requests (incidents:arbitrate) est disponible uniquement en UNDER_REVIEW ou ADMIN_REVIEW et sans autre demande PENDING ; le serveur configure ou omet dueAt. Les contrôles d’état restent autoritaires côté serveur.',
+  ],
+  'ADM-29': [
+    'ADM-29 · revue/escalade réelle : POST /api/v1/admin/claims/:claimId/review (incidents:arbitrate), idempotent et audité ; décision réelle : POST /api/v1/admin/claims/:claimId/decision, même permission, uniquement depuis ADMIN_REVIEW. Aucune transition locale n’est simulée.',
+    'ADM-29 · le DTO de décision n’accepte que decision et resolution. Le backend aboutit à RESOLVED (RESOLVE) ou REJECTED (REJECT), états terminaux existants ; aucun choix de catégorie, effet financier, double validation, appel ou prévisualisation n’est exposé par une route Claim.',
+    'ADM-29 · l’interface propose seulement RESOLVE et REJECT. REPLACE existe dans le handler, mais son effet déclenche le workflow Remplacement et reste exclu de cette tranche. Aucune option ou action de remplacement n’est rendue.',
+    'ADM-29 · aucune commande ADMIN de clôture vers CLOSED n’est déclarée. CLOSED reste affichable lorsqu’il est renvoyé par le serveur, mais l’interface n’invente pas une fermeture.',
+  ],
+  'ADM-30': [
+    'ADM-30 · la page réutilise admin.claims.list et filtre localement les Claims terminés de la page réelle ; resolvedAt, resolvedBy, resolution et status ne sont affichés que lorsqu’ils sont présents dans ClaimView.',
+    'ADM-30 · historique d’événements par Claim, motifs structurés, recours, analyses, comparaison et statistiques — aucune route/DTO consultable ne les fournit. GET /api/v1/admin/audit est une frontière de contrôle non filtrée par Claim ; aucun audit vide ou générique n’est présenté comme historique.',
+    'ADM-30 · aucun filtrage serveur par statut ne permet d’affirmer que la page chargée contient l’historique complet ; charger davantage utilise seulement le curseur officiel admin.claims.list.',
+  ],
 };

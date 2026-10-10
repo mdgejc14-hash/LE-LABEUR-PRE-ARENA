@@ -1,11 +1,16 @@
 /**
  * ADM — accès frontend aux routes BACKEND EXISTANTES (tranches P4A, P4B-1,
- * P4B-2 et P4C).
+ * P4B-2, P4C et P4D).
  *
  * P4C-DESIGN-ADMIN-SALARY-PROOFS : aucune route nouvelle. Les écrans salaire
  * se limitent aux lectures déjà gardées (admin.payments.list, payments.read) ;
  * aucune route réservée à l'Employeur ou au Candidat (confirmation OTP) n'est
  * appelée ici.
+ * P4D-DESIGN-ADMIN-CLAIMS : lectures et commandes de Claims utilisent les
+ * routes `admin.claims.*` opérationnelles (permission incidents:read:any pour
+ * lire, incidents:arbitrate pour revue/demande de justificatif/décision). Les
+ * DTO et entrées viennent du repository réel ; les références de preuves restent
+ * opaques à l'interface et aucune route document/partie n'est détournée.
  * Règles absolues :
  *  - aucun endpoint n'est créé, renommé ou contourné ; chaque chemin appelé ici
  *    existe déjà dans `src/backend/api/routeContracts.ts` (vérifié par test) ;
@@ -24,7 +29,11 @@ import type {
   QualificationDecision,
 } from '../backend/matching/records';
 import type { QualificationReviewQueueItem } from '../backend/matching/matchingRepository';
-import type { ClaimView } from '../backend/disputes/claimRepository';
+import type {
+  AdminClaimDecisionInput,
+  AdminClaimEvidenceInput,
+  ClaimView,
+} from '../backend/disputes/claimRepository';
 import type { PaymentView } from '../backend/repositories/paymentRepository';
 import type { PaymentDeclarationRecord } from '../backend/persistence/paymentRecords';
 import type {
@@ -44,6 +53,8 @@ export type {
   MissionQualificationRecord,
   QualificationDecision,
   QualificationReviewQueueItem,
+  AdminClaimDecisionInput,
+  AdminClaimEvidenceInput,
   ClaimView,
   Contract,
   PaymentView,
@@ -99,7 +110,14 @@ export const ADMIN_API_PATHS: readonly string[] = [
   // P4B-1 — supervision des contrats : lecture ADMIN réelle du registre des
   // contrats et lecture ADMIN des Claims rattachés (incidents d'un contrat).
   '/api/v1/admin/contracts',
+  // P4D — routes réellement composées du workflow Claim. La liste et la fiche
+  // exigent incidents:read:any ; chaque commande exige incidents:arbitrate,
+  // une Idempotency-Key et les gardes d'état appliquées par le Worker.
   '/api/v1/admin/claims',
+  '/api/v1/admin/claims/:claimId',
+  '/api/v1/admin/claims/:claimId/review',
+  '/api/v1/admin/claims/:claimId/evidence-requests',
+  '/api/v1/admin/claims/:claimId/decision',
   // P4B-2 — lecture ADMIN des paiements et des lots de rapprochement déjà connus.
   '/api/v1/admin/payments',
   '/api/v1/payments/:paymentId',
@@ -234,6 +252,52 @@ export class AdminApi {
    */
   claims(options: ListOptions = {}): Promise<AdminPage<ClaimView>> {
     return this.list<ClaimView>('/admin/claims', options);
+  }
+
+  /**
+   * Fiche Claim ADMIN `admin.claims.read` (GET /api/v1/admin/claims/:claimId,
+   * permission incidents:read:any). La réponse réelle est ClaimView ; ses
+   * références opaques, metadata, salaryConfirmationId et idempotencyKey ne
+   * doivent pas être rendus par l'interface.
+   */
+  claim(claimId: string, signal?: AbortSignal): Promise<ClaimView> {
+    return this.client.request<ClaimView>(`/admin/claims/${encodeURIComponent(claimId)}`, { signal });
+  }
+
+  /** Mise en revue / escalade du Claim ; idempotent et audité côté serveur. */
+  reviewClaim(claimId: string, note: string | undefined, signal?: AbortSignal, idempotencyKey = newIdempotencyKey()): Promise<ClaimView> {
+    return this.client.request<ClaimView>(`/admin/claims/${encodeURIComponent(claimId)}/review`, {
+      method: 'POST',
+      body: { ...(note ? { note } : {}) },
+      idempotencyKey,
+      signal,
+    });
+  }
+
+  /** Demande réelle de justificatif ; le serveur décide l'échéance configurée. */
+  requestClaimEvidence(claimId: string, input: AdminClaimEvidenceInput, signal?: AbortSignal, idempotencyKey = newIdempotencyKey()): Promise<ClaimView> {
+    return this.client.request<ClaimView>(`/admin/claims/${encodeURIComponent(claimId)}/evidence-requests`, {
+      method: 'POST',
+      body: input,
+      idempotencyKey,
+      signal,
+    });
+  }
+
+  /** Le workflow réel n'accepte que RESOLVE/REJECT/REPLACE ; P4D n'expose
+   * volontairement que RESOLVE et REJECT, REPLACE étant hors de cette tranche. */
+  decideClaim(
+    claimId: string,
+    input: Omit<AdminClaimDecisionInput, 'decision'> & { decision: Exclude<AdminClaimDecisionInput['decision'], 'REPLACE'> },
+    signal?: AbortSignal,
+    idempotencyKey = newIdempotencyKey(),
+  ): Promise<ClaimView> {
+    return this.client.request<ClaimView>(`/admin/claims/${encodeURIComponent(claimId)}/decision`, {
+      method: 'POST',
+      body: input,
+      idempotencyKey,
+      signal,
+    });
   }
 
   /* ── Paiements et rapprochement (P4B-2 — routes réellement présentes) ── */

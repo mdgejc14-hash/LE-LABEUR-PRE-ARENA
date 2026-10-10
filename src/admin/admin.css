@@ -340,6 +340,35 @@
   }
 }
 
+.lbm-admin__claim-filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+  gap: var(--space-16);
+  min-width: 0;
+}
+
+.lbm-admin__claim-status {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.lbm-admin__claim-confirm {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-12);
+  color: var(--text-mid);
+  line-height: var(--body-line-height);
+}
+
+.lbm-admin__claim-confirm input[type='checkbox'] {
+  inline-size: 24px;
+  block-size: 24px;
+  flex: 0 0 24px;
+  accent-color: var(--gold-500);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .lbm-admin * {
     transition-duration: 0.01ms !important;

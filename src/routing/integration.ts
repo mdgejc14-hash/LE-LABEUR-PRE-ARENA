@@ -36,9 +36,13 @@
  * les capacités de confirmation/preuve non exposées sont déclarées
  * BACKEND_GAP → statut PARTIEL.
  *
- * Les autres unités ADM (litiges, remplacements, réputation, documents,
- * notifications, ops, sécurité avancée, infra), FIN et RTC restent non
- * intégrées.
+ * P4D-DESIGN-ADMIN-CLAIMS : trois unités ADM-26 (file), ADM-27 (fiche +
+ * justificatifs) et ADM-29 (décision + historique — 5 fiches ADM-26 → ADM-30)
+ * utilisent uniquement les routes admin.claims.* existantes ; les lacunes
+ * de file, contenu probatoire et audit restent BACKEND_GAP → statut PARTIEL.
+ *
+ * Les autres unités ADM (Remplacements, réputation, documents, notifications,
+ * ops, sécurité avancée, infra), FIN et RTC restent non intégrées.
  */
 
 import { PRODUCTION_UNITS, TOTAL_UNITS, UNIT_COUNTS_BY_FAMILY, type ProductionUnit } from '../design-system/generated/productionUnits';
@@ -74,9 +78,9 @@ export const PRESTATAIRE_UNIT_IDS: readonly string[] = PRESTATAIRE_DESIGN_UNITS.
 
 /**
  * Unités ADM livrées par P4A-DESIGN-ADMIN-CORE, P4B-1-DESIGN-ADMIN-CONTRACTS,
- * P4B-2-DESIGN-ADMIN-PAYMENTS et P4C-DESIGN-ADMIN-SALARY-PROOFS (13 unités,
- * 24 fiches, dérivées du catalogue généré). Même règle : PARTIEL
- * dès qu'une fiche déclare une capacité absente.
+ * P4B-2-DESIGN-ADMIN-PAYMENTS, P4C-DESIGN-ADMIN-SALARY-PROOFS et
+ * P4D-DESIGN-ADMIN-CLAIMS (16 unités, 29 fiches, dérivées du catalogue
+ * généré). Même règle : PARTIEL dès qu'une fiche déclare une capacité absente.
  */
 export const ADMIN_UNIT_IDS: readonly string[] = ADMIN_DESIGN_UNITS.map((unit) => unit.id);
 

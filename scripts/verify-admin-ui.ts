@@ -1,12 +1,12 @@
 /**
- * P4B-2-DESIGN-ADMIN-PAYMENTS — vérification UI réelle (Chromium) de l'espace
- * supervision livré (P4A + P4B-1 contrats + P4B-2 paiements + P4C salaire).
+ * P4D-DESIGN-ADMIN-CLAIMS — vérification UI réelle (Chromium) de l'espace
+ * supervision livré (P4A + P4B-1 contrats + P4B-2 paiements + P4C salaire + P4D Claims).
  *
  * Comme le script P2, ce script n'affirme rien sur des données simulées dans
  * l'application : les fixtures HTTP vivent ICI et ne sont jamais activées dans
  * le produit. Ce qui est vérifié dans un navigateur réel :
  *
- *  1. AUCUNE source de données configurée : les 24 fiches ADM rendent leur
+ *  1. AUCUNE source de données configurée : les 29 fiches ADM rendent leur
  *     conteneur (`data-unit`, `data-screen`), la structure déclarée par le
  *     design (`data-sheet-frame`) et le BACKEND_GAP, sans débordement
  *     horizontal à 360 px comme à 1440 px ; aucun terme du Master Design ni
@@ -32,7 +32,11 @@
  *  8. P4C : confirmations de Salaire — file réelle des paiements SALARY,
  *     confirmation du Candidat jamais déduite, distinction
  *     déclaration/vérification/PAID/confirmation, fiche de preuve sans
- *     formulaire ni secret, 360/1440 px.
+ *     formulaire ni secret, 360/1440 px ;
+ *  9. P4D : Claims issus des routes ADMIN réelles, filtres de page locale,
+ *     revue/demande de justificatif/décision avec idempotence, permissions,
+ *     statuts terminaux, références opaques masquées, aucun contrôle de
+ *     restriction/remplacement, 360/1440 px.
  *
  * Exécution : `npm run verify:admin-ui`.
  */
@@ -123,8 +127,61 @@ const FIXTURE_CLAIM = {
   reason: 'Retard de reprise signalé',
   status: 'OPEN',
   createdAt: '2026-09-20T00:00:00.000Z',
+  dueAt: '2026-09-25T00:00:00.000Z',
+  evidenceReference: 'private-claim-evidence-reference-e2e',
+  salaryConfirmationId: 'private-salary-confirmation-e2e',
+  metadata: { internalMarker: 'private-claim-metadata-e2e' },
+  idempotencyKey: 'private-claim-idempotency-key-e2e',
+  evidenceRequests: [{
+    evidenceRequestId: 'evr-e2e-1',
+    claimId: 'clm-e2e-1',
+    requestedFrom: 'usr-emp-e2e',
+    requestedBy: 'usr-admin-e2e',
+    requestedType: 'CONTRACT_EVIDENCE',
+    status: 'SUBMITTED',
+    createdAt: '2026-09-20T10:00:00.000Z',
+    submittedAt: '2026-09-21T10:00:00.000Z',
+    evidenceReference: 'private-request-evidence-reference-e2e',
+  }],
+  restrictions: [{
+    restrictionId: 'rsk-e2e-1',
+    claimId: 'clm-e2e-1',
+    userId: 'usr-emp-e2e',
+    scope: 'CONTRACT_TERMINATE',
+    status: 'ACTIVE',
+    reason: 'private-restriction-reason-e2e',
+    appliedBy: 'usr-admin-e2e',
+    appliedAt: '2026-09-20T11:00:00.000Z',
+  }],
+};
+
+const FIXTURE_DECISION_CLAIM = {
+  ...FIXTURE_CLAIM,
+  claimId: 'clm-decision-e2e',
+  type: 'PAYMENT_DISPUTE',
+  reason: 'Contestation examinée par la revue ADMIN',
+  status: 'ADMIN_REVIEW',
+  evidenceReference: undefined,
+  salaryConfirmationId: undefined,
   metadata: {},
-  idempotencyKey: 'seed-e2e-1',
+  idempotencyKey: 'private-decision-claim-key-e2e',
+  evidenceRequests: [],
+  restrictions: [],
+};
+
+const FIXTURE_TERMINAL_CLAIM = {
+  ...FIXTURE_CLAIM,
+  claimId: 'clm-terminal-e2e',
+  type: 'OTHER_REVIEW_REQUIRED',
+  reason: 'Dossier arrivé à une issue terminale',
+  status: 'RESOLVED',
+  resolvedAt: '2026-09-22T10:00:00.000Z',
+  resolvedBy: 'usr-admin-e2e',
+  resolution: 'Résolution motivée enregistrée',
+  evidenceReference: undefined,
+  salaryConfirmationId: undefined,
+  metadata: {},
+  idempotencyKey: 'private-terminal-claim-key-e2e',
   evidenceRequests: [],
   restrictions: [],
 };
@@ -363,6 +420,7 @@ const FIXTURE_BATCH_REPORT = {
 };
 
 let fixturePaymentRows: Record<string, unknown>[] = [FIXTURE_SALARY_PAYMENT, FIXTURE_FEE_PAYMENT, FIXTURE_SCHEDULED_PAYMENT];
+let fixtureClaimRows: Record<string, unknown>[] = [FIXTURE_CLAIM, FIXTURE_DECISION_CLAIM, FIXTURE_TERMINAL_CLAIM];
 type PaymentListMode = 'ready' | 'empty' | 'not-configured' | 'error';
 type SessionMode = 'admin' | 'employer' | 'anonymous' | 'error';
 
@@ -408,6 +466,10 @@ try {
   let paymentListMode: PaymentListMode = 'ready';
   let paymentReadPermission = true;
   let paymentActionPermissions: 'all' | 'read-only' = 'all';
+  let claimActionPermissions: 'all' | 'read-only' = 'all';
+  let claimListCalls = 0;
+  let claimDetailCalls = 0;
+  const claimCommandRequests: Array<{ command: string; claimId: string; key: string; body: Record<string, unknown> }> = [];
   let paymentListDelayMs = 0;
   let approveFailureCount = 0;
   let approveDelayMs = 0;
@@ -438,6 +500,17 @@ try {
     reviewDecisionRequests.length = 0;
     correctionAttemptRequests.length = 0;
   };
+  const resetClaimFixtures = () => {
+    fixtureClaimRows = [
+      { ...FIXTURE_CLAIM, evidenceRequests: [...FIXTURE_CLAIM.evidenceRequests], restrictions: [...FIXTURE_CLAIM.restrictions] },
+      { ...FIXTURE_DECISION_CLAIM, evidenceRequests: [], restrictions: [] },
+      { ...FIXTURE_TERMINAL_CLAIM, evidenceRequests: [], restrictions: [] },
+    ];
+    claimActionPermissions = 'all';
+    claimListCalls = 0;
+    claimDetailCalls = 0;
+    claimCommandRequests.length = 0;
+  };
   await page.route('**/api/v1/**', async (route) => {
     const url = new URL(route.request().url());
     const method = route.request().method();
@@ -466,6 +539,7 @@ try {
                 'users:read:any',
                 'contracts:read:any',
                 'incidents:read:any',
+                ...(claimActionPermissions === 'all' ? ['incidents:arbitrate'] : []),
                 ...(paymentReadPermission ? ['payments:read:any'] : []),
                 ...(paymentActionPermissions === 'all' ? ['payments:approve', 'payments:reject'] : []),
               ]
@@ -478,9 +552,70 @@ try {
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ items: [FIXTURE_CONTRACT], cursor: null, limit: 100, hasMore: false }) });
       return;
     }
-    if (url.pathname === '/api/v1/admin/claims') {
-      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ items: [FIXTURE_CLAIM], cursor: null, limit: 100, hasMore: false }) });
+    if (url.pathname === '/api/v1/admin/claims' && method === 'GET') {
+      claimListCalls += 1;
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ items: fixtureClaimRows, cursor: null, limit: 100, hasMore: false }),
+      });
       return;
+    }
+    if (url.pathname.startsWith('/api/v1/admin/claims/')) {
+      const segments = url.pathname.split('/');
+      const claimId = decodeURIComponent(segments[5] ?? '');
+      const command = segments[6] ?? '';
+      const claim = fixtureClaimRows.find((item) => item.claimId === claimId);
+      if (!claim) {
+        await route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ error: { code: 'NOT_FOUND', message: 'Claim absent de la fixture.', requestId: SERVER_REQUEST_ID } }) });
+        return;
+      }
+      if (method === 'GET' && !command) {
+        claimDetailCalls += 1;
+        await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(claim) });
+        return;
+      }
+      if (method === 'POST' && ['review', 'evidence-requests', 'decision'].includes(command)) {
+        if (sessionMode !== 'admin' || claimActionPermissions !== 'all') {
+          await route.fulfill({ status: 403, contentType: 'application/json', body: JSON.stringify({ error: { code: 'FORBIDDEN', message: SERVER_SECRET, requestId: SERVER_REQUEST_ID } }) });
+          return;
+        }
+        const body = route.request().postDataJSON() as Record<string, unknown>;
+        const key = route.request().headers()['idempotency-key'] ?? '';
+        claimCommandRequests.push({ command, claimId, key, body });
+        let updated: Record<string, unknown>;
+        if (command === 'review') {
+          updated = { ...claim, status: 'ADMIN_REVIEW' };
+        } else if (command === 'evidence-requests') {
+          const evidenceRequests = Array.isArray(claim.evidenceRequests) ? claim.evidenceRequests as Record<string, unknown>[] : [];
+          const evidenceRequest = {
+            evidenceRequestId: 'evr-requested-e2e',
+            claimId,
+            requestedFrom: body.requestedFrom,
+            requestedBy: 'usr-admin-e2e',
+            requestedType: body.requestedType,
+            status: 'PENDING',
+            createdAt: '2026-09-23T10:00:00.000Z',
+          };
+          updated = { ...claim, status: 'EVIDENCE_REQUESTED', evidenceRequests: [...evidenceRequests, evidenceRequest] };
+        } else {
+          if (claim.status !== 'ADMIN_REVIEW') {
+            await route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ error: { code: 'BUSINESS_RULE_VIOLATION', message: 'Le Claim doit être en revue ADMIN.', requestId: SERVER_REQUEST_ID } }) });
+            return;
+          }
+          const decision = body.decision === 'REJECT' ? 'REJECTED' : 'RESOLVED';
+          updated = {
+            ...claim,
+            status: decision,
+            resolvedAt: '2026-09-23T11:00:00.000Z',
+            resolvedBy: 'usr-admin-e2e',
+            resolution: body.resolution,
+          };
+        }
+        fixtureClaimRows = fixtureClaimRows.map((item) => item.claimId === claimId ? updated : item);
+        await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(updated) });
+        return;
+      }
     }
     if (url.pathname === '/api/v1/admin/payments' && method === 'GET') {
       paymentListCalls += 1;
@@ -654,7 +789,7 @@ try {
     assert.ok(!text.includes(SERVER_SECRET), `${label} : message serveur brut rendu`);
   };
 
-  /* ── 1. Aucune source de données configurée : 24 fiches, deux largeurs ── */
+  /* ── 1. Aucune source de données configurée : 29 fiches, deux largeurs ── */
   const demo = await startApp('demo');
   demoServer = demo.server;
   for (const width of [360, 1440]) {
@@ -998,6 +1133,132 @@ try {
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.waitForFunction(() => document.documentElement.scrollWidth <= innerWidth, null, { timeout: 5000 }).catch(() => undefined);
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'débordement horizontal ADM-24 à 1440 px');
+  });
+
+  await check('ADM-26/27/28 — file et dossier Claim réels, revue/demande de justificatif idempotentes, références opaques masquées', async () => {
+    sessionMode = 'admin';
+    resetClaimFixtures();
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await page.goto(api.origin + '/admin/litiges');
+    await page.locator('[data-screen="ADM-26"]').waitFor();
+    await page.getByText('clm-e2e-1', { exact: true }).first().waitFor();
+    let text = await screenText();
+    assert.ok(says(text, '3 Claim(s) renvoyé(s)'), 'compte local des Claims chargés absent');
+    assert.ok(says(text, 'ADMIN_REVIEW') && says(text, 'OPEN') && says(text, 'RESOLVED'), 'statuts réellement renvoyés absents');
+    assert.ok(says(text, 'uniquement les Claims effectivement reçus'), 'portée de page/cursor non déclarée');
+    assert.equal(claimListCalls, 1, 'une page réelle doit alimenter le registre');
+    await page.getByLabel('Rechercher un Claim dans les pages chargées').fill('clm-e2e-1');
+    assert.equal(await page.locator('[data-screen="ADM-26"] tbody tr').count(), 1, 'recherche locale limitée aux pages reçues');
+    await assertNoForbiddenText('/admin/litiges', text);
+
+    await page.goto(api.origin + '/admin/litiges/clm-e2e-1');
+    await page.locator('[data-screen="ADM-27"]').waitFor();
+    await page.getByText('Retard de reprise signalé', { exact: true }).waitFor();
+    text = await screenText();
+    assert.ok(text.includes('usr-can-e2e') && text.includes('usr-emp-e2e'), 'identifiants de compte réels absents');
+    assert.ok(says(text, 'Référence Claim') && says(text, 'Motif transmis'), 'dossier Claim réel incomplet');
+    for (const marker of [
+      'private-claim-evidence-reference-e2e',
+      'private-salary-confirmation-e2e',
+      'private-claim-metadata-e2e',
+      'private-claim-idempotency-key-e2e',
+      'private-request-evidence-reference-e2e',
+      'private-restriction-reason-e2e',
+      'CONTRACT_TERMINATE',
+    ]) assert.ok(!text.includes(marker), `champ opaque/hors scope rendu : ${marker}`);
+    assert.equal(await page.getByRole('button', { name: /Appliquer la restriction|Libérer la restriction/i }).count(), 0, 'aucun contrôle de restriction ne doit exister');
+    assert.equal(await page.locator('[data-screen="ADM-27"] table thead th[scope="col"]').count(), 6, 'table des demandes non sémantique');
+    await page.getByLabel('Note facultative de mise en revue ADMIN').fill('Note de revue E2E');
+    await page.getByRole('button', { name: 'Transmettre à la revue ADMIN' }).click();
+    await page.locator('[data-screen="ADM-27"] dd').filter({ hasText: 'ADMIN_REVIEW' }).waitFor();
+    assert.equal(claimCommandRequests.length, 1, 'commande de revue absente');
+    assert.equal(claimCommandRequests[0].command, 'review');
+    assert.equal(claimCommandRequests[0].claimId, 'clm-e2e-1');
+    assert.deepEqual(claimCommandRequests[0].body, { note: 'Note de revue E2E' });
+    assert.ok(claimCommandRequests[0].key, 'clé d’idempotence de revue absente');
+
+    await page.goto(api.origin + '/admin/litiges/clm-e2e-1/pieces');
+    await page.locator('[data-screen="ADM-28"]').waitFor();
+    await page.getByLabel('Type de justificatif demandé').selectOption('SUPPORTING_EVIDENCE');
+    await page.getByLabel('Compte destinataire de la demande').selectOption('usr-can-e2e');
+    text = await screenText();
+    assert.ok(says(text, 'Non fournie par le serveur'), 'échéance absente doit rester absente');
+    for (const marker of ['private-claim-evidence-reference-e2e', 'private-request-evidence-reference-e2e', 'private-restriction-reason-e2e']) {
+      assert.ok(!text.includes(marker), `référence/valeur sensible rendue dans ADM-28 : ${marker}`);
+    }
+    await page.getByRole('button', { name: 'Envoyer la demande au serveur' }).click();
+    await page.locator('[data-screen="ADM-28"] dd').filter({ hasText: 'EVIDENCE_REQUESTED' }).waitFor();
+    assert.equal(claimCommandRequests.length, 2, 'commande de demande de justificatif absente');
+    assert.equal(claimCommandRequests[1].command, 'evidence-requests');
+    assert.deepEqual(claimCommandRequests[1].body, { requestedType: 'SUPPORTING_EVIDENCE', requestedFrom: 'usr-can-e2e' });
+    assert.ok(claimCommandRequests[1].key, 'clé d’idempotence de demande absente');
+    assert.ok(!('dueAt' in claimCommandRequests[1].body), 'l’interface ne doit pas calculer d’échéance');
+    text = await screenText();
+    assert.ok(says(text, 'EVIDENCE_REQUESTED') && says(text, 'Demander un justificatif'), 'état de commande réel absent');
+    await assertNoForbiddenText('/admin/litiges/clm-e2e-1', text);
+    await page.setViewportSize({ width: 360, height: 900 });
+    await page.waitForFunction(() => document.documentElement.scrollWidth <= innerWidth, null, { timeout: 5000 }).catch(() => undefined);
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'débordement horizontal ADM-28 à 360 px');
+  });
+
+  await check('ADM-29/30 — décision limitée à RESOLVE/REJECT et projection des seuls Claims terminés', async () => {
+    sessionMode = 'admin';
+    resetClaimFixtures();
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto(api.origin + '/admin/litiges/clm-decision-e2e/decision');
+    await page.locator('[data-screen="ADM-29"]').waitFor();
+    await page.getByLabel('Résolution motivée du Claim').fill('Résolution E2E consignée par le serveur');
+    const decision = page.getByLabel('Décision ADMIN du Claim');
+    const decisionValues = await decision.locator('option').evaluateAll((options) => options.map((option) => (option as HTMLOptionElement).value));
+    assert.deepEqual(decisionValues, ['RESOLVE', 'REJECT'], 'aucune décision REPLACE ou autre option ne doit être proposée');
+    await page.getByLabel('Je confirme l’envoi d’une décision terminale au serveur ; celui-ci revalide l’état courant et l’idempotence.').check();
+    await page.getByRole('button', { name: 'Envoyer la décision ADMIN' }).click();
+    await page.locator('[data-screen="ADM-29"] dd').filter({ hasText: 'RESOLVED' }).waitFor();
+    assert.equal(claimCommandRequests.length, 1, 'commande de décision absente');
+    assert.equal(claimCommandRequests[0].command, 'decision');
+    assert.equal(claimCommandRequests[0].claimId, 'clm-decision-e2e');
+    assert.deepEqual(claimCommandRequests[0].body, { decision: 'RESOLVE', resolution: 'Résolution E2E consignée par le serveur' });
+    assert.ok(claimCommandRequests[0].key, 'clé d’idempotence de décision absente');
+    assert.equal(await page.locator('[data-screen="ADM-29"] form').count(), 0, 'aucune seconde décision après terminalité');
+    let text = await screenText();
+    assert.ok(says(text, 'statut serveur est terminal') || says(text, 'résolution motivée'), 'état terminal après réponse serveur non présenté');
+    await assertNoForbiddenText('/admin/litiges/clm-decision-e2e/decision', text);
+
+    await page.goto(api.origin + '/admin/litiges/decisions');
+    await page.locator('[data-screen="ADM-30"]').waitFor();
+    await page.getByText('clm-decision-e2e', { exact: true }).waitFor();
+    text = await screenText();
+    assert.ok(says(text, 'clm-terminal-e2e') && says(text, 'clm-decision-e2e'), 'Claims terminés renvoyés par la page réelle absents');
+    assert.ok(!text.includes('clm-e2e-1'), 'Claim non terminal ne doit pas apparaître dans la projection ADM-30');
+    assert.ok(says(text, 'ceci n’est pas un journal d’événements exhaustif'), 'portée limitée de l’historique non dite');
+    assert.ok(says(text, 'RESOLVED'), 'statut terminal réel absent');
+    await assertNoForbiddenText('/admin/litiges/decisions', text);
+    await page.setViewportSize({ width: 360, height: 900 });
+    await page.waitForFunction(() => document.documentElement.scrollWidth <= innerWidth, null, { timeout: 5000 }).catch(() => undefined);
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'débordement horizontal ADM-30 à 360 px');
+  });
+
+  await check('ADM Claims — les actions restent conditionnées aux permissions ADMIN réelles', async () => {
+    sessionMode = 'admin';
+    resetClaimFixtures();
+    claimActionPermissions = 'read-only';
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto(api.origin + '/admin/litiges/clm-decision-e2e');
+    await page.reload();
+    await page.locator('[data-screen="ADM-27"]').waitFor();
+    assert.ok(await page.getByText(/incidents:arbitrate est absente/).count() > 0, 'absence de permission de mutation non dite');
+    assert.equal(await page.locator('[data-screen="ADM-27"] form').count(), 0, 'formulaire rendu sans incidents:arbitrate');
+    assert.equal(claimCommandRequests.length, 0, 'aucune commande sans incidents:arbitrate');
+
+    resetClaimFixtures();
+    sessionMode = 'employer';
+    await page.goto(api.origin + '/admin/litiges');
+    await page.reload();
+    await page.locator('[data-state="403"]').waitFor();
+    assert.equal(claimListCalls, 0, 'un compte Employeur ne doit jamais appeler la route ADMIN Claim');
+    assert.equal(claimDetailCalls, 0, 'un compte Employeur ne doit jamais appeler la lecture ADMIN Claim');
+    await assertNoForbiddenText('/admin/litiges refusé', await page.locator('[data-state="403"]').innerText());
+    sessionMode = 'admin';
   });
 
   await check('ADM — refus non-ADMIN sur la route Paiement : aucune lecture ADMIN ni accès partie contourné', async () => {

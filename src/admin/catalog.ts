@@ -1,7 +1,7 @@
 // GÉNÉRÉ PAR scripts/design/generate-admin-catalog.py — NE PAS ÉDITER À LA MAIN.
 // Source : design/llab/content/adm_*.py, design/llab/units.py — tranches livrées :
 // P4A (ADM-01 → ADM-12), P4B-1 CONTRATS (ADM-13 → ADM-17), P4B-2 PAIEMENTS (ADM-18 → ADM-22)
-// et P4C SALAIRE (ADM-23 → ADM-24).
+// P4C SALAIRE (ADM-23 → ADM-24), P4D CLAIMS (ADM-26 → ADM-30).
 // Régénérer : npm run design:admin
 //
 // Référence de design UNIQUEMENT : aucun libellé de ce fichier n'est affiché par
@@ -748,6 +748,163 @@ export const ADMIN_DESIGN_UNITS = [
       "POST /admin/salary/proofs/:id/validate",
       "POST /admin/salary/proofs/:id/invalidate {motive}"
     ]
+  },
+  {
+    "id": "ADM-26",
+    "canon": "ADM — litiges (file)",
+    "criticality": "P0",
+    "archetype": "File des conflits",
+    "screenCodes": [
+      "ADM-26"
+    ],
+    "routes": [
+      "/admin/litiges"
+    ],
+    "zoneKinds": [
+      "cta",
+      "kpi",
+      "list",
+      "table"
+    ],
+    "componentRefs": [
+      "Compteur",
+      "Marqueur",
+      "Table",
+      "Verrou"
+    ],
+    "stateNames": [
+      "File saine",
+      "Surcharge",
+      "Afflux",
+      "Vide"
+    ],
+    "tokens": [
+      "--amber-500",
+      "--clay-500",
+      "--mono",
+      "--table",
+      "--violet-500"
+    ],
+    "designApi": [
+      "GET /admin/disputes?queue=&cursor=",
+      "POST /admin/disputes/:id/claim",
+      "GET /admin/disputes/sla"
+    ]
+  },
+  {
+    "id": "ADM-27",
+    "canon": "ADM — litige (fiche & pièces)",
+    "criticality": "P0",
+    "archetype": "Dossier contradictoire complet",
+    "screenCodes": [
+      "ADM-27",
+      "ADM-28"
+    ],
+    "routes": [
+      "/admin/litiges/:id",
+      "/admin/litiges/:id/pieces"
+    ],
+    "zoneKinds": [
+      "chat",
+      "cta",
+      "hero",
+      "kpi",
+      "list",
+      "table"
+    ],
+    "componentRefs": [
+      "Chronologie",
+      "Matrice",
+      "Métadonnées",
+      "Notes",
+      "Recevabilité",
+      "Résumé",
+      "Table",
+      "Visionneuse"
+    ],
+    "stateNames": [
+      "Instruction",
+      "Complète",
+      "Incomplète (silence)",
+      "Recours",
+      "Concordant",
+      "Contradictoire",
+      "Insuffisant",
+      "Pièce tardive"
+    ],
+    "tokens": [
+      "--amber-500",
+      "--clay-500",
+      "--glass-1",
+      "--mono",
+      "--text-mid"
+    ],
+    "designApi": [
+      "GET /admin/disputes/:id/full",
+      "POST /admin/disputes/:id/request-evidence",
+      "POST /admin/disputes/:id/recuse",
+      "GET /admin/disputes/:id/evidence",
+      "POST /admin/disputes/:id/evidence/:eid/admissibility",
+      "GET /admin/disputes/:id/contradictions"
+    ]
+  },
+  {
+    "id": "ADM-29",
+    "canon": "ADM — litige (décision)",
+    "criticality": "P0",
+    "archetype": "Rédiger le verdict",
+    "screenCodes": [
+      "ADM-29",
+      "ADM-30"
+    ],
+    "routes": [
+      "/admin/litiges/:id/decision",
+      "/admin/litiges/decisions"
+    ],
+    "zoneKinds": [
+      "cta",
+      "doc",
+      "kpi",
+      "list",
+      "price",
+      "table",
+      "verdict"
+    ],
+    "componentRefs": [
+      "Comparateur",
+      "Double",
+      "Gabarits",
+      "Indicateur",
+      "Liaison",
+      "Simulateur",
+      "Table"
+    ],
+    "stateNames": [
+      "Brouillon",
+      "Contre-signature",
+      "Publiée",
+      "Infirmée en recours",
+      "Stable",
+      "Divergence détectée",
+      "Infirmation élevée",
+      "Vide"
+    ],
+    "tokens": [
+      "--clay-500",
+      "--emerald-500",
+      "--glass-2",
+      "--gold-500",
+      "--mono",
+      "--table",
+      "--violet-500"
+    ],
+    "designApi": [
+      "POST /admin/disputes/:id/decision {issue, facts, evidenceRefs, ruleRefs, calculation}",
+      "GET /admin/disputes/:id/decision/preview-effects",
+      "GET /admin/disputes/decisions?cursor=",
+      "GET /admin/disputes/decisions/analytics",
+      "GET /admin/disputes/decisions/compare?ids="
+    ]
   }
 ] as const;
 
@@ -1395,6 +1552,139 @@ export const ADMIN_DESIGN_SCREENS = [
       "--emerald-500",
       "--clay-500",
       "--amber-500",
+      "--table"
+    ]
+  },
+  {
+    "code": "ADM-26",
+    "unitId": "ADM — litiges (file)",
+    "route": "/admin/litiges",
+    "canonicalRoute": "/admin/litiges",
+    "role": "ADMIN",
+    "criticality": "P0",
+    "zoneKinds": [
+      "kpi",
+      "table",
+      "list",
+      "cta"
+    ],
+    "variantOf": null,
+    "designApi": [
+      "GET /admin/disputes?queue=&cursor=",
+      "POST /admin/disputes/:id/claim",
+      "GET /admin/disputes/sla"
+    ],
+    "tokens": [
+      "--clay-500",
+      "--amber-500",
+      "--violet-500",
+      "--mono",
+      "--table"
+    ]
+  },
+  {
+    "code": "ADM-27",
+    "unitId": "ADM — litige (fiche & pièces)",
+    "route": "/admin/litiges/:id",
+    "canonicalRoute": "/admin/litiges/:id",
+    "role": "ADMIN",
+    "criticality": "P0",
+    "zoneKinds": [
+      "hero",
+      "chat",
+      "table",
+      "list",
+      "cta"
+    ],
+    "variantOf": null,
+    "designApi": [
+      "GET /admin/disputes/:id/full",
+      "POST /admin/disputes/:id/request-evidence",
+      "POST /admin/disputes/:id/recuse"
+    ],
+    "tokens": [
+      "--clay-500",
+      "--amber-500",
+      "--mono",
+      "--glass-1",
+      "--text-mid"
+    ]
+  },
+  {
+    "code": "ADM-28",
+    "unitId": "ADM — litige (fiche & pièces)",
+    "route": "/admin/litiges/:id/pieces",
+    "canonicalRoute": "/admin/litiges/:id/pieces",
+    "role": "ADMIN",
+    "criticality": "P1",
+    "zoneKinds": [
+      "list",
+      "table",
+      "kpi",
+      "cta"
+    ],
+    "variantOf": null,
+    "designApi": [
+      "GET /admin/disputes/:id/evidence",
+      "POST /admin/disputes/:id/evidence/:eid/admissibility",
+      "GET /admin/disputes/:id/contradictions"
+    ],
+    "tokens": [
+      "--mono",
+      "--clay-500",
+      "--amber-500",
+      "--glass-1"
+    ]
+  },
+  {
+    "code": "ADM-29",
+    "unitId": "ADM — litige (décision)",
+    "route": "/admin/litiges/:id/decision",
+    "canonicalRoute": "/admin/litiges/:id/decision",
+    "role": "ADMIN",
+    "criticality": "P0",
+    "zoneKinds": [
+      "verdict",
+      "doc",
+      "price",
+      "cta"
+    ],
+    "variantOf": null,
+    "designApi": [
+      "POST /admin/disputes/:id/decision {issue, facts, evidenceRefs, ruleRefs, calculation}",
+      "GET /admin/disputes/:id/decision/preview-effects"
+    ],
+    "tokens": [
+      "--gold-500",
+      "--clay-500",
+      "--emerald-500",
+      "--mono",
+      "--glass-2"
+    ]
+  },
+  {
+    "code": "ADM-30",
+    "unitId": "ADM — litige (décision)",
+    "route": "/admin/litiges/decisions",
+    "canonicalRoute": "/admin/litiges/decisions",
+    "role": "ADMIN",
+    "criticality": "P1",
+    "zoneKinds": [
+      "table",
+      "kpi",
+      "list",
+      "cta"
+    ],
+    "variantOf": "ADM-29",
+    "designApi": [
+      "GET /admin/disputes/decisions?cursor=",
+      "GET /admin/disputes/decisions/analytics",
+      "GET /admin/disputes/decisions/compare?ids="
+    ],
+    "tokens": [
+      "--mono",
+      "--violet-500",
+      "--clay-500",
       "--table"
     ]
   }
