@@ -11,6 +11,14 @@
  * lire, incidents:arbitrate pour revue/demande de justificatif/décision). Les
  * DTO et entrées viennent du repository réel ; les références de preuves restent
  * opaques à l'interface et aucune route document/partie n'est détournée.
+ * P4E-1-DESIGN-ADMIN-REPLACEMENTS : lecture seule des dossiers de Remplacement
+ * par `admin.replacements.list` / `admin.replacements.read` (permission serveur
+ * replacements:read:any, revérifiée par `replacementRepository`) et lecture des
+ * Propositions par `admin.proposals.list` (applications:read:any). Les routes
+ * déclarées `admin.replacements.assign|transfer|finalize` restent VOLONTAIREMENT
+ * sans handler (le consentement du Candidat passe par la Proposition) : elles ne
+ * sont jamais appelées. `replacements.read` (Employeur/Candidat) et
+ * `replacements.offer.create` (Employeur) ne sont pas détournées.
  * Règles absolues :
  *  - aucun endpoint n'est créé, renommé ou contourné ; chaque chemin appelé ici
  *    existe déjà dans `src/backend/api/routeContracts.ts` (vérifié par test) ;
@@ -45,7 +53,7 @@ import type {
   PaymentReconciliationCorrectionAttemptRecord,
   PaymentReconciliationReviewRecord,
 } from '../backend/persistence/paymentReconciliationRecords';
-import type { Contract } from '../types';
+import type { Contract, MissionProposal, ReplacementDossier } from '../types';
 import { ApiClientError, HttpApiClient } from '../repositories/apiClient';
 
 export type {
@@ -57,6 +65,8 @@ export type {
   AdminClaimEvidenceInput,
   ClaimView,
   Contract,
+  MissionProposal,
+  ReplacementDossier,
   PaymentView,
   PaymentDeclarationRecord,
   PaymentReconciliationBatchReport,
@@ -118,6 +128,11 @@ export const ADMIN_API_PATHS: readonly string[] = [
   '/api/v1/admin/claims/:claimId/review',
   '/api/v1/admin/claims/:claimId/evidence-requests',
   '/api/v1/admin/claims/:claimId/decision',
+  // P4E-1 — lectures ADMIN du workflow Remplacement (aucune commande ADMIN :
+  // assign/transfer/finalize restent sans handler et ne sont jamais appelées).
+  '/api/v1/admin/replacements',
+  '/api/v1/admin/replacements/:replacementId',
+  '/api/v1/admin/proposals',
   // P4B-2 — lecture ADMIN des paiements et des lots de rapprochement déjà connus.
   '/api/v1/admin/payments',
   '/api/v1/payments/:paymentId',
@@ -298,6 +313,33 @@ export class AdminApi {
       idempotencyKey,
       signal,
     });
+  }
+
+  /* ── Remplacements (P4E-1 — lecture seule du workflow existant) ── */
+
+  /**
+   * File ADMIN réelle `admin.replacements.list` (GET /api/v1/admin/replacements,
+   * permission serveur `replacements:read:any`). Sans persistance durable, le
+   * Worker répond sa frontière de contrôle (`persistence: 'not-configured'`) :
+   * ce marqueur est conservé pour ne pas présenter une file vide comme réelle.
+   */
+  replacements(options: ListOptions = {}): Promise<AdminPage<ReplacementDossier>> {
+    return this.list<ReplacementDossier>('/admin/replacements', options);
+  }
+
+  /** Dossier unitaire `admin.replacements.read` (même permission, même projection). */
+  replacement(replacementId: string, signal?: AbortSignal): Promise<ReplacementDossier> {
+    return this.client.request<ReplacementDossier>(`/admin/replacements/${encodeURIComponent(replacementId)}`, { signal });
+  }
+
+  /**
+   * Propositions `admin.proposals.list` (GET /api/v1/admin/proposals, permission
+   * `applications:read:any`). Aucun filtre serveur par Proposition : la
+   * Proposition sélectionnée d'un Remplacement est recherchée dans la page
+   * réellement chargée, jamais reconstituée.
+   */
+  proposals(options: ListOptions = {}): Promise<AdminPage<MissionProposal>> {
+    return this.list<MissionProposal>('/admin/proposals', options);
   }
 
   /* ── Paiements et rapprochement (P4B-2 — routes réellement présentes) ── */

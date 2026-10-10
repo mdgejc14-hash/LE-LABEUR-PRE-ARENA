@@ -375,3 +375,28 @@
     animation-duration: 0.01ms !important;
   }
 }
+
+/* P4E-1 · Remplacements (lecture seule) — mêmes jetons que les filtres Claims. */
+.lbm-admin__replacement-filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+  gap: var(--space-16);
+  min-width: 0;
+}
+
+/* Une option longue (libellé + code serveur) ne doit jamais élargir la page à 360 px. */
+.lbm-admin__replacement-filters > *,
+.lbm-admin__replacement-filters select,
+.lbm-admin__replacement-filters input {
+  min-width: 0;
+  max-width: 100%;
+  width: 100%;
+}
+
+.lbm-admin__replacement-status {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4);
+  min-width: 0;
+}

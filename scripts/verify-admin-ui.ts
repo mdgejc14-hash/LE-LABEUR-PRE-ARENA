@@ -37,6 +37,13 @@
  *     revue/demande de justificatif/décision avec idempotence, permissions,
  *     statuts terminaux, références opaques masquées, aucun contrôle de
  *     restriction/remplacement, 360/1440 px.
+ * 10. P4E-1 : Remplacements issus des routes ADMIN réelles en lecture seule
+ *     (admin.replacements.list/read), filtre/recherche locaux au clavier,
+ *     pagination curseur single-flight, dossier composé bloc par bloc
+ *     (Claim, Contrats source/successeur, Proposition, Paiements par Contrat),
+ *     Proposition envoyée ≠ acceptée, Contrat successeur DRAFT ≠ actif, aucun
+ *     transfert de Paiement, permissions par bloc, 403/404/500/not-configured,
+ *     arbitrage sans formulaire, aucune commande envoyée, 360/1440 px.
  *
  * Exécution : `npm run verify:admin-ui`.
  */
@@ -419,6 +426,110 @@ const FIXTURE_BATCH_REPORT = {
   hasMore: false,
 };
 
+/* ── P4E-1 · Remplacements (fixtures HTTP de vérification, jamais dans l'application) ── */
+const FIXTURE_RPL_SOURCE_CONTRACT = {
+  ...FIXTURE_CONTRACT,
+  id: 'ctr-rpl-src',
+  status: 'REPLACED',
+  replacementId: 'rpl-e2e-2',
+  replacedContractId: 'ctr-rpl-new',
+  history: [
+    { id: 'log-rpl-1', timestamp: '2026-09-10T08:00:00.000Z', event: 'CONTRACT_ACTIVATED', description: 'Contrat actif.', actor: 'Système' },
+    { id: 'log-rpl-2', timestamp: '2026-09-20T09:00:00.000Z', event: 'CONTRACT_REPLACED', description: 'Contrat passé à REPLACED par la décision ADMIN du Claim clm-rpl-2.', actor: 'Superviseur' },
+    { id: 'log-rpl-3', timestamp: '2026-09-28T09:00:00.000Z', event: 'REPLACEMENT_SUCCESSOR_LINKED', description: 'Contrat successeur ctr-rpl-new lié au Remplacement.', actor: 'A. Gbian' },
+  ],
+};
+const FIXTURE_RPL_SELECTED_SOURCE_CONTRACT = {
+  ...FIXTURE_CONTRACT,
+  id: 'ctr-rpl-src1',
+  status: 'REPLACED',
+  replacementId: 'rpl-e2e-1',
+  history: [
+    { id: 'log-rpl-11', timestamp: '2026-09-10T08:00:00.000Z', event: 'CONTRACT_ACTIVATED', description: 'Contrat actif.', actor: 'Système' },
+    { id: 'log-rpl-12', timestamp: '2026-09-20T09:00:00.000Z', event: 'CONTRACT_REPLACED', description: 'Contrat passé à REPLACED par la décision ADMIN du Claim clm-rpl-e2e.', actor: 'Superviseur' },
+  ],
+};
+const FIXTURE_RPL_SUCCESSOR_CONTRACT = {
+  ...FIXTURE_CONTRACT,
+  id: 'ctr-rpl-new',
+  status: 'DRAFT',
+  employeeId: 'usr-can-rpl',
+  employeeName: 'K. Houngbo',
+  employerSigned: false,
+  employeeSigned: false,
+  replacementId: 'rpl-e2e-2',
+  replacedContractId: 'ctr-rpl-src',
+  history: [
+    { id: 'log-rpl-4', timestamp: '2026-09-28T09:00:00.000Z', event: 'CONTRACT_CREATED', description: 'Contrat successeur préparé en brouillon depuis la Proposition acceptée prop-rpl-2.', actor: 'A. Gbian' },
+  ],
+};
+const FIXTURE_RPL_BASE = {
+  employerId: 'usr-emp-e2e',
+  employerName: 'A. Gbian',
+  openedAt: '2026-09-20T09:00:00.000Z',
+  createdAt: '2026-09-20T09:00:00.000Z',
+  updatedAt: '2026-09-25T09:00:00.000Z',
+};
+const FIXTURE_RPL_PENDING = { ...FIXTURE_RPL_BASE, id: 'rpl-e2e-0', incidentId: 'clm-rpl-0', claimId: 'clm-rpl-0', originalContractId: 'ctr-rpl-zero', status: 'PENDING_OFFER' };
+const FIXTURE_RPL_SELECTED = {
+  ...FIXTURE_RPL_BASE,
+  id: 'rpl-e2e-1',
+  incidentId: 'clm-rpl-e2e',
+  claimId: 'clm-rpl-e2e',
+  originalContractId: 'ctr-rpl-src1',
+  urgentOfferId: 'off-rpl-1',
+  urgentOfferTitle: 'Reprise entretien hebdomadaire',
+  selectedCandidateId: 'usr-can-rpl',
+  selectedCandidateName: 'K. Houngbo',
+  selectedApplicationId: 'app-rpl-1',
+  selectedProposalId: 'prop-rpl-1',
+  status: 'CANDIDATE_SELECTED',
+};
+const FIXTURE_RPL_FINALIZED = {
+  ...FIXTURE_RPL_SELECTED,
+  id: 'rpl-e2e-2',
+  incidentId: 'clm-rpl-2',
+  claimId: 'clm-rpl-2',
+  originalContractId: 'ctr-rpl-src',
+  selectedProposalId: 'prop-rpl-2',
+  newContractId: 'ctr-rpl-new',
+  status: 'CONTRACT_FINALIZED',
+};
+const FIXTURE_RPL_NEXT_PAGE = { ...FIXTURE_RPL_BASE, id: 'rpl-e2e-3', incidentId: 'clm-rpl-3', claimId: 'clm-rpl-3', originalContractId: 'ctr-rpl-three', urgentOfferId: 'off-rpl-3', urgentOfferTitle: 'Reprise garde de nuit', status: 'SOURCING_CANDIDATES' };
+const FIXTURE_RPL_PROPOSAL_BASE = {
+  conversationId: 'conv-rpl', offerId: 'off-rpl-1', applicationId: 'app-rpl-1', employerId: 'usr-emp-e2e', employerName: 'A. Gbian',
+  employeeId: 'usr-can-rpl', employeeName: 'K. Houngbo', missionTitle: 'Reprise entretien hebdomadaire', amount: 120000, currency: 'XOF',
+  periodicity: 'MENSUELLE', startDate: '2026-10-01T00:00:00.000Z', durationMonths: 6, location: 'Abomey-Calavi', conditions: [],
+  sentAt: '2026-09-24T10:00:00.000Z', updatedAt: '2026-09-24T10:00:00.000Z',
+};
+const FIXTURE_RPL_PROPOSALS = [
+  { ...FIXTURE_RPL_PROPOSAL_BASE, id: 'prop-rpl-1', status: 'SENT' },
+  { ...FIXTURE_RPL_PROPOSAL_BASE, id: 'prop-rpl-2', status: 'ACCEPTED', contractId: 'ctr-rpl-new' },
+];
+const FIXTURE_RPL_SOURCE_PAYMENT = {
+  ...FIXTURE_SCHEDULED_PAYMENT,
+  paymentId: 'pay-rpl-src1',
+  contractId: 'ctr-rpl-src1',
+  idempotencyKey: 'IDEMPOTENCY_MUST_NOT_RENDER',
+};
+const FIXTURE_RPL_FINALIZED_SOURCE_PAYMENT = {
+  ...FIXTURE_SCHEDULED_PAYMENT,
+  paymentId: 'pay-rpl-src2',
+  contractId: 'ctr-rpl-src',
+  idempotencyKey: 'IDEMPOTENCY_MUST_NOT_RENDER',
+};
+const FIXTURE_RPL_CLAIM = {
+  ...FIXTURE_CLAIM,
+  claimId: 'clm-rpl-e2e',
+  contractId: 'ctr-rpl-src1',
+  type: 'CONTRACT_INCIDENT',
+  status: 'RESOLVED',
+  replacementId: 'rpl-e2e-1',
+  resolvedAt: '2026-09-20T09:00:00.000Z',
+  evidenceRequests: [],
+  restrictions: [],
+};
+
 let fixturePaymentRows: Record<string, unknown>[] = [FIXTURE_SALARY_PAYMENT, FIXTURE_FEE_PAYMENT, FIXTURE_SCHEDULED_PAYMENT];
 let fixtureClaimRows: Record<string, unknown>[] = [FIXTURE_CLAIM, FIXTURE_DECISION_CLAIM, FIXTURE_TERMINAL_CLAIM];
 type PaymentListMode = 'ready' | 'empty' | 'not-configured' | 'error';
@@ -470,6 +581,30 @@ try {
   let claimListCalls = 0;
   let claimDetailCalls = 0;
   const claimCommandRequests: Array<{ command: string; claimId: string; key: string; body: Record<string, unknown> }> = [];
+  // P4E-1 — état des fixtures Remplacement.
+  type ReplacementMode = 'ready' | 'not-configured' | 'error';
+  let replacementReadPermission = true;
+  let proposalReadPermission = true;
+  let replacementMode: ReplacementMode = 'ready';
+  let replacementScenario = false;
+  let replacementListCalls = 0;
+  let replacementDetailCalls = 0;
+  let replacementNextPageDelayMs = 0;
+  let proposalListCalls = 0;
+  const replacementCursors: Array<string | null> = [];
+  const replacementMutations: string[] = [];
+  const resetReplacementFixtures = () => {
+    replacementReadPermission = true;
+    proposalReadPermission = true;
+    replacementMode = 'ready';
+    replacementScenario = false;
+    replacementListCalls = 0;
+    replacementDetailCalls = 0;
+    replacementNextPageDelayMs = 0;
+    proposalListCalls = 0;
+    replacementCursors.length = 0;
+    replacementMutations.length = 0;
+  };
   let paymentListDelayMs = 0;
   let approveFailureCount = 0;
   let approveDelayMs = 0;
@@ -542,14 +677,79 @@ try {
                 ...(claimActionPermissions === 'all' ? ['incidents:arbitrate'] : []),
                 ...(paymentReadPermission ? ['payments:read:any'] : []),
                 ...(paymentActionPermissions === 'all' ? ['payments:approve', 'payments:reject'] : []),
+                ...(replacementReadPermission ? ['replacements:read:any'] : []),
+                ...(proposalReadPermission ? ['applications:read:any'] : []),
               ]
             : [],
         }),
       });
       return;
     }
+    // P4E-1 — toute écriture vers un Remplacement serait une commande inventée.
+    if (/\/api\/v1\/(admin\/)?replacements/.test(url.pathname) && method !== 'GET') {
+      replacementMutations.push(`${method} ${url.pathname}`);
+      await route.fulfill({ status: 405, contentType: 'application/json', body: JSON.stringify({ error: { code: 'METHOD_NOT_ALLOWED', message: SERVER_SECRET, requestId: SERVER_REQUEST_ID } }) });
+      return;
+    }
+    if (url.pathname === '/api/v1/admin/replacements' && method === 'GET') {
+      replacementListCalls += 1;
+      const cursor = url.searchParams.get('cursor');
+      replacementCursors.push(cursor);
+      if (!replacementReadPermission) {
+        await route.fulfill({ status: 403, contentType: 'application/json', body: JSON.stringify({ error: { code: 'FORBIDDEN', message: SERVER_SECRET, requestId: SERVER_REQUEST_ID } }) });
+        return;
+      }
+      if (replacementMode === 'error') {
+        await route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: { code: 'INTERNAL', message: SERVER_SECRET, requestId: SERVER_REQUEST_ID } }) });
+        return;
+      }
+      if (replacementMode === 'not-configured') {
+        await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ items: [], cursor: null, limit: 100, hasMore: false, persistence: 'not-configured' }) });
+        return;
+      }
+      if (cursor === 'rpl-e2e-2') {
+        if (replacementNextPageDelayMs > 0) await new Promise((resolveDelay) => setTimeout(resolveDelay, replacementNextPageDelayMs));
+        await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ items: [FIXTURE_RPL_NEXT_PAGE], cursor: null, limit: 100, hasMore: false }) });
+        return;
+      }
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ items: [FIXTURE_RPL_PENDING, FIXTURE_RPL_SELECTED, FIXTURE_RPL_FINALIZED], cursor: 'rpl-e2e-2', limit: 100, hasMore: true }) });
+      return;
+    }
+    if (url.pathname.startsWith('/api/v1/admin/replacements/') && method === 'GET') {
+      replacementDetailCalls += 1;
+      const replacementId = decodeURIComponent(url.pathname.split('/').at(-1) ?? '');
+      if (!replacementReadPermission) {
+        await route.fulfill({ status: 403, contentType: 'application/json', body: JSON.stringify({ error: { code: 'FORBIDDEN', message: SERVER_SECRET, requestId: SERVER_REQUEST_ID } }) });
+        return;
+      }
+      if (replacementMode === 'error') {
+        await route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: { code: 'INTERNAL', message: SERVER_SECRET, requestId: SERVER_REQUEST_ID } }) });
+        return;
+      }
+      const dossier = [FIXTURE_RPL_PENDING, FIXTURE_RPL_SELECTED, FIXTURE_RPL_FINALIZED, FIXTURE_RPL_NEXT_PAGE].find((item) => item.id === replacementId);
+      if (!dossier) {
+        await route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ error: { code: 'NOT_FOUND', message: 'Remplacement absent de la fixture.', requestId: SERVER_REQUEST_ID } }) });
+        return;
+      }
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(dossier) });
+      return;
+    }
+    if (url.pathname === '/api/v1/admin/proposals' && method === 'GET') {
+      proposalListCalls += 1;
+      if (!proposalReadPermission) {
+        await route.fulfill({ status: 403, contentType: 'application/json', body: JSON.stringify({ error: { code: 'FORBIDDEN', message: SERVER_SECRET, requestId: SERVER_REQUEST_ID } }) });
+        return;
+      }
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ items: FIXTURE_RPL_PROPOSALS, cursor: null, limit: 100, hasMore: false }) });
+      return;
+    }
+    if (url.pathname === '/api/v1/admin/claims/clm-rpl-e2e' && method === 'GET') {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(FIXTURE_RPL_CLAIM) });
+      return;
+    }
     if (url.pathname === '/api/v1/admin/contracts') {
-      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ items: [FIXTURE_CONTRACT], cursor: null, limit: 100, hasMore: false }) });
+      const items = replacementScenario ? [FIXTURE_CONTRACT, FIXTURE_RPL_SELECTED_SOURCE_CONTRACT, FIXTURE_RPL_SOURCE_CONTRACT, FIXTURE_RPL_SUCCESSOR_CONTRACT] : [FIXTURE_CONTRACT];
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ items, cursor: null, limit: 100, hasMore: false }) });
       return;
     }
     if (url.pathname === '/api/v1/admin/claims' && method === 'GET') {
@@ -789,7 +989,7 @@ try {
     assert.ok(!text.includes(SERVER_SECRET), `${label} : message serveur brut rendu`);
   };
 
-  /* ── 1. Aucune source de données configurée : 29 fiches, deux largeurs ── */
+  /* ── 1. Aucune source de données configurée : toutes les fiches livrées, deux largeurs ── */
   const demo = await startApp('demo');
   demoServer = demo.server;
   for (const width of [360, 1440]) {
@@ -1259,6 +1459,208 @@ try {
     assert.equal(claimDetailCalls, 0, 'un compte Employeur ne doit jamais appeler la lecture ADMIN Claim');
     await assertNoForbiddenText('/admin/litiges refusé', await page.locator('[data-state="403"]').innerText());
     sessionMode = 'admin';
+  });
+
+  /* ── P4E-1 · Remplacements (lecture seule) ── */
+
+  await check('ADM-31 — file réelle des Remplacements : statuts serveur, filtre/recherche locaux au clavier, curseur single-flight, aucune commande', async () => {
+    sessionMode = 'admin';
+    resetReplacementFixtures();
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await page.goto(api.origin + '/admin/remplacements');
+    await page.reload();
+    await page.locator('[data-screen="ADM-31"]').waitFor();
+    await page.getByText('rpl-e2e-1', { exact: true }).first().waitFor();
+    let text = await screenText();
+    assert.equal(replacementListCalls, 1, 'une seule page réelle doit alimenter la file');
+    assert.deepEqual(replacementCursors, [null], 'premier appel sans curseur');
+    for (const code of ['PENDING_OFFER', 'CANDIDATE_SELECTED', 'CONTRACT_FINALIZED']) assert.ok(text.includes(code), `statut serveur ${code} absent`);
+    assert.ok(says(text, 'Offre de remplacement à publier') && says(text, 'Contrat successeur créé'), 'libellés officiels absents');
+    assert.ok(says(text, '3 dossier(s) de Remplacement'), 'compte limité à la page chargée absent');
+    assert.ok(says(text, 'Aucun total global'), 'portée des repères non déclarée');
+    assert.ok(text.includes('K. Houngbo'), 'Candidat sélectionné réel absent');
+    assert.equal(await page.locator('[data-screen="ADM-31"] tbody tr').count(), 3, 'trois dossiers réels');
+    assert.equal(await page.locator('[data-screen="ADM-31"] a[href="/admin/litiges/clm-rpl-e2e"]').count(), 1, 'lien vers le Claim d’origine absent');
+    // Filtre d'état au clavier.
+    const select = page.getByLabel('Filtrer par statut de Remplacement');
+    await select.focus();
+    await select.selectOption('CANDIDATE_SELECTED');
+    assert.equal(await page.locator('[data-screen="ADM-31"] tbody tr').count(), 1, 'filtre local par statut');
+    await select.selectOption('all');
+    await page.getByLabel('Rechercher un Remplacement dans les pages chargées').fill('ctr-rpl-zero');
+    assert.equal(await page.locator('[data-screen="ADM-31"] tbody tr').count(), 1, 'recherche locale');
+    await page.getByLabel('Rechercher un Remplacement dans les pages chargées').fill('');
+    // Page suivante : double activation pendant le chargement = une seule requête.
+    replacementNextPageDelayMs = 400;
+    const more = page.getByRole('button', { name: 'Charger la page suivante' });
+    await more.focus();
+    await page.keyboard.press('Enter');
+    await more.click({ force: true }).catch(() => undefined);
+    await page.getByText('rpl-e2e-3', { exact: true }).first().waitFor();
+    assert.deepEqual(replacementCursors, [null, 'rpl-e2e-2'], 'curseur officiel utilisé une seule fois (single-flight)');
+    assert.equal(await page.locator('[data-screen="ADM-31"] tbody tr').count(), 4, 'page suivante ajoutée');
+    assert.equal(await page.getByRole('button', { name: 'Charger la page suivante' }).count(), 0, 'plus de page annoncée par le serveur');
+    text = await screenText();
+    assert.ok(!text.includes(SERVER_SECRET), 'aucun message serveur brut');
+    assert.equal(await page.locator('[data-screen="ADM-31"] form').count(), 0, 'aucun formulaire de commande');
+    assert.ok(await page.locator('[data-backend-gap="true"]').first().isVisible(), 'BACKEND_GAP ADM-31 absent');
+    assert.deepEqual(replacementMutations, [], 'aucune commande Remplacement envoyée');
+    await assertNoForbiddenText('/admin/remplacements', text);
+    await page.setViewportSize({ width: 360, height: 900 });
+    const overflowing = await page.evaluate(() =>
+      [...document.querySelectorAll('[data-screen="ADM-31"] *')]
+        .filter((element) => element.getBoundingClientRect().right > innerWidth + 1 && !element.closest('.lbm-admin__table-wrap'))
+        .slice(0, 5)
+        .map((element) => `${element.tagName.toLowerCase()}.${element.className}`),
+    );
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `débordement horizontal ADM-31 à 360 px : ${overflowing.join(' | ')}`);
+  });
+
+  await check('ADM-32 — dossier CANDIDATE_SELECTED : Claim, Contrat source REPLACED, Proposition envoyée ≠ acceptée, Paiements du Contrat source non transférés', async () => {
+    sessionMode = 'admin';
+    resetReplacementFixtures();
+    resetPaymentFixtures();
+    replacementScenario = true;
+    fixturePaymentRows = [...fixturePaymentRows, FIXTURE_RPL_SOURCE_PAYMENT];
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await page.goto(api.origin + '/admin/remplacements/rpl-e2e-1');
+    await page.reload();
+    await page.locator('[data-screen="ADM-32"]').waitFor();
+    for (const block of ['claim', 'contracts', 'proposal', 'payments']) {
+      await page.locator(`[data-block="${block}"][data-block-state="ready"]`).waitFor();
+    }
+    const text = await screenText();
+    assert.ok(text.includes('rpl-e2e-1') && text.includes('clm-rpl-e2e') && text.includes('ctr-rpl-src1'), 'références réelles du dossier absentes');
+    assert.ok(text.includes('CONTRACT_INCIDENT') && says(text, 'Contrat du Claim = Contrat source'), 'Claim d’origine non composé');
+    assert.ok(text.includes('REPLACED') && text.includes('CONTRACT_REPLACED'), 'Contrat source REPLACED / historique absent');
+    assert.ok(says(text, 'Envoyée — réponse du Candidat attendue') && text.includes('SENT'), 'Proposition SENT non distinguée');
+    assert.ok(!says(text, 'Acceptée par le Candidat'), 'une Proposition envoyée ne doit pas être présentée comme acceptée');
+    const steps = await page.locator('[data-screen="ADM-32"] .lbm-admin__timeline li').evaluateAll((items) => items.map((item) => item.getAttribute('data-done')));
+    assert.deepEqual(steps, ['true', 'true', 'true', 'true', 'true', 'false', 'false', 'false'], 'déroulé : acceptation non déduite');
+    assert.ok(says(text, 'l’Employeur émet la Proposition ; le Candidat y répond explicitement'), 'acteur de l’étape suivante absent');
+    assert.ok(text.includes('pay-rpl-src1'), 'Paiement réel du Contrat source absent');
+    assert.ok(!text.includes('pay-rpl-src2'), 'Paiement d’un autre Contrat source rattaché à tort');
+    assert.ok(says(text, 'Aucun Contrat successeur : aucun Paiement ne peut lui être rattaché'), 'absence de successeur non dite');
+    assert.equal(await page.locator('[data-no-payment-transfer="true"]').count(), 1, 'absence de transfert de Paiement non affichée');
+    assert.ok(!text.includes('IDEMPOTENCY_MUST_NOT_RENDER'), 'clé d’idempotence rendue');
+    assert.ok(!text.includes('pay-salary-e2e'), 'Paiement d’un autre Contrat rattaché à tort');
+    assert.equal(await page.locator('[data-screen="ADM-32"] form').count(), 0, 'aucun formulaire');
+    assert.equal(await page.locator('[data-screen="ADM-32"] table thead th[scope="col"]').count() > 0, true, 'tables non sémantiques');
+    assert.deepEqual(replacementMutations, [], 'aucune commande Remplacement envoyée');
+    await assertNoForbiddenText('/admin/remplacements/rpl-e2e-1', text);
+    await page.setViewportSize({ width: 360, height: 900 });
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'débordement horizontal ADM-32 à 360 px');
+    resetPaymentFixtures();
+    resetReplacementFixtures();
+  });
+
+  await check('ADM-32 — dossier CONTRACT_FINALIZED : Contrat successeur distinct en DRAFT (non actif), Proposition acceptée, Paiements séparés par Contrat', async () => {
+    sessionMode = 'admin';
+    resetReplacementFixtures();
+    resetPaymentFixtures();
+    replacementScenario = true;
+    fixturePaymentRows = [...fixturePaymentRows, FIXTURE_RPL_SOURCE_PAYMENT, FIXTURE_RPL_FINALIZED_SOURCE_PAYMENT];
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await page.goto(api.origin + '/admin/remplacements/rpl-e2e-2');
+    await page.locator('[data-screen="ADM-32"]').waitFor();
+    for (const block of ['contracts', 'proposal', 'payments']) {
+      await page.locator(`[data-block="${block}"][data-block-state="ready"]`).waitFor();
+    }
+    const text = await screenText();
+    assert.ok(text.includes('ctr-rpl-new') && text.includes('DRAFT'), 'Contrat successeur réel absent');
+    assert.equal(await page.locator('[data-successor-inactive="DRAFT"]').count(), 1, 'Contrat successeur DRAFT non signalé comme non actif');
+    assert.ok(says(text, 'Acceptée par le Candidat') && text.includes('ACCEPTED'), 'Proposition acceptée absente');
+    const steps = await page.locator('[data-screen="ADM-32"] .lbm-admin__timeline li').evaluateAll((items) => items.map((item) => item.getAttribute('data-done')));
+    assert.deepEqual(steps, ['true', 'true', 'true', 'true', 'true', 'true', 'true', 'false'], 'DRAFT ≠ actif dans le déroulé');
+    assert.ok(says(text, 'Aucun Paiement du Contrat successeur dans la page chargée'), 'Paiements du successeur : aucun transfert');
+    assert.ok(text.includes('pay-rpl-src2') && !text.includes('pay-rpl-src1'), 'Paiements du Contrat source restent rattachés à leur seul Contrat');
+    assert.ok(text.includes('REPLACEMENT_SUCCESSOR_LINKED'), 'historique de liaison absent');
+    assert.equal(await page.locator('a[href="/admin/contrats/ctr-rpl-new"]').count(), 1, 'lien vers la fiche du Contrat successeur absent');
+    assert.deepEqual(replacementMutations, [], 'aucune commande Remplacement envoyée');
+    await assertNoForbiddenText('/admin/remplacements/rpl-e2e-2', text);
+    resetPaymentFixtures();
+    resetReplacementFixtures();
+  });
+
+  await check('ADM-32 — permissions par bloc : lectures non permises non appelées, état dit, aucun échec global', async () => {
+    sessionMode = 'admin';
+    resetReplacementFixtures();
+    resetPaymentFixtures();
+    proposalReadPermission = false;
+    paymentReadPermission = false;
+    paymentListCalls = 0;
+    await page.goto(api.origin + '/admin/remplacements/rpl-e2e-1');
+    await page.reload();
+    await page.locator('[data-screen="ADM-32"]').waitFor();
+    await page.locator('[data-permission-missing="applications:read:any"]').waitFor();
+    await page.locator('[data-permission-missing="payments:read:any"]').waitFor();
+    assert.equal(proposalListCalls, 0, 'admin.proposals.list ne doit pas être appelée sans applications:read:any');
+    assert.equal(paymentListCalls, 0, 'admin.payments.list ne doit pas être appelée sans payments:read:any');
+    await page.locator('[data-block="claim"]').waitFor();
+    resetPaymentFixtures();
+    resetReplacementFixtures();
+  });
+
+  await check('ADM-33 — arbitrage : capacité absente, aucun formulaire ni commande, dossier réel seulement', async () => {
+    sessionMode = 'admin';
+    resetReplacementFixtures();
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto(api.origin + '/admin/remplacements/rpl-e2e-2/arbitrage');
+    await page.locator('[data-screen="ADM-33"]').waitFor();
+    await page.getByText('CONTRACT_FINALIZED', { exact: true }).first().waitFor();
+    const text = await screenText();
+    assert.ok(says(text, 'indisponible') && says(text, 'aucune saisie'), 'indisponibilité non dite');
+    assert.equal(await page.locator('[data-screen="ADM-33"] form, [data-screen="ADM-33"] textarea, [data-screen="ADM-33"] input').count(), 0, 'aucun formulaire d’arbitrage');
+    assert.equal(await page.locator('[data-screen="ADM-33"] button').filter({ hasNotText: /Actualiser/ }).count(), 0, 'aucun bouton de commande');
+    assert.ok(await page.locator('[data-backend-gap="true"]').first().isVisible(), 'BACKEND_GAP ADM-33 absent');
+    assert.equal(await page.locator('[data-screen="ADM-33"] [data-no-payment-transfer="true"]').count(), 1, 'aucune écriture financière : non dit');
+    assert.deepEqual(replacementMutations, [], 'aucune commande Remplacement envoyée');
+    await assertNoForbiddenText('/admin/remplacements/rpl-e2e-2/arbitrage', text);
+    await page.setViewportSize({ width: 360, height: 900 });
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'débordement horizontal ADM-33 à 360 px');
+  });
+
+  await check('ADM-31/32/33 — refus : 403 sans replacements:read:any et pour un Employeur, aucune lecture ADMIN appelée', async () => {
+    resetReplacementFixtures();
+    sessionMode = 'admin';
+    replacementReadPermission = false;
+    for (const path of ['/admin/remplacements', '/admin/remplacements/rpl-e2e-1', '/admin/remplacements/rpl-e2e-1/arbitrage']) {
+      await page.goto(api.origin + path);
+      await page.reload();
+      await page.locator('[data-state="403"]').waitFor();
+    }
+    assert.equal(replacementListCalls + replacementDetailCalls, 0, 'aucune lecture sans permission replacements:read:any');
+    resetReplacementFixtures();
+    sessionMode = 'employer';
+    await page.goto(api.origin + '/admin/remplacements');
+    await page.reload();
+    await page.locator('[data-state="403"]').waitFor();
+    assert.equal(replacementListCalls, 0, 'un compte Employeur ne doit jamais appeler la file ADMIN');
+    await assertNoForbiddenText('/admin/remplacements refusé', await page.locator('[data-state="403"]').innerText());
+    sessionMode = 'admin';
+    resetReplacementFixtures();
+  });
+
+  await check('ADM-31/32 — frontière not-configured, erreur 500 (corrélation seule), dossier 404 : états honnêtes', async () => {
+    sessionMode = 'admin';
+    resetReplacementFixtures();
+    replacementMode = 'not-configured';
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto(api.origin + '/admin/remplacements');
+    await page.reload();
+    await page.locator('[data-screen="ADM-31"]').waitFor();
+    await page.getByText(/frontière de contrôle sans persistance métier/).waitFor();
+    assert.equal(await page.locator('[data-screen="ADM-31"] tbody tr').count(), 0, 'aucune ligne inventée sans persistance');
+    replacementMode = 'error';
+    await page.reload();
+    await page.locator('[data-state="500"]').waitFor();
+    const errorText = await page.locator('[data-state="500"]').innerText();
+    assert.ok(!errorText.includes(SERVER_SECRET), 'message serveur brut rendu');
+    assert.ok(errorText.includes(SERVER_REQUEST_ID), 'corrélation serveur absente');
+    replacementMode = 'ready';
+    await page.goto(api.origin + '/admin/remplacements/rpl-absent');
+    await page.locator('[data-state="404"]').waitFor();
+    resetReplacementFixtures();
   });
 
   await check('ADM — refus non-ADMIN sur la route Paiement : aucune lecture ADMIN ni accès partie contourné', async () => {

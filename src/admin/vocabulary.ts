@@ -22,7 +22,22 @@
  *                            l’Employeur, confirmation OTP réservée au Candidat)
  *   fiche « Preuves OTP »  → produit : preuve de réception du Salaire, examinée
  *                            sans jamais exposer un secret (aucun renommage)
- *   fiche « Remplacement » → produit REPLACEMENT / « Remplacement »
+ *   fiche « Remplacement » → produit REPLACEMENT / « Remplacement » (dossier
+ *                            persistant ReplacementDossier ; statuts réels
+ *                            PENDING_OFFER / SOURCING_CANDIDATES /
+ *                            CANDIDATE_SELECTED / TRANSFERRED_TO_EMPLOYER /
+ *                            CONTRACT_FINALIZED, jamais renommés)
+ *   fiche « prestataire sortant » → produit : Candidat du Contrat source
+ *   fiche « remplaçant » / « entrant » → produit : Candidat sélectionné
+ *                            (Candidature puis Proposition acceptée)
+ *   fiche « mission » d'un remplacement → produit : Offre de remplacement
+ *   fiche « motif » d'un remplacement → produit : Claim d'origine (type et
+ *                            motif lus sur le Claim, jamais recopiés)
+ *   fiche « bascule » / « contrat successeur » → produit : Contrat successeur
+ *                            (nouveau Contrat, cycle normal de signature)
+ *   fiche états « notification, contestation, recherche, bascule, clôturé »
+ *                            → AUCUN équivalent produit : non affichés comme
+ *                            statuts (BACKEND_GAP documenté)
  *   fiche « Matching »     → produit MATCHING / « Matching »
  *   fiche « Document »     → produit DOCUMENT / « Document »
  *   fiche « Qualification »→ produit QUALIFICATION / « Qualification » (moteur
@@ -36,7 +51,7 @@
  * restent ceux du produit (`ACTIVE`, `BLOCKED`, `HUMAN_REVIEW_REQUIRED`…).
  */
 
-import type { ContractStatus, UserRole } from '../types';
+import type { ContractStatus, ProposalStatus, ReplacementDossier, UserRole } from '../types';
 import type { ServerUserRecord } from '../backend/identity/stores';
 import type { QualificationDecision, QualificationReasonSeverity } from '../backend/matching/records';
 import type {
@@ -457,4 +472,73 @@ export const ADMIN_UI_TERMS = {
   CLAIM_EVIDENCE: `Justificatifs du ${PRODUCT_LABELS.CLAIM.singular.toLowerCase()}`,
   CLAIM_DECISION: `Décision ADMIN du ${PRODUCT_LABELS.CLAIM.singular.toLowerCase()}`,
   CLAIM_DECISION_HISTORY: `Décisions des ${PRODUCT_LABELS.CLAIM.plural.toLowerCase()}`,
+  REPLACEMENT_REGISTRY: PRODUCT_LABELS.REPLACEMENT.plural,
+  REPLACEMENT_SHEET: `Dossier de ${PRODUCT_LABELS.REPLACEMENT.singular}`,
+  REPLACEMENT_ARBITRATION: `Arbitrage du ${PRODUCT_LABELS.REPLACEMENT.singular}`,
 } as const;
+
+/* ── P4E-1 · workflow de Remplacement (lecture seule) ─────────────────────
+ * Statuts RÉELS du dossier (`REPLACEMENT_STATUS_VALUES`,
+ * src/backend/replacements/records.ts ; parité vérifiée par test). Les codes
+ * restent ceux du serveur — y compris le nom historique
+ * TRANSFERRED_TO_EMPLOYER, posé par `acceptProposal` lorsque le Candidat a
+ * accepté la Proposition — et sont affichés à côté de chaque libellé.
+ * CONTRACT_FINALIZED signifie qu'un Contrat successeur DISTINCT a été créé et
+ * lié (brouillon au départ) : ce n'est jamais un Contrat actif.
+ */
+
+export type ReplacementStatus = ReplacementDossier['status'];
+
+export const REPLACEMENT_STATUS_LABELS: Record<ReplacementStatus, string> = {
+  PENDING_OFFER: 'Offre de remplacement à publier',
+  SOURCING_CANDIDATES: 'Offre publiée — Candidatures ouvertes',
+  CANDIDATE_SELECTED: 'Candidat sélectionné',
+  TRANSFERRED_TO_EMPLOYER: 'Proposition acceptée par le Candidat',
+  CONTRACT_FINALIZED: 'Contrat successeur créé',
+};
+
+export const REPLACEMENT_STATUS_TONES: Record<ReplacementStatus, 'amber' | 'violet' | 'gold' | 'cyan'> = {
+  PENDING_OFFER: 'amber',
+  SOURCING_CANDIDATES: 'violet',
+  CANDIDATE_SELECTED: 'violet',
+  TRANSFERRED_TO_EMPLOYER: 'gold',
+  CONTRACT_FINALIZED: 'cyan',
+};
+
+/**
+ * Acteur de l'étape suivante, tel que FIXÉ par les handlers existants (aucune
+ * commande ADMIN n'existe dans le workflow une fois le dossier ouvert) :
+ *  - PENDING_OFFER : `replacements.offer.create` (rôle EMPLOYER, propriétaire) ;
+ *  - SOURCING_CANDIDATES : Candidature du Candidat, sélection SHORTLIST par
+ *    l'Employeur (`selectApplication`, atomique) ;
+ *  - CANDIDATE_SELECTED : Proposition émise par l'Employeur, puis réponse
+ *    explicite du Candidat (ACCEPT / DECLINE / EXPIRE) ;
+ *  - TRANSFERRED_TO_EMPLOYER : création du Contrat successeur par l'Employeur ;
+ *  - CONTRACT_FINALIZED : signatures et activation par le cycle normal du Contrat.
+ */
+export const REPLACEMENT_NEXT_STEP: Record<ReplacementStatus, string> = {
+  PENDING_OFFER: 'L’Employeur propriétaire publie l’Offre de remplacement.',
+  SOURCING_CANDIDATES: 'Les Candidats postulent à l’Offre ; l’Employeur sélectionne une Candidature.',
+  CANDIDATE_SELECTED: 'L’Employeur émet la Proposition ; le Candidat y répond explicitement.',
+  TRANSFERRED_TO_EMPLOYER: 'L’Employeur crée le Contrat successeur depuis la Proposition acceptée.',
+  CONTRACT_FINALIZED: 'Le Contrat successeur suit son cycle normal : signatures puis activation.',
+};
+
+/** Statuts réels de Proposition (`PROPOSAL_STATUS_VALUES`) ; envoyée ≠ acceptée. */
+export const PROPOSAL_STATUS_LABELS: Record<ProposalStatus, string> = {
+  DRAFT: 'Brouillon',
+  SENT: 'Envoyée — réponse du Candidat attendue',
+  REVISION_REQUESTED: 'Révision demandée',
+  ACCEPTED: 'Acceptée par le Candidat',
+  DECLINED: 'Refusée par le Candidat',
+  EXPIRED: 'Expirée',
+};
+
+export const PROPOSAL_STATUS_TONES: Record<ProposalStatus, 'slate' | 'violet' | 'amber' | 'emerald' | 'clay'> = {
+  DRAFT: 'slate',
+  SENT: 'violet',
+  REVISION_REQUESTED: 'amber',
+  ACCEPTED: 'emerald',
+  DECLINED: 'clay',
+  EXPIRED: 'slate',
+};

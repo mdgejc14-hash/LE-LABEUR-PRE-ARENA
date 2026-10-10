@@ -1,8 +1,8 @@
 /**
- * ADM —— registre des écrans livrés (16 unités, 29 fiches — tranches P4A,
- * P4B-1, P4B-2, P4C et P4D).
+ * ADM —— registre des écrans livrés (17 unités, 32 fiches — tranches P4A,
+ * P4B-1, P4B-2, P4C, P4D et P4E-1).
  *
- * Chaque code de fiche ADM-01 → ADM-24 et ADM-26 → ADM-30 livré par ces
+ * Chaque code de fiche ADM-01 → ADM-24 et ADM-26 → ADM-33 livré par ces
  * tranches est associé à l'écran qui le rend. Les variantes des fiches (mêmes
  * zones, état imposé par la route) réutilisent l'écran canonique, comme le
  * décrit le Master Design.
@@ -15,8 +15,11 @@
  * reste réservée au Candidat et l'ADMIN n'y accède pas (BACKEND_GAP).
  * P4D ajoute ADM-26 (file), ADM-27/28 (fiche & justificatifs) et ADM-29/30
  * (décision & consultation des Claims terminés), sans créer de route serveur.
- * Les unités Remplacements, réputation, documents, ops, sécurité et infra
- * restent hors tranche.
+ * P4E-1 ajoute l'unité « ADM — remplacements (file & arbitrage) » : ADM-31
+ * (file), ADM-32 (suivi détaillé) et ADM-33 (arbitrage, BACKEND_GAP), en
+ * lecture seule des routes admin.replacements.list/read existantes.
+ * Les unités réputation, documents, ops, sécurité et infra restent hors
+ * tranche.
  *
  * Ce module est le SEUL point d'entrée des routes `/admin/*` des tranches :
  * il résout la fiche depuis le chemin réel, applique la garde de session puis
@@ -58,6 +61,11 @@ import {
   Admin29ClaimDecision,
   Admin30ClaimDecisionHistory,
 } from './screens/claims';
+import {
+  Admin31ReplacementRegistry,
+  Admin32ReplacementSheet,
+  Admin33ReplacementArbitration,
+} from './screens/replacements';
 
 type AdminScreenComponent = (props: AdminUnitProps) => ReactNode;
 
@@ -92,6 +100,9 @@ export const ADMIN_SCREEN_COMPONENTS: Readonly<Record<string, AdminScreenCompone
   'ADM-28': Admin28ClaimEvidence,
   'ADM-29': Admin29ClaimDecision,
   'ADM-30': Admin30ClaimDecisionHistory,
+  'ADM-31': Admin31ReplacementRegistry,
+  'ADM-32': Admin32ReplacementSheet,
+  'ADM-33': Admin33ReplacementArbitration,
 };
 
 export function adminScreenCodes(): readonly string[] {
@@ -102,7 +113,8 @@ export function adminScreenCodes(): readonly string[] {
  * Rendu d'une route `/admin/*` rattachée à une unité ADM de la tranche. Le
  * chemin est résolu vers sa fiche ; sans fiche correspondante, l'appelant
  * garde la main (aucun écran n'est inventé pour une route non livrée). P4D
- * enregistre uniquement les routes ADM-26 à ADM-30 du Master exact.
+ * enregistre uniquement les routes ADM-26 à ADM-30 du Master exact ; P4E-1
+ * uniquement ADM-31 à ADM-33.
  */
 export function AdminScreen({
   unitId,

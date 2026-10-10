@@ -41,8 +41,14 @@
  * utilisent uniquement les routes admin.claims.* existantes ; les lacunes
  * de file, contenu probatoire et audit restent BACKEND_GAP → statut PARTIEL.
  *
- * Les autres unités ADM (Remplacements, réputation, documents, notifications,
- * ops, sécurité avancée, infra), FIN et RTC restent non intégrées.
+ * P4E-1-DESIGN-ADMIN-REPLACEMENTS : unité ADM-31 (file, suivi détaillé et
+ * arbitrage — 3 fiches ADM-31 → ADM-33) en lecture seule des routes
+ * admin.replacements.list/read existantes ; les commandes assign/transfer/
+ * finalize (sans handler), les statistiques, l'intervention et l'arbitrage
+ * restent BACKEND_GAP → statut PARTIEL.
+ *
+ * Les autres unités ADM (réputation, documents, notifications, ops, sécurité
+ * avancée, infra), FIN et RTC restent non intégrées.
  */
 
 import { PRODUCTION_UNITS, TOTAL_UNITS, UNIT_COUNTS_BY_FAMILY, type ProductionUnit } from '../design-system/generated/productionUnits';
@@ -78,8 +84,9 @@ export const PRESTATAIRE_UNIT_IDS: readonly string[] = PRESTATAIRE_DESIGN_UNITS.
 
 /**
  * Unités ADM livrées par P4A-DESIGN-ADMIN-CORE, P4B-1-DESIGN-ADMIN-CONTRACTS,
- * P4B-2-DESIGN-ADMIN-PAYMENTS, P4C-DESIGN-ADMIN-SALARY-PROOFS et
- * P4D-DESIGN-ADMIN-CLAIMS (16 unités, 29 fiches, dérivées du catalogue
+ * P4B-2-DESIGN-ADMIN-PAYMENTS, P4C-DESIGN-ADMIN-SALARY-PROOFS,
+ * P4D-DESIGN-ADMIN-CLAIMS et P4E-1-DESIGN-ADMIN-REPLACEMENTS (17 unités,
+ * 32 fiches, dérivées du catalogue
  * généré). Même règle : PARTIEL dès qu'une fiche déclare une capacité absente.
  */
 export const ADMIN_UNIT_IDS: readonly string[] = ADMIN_DESIGN_UNITS.map((unit) => unit.id);

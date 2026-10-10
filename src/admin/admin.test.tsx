@@ -1,12 +1,13 @@
 /**
  * P4A-DESIGN-ADMIN-CORE + P4B-1-DESIGN-ADMIN-CONTRACTS +
- * P4B-2-DESIGN-ADMIN-PAYMENTS + P4C-DESIGN-ADMIN-SALARY-PROOFS + P4D-DESIGN-ADMIN-CLAIMS — tests de l'espace supervision livré.
+ * P4B-2-DESIGN-ADMIN-PAYMENTS + P4C-DESIGN-ADMIN-SALARY-PROOFS + P4D-DESIGN-ADMIN-CLAIMS +
+ * P4E-1-DESIGN-ADMIN-REPLACEMENTS — tests de l'espace supervision livré.
  *
  * Couverture :
  *  1. parité du catalogue généré avec la source de design (Python) ;
  *  2. résolution de route : chaque fiche ADM des tranches est atteignable et
  *     rattachée à son unité (regroupement `units.py`, pas une plage numérique) ;
- *  3. registre complet (16 unités / 29 fiches), selon les regroupements canoniques exacts ;
+ *  3. registre complet (17 unités / 32 fiches), selon les regroupements canoniques exacts ;
  *  4. API : chaque chemin appelé existe déjà dans `routeContracts.ts` ;
  *  5. GARDE-FOU DE VOCABULAIRE : aucun libellé métier du Master Design
  *     (Mission, Client, Prestataire, Litige) ne peut entrer dans l'interface,
@@ -19,7 +20,8 @@
  *     (QUALIFICATION_DECISIONS) et options de revue réelles ;
  *  9. garde de session : seul un compte ADMIN actif ouvre l'espace ;
  * 10. intégration : unités ADMIN livrées = PARTIEL, EMP/PRE/PUB/SYS inchangés,
- *     ADM-26 → ADM-30 Claims seulement, autres ADM/FIN/RTC non intégrées ;
+ *     ADM-26 → ADM-30 Claims, ADM-31 → ADM-33 Remplacements seulement,
+ *     autres ADM/FIN/RTC non intégrées ;
  * 11. responsive, accessibilité (table sémantique) et reduced-motion (CSS) ;
  * 12. P4B-1 contrats : routes ADM réelles du registre et des Claims, statuts
  *     et types de Claim en parité exacte avec le serveur, segments du registre
@@ -37,6 +39,12 @@
  * 15. P4D Claims : parité exacte des 5 routes, unités Master, permissions,
  *     enums serveur, commande idempotente, seuls RESOLVE/REJECT, aucun champ
  *     probatoire opaque ni restriction hors scope dans l’interface.
+ * 16. P4E-1 Remplacements : unité exacte du Master (ADM-31/32/33), routes et
+ *     handlers ADMIN réels en lecture seule (list/read), parité des statuts
+ *     de Remplacement et de Proposition avec le serveur, aucune commande
+ *     assign/transfer/finalize/décision/Offre, Proposition envoyée ≠ acceptée,
+ *     Contrat successeur DRAFT ≠ actif, aucun transfert ni total de Paiement,
+ *     permissions par bloc, vocabulaire officiel et BACKEND_GAP explicites.
  */
 
 import React from 'react';
@@ -48,6 +56,7 @@ import { ADMIN_DESIGN_SCREENS, ADMIN_DESIGN_UNITS } from './catalog';
 import { ADMIN_UNIT_GAPS } from './gaps';
 import { adminGapsFor, resolveAdminScreen, unitForScreen } from './screenMap';
 import { ADMIN_SCREEN_COMPONENTS, AdminScreen } from './registry';
+import { replacementWorkflowSteps, REPLACEMENT_READ_PERMISSION } from './screens/replacements';
 import { AdminRouteFallback } from './RouteFallback';
 import { DataTable } from './components';
 import { DOCK_DEFINITIONS } from '../design-system/shells/shellNavigation';
@@ -74,12 +83,20 @@ import {
   PAYMENT_RECONCILIATION_BATCH_STATUS_LABELS,
   PAYMENT_RECONCILIATION_ITEM_STATUS_LABELS,
   PAYMENT_RECONCILIATION_REVIEW_DECISION_LABELS,
+  PROPOSAL_STATUS_LABELS,
+  PROPOSAL_STATUS_TONES,
+  REPLACEMENT_NEXT_STEP,
+  REPLACEMENT_STATUS_LABELS,
+  REPLACEMENT_STATUS_TONES,
   ADMIN_UI_TERMS,
   formatContractAmount,
   formatPaymentAmount,
   maskEmail,
 } from './vocabulary';
 import { CLAIM_EVIDENCE_STATUS_VALUES, CLAIM_EVIDENCE_TYPE_VALUES, CLAIM_STATUS_VALUES, CLAIM_TYPE_VALUES } from '../backend/disputes/records';
+import { REPLACEMENT_STATUS_VALUES } from '../backend/replacements/records';
+import { ADMIN_PERMISSIONS } from '../backend/identity/permissions';
+import type { Contract, ReplacementDossier } from '../types';
 import { adminError } from './errors';
 import { adminGuard, type AdminSessionState } from './hooks';
 import { API_ROUTE_CONTRACTS } from '../backend/api/routeContracts';
@@ -180,11 +197,11 @@ export async function runAdminTests(): Promise<{ name: string; success: boolean;
     execFileSync('python3', ['scripts/design/generate-admin-catalog.py', '--check']);
   });
 
-  check('ADM — 16 unités / 29 fiches, chaque fiche rattachée à une seule unité', () => {
-    assert.equal(ADMIN_DESIGN_UNITS.length, 16);
-    assert.equal(ADMIN_DESIGN_SCREENS.length, 29);
+  check('ADM — 17 unités / 32 fiches, chaque fiche rattachée à une seule unité', () => {
+    assert.equal(ADMIN_DESIGN_UNITS.length, 17);
+    assert.equal(ADMIN_DESIGN_SCREENS.length, 32);
     const codes = ADMIN_DESIGN_SCREENS.map((screen) => screen.code);
-    assert.equal(new Set(codes).size, 29);
+    assert.equal(new Set(codes).size, 32);
     for (const screen of ADMIN_DESIGN_SCREENS) {
       const unit = unitForScreen(screen.code);
       assert.ok(unit, `fiche sans unité : ${screen.code}`);
@@ -198,7 +215,7 @@ export async function runAdminTests(): Promise<{ name: string; success: boolean;
     // P4C ajoute ADM-23 = {confirmations, preuves OTP}, unité unique salaire.
     // P4D conserve les groupements du Master : ADM-27 = {fiche, pièces},
     // ADM-29 = {décision, historique}; ADM-26 reste une unité distincte.
-    assert.deepEqual(ADMIN_DESIGN_UNITS.map((unit) => unit.id), ['ADM-01', 'ADM-02', 'ADM-04', 'ADM-06', 'ADM-08', 'ADM-10', 'ADM-11', 'ADM-13', 'ADM-14', 'ADM-16', 'ADM-18', 'ADM-20', 'ADM-23', 'ADM-26', 'ADM-27', 'ADM-29']);
+    assert.deepEqual(ADMIN_DESIGN_UNITS.map((unit) => unit.id), ['ADM-01', 'ADM-02', 'ADM-04', 'ADM-06', 'ADM-08', 'ADM-10', 'ADM-11', 'ADM-13', 'ADM-14', 'ADM-16', 'ADM-18', 'ADM-20', 'ADM-23', 'ADM-26', 'ADM-27', 'ADM-29', 'ADM-31']);
     assert.deepEqual(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-02')?.screenCodes, ['ADM-02', 'ADM-03']);
     assert.deepEqual(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-04')?.screenCodes, ['ADM-04', 'ADM-05']);
     assert.deepEqual(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-06')?.screenCodes, ['ADM-06', 'ADM-07']);
@@ -235,6 +252,14 @@ export async function runAdminTests(): Promise<{ name: string; success: boolean;
     assert.deepEqual(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-29')?.screenCodes, ['ADM-29', 'ADM-30']);
     assert.deepEqual(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-29')?.routes, ['/admin/litiges/:id/decision', '/admin/litiges/decisions']);
     assert.equal(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-29')?.canon, 'ADM — litige (décision)');
+    // P4E-1 : unité exacte « ADM — remplacements (file & arbitrage) » de units.py.
+    assert.deepEqual(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-31')?.screenCodes, ['ADM-31', 'ADM-32', 'ADM-33']);
+    assert.deepEqual(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-31')?.routes, [
+      '/admin/remplacements',
+      '/admin/remplacements/:id',
+      '/admin/remplacements/:id/arbitrage',
+    ]);
+    assert.equal(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-31')?.canon, 'ADM — remplacements (file & arbitrage)');
   });
 
   check('ADM — chaque route de fiche est résolue par le routeur P0 vers son unité', () => {
@@ -411,8 +436,8 @@ export async function runAdminTests(): Promise<{ name: string; success: boolean;
     }
   });
 
-  check('ADM — intégration : 16 unités ADM PARTIEL (P4A + P4B-1 + P4B-2 + P4C + P4D), EMP/PRE/PUB/SYS inchangés, autres ADM/FIN/RTC non intégrées', () => {
-    assert.equal(ADMIN_UNIT_IDS.length, 16);
+  check('ADM — intégration : 17 unités ADM PARTIEL (P4A + P4B-1 + P4B-2 + P4C + P4D + P4E-1), EMP/PRE/PUB/SYS inchangés, autres ADM/FIN/RTC non intégrées', () => {
+    assert.equal(ADMIN_UNIT_IDS.length, 17);
     for (const unitId of ADMIN_UNIT_IDS) {
       assert.equal(integrationStatus(unitId), 'PARTIEL', `${unitId} doit être PARTIEL`);
       assert.ok(isAdminUnit(unitId), `${unitId} doit être reconnue comme unité ADM`);
@@ -436,6 +461,7 @@ export async function runAdminTests(): Promise<{ name: string; success: boolean;
     assert.equal(integrationStatus('ADM-26'), 'PARTIEL', 'ADM-26 (file Claim) est livrée par P4D');
     assert.equal(integrationStatus('ADM-27'), 'PARTIEL', 'ADM-27/28 (dossier et justificatifs Claim) sont livrées par P4D');
     assert.equal(integrationStatus('ADM-29'), 'PARTIEL', 'ADM-29/30 (décision et Claims terminés) sont livrées par P4D');
+    assert.equal(integrationStatus('ADM-31'), 'PARTIEL', 'ADM-31/32/33 (file, suivi et arbitrage des Remplacements) sont livrées par P4E-1');
   });
 
   check('ADM — erreurs : projection en états StateGuard, corrélation sûre uniquement', () => {
@@ -965,7 +991,8 @@ export async function runAdminTests(): Promise<{ name: string; success: boolean;
       '/admin/litiges/clm-42/evidence',
       '/admin/litiges/clm-42/restrictions',
       '/admin/litiges/decisions/analytics',
-      '/admin/remplacements',
+      // `/admin/remplacements` n'est plus listé ici : la route est désormais
+      // livrée par P4E-1 (unité ADM-31) et vérifiée dans le bloc P4E-1.
     ]) {
       assert.equal(resolveAdminScreen(path), null, `${path} : aucun écran non livré ne doit être créé`);
     }
@@ -1075,6 +1102,202 @@ export async function runAdminTests(): Promise<{ name: string; success: boolean;
       assert.ok((ADMIN_UNIT_GAPS[code] ?? []).length > 0, `${code} doit conserver son BACKEND_GAP exact`);
     }
     assert.deepEqual(forbiddenTermsIn(stripTechnicalTokens(claimGaps)), [], 'vocabulaire de gap P4D');
+  });
+
+
+  /* ── P4E-1-DESIGN-ADMIN-REPLACEMENTS ── */
+
+  const REPLACEMENT_CODES = ['ADM-31', 'ADM-32', 'ADM-33'] as const;
+
+  check('ADM — P4E-1 : les trois routes P0 sont résolues vers l’unité exacte du Master et rendues par leur écran', () => {
+    const cases: readonly [string, string, Record<string, string>][] = [
+      ['/admin/remplacements', 'ADM-31', {}],
+      ['/admin/remplacements/rpl-42', 'ADM-32', { id: 'rpl-42' }],
+      ['/admin/remplacements/rpl-42/arbitrage', 'ADM-33', { id: 'rpl-42' }],
+    ];
+    for (const [path, code, params] of cases) {
+      const resolved = resolveAdminScreen(path);
+      assert.equal(resolved?.code, code, `${path} → fiche`);
+      assert.equal(resolved?.unitId, 'ADM-31', `${path} → unité Master`);
+      assert.deepEqual(resolved?.params, params, `${path} → paramètres`);
+      const route = resolveRoute(path);
+      assert.equal(route.kind, 'shell', `${path} : shell`);
+      if (route.kind === 'shell') {
+        assert.equal(route.shell, 'ADMIN', `${path} : espace ADMIN`);
+        assert.equal(route.unitId, 'ADM-31', `${path} : unité P0`);
+      }
+      assert.ok(ADMIN_SCREEN_COMPONENTS[code], `${code} : écran absent du registre`);
+    }
+    // Capacités du design absentes du produit : aucune route de fiche n'est inventée.
+    const replacementRoutes = ADMIN_DESIGN_SCREENS.filter((screen) => screen.route.startsWith('/admin/remplacements')).map((screen) => screen.route);
+    assert.deepEqual(replacementRoutes, ['/admin/remplacements', '/admin/remplacements/:id', '/admin/remplacements/:id/arbitrage']);
+    assert.ok(!replacementRoutes.some((route) => /reassign|stats|intervene|full|preview/.test(route)), 'aucune route inventée');
+    const catalogUnit = ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-31');
+    const productionUnit = PRODUCTION_UNITS.find((unit) => unit.id === 'ADM-31');
+    assert.ok(catalogUnit && productionUnit, 'ADM-31 : unité absente');
+    assert.deepEqual([...catalogUnit.routes].sort(), [...productionUnit.routes].sort(), 'ADM-31 : routes identiques au routeur P0');
+    assert.deepEqual(ADMIN_DESIGN_SCREENS.find((screen) => screen.code === 'ADM-32')?.variantOf, 'ADM-31');
+    const dock = DOCK_DEFINITIONS.ADM.map((item) => item.href);
+    assert.ok(!dock.some((href) => href.startsWith('/admin/remplacements')), 'le dock ADM n’est pas modifié par P4E-1');
+  });
+
+  check('ADM — P4E-1 : handlers ADMIN réels en lecture seule, permissions serveur, aucune commande appelée', () => {
+    const route = (key: string) => API_ROUTE_CONTRACTS.find((candidate) => candidate.key === key);
+    const reads = [
+      ['admin.replacements.list', '/api/v1/admin/replacements', 'replacements:read:any'],
+      ['admin.replacements.read', '/api/v1/admin/replacements/:replacementId', 'replacements:read:any'],
+      ['admin.proposals.list', '/api/v1/admin/proposals', 'applications:read:any'],
+    ] as const;
+    for (const [key, path, permission] of reads) {
+      const contract = route(key);
+      assert.ok(contract, `${key} absente du catalogue serveur`);
+      assert.equal(contract.method, 'GET', `${key} lecture`);
+      assert.equal(contract.path, path, `${key} chemin réel`);
+      assert.equal(contract.scope, 'admin', `${key} portée ADMIN`);
+      assert.equal(contract.permission, permission, `${key} permission existante`);
+      assert.ok(ADMIN_PERMISSIONS.includes(permission as never), `${permission} doit appartenir au rôle ADMIN`);
+      assert.ok(ADMIN_API_PATHS.includes(path), `${key} non utilisé par AdminApi`);
+    }
+    const repositorySource = readFileSync(new URL('../backend/replacements/replacementRepository.ts', import.meta.url), 'utf8');
+    const proposalSource = readFileSync(new URL('../backend/repositories/proposalRepository.ts', import.meta.url), 'utf8');
+    assert.ok(repositorySource.includes("'admin.replacements.list': async context => repository.listAdmin"), 'la file appelle listAdmin réel');
+    assert.ok(repositorySource.includes("'admin.replacements.read': async context => repository.get"), 'le dossier appelle get réel');
+    assert.ok(repositorySource.includes("Permission replacements:read:any requise."), 'la permission est revérifiée par le repository');
+    assert.ok(proposalSource.includes("'admin.proposals.list': async context => repository.getAdminProposals"), 'Propositions ADMIN : handler réel');
+    // Les commandes historiques restent sans handler et ne sont jamais appelées.
+    for (const key of ['admin.replacements.assign', 'admin.replacements.transfer', 'admin.replacements.finalize']) {
+      assert.ok(route(key), `${key} reste déclarée au catalogue (inchangé)`);
+      assert.ok(!repositorySource.includes(`'${key}'`), `${key} ne doit pas avoir de handler`);
+      assert.ok(!ADMIN_API_PATHS.includes(route(key)!.path), `${key} ne doit pas être exposée par AdminApi`);
+    }
+    const apiSource = stripComments(readFileSync(new URL('./api.ts', import.meta.url), 'utf8'));
+    const screenSource = stripComments(readFileSync(new URL('./screens/replacements.tsx', import.meta.url), 'utf8'));
+    for (const forbidden of [/\/assign\b/, /\/transfer\b/, /\/finalize\b/, /\/reassign\b/, /\/intervene\b/, /\/arbitrate\b/]) {
+      assert.ok(!forbidden.test(apiSource), `AdminApi ne doit pas appeler ${forbidden}`);
+      assert.ok(!forbidden.test(screenSource), `l’écran ne doit pas appeler ${forbidden}`);
+    }
+    for (const call of ['decideClaim', 'reviewClaim', 'requestClaimEvidence', 'newIdempotencyKey', 'idempotencyKey', 'method:', "'POST'", 'createOffer', 'offer.create', '/replacements/:replacementId/offer']) {
+      assert.ok(!screenSource.includes(call), `aucune commande dans replacements.tsx (${call})`);
+    }
+    assert.ok(!/<form\b|onSubmit/.test(screenSource), 'aucun formulaire de commande dans les écrans Remplacement');
+    assert.ok(!ADMIN_API_PATHS.some((path) => path.startsWith('/api/v1/replacements')), 'aucune route Employeur/Candidat de Remplacement n’est détournée');
+    assert.equal(REPLACEMENT_READ_PERMISSION, 'replacements:read:any');
+  });
+
+  await checkAsync('ADM — P4E-1 : appels AdminApi exacts (curseur, encodage), aucune clé d’idempotence', async () => {
+    const calls: { path: string; options?: Record<string, unknown> }[] = [];
+    const client = {
+      request: async (path: string, options?: Record<string, unknown>) => {
+        calls.push({ path, options });
+        return path.startsWith('/admin/replacements/') ? { id: 'rpl/a', status: 'PENDING_OFFER' } : { items: [], hasMore: false, cursor: null };
+      },
+    };
+    const api = new AdminApi(client as never);
+    await api.replacements({ limit: 100 });
+    await api.replacements({ limit: 100, cursor: 'rpl-9' });
+    await api.replacement('rpl/a');
+    await api.proposals({ limit: 100 });
+    assert.deepEqual(calls.map(({ path }) => path), ['/admin/replacements', '/admin/replacements', '/admin/replacements/rpl%2Fa', '/admin/proposals']);
+    assert.deepEqual(calls[0].options?.query, { limit: 100, cursor: null });
+    assert.deepEqual(calls[1].options?.query, { limit: 100, cursor: 'rpl-9' });
+    for (const call of calls) {
+      assert.equal(call.options?.method ?? 'GET', 'GET', `${call.path} : lecture uniquement`);
+      assert.equal(call.options?.idempotencyKey, undefined, `${call.path} : aucune commande`);
+      assert.equal(call.options?.body, undefined, `${call.path} : aucun corps`);
+    }
+  });
+
+  check('ADM — P4E-1 : statuts de Remplacement et de Proposition en parité exacte avec le serveur', () => {
+    assert.deepEqual(Object.keys(REPLACEMENT_STATUS_LABELS).sort(), [...REPLACEMENT_STATUS_VALUES].sort());
+    assert.deepEqual(Object.keys(REPLACEMENT_STATUS_TONES).sort(), [...REPLACEMENT_STATUS_VALUES].sort());
+    assert.deepEqual(Object.keys(REPLACEMENT_NEXT_STEP).sort(), [...REPLACEMENT_STATUS_VALUES].sort());
+    // Parité lue dans la source serveur (aucun import d'exécution de la persistance hors Worker).
+    const coreRecordsSource = readFileSync(new URL('../backend/persistence/coreRecords.ts', import.meta.url), 'utf8');
+    const proposalBlock = coreRecordsSource.match(/export const PROPOSAL_STATUS_VALUES = \[([\s\S]*?)\]/);
+    assert.ok(proposalBlock, 'PROPOSAL_STATUS_VALUES introuvable côté serveur');
+    const PROPOSAL_STATUS_VALUES = [...proposalBlock[1].matchAll(/'([A-Z_]+)'/g)].map((match) => match[1]);
+    assert.equal(PROPOSAL_STATUS_VALUES.length, 6, 'six statuts réels de Proposition');
+    assert.deepEqual(Object.keys(PROPOSAL_STATUS_LABELS).sort(), [...PROPOSAL_STATUS_VALUES].sort());
+    assert.deepEqual(Object.keys(PROPOSAL_STATUS_TONES).sort(), [...PROPOSAL_STATUS_VALUES].sort());
+    assert.notEqual(PROPOSAL_STATUS_LABELS.SENT, PROPOSAL_STATUS_LABELS.ACCEPTED, 'Proposition envoyée ≠ acceptée');
+    assert.ok(!/accept/i.test(PROPOSAL_STATUS_LABELS.SENT), 'SENT ne doit pas évoquer une acceptation');
+    assert.ok(/Candidat/.test(PROPOSAL_STATUS_LABELS.ACCEPTED), 'ACCEPTED = réponse explicite du Candidat');
+    assert.ok(!/actif/i.test(REPLACEMENT_STATUS_LABELS.CONTRACT_FINALIZED), 'CONTRACT_FINALIZED ≠ Contrat actif');
+    assert.equal(CONTRACT_STATUS_LABELS.REPLACED, 'Remplacé');
+    assert.equal(PRODUCT_LABELS.REPLACEMENT.singular, 'Remplacement');
+    assert.equal(ADMIN_UI_TERMS.REPLACEMENT_REGISTRY, 'Remplacements');
+    for (const status of REPLACEMENT_STATUS_VALUES) {
+      assert.deepEqual(forbiddenTermsIn(`${REPLACEMENT_STATUS_LABELS[status]} ${REPLACEMENT_NEXT_STEP[status]}`), [], `${status} : vocabulaire officiel`);
+      assert.ok(!/ADMIN/.test(REPLACEMENT_NEXT_STEP[status]), `${status} : aucune étape suivante attribuée à l’ADMIN`);
+    }
+  });
+
+  check('ADM — P4E-1 : déroulé construit depuis le dossier réel (envoyée ≠ acceptée, DRAFT ≠ actif, aucune date inventée)', () => {
+    const base: ReplacementDossier = {
+      id: 'rpl-1', incidentId: 'clm-1', claimId: 'clm-1', originalContractId: 'ctr-1', employerId: 'usr-e', employerName: 'Employeur',
+      status: 'PENDING_OFFER', openedAt: '2026-10-01T10:00:00.000Z', createdAt: '2026-10-01T10:00:00.000Z', updatedAt: '2026-10-01T10:00:00.000Z',
+    };
+    const done = (dossier: ReplacementDossier, successor: Contract | null = null) => replacementWorkflowSteps(dossier, successor).map((step) => step.done);
+    assert.deepEqual(done(base), [true, true, false, false, false, false, false, false], 'PENDING_OFFER : seules ouverture et REPLACED');
+    const sourcing = { ...base, status: 'SOURCING_CANDIDATES' as const, urgentOfferId: 'off-1', urgentOfferTitle: 'Offre' };
+    assert.deepEqual(done(sourcing), [true, true, true, false, false, false, false, false]);
+    const sent = { ...sourcing, status: 'CANDIDATE_SELECTED' as const, selectedApplicationId: 'app-1', selectedCandidateId: 'usr-c', selectedProposalId: 'prop-1' };
+    assert.deepEqual(done(sent), [true, true, true, true, true, false, false, false], 'Proposition envoyée : pas d’acceptation déduite');
+    const accepted = { ...sent, status: 'TRANSFERRED_TO_EMPLOYER' as const };
+    assert.deepEqual(done(accepted), [true, true, true, true, true, true, false, false]);
+    const finalized = { ...accepted, status: 'CONTRACT_FINALIZED' as const, newContractId: 'ctr-2' };
+    const draft = { id: 'ctr-2', status: 'DRAFT' } as Contract;
+    const active = { id: 'ctr-2', status: 'ACTIVE' } as Contract;
+    assert.deepEqual(done(finalized, draft), [true, true, true, true, true, true, true, false], 'Contrat successeur DRAFT ≠ actif');
+    assert.deepEqual(done(finalized, null), [true, true, true, true, true, true, true, false], 'statut du successeur non lu : jamais actif');
+    assert.deepEqual(done(finalized, active), [true, true, true, true, true, true, true, true]);
+    const steps = replacementWorkflowSteps(finalized, draft);
+    const datedSteps = steps.filter((step) => /\d{2}\/\d{2}\/\d{4}|\d{4}-\d{2}-\d{2}/.test(step.detail ?? ''));
+    assert.equal(datedSteps.length, 1, 'seule l’ouverture du dossier porte une date (renvoyée par le serveur)');
+    assert.deepEqual(forbiddenTermsIn(steps.map((step) => `${step.label} ${step.detail ?? ''}`).join(' ')), []);
+  });
+
+  check('ADM — P4E-1 : aucun transfert, total ou calcul de Paiement ; aucune donnée simulée ; champs techniques non affichés', () => {
+    const source = stripComments(readFileSync(new URL('./screens/replacements.tsx', import.meta.url), 'utf8'));
+    assert.ok(!/\.reduce\(|(?<!\p{L})sum(?!\p{L})|total\s*[:=+]|\+=/u.test(source), 'aucun total ni cumul de Paiement');
+    assert.ok(!/payment\.amount\s*[-+*/]/.test(source), 'aucun calcul monétaire');
+    assert.ok(source.includes('payment.contractId === contractId'), 'les Paiements sont filtrés par Contrat, jamais fusionnés');
+    assert.ok(source.includes('data-no-payment-transfer="true"'), 'l’absence de transfert de Paiement est affichée');
+    for (const field of ['idempotencyKey', 'metadata', 'payload', 'objectKey', 'secret', 'token', 'password']) {
+      assert.ok(!source.includes(field), `${field} ne doit pas être lu par l’écran`);
+    }
+    for (const fake of ['Math.random', 'faker', 'mock', 'demo', 'sample', 'lorem']) {
+      assert.ok(!source.toLowerCase().includes(fake.toLowerCase()), `aucune donnée simulée (${fake})`);
+    }
+    assert.ok(!/Date\.now\(|new Date\(\)/.test(source), 'aucune ancienneté ni échéance calculée dans le navigateur');
+    for (const permission of ['replacements:read:any', 'incidents:read:any', 'contracts:read:any', 'applications:read:any', 'payments:read:any']) {
+      assert.ok(source.includes(`'${permission}'`), `permission ${permission} vérifiée côté interface`);
+    }
+    assert.ok(source.includes('<SystemFeedback state="403" />'), 'accès refusé : état SYS 403');
+    assert.ok(source.includes("'not-configured'"), 'frontière de contrôle sans persistance affichée honnêtement');
+    assert.ok(source.includes('Hors page chargée'), 'un Contrat hors page n’est jamais relu par une route de partie');
+    assert.ok(!/api\.contract\(|contracts\.read|\/api\/v1\/contracts\//.test(source), 'aucune route de partie Contrat détournée');
+  });
+
+  check('ADM — P4E-1 : vocabulaire officiel et BACKEND_GAP explicites pour chaque fiche', () => {
+    const source = readFileSync(new URL('./screens/replacements.tsx', import.meta.url), 'utf8');
+    const displayed = displayStringsIn(stripComments(source)).join(' ');
+    assert.deepEqual(forbiddenTermsIn(displayed), [], 'aucun terme du Master non officiel affiché');
+    for (const label of FORBIDDEN_FINANCE_LABELS) assert.ok(!displayed.includes(label), `libellé financier interdit : ${label}`);
+    for (const code of REPLACEMENT_CODES) {
+      const gaps = ADMIN_UNIT_GAPS[code] ?? [];
+      assert.ok(gaps.length > 0, `${code} doit déclarer son BACKEND_GAP`);
+      assert.deepEqual(forbiddenTermsIn(stripTechnicalTokens(gaps.join(' '))), [], `${code} : vocabulaire de gap`);
+      for (const label of FORBIDDEN_FINANCE_LABELS) assert.ok(!gaps.join(' ').includes(label), `${code} : libellé financier interdit`);
+    }
+    const allGaps = REPLACEMENT_CODES.flatMap((code) => ADMIN_UNIT_GAPS[code] ?? []).join(' ');
+    for (const capability of ['/admin/replacements/stats', '/admin/replacements/:id/reassign', '/admin/replacements/:id/full', '/admin/replacements/:id/intervene', '/admin/replacements/:id/arbitrate']) {
+      assert.ok(allGaps.includes(capability), `capacité absente non déclarée : ${capability}`);
+      const declared = API_ROUTE_CONTRACTS.some((contract) => contract.path === `/api/v1${capability.replace(':id', ':replacementId')}`);
+      assert.equal(declared, false, `${capability} ne doit pas exister au catalogue serveur`);
+    }
+    assert.ok(/assign[\s\S]*transfer[\s\S]*finalize/.test(allGaps), 'commandes sans handler déclarées');
+    assert.ok(adminGapsFor('ADM-31', '/admin/remplacements/rpl-1/arbitrage').some((line) => line.startsWith('ADM-33')), 'les gaps ADM-33 sont servis sur sa route');
   });
 
   return results;
