@@ -8,6 +8,7 @@ import { isGoogleAuthAvailable, triggerGoogleSignInPrompt } from '../services/au
 import { Link, navigate } from '../routing/navigation';
 import { PUBLIC_SCREENS } from './catalog';
 import { PublicAuth, publicError, type PublicRole } from './auth';
+import { PUBLIC_AUTH_GAPS, type PublicAuthGapCode } from './gaps';
 import { SystemFeedback } from './SystemFeedback';
 import './public.css';
 
@@ -34,6 +35,15 @@ function ExitLinks() {
 function Notice({ children }: { children: ReactNode }) {
   return <GlassSurface level={1} className="lbm-public__notice"><p>{children}</p></GlassSurface>;
 }
+function BackendGap({ code }: { code: PublicAuthGapCode }) {
+  const gap = PUBLIC_AUTH_GAPS[code];
+  const id = `public-${code.toLowerCase()}-backend-gap`;
+  return <GlassSurface level={1} id={id} role="note" className="lbm-public__gap" data-backend-gap="true">
+    <p className="lbm-kicker">BACKEND_GAP · {code}</p>
+    <p className="lbm-body">{gap.explanation}</p>
+  </GlassSurface>;
+}
+function gapDescription(code: PublicAuthGapCode) { return `public-${code.toLowerCase()}-backend-gap`; }
 function Title({ children }: { children: ReactNode }) { return <h1 className="lbm-title">{children}</h1>; }
 
 function Splash() {
@@ -162,28 +172,31 @@ function Registration() {
   const role = storedRole();
   return <><Title>Ouvrons votre espace de travail.</Title>
     {role && <StatusSeal tone={role === 'EMPLOYER' ? 'gold' : 'emerald'} label={role === 'EMPLOYER' ? 'Client' : 'Prestataire'} />}
-    <Notice>L'inscription décrite ici nécessite la vérification du téléphone et l'enregistrement du consentement légal. Ces services ne sont pas disponibles dans cette version. Aucune donnée d'inscription n'est collectée.</Notice>
-    <NeoPressButton variant="primary" disabled>Créer mon compte</NeoPressButton>
+    <BackendGap code="PUB-05" />
+    <NeoPressButton variant="primary" disabled aria-describedby={gapDescription('PUB-05')}>Créer mon compte</NeoPressButton>
     <Link href="/onboarding/profil">Changer de profil</Link><Link href="/connexion">Déjà inscrit ? Se connecter</Link>
   </>;
 }
 function Otp() {
   return <><Title>Dernière étape.</Title>
-    <Notice>Aucune vérification OTP d'authentification n'est disponible dans cette version. Aucun code n'a été envoyé.</Notice>
-    <p className="lbm-body">LE LABEUR ne vous demandera jamais ce code par téléphone.</p>
-    <NeoPressButton variant="primary" disabled>Vérifier</NeoPressButton><Link href="/inscription">Changer de numéro</Link>
+    <BackendGap code="PUB-06" />
+    <p className="lbm-body">LE LABEUR ne vous demandera jamais un code de confirmation par téléphone.</p>
+    <NeoPressButton variant="primary" disabled aria-describedby={gapDescription('PUB-06')}>Vérifier</NeoPressButton><Link href="/inscription">Changer de numéro</Link>
   </>;
 }
 function Recovery() {
   return <><Title>Reprenons ensemble.</Title>
-    <Notice>La récupération par e-mail ou SMS n'est pas disponible dans cette version. Aucun lien n'a été envoyé.</Notice>
-    <NeoPressButton variant="primary" disabled>Envoyer le lien de récupération</NeoPressButton><Link href="/connexion">Retour connexion</Link>
+    <BackendGap code="PUB-07" />
+    <NeoPressButton variant="primary" disabled aria-describedby={gapDescription('PUB-07')}>Envoyer le lien de récupération</NeoPressButton><Link href="/connexion">Retour connexion</Link>
   </>;
 }
 function Legal() {
   return <><Title>CGU / Confidentialité</Title>
-    <Notice>Le document légal versionné n'est pas disponible dans cette version. Aucun texte, numéro de version ou consentement n'est simulé.</Notice>
-    <NeoPressButton variant="primary" disabled>Télécharger le PDF</NeoPressButton>
+    <BackendGap code="PUB-08" />
+    <div className="lbm-public__actions">
+      <NeoPressButton variant="primary" disabled aria-describedby={gapDescription('PUB-08')}>Accepter la version en vigueur</NeoPressButton>
+      <NeoPressButton variant="ghost" disabled aria-describedby={gapDescription('PUB-08')}>Télécharger le document</NeoPressButton>
+    </div>
   </>;
 }
 function Blocked() {

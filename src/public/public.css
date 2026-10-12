@@ -4,6 +4,8 @@
 .lbm-public__subtitle { font: inherit; font-weight: 600; color: var(--text-hi); }
 .lbm-public__notice { padding: var(--space-16); color: var(--text-mid); border-radius: var(--squircle-14); }
 .lbm-public__notice p { margin: 0; }
+.lbm-public__gap { padding: var(--space-16); border: 1px dashed var(--amber-500); border-radius: var(--squircle-14); display: grid; gap: var(--space-8); }
+.lbm-public__gap p { margin: 0; }
 .lbm-public__actions, .lbm-public__links { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-16); }
 .lbm-public__links { border-top: 1px solid var(--stroke-mid); padding-top: var(--space-24); }
 .lbm-public a { display: inline-flex; align-items: center; min-height: var(--touch-target-mobile); color: var(--text-gold); text-decoration: underline; text-underline-offset: 4px; }
