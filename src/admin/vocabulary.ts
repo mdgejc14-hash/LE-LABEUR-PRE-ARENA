@@ -482,6 +482,7 @@ export const ADMIN_UI_TERMS = {
   PAYMENT_INCIDENT: 'Incident de paiement',
   SALARY_CONFIRMATION_QUEUE: 'Confirmations de Salaire',
   SALARY_PROOF_REVIEW: 'Preuve de réception du Salaire',
+  SALARY_DISPUTES_CORRECTIONS: 'Salaire — contestations & corrections',
   CLAIM_REGISTRY: PRODUCT_LABELS.CLAIM.plural,
   CLAIM_SHEET: `Fiche ${PRODUCT_LABELS.CLAIM.singular}`,
   CLAIM_EVIDENCE: `Justificatifs du ${PRODUCT_LABELS.CLAIM.singular.toLowerCase()}`,

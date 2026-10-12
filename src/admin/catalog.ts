@@ -8,8 +8,9 @@
 // P4G-4 INFRASTRUCTURE (ADM-57 → ADM-58),
 // P4G-5A CONTRÔLES DE SÉCURITÉ (ADM-52 → ADM-54),
 // P4G-5B INCIDENTS & AUDIT DE SÉCURITÉ (ADM-55 → ADM-56),
-// P4G-6 DONNÉES D’INFRASTRUCTURE (ADM-59 → ADM-60).
-// P4G-7 MÉDIA, OBSERVABILITÉ & STATUT (ADM-61 → ADM-63).
+// P4G-6 DONNÉES D’INFRASTRUCTURE (ADM-59 → ADM-60),
+// P4G-7 MÉDIA, OBSERVABILITÉ & STATUT (ADM-61 → ADM-63),
+// P4G-8 SALAIRE — CONTESTATIONS & CORRECTIONS (ADM-25).
 // Régénérer : npm run design:admin
 //
 // Référence de design UNIQUEMENT : aucun libellé de ce fichier n'est affiché par
@@ -755,6 +756,46 @@ export const ADMIN_DESIGN_UNITS = [
       "GET /admin/salary/proofs/:id",
       "POST /admin/salary/proofs/:id/validate",
       "POST /admin/salary/proofs/:id/invalidate {motive}"
+    ]
+  },
+  {
+    "id": "ADM-25",
+    "canon": "ADM — salaire (litiges)",
+    "criticality": "P1",
+    "archetype": "Corriger la vérité financière",
+    "screenCodes": [
+      "ADM-25"
+    ],
+    "routes": [
+      "/admin/salaire/litiges"
+    ],
+    "zoneKinds": [
+      "cta",
+      "kpi",
+      "list",
+      "table"
+    ],
+    "componentRefs": [
+      "Carte",
+      "Table",
+      "Taux"
+    ],
+    "stateNames": [
+      "Ouvert",
+      "Preuve demandée",
+      "Résolu — fondé",
+      "Résolu — non fondé"
+    ],
+    "tokens": [
+      "--clay-500",
+      "--emerald-500",
+      "--gold-500",
+      "--mono",
+      "--table"
+    ],
+    "designApi": [
+      "GET /admin/salary/disputes?cursor=",
+      "POST /admin/salary/disputes/:id/resolve {decision, entries, motive}"
     ]
   },
   {
@@ -2484,6 +2525,32 @@ export const ADMIN_DESIGN_SCREENS = [
       "--emerald-500",
       "--clay-500",
       "--amber-500",
+      "--table"
+    ]
+  },
+  {
+    "code": "ADM-25",
+    "unitId": "ADM — salaire (litiges)",
+    "route": "/admin/salaire/litiges",
+    "canonicalRoute": "/admin/salaire/litiges",
+    "role": "ADMIN",
+    "criticality": "P1",
+    "zoneKinds": [
+      "list",
+      "table",
+      "kpi",
+      "cta"
+    ],
+    "variantOf": null,
+    "designApi": [
+      "GET /admin/salary/disputes?cursor=",
+      "POST /admin/salary/disputes/:id/resolve {decision, entries, motive}"
+    ],
+    "tokens": [
+      "--clay-500",
+      "--gold-500",
+      "--mono",
+      "--emerald-500",
       "--table"
     ]
   },

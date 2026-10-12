@@ -73,6 +73,20 @@ Tranches livrées :
   Le rapport public `/healthz` et la frontière de contrôle `admin.stats.read`
   (`{metrics: {}}`, persistence not-configured) ne fournissent aucune des
   mesures de l’observabilité. Les trois vues sont diagnostiques.
+  P4G-8-DESIGN-ADMIN-SALARY-DISPUTES : ADM-25, dernière fiche ADMIN du
+  référentiel, dans son unité propre « ADM — salaire (litiges) » (canon
+  orphelin de `design/llab/units.py`, non regroupé avec ADM-23/24). Les deux
+  références de design (GET /admin/salary/disputes?cursor= et
+  POST /admin/salary/disputes/:id/resolve {decision, entries, motive}) ne
+  sont déclarées dans AUCUN contrat serveur et aucune n’est servie par un
+  handler composé (404 vérifié avec une session ADMIN réelle). Un Claim
+  (SALARY_NOT_RECEIVED / PAYMENT_DISPUTE, couvert par ADM-26 → ADM-30) n’est
+  ni un objet de contestation salariale avec montant contesté et taux de
+  fondement, ni un générateur d’écritures compensatoires sur un solde ; une
+  tentative de correction de rapprochement (ADM-19) reste une proposition
+  append-only non appliquée sur un lot ; et les routes OTP de confirmation de
+  Salaire restent réservées à l’Employeur et au Candidat. La vue est
+  diagnostique.
 
 Ce générateur ne produit AUCUN libellé métier : les textes affichés par
 l'interface viennent de `src/admin/vocabulary.ts` (vocabulaire LE LABEUR).
@@ -293,7 +307,16 @@ TRANCHE_P4G6 = {'ADM-59', 'ADM-60'}
 # capacités serveur.
 TRANCHE_P4G7 = {'ADM-61', 'ADM-62', 'ADM-63'}
 
-TRANCHE_ADMIN = TRANCHE_P4G1 | TRANCHE_P4G2 | TRANCHE_P4G3 | TRANCHE_P4G4 | TRANCHE_P4G5A | TRANCHE_P4G5B | TRANCHE_P4G6 | TRANCHE_P4G7 | TRANCHE_P4A | TRANCHE_P4B1 | TRANCHE_P4B2 | TRANCHE_P4C | TRANCHE_P4D | TRANCHE_P4E1 | TRANCHE_P4E2 | TRANCHE_P4F | TRANCHE_P4F2
+# P4G-8 : unité exacte de design/llab/units.py « ADM — salaire (litiges) » =
+# ADM-25 (dernière fiche ADMIN non livrée du référentiel, domaine Paiements &
+# Réconciliation, route /admin/salaire/litiges). Les deux références de design
+# (GET /admin/salary/disputes?cursor= et
+# POST /admin/salary/disputes/:id/resolve {decision, entries, motive}) ne sont
+# déclarées dans aucun contrat et ne sont servies par aucun handler : elles
+# restent des comparaisons, jamais des capacités serveur.
+TRANCHE_P4G8 = {'ADM-25'}
+
+TRANCHE_ADMIN = TRANCHE_P4G1 | TRANCHE_P4G2 | TRANCHE_P4G3 | TRANCHE_P4G4 | TRANCHE_P4G5A | TRANCHE_P4G5B | TRANCHE_P4G6 | TRANCHE_P4G7 | TRANCHE_P4G8 | TRANCHE_P4A | TRANCHE_P4B1 | TRANCHE_P4B2 | TRANCHE_P4C | TRANCHE_P4D | TRANCHE_P4E1 | TRANCHE_P4E2 | TRANCHE_P4F | TRANCHE_P4F2
 
 families = load_all()
 SCREENS = [s for s in families['ADM'] if s.code in TRANCHE_ADMIN]
@@ -361,8 +384,9 @@ payload = (
     '// P4G-4 INFRASTRUCTURE (ADM-57 → ADM-58),\n'
     '// P4G-5A CONTRÔLES DE SÉCURITÉ (ADM-52 → ADM-54),\n'
     '// P4G-5B INCIDENTS & AUDIT DE SÉCURITÉ (ADM-55 → ADM-56),\n'
-    '// P4G-6 DONNÉES D’INFRASTRUCTURE (ADM-59 → ADM-60).\n'
-    '// P4G-7 MÉDIA, OBSERVABILITÉ & STATUT (ADM-61 → ADM-63).\n'
+    '// P4G-6 DONNÉES D’INFRASTRUCTURE (ADM-59 → ADM-60),\n'
+    '// P4G-7 MÉDIA, OBSERVABILITÉ & STATUT (ADM-61 → ADM-63),\n'
+    '// P4G-8 SALAIRE — CONTESTATIONS & CORRECTIONS (ADM-25).\n'
     '// Régénérer : npm run design:admin\n'
     '//\n'
     '// Référence de design UNIQUEMENT : aucun libellé de ce fichier n\'est affiché par\n'

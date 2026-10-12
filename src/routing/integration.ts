@@ -102,10 +102,22 @@
  * contrôle admin.stats.read répond {metrics: {}}. Aucune donnée n’est appelée
  * ni convertie en mesure → statut PARTIEL.
  *
- * Les 33 unités ADM du catalogue livré (62 fiches) sont couvertes. L’unité
- * ADM-25 « ADM — salaire (litiges) » est déclarée par le routeur P0 mais reste
- * hors catalogue — aucune tranche ne la livre, donc NON_INTEGRE — et FIN comme
- * RTC restent non intégrées.
+ * P4G-8-DESIGN-ADMIN-SALARY-DISPUTES : ADM-25 (contestations salariales &
+ * corrections) — unité de production propre « ADM — salaire (litiges) » de
+ * `units.py`, route P0 `/admin/salaire/litiges`. Les deux références de design
+ * (`GET /admin/salary/disputes?cursor=` et
+ * `POST /admin/salary/disputes/:id/resolve {decision, entries, motive}`) ne
+ * sont déclarées dans aucun contrat ni servies par un handler (404 sur le
+ * worker composé avec une session ADMIN réelle) ; ni les Claims (ADM-26 →
+ * ADM-30), ni les Paiements de nature SALARY (ADM-18, ADM-21, ADM-23), ni les
+ * tentatives de correction de rapprochement append-only (ADM-19), ni les
+ * routes OTP réservées aux parties (403 pour ADMIN) ne constituent un grand
+ * livre de contestations salariales ou d’écritures compensatoires → statut
+ * PARTIEL.
+ *
+ * Les 34 unités ADM du référentiel (63 fiches) sont désormais toutes livrées
+ * et au statut PARTIEL. La création d’ADM-25 ne débloque pas les unités FIN :
+ * FIN (FIN-01 → FIN-03) et RTC (RTC-01 → RTC-02) restent non intégrées.
  */
 
 import { PRODUCTION_UNITS, TOTAL_UNITS, UNIT_COUNTS_BY_FAMILY, type ProductionUnit } from '../design-system/generated/productionUnits';
@@ -148,9 +160,10 @@ export const PRESTATAIRE_UNIT_IDS: readonly string[] = PRESTATAIRE_DESIGN_UNITS.
  * P4G-2-DESIGN-ADMIN-SUPERVISION, P4G-3-DESIGN-ADMIN-SECURITY,
  * P4G-4-DESIGN-ADMIN-INFRASTRUCTURE, P4G-5A-DESIGN-ADMIN-SECURITY-CONTROLS,
  * P4G-5B-DESIGN-ADMIN-SECURITY-INCIDENTS-AUDIT,
- * P4G-6-DESIGN-ADMIN-DATA-INFRASTRUCTURE et
- * P4G-7-DESIGN-ADMIN-MEDIA-OBSERVABILITY-STATUS
- * (33 unités, 62 fiches, dérivées du catalogue généré). P4G-2 rend ADM-47/48/49
+ * P4G-6-DESIGN-ADMIN-DATA-INFRASTRUCTURE,
+ * P4G-7-DESIGN-ADMIN-MEDIA-OBSERVABILITY-STATUS et
+ * P4G-8-DESIGN-ADMIN-SALARY-DISPUTES
+ * (34 unités, 63 fiches, dérivées du catalogue généré). P4G-2 rend ADM-47/48/49
  * diagnostiques : les capacités SLO, dead-letter et incidents d’exploitation
  * sont absentes du backend.
  * P4G-3 rend ADM-50/51 diagnostiques : aucune API ADMIN de détection IDOR.
@@ -166,7 +179,12 @@ export const PRESTATAIRE_UNIT_IDS: readonly string[] = PRESTATAIRE_DESIGN_UNITS.
  * P4G-7 rend ADM-61/62/63 diagnostiques : aucune API ADMIN de média, de
  * qualité d’appel, d’observabilité ni de statut public n’est installée ; les
  * sessions média réelles sont réservées aux participants et le rapport public
- * /healthz n’est pas une page de statut. Même règle : PARTIEL dès qu'une fiche
+ * /healthz n’est pas une page de statut.
+ * P4G-8 rend ADM-25 diagnostique : aucune route ADMIN de contestation
+ * salariale ni d’écriture compensatoire n’est installée ; les Claims, les
+ * Paiements de nature SALARY, les tentatives de correction de rapprochement et
+ * les routes OTP réservées aux parties ne constituent pas une source de
+ * substitution. Même règle : PARTIEL dès qu'une fiche
  * déclare une capacité absente.
  */
 export const ADMIN_UNIT_IDS: readonly string[] = ADMIN_DESIGN_UNITS.map((unit) => unit.id);

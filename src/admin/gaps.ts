@@ -99,6 +99,26 @@
  * rejeux, ni règles ni statistiques de limitation de débit, ni consultation ni
  * rejeu de webhooks. Ces protections internes ne sont ni appelées ni traduites
  * en mesure : chaque capacité de supervision est BACKEND_GAP.
+ *
+ * P4G-8-DESIGN-ADMIN-SALARY-DISPUTES (ADM-25) : unité exacte « ADM — salaire
+ * (litiges) » de `units.py`, route P0 `/admin/salaire/litiges` (domaine
+ * Paiements & Réconciliation). Les deux références de design de la fiche
+ * (`GET /admin/salary/disputes?cursor=` et
+ * `POST /admin/salary/disputes/:id/resolve {decision, entries, motive}`) ne
+ * figurent dans aucun contrat serveur et ne sont servies par aucun handler :
+ * elles répondent 404 sur le worker composé (vérifié avec une session ADMIN
+ * réelle). Un `Claim` (`SALARY_NOT_RECEIVED` ou `PAYMENT_DISPUTE`, couvert par
+ * ADM-26 → ADM-30) est un dossier procédural qui n'expose ni montant de
+ * Salaire, ni montant contesté, ni solde avant/après, ni écriture
+ * compensatoire, et dont la décision (`RESOLVE` / `REJECT`) ne modifie jamais
+ * un `Payment` ni une confirmation de Salaire : il n'est pas réutilisé comme
+ * substitut. De même, les échéances `Payment` de nature `SALARY` (ADM-18,
+ * ADM-21, ADM-23), les tentatives de correction de rapprochement append-only
+ * `RECORDED` (ADM-19) et les routes OTP réservées à l'Employeur et au Candidat
+ * (403 pour ADMIN) ne constituent ni une file de contestations salariales ni
+ * un mécanisme d'écriture compensatoire. Chaque capacité absente est déclarée
+ * en BACKEND_GAP et aucune correction de Salaire, remboursement, retenue ou
+ * versement n'est simulé.
  */
 
 export const ADMIN_UNIT_GAPS: Record<string, readonly string[]> = {
@@ -245,6 +265,15 @@ export const ADMIN_UNIT_GAPS: Record<string, readonly string[]> = {
     'ADM-24 · l’empreinte de preuve, son horodatage, la voie d’acheminement du code, les tentatives de saisie et les signaux de fraude sont produits côté serveur de confirmation et jamais exposés à l’ADMIN : les repères de la fiche affichent « — ».',
     'ADM-24 · AUCUN secret n’est affiché — ni code, ni empreinte de code, ni graine, ni nonce — et aucun écran ne contourne la confirmation réservée au Candidat.',
     'ADM-24 · la référence affichée vient du chemin ; aucune trace, aucun versement et aucune décision ne sont chargés faute de handler : la fiche ne rend aucun formulaire, aucune commande ne pouvant être exécutée.',
+  ],
+  /* ── P4G-8 · contestations salariales et écritures de correction ── */
+  'ADM-25': [
+    'ADM-25 · fiche entière en BACKEND_GAP : GET /admin/salary/disputes?cursor= et POST /admin/salary/disputes/:id/resolve {decision, entries, motive} ne sont déclarées dans aucun contrat serveur et ne sont servies par aucun handler composé (404 vérifié sur le worker composé avec une session ADMIN réelle). Aucune permission ADMIN dédiée aux contestations salariales ou aux écritures compensatoires n’existe.',
+    'ADM-25 · volume et calibrage (contestations ouvertes, montant total en jeu, délai médian de résolution, taux de contestations jugées fondées) : aucune source serveur ne calcule ces indicateurs. Les repères affichent « — » (indisponible), jamais zéro, jamais un montant nul ni un taux inventé.',
+    'ADM-25 · file de contestations salariales et états de fiche (Ouvert, Preuve demandée, Résolu — fondé, Résolu — non fondé) : aucun objet serveur ne porte le montant contesté, la partie qui conteste, le motif salarial (non reçu, montant erroné, preuve refusée), l’ancienneté ou l’urgence.',
+    'ADM-25 · table d’écritures compensatoires proposées par le système (solde avant/après, impact tnum, référence au journal) et commandes « Résoudre » / « Demander une pièce » : le modèle serveur ne comporte ni grand livre de solde salarial, ni génération d’écritures compensatoires motivées, ni mécanisme de correction de Salaire, de remboursement, de retenue ou de versement. Les commandes écrites par la fiche sont désactivées.',
+    'ADM-25 · distinction vérifiée avec Claim (ADM-26 → ADM-30, permissions incidents:read:any et incidents:arbitrate) : même lorsqu’un Claim porte le type SALARY_NOT_RECEIVED ou PAYMENT_DISPUTE, ClaimView reste un dossier procédural entre Employeur et Candidat qui n’expose ni montant du Salaire, ni montant contesté, ni solde avant/après, ni écriture compensatoire, et admin.claims.decision (RESOLVE / REJECT) ne modifie jamais un Paiement ni une confirmation de Salaire. Aucune file de Claim n’est réutilisée comme substitut.',
+    'ADM-25 · distinction vérifiée avec Payment, rapprochement et confirmation OTP : admin.payments.list / payments.read (payments:read:any) exposent les échéances de Salaire et les déclarations externes de l’Employeur (statut REJECTED = rejet ADMIN d’une déclaration via admin.payments.reject, jamais une contestation salariale) ; admin.payment-reconciliation.reviews.correction-attempt (payments:approve, ADM-19) consigne une proposition append-only RECORDED non appliquée sur un item de lot ; et payments.salary.confirmation.request / confirm restent réservées à l’Employeur et au Candidat (403 pour ADMIN).',
   ],
   /* ── P4D · workflow Claim réellement disponible ── */
   'ADM-26': [

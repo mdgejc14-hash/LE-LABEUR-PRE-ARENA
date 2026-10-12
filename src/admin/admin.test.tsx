@@ -8,13 +8,14 @@
  * P4G-5A-DESIGN-ADMIN-SECURITY-CONTROLS +
  * P4G-5B-DESIGN-ADMIN-SECURITY-INCIDENTS-AUDIT +
  * P4G-6-DESIGN-ADMIN-DATA-INFRASTRUCTURE +
- * P4G-7-DESIGN-ADMIN-MEDIA-OBSERVABILITY-STATUS — tests de l'espace supervision livré.
+ * P4G-7-DESIGN-ADMIN-MEDIA-OBSERVABILITY-STATUS +
+ * P4G-8-DESIGN-ADMIN-SALARY-DISPUTES — tests de l'espace supervision livré.
  *
  * Couverture :
  *  1. parité du catalogue généré avec la source de design (Python) ;
  *  2. résolution de route : chaque fiche ADM des tranches est atteignable et
  *     rattachée à son unité (regroupement `units.py`, pas une plage numérique) ;
- *  3. registre complet (33 unités / 62 fiches), selon les regroupements canoniques exacts ;
+ *  3. registre complet (34 unités / 63 fiches), selon les regroupements canoniques exacts ;
  *  4. API : chaque chemin appelé existe déjà dans `routeContracts.ts` ;
  *  5. GARDE-FOU DE VOCABULAIRE : aucun libellé métier du Master Design
  *     (Mission, Client, Prestataire, Litige) ne peut entrer dans l'interface,
@@ -105,6 +106,19 @@
  *     ces surfaces n'est appelée ni convertie en mesure ; aucun état de
  *     composant, aucun incident public, aucune maintenance, aucune trace,
  *     aucune alerte, aucun relais et aucune opération n'est simulé.
+ * 24. P4G-8 : ADM-25 (Salaire — contestations & corrections) — dernière unité
+ *     ADMIN du référentiel (« ADM — salaire (litiges) » dans `units.py`, non
+ *     regroupée avec ADM-23/24), route P0 `/admin/salaire/litiges` ; les deux
+ *     références de design (`GET /admin/salary/disputes?cursor=` et
+ *     `POST /admin/salary/disputes/:id/resolve {decision, entries, motive}`)
+ *     sont vérifiées absentes du catalogue et répondent 404 sur le worker
+ *     composé avec une session ADMIN réelle ; distinction explicite avec Claim
+ *     (ADM-26 → ADM-30), Payment de nature SALARY (ADM-18/21/23), tentative de
+ *     correction de rapprochement append-only (ADM-19) et routes OTP réservées
+ *     aux parties (403 pour ADMIN) ; aucun montant contesté, aucun solde
+ *     avant/après, aucune écriture compensatoire, aucun remboursement, retenue
+ *     ou versement simulé ; les 34 unités ADM sont désormais PARTIEL et FIN
+ *     (FIN-01 → FIN-03) comme RTC restent NON_INTEGRE.
  */
 
 import React from 'react';
@@ -116,6 +130,8 @@ import { ADMIN_DESIGN_SCREENS, ADMIN_DESIGN_UNITS } from './catalog';
 import { ADMIN_UNIT_GAPS } from './gaps';
 import { adminGapsFor, resolveAdminScreen, unitForScreen } from './screenMap';
 import { ADMIN_SCREEN_COMPONENTS, AdminScreen } from './registry';
+import { Admin25SalaryDisputes } from './screens/salaryDisputes';
+import { composeWorker } from '../backend/api/entry';
 import { replacementWorkflowSteps, REPLACEMENT_READ_PERMISSION } from './screens/replacements';
 import { REPUTATION_DECIDE_PERMISSION, REPUTATION_READ_PERMISSION } from './screens/reputation';
 import {
@@ -322,11 +338,11 @@ export async function runAdminTests(): Promise<{ name: string; success: boolean;
     execFileSync('python3', ['scripts/design/generate-admin-catalog.py', '--check']);
   });
 
-  check('ADM — 33 unités / 62 fiches, chaque fiche rattachée à une seule unité', () => {
-    assert.equal(ADMIN_DESIGN_UNITS.length, 33);
-    assert.equal(ADMIN_DESIGN_SCREENS.length, 62);
+  check('ADM — 34 unités / 63 fiches, chaque fiche rattachée à une seule unité', () => {
+    assert.equal(ADMIN_DESIGN_UNITS.length, 34);
+    assert.equal(ADMIN_DESIGN_SCREENS.length, 63);
     const codes = ADMIN_DESIGN_SCREENS.map((screen) => screen.code);
-    assert.equal(new Set(codes).size, 62);
+    assert.equal(new Set(codes).size, 63);
     for (const screen of ADMIN_DESIGN_SCREENS) {
       const unit = unitForScreen(screen.code);
       assert.ok(unit, `fiche sans unité : ${screen.code}`);
@@ -337,10 +353,11 @@ export async function runAdminTests(): Promise<{ name: string; success: boolean;
     // ajoute ADM-13 (registre, unité propre), ADM-14 = {fiche, incidents,
     // journal} (une seule unité de production) et ADM-16 (révision forcée,
     // unité propre) — exactement les regroupements de `design/llab/units.py`.
-    // P4C ajoute ADM-23 = {confirmations, preuves OTP}, unité unique salaire.
+    // P4C ajoute ADM-23 = {confirmations, preuves OTP} ; P4G-8 ajoute ADM-25
+    // dans son unité propre « ADM — salaire (litiges) ».
     // P4D conserve les groupements du Master : ADM-27 = {fiche, pièces},
     // ADM-29 = {décision, historique}; ADM-26 reste une unité distincte.
-    assert.deepEqual(ADMIN_DESIGN_UNITS.map((unit) => unit.id), ['ADM-01', 'ADM-02', 'ADM-04', 'ADM-06', 'ADM-08', 'ADM-10', 'ADM-11', 'ADM-13', 'ADM-14', 'ADM-16', 'ADM-18', 'ADM-20', 'ADM-23', 'ADM-26', 'ADM-27', 'ADM-29', 'ADM-31', 'ADM-34', 'ADM-35', 'ADM-37', 'ADM-38', 'ADM-41', 'ADM-44', 'ADM-47', 'ADM-48', 'ADM-50', 'ADM-52', 'ADM-55', 'ADM-57', 'ADM-59', 'ADM-61', 'ADM-62', 'ADM-63']);
+    assert.deepEqual(ADMIN_DESIGN_UNITS.map((unit) => unit.id), ['ADM-01', 'ADM-02', 'ADM-04', 'ADM-06', 'ADM-08', 'ADM-10', 'ADM-11', 'ADM-13', 'ADM-14', 'ADM-16', 'ADM-18', 'ADM-20', 'ADM-23', 'ADM-25', 'ADM-26', 'ADM-27', 'ADM-29', 'ADM-31', 'ADM-34', 'ADM-35', 'ADM-37', 'ADM-38', 'ADM-41', 'ADM-44', 'ADM-47', 'ADM-48', 'ADM-50', 'ADM-52', 'ADM-55', 'ADM-57', 'ADM-59', 'ADM-61', 'ADM-62', 'ADM-63']);
     assert.deepEqual(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-02')?.screenCodes, ['ADM-02', 'ADM-03']);
     assert.deepEqual(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-04')?.screenCodes, ['ADM-04', 'ADM-05']);
     assert.deepEqual(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-06')?.screenCodes, ['ADM-06', 'ADM-07']);
@@ -369,6 +386,10 @@ export async function runAdminTests(): Promise<{ name: string; success: boolean;
     ]);
     assert.equal(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-23')?.canon, 'ADM — salaire (confirmations & preuves OTP)');
     assert.equal(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-23')?.criticality, 'P0');
+    assert.deepEqual(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-25')?.screenCodes, ['ADM-25']);
+    assert.deepEqual(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-25')?.routes, ['/admin/salaire/litiges']);
+    assert.equal(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-25')?.canon, 'ADM — salaire (litiges)');
+    assert.equal(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-25')?.criticality, 'P1');
     assert.deepEqual(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-26')?.screenCodes, ['ADM-26']);
     assert.deepEqual(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-26')?.routes, ['/admin/litiges']);
     assert.deepEqual(ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-27')?.screenCodes, ['ADM-27', 'ADM-28']);
@@ -466,7 +487,7 @@ export async function runAdminTests(): Promise<{ name: string; success: boolean;
     assert.equal(index.kind === 'shell' && index.unitId, 'ADM-01', 'l’index /admin doit être le tableau de bord ADM-01');
   });
 
-  check('ADM — registre complet : les 62 fiches livrées ont un écran, aucun code inconnu', () => {
+  check('ADM — registre complet : les 63 fiches livrées ont un écran, aucun code inconnu', () => {
     const registered = Object.keys(ADMIN_SCREEN_COMPONENTS).sort();
     const expected = ADMIN_DESIGN_SCREENS.map((screen) => screen.code).sort();
     assert.deepEqual(registered, expected);
@@ -629,8 +650,8 @@ export async function runAdminTests(): Promise<{ name: string; success: boolean;
     }
   });
 
-  check('ADM — intégration : 33 unités ADM PARTIEL (P4A → P4G-7), EMP/PRE/PUB/SYS inchangés, autres ADM/FIN/RTC non intégrées', () => {
-    assert.equal(ADMIN_UNIT_IDS.length, 33);
+  check('ADM — intégration : 34 unités ADM PARTIEL (P4A → P4G-8), EMP/PRE/PUB/SYS inchangés, FIN/RTC non intégrées', () => {
+    assert.equal(ADMIN_UNIT_IDS.length, 34);
     for (const unitId of ADMIN_UNIT_IDS) {
       assert.equal(integrationStatus(unitId), 'PARTIEL', `${unitId} doit être PARTIEL`);
       assert.ok(isAdminUnit(unitId), `${unitId} doit être reconnue comme unité ADM`);
@@ -650,20 +671,17 @@ export async function runAdminTests(): Promise<{ name: string; success: boolean;
     assert.equal(integrationStatus('ADM-18'), 'PARTIEL', 'ADM-18 (Paiements et rapprochement) est livrée par P4B-2');
     assert.equal(integrationStatus('ADM-20'), 'PARTIEL', 'ADM-20 (anomalies, déclarations et incidents) est livrée par P4B-2');
     assert.equal(integrationStatus('ADM-23'), 'PARTIEL', 'ADM-23 (confirmations de Salaire et preuves) est livrée par P4C');
-    // STATUT VÉRIFIÉ D'ADM-25 (documenté par P4G-5A, confirmé par P4G-7 —
-    // dernière unité ADMIN non livrée du référentiel ; périmètre non étendu) :
-    // « Salaire — litiges & corrections », domaine « Paiements & Réconciliation »,
-    // route /admin/salaire/litiges, canon « ADM — salaire (litiges) » — unité de
-    // production propre selon units.py (elle n'est PAS regroupée avec ADM-23/24).
-    // Elle est déclarée par le routeur P0 mais absente de src/admin/catalog.ts :
-    // aucune tranche ne la livre, donc NON_INTEGRE. Elle relève du domaine
-    // Paiements, pas de la sécurité : P4G-5A ne l'intègre pas.
-    assert.equal(integrationStatus('ADM-25'), 'NON_INTEGRE', 'ADM-25 (salaire — litiges & corrections) reste hors tranches livrées');
+    // P4G-8 : ADM-25 (« Salaire — litiges & corrections », domaine
+    // « Paiements & Réconciliation », route /admin/salaire/litiges, canon
+    // « ADM — salaire (litiges) », unité propre selon units.py non regroupée
+    // avec ADM-23/24) est désormais livrée en diagnostic et passe en PARTIEL.
+    assert.equal(integrationStatus('ADM-25'), 'PARTIEL', 'ADM-25 (salaire — contestations & corrections) est livrée en diagnostic par P4G-8');
     const deliveredScreenCodes: readonly string[] = ADMIN_DESIGN_SCREENS.map((screen) => screen.code);
     const deliveredUnitIds: readonly string[] = ADMIN_DESIGN_UNITS.map((unit) => unit.id);
-    assert.equal(deliveredScreenCodes.includes('ADM-25'), false, 'ADM-25 absente du catalogue livré');
-    assert.equal(deliveredUnitIds.includes('ADM-25'), false, 'ADM-25 absente des unités livrées');
-    assert.ok(PRODUCTION_UNITS.some((unit) => unit.id === 'ADM-25'), 'ADM-25 déclarée par le routeur P0 mais non livrée');
+    assert.equal(deliveredScreenCodes.includes('ADM-25'), true, 'ADM-25 présente dans le catalogue livré');
+    assert.equal(deliveredUnitIds.includes('ADM-25'), true, 'ADM-25 présente dans les unités livrées');
+    assert.ok((ADMIN_UNIT_GAPS['ADM-25'] ?? []).length > 0, 'ADM-25 : BACKEND_GAP obligatoire');
+    assert.equal(typeof ADMIN_SCREEN_COMPONENTS['ADM-25'], 'function', 'ADM-25 : écran livré');
     assert.equal(integrationStatus('ADM-26'), 'PARTIEL', 'ADM-26 (file Claim) est livrée par P4D');
     assert.equal(integrationStatus('ADM-27'), 'PARTIEL', 'ADM-27/28 (dossier et justificatifs Claim) sont livrées par P4D');
     assert.equal(integrationStatus('ADM-29'), 'PARTIEL', 'ADM-29/30 (décision et Claims terminés) sont livrées par P4D');
@@ -701,14 +719,16 @@ export async function runAdminTests(): Promise<{ name: string; success: boolean;
       assert.equal(deliveredScreenCodes.includes(code), true, `${code} : livrée par P4G-7`);
       assert.equal(deliveredUnitIds.includes(code), true, `${code} : unité livrée par P4G-7`);
     }
-    // Toute la famille ADMIN est désormais couverte, à l'exception d'ADM-25 —
-    // unité de production propre de « Salaire — litiges & corrections »,
-    // déclarée par le routeur P0 mais livrée par aucune tranche.
+    // Les 34 unités de la famille ADMIN sont désormais toutes couvertes ;
+    // la création d'ADM-25 ne débloque pas les unités FIN (FIN-01 → FIN-03).
     const uncoveredAdminUnits = PRODUCTION_UNITS
       .filter((unit) => unit.family === 'ADM')
       .filter((unit) => !deliveredUnitIds.includes(unit.id))
       .map((unit) => unit.id);
-    assert.deepEqual(uncoveredAdminUnits, ['ADM-25'], 'seule ADM-25 reste hors catalogue livré');
+    assert.deepEqual(uncoveredAdminUnits, [], 'les 34 unités ADM du référentiel sont désormais livrées');
+    for (const finUnitId of ['FIN-01', 'FIN-02', 'FIN-03']) {
+      assert.equal(integrationStatus(finUnitId), 'NON_INTEGRE', `${finUnitId} : la création d’ADM-25 ne débloque pas les unités FIN`);
+    }
   });
 
   check('ADM — erreurs : projection en états StateGuard, corrélation sûre uniquement', () => {
@@ -1120,8 +1140,10 @@ export async function runAdminTests(): Promise<{ name: string; success: boolean;
     const productionUnit = PRODUCTION_UNITS.find((unit) => unit.id === 'ADM-23');
     assert.ok(catalogUnit && productionUnit, 'unité ADM-23 introuvable');
     assert.deepEqual([...catalogUnit.routes].sort(), [...productionUnit.routes].sort(), 'ADM-23 : routes du catalogue = routes du routeur P0');
-    // Hors tranche : aucune fiche n'est inventée pour les autres écrans salaire.
-    assert.equal(resolveAdminScreen('/admin/salaire/litiges'), null, 'ADM-25 hors tranche (NON_INTEGRE) : aucune fiche inventée');
+    // /admin/salaire/litiges appartient à son unité propre ADM-25 (livrée par
+    // P4G-8, jamais regroupée avec ADM-23/24) ; aucune fiche index /admin/salaire.
+    assert.equal(resolveAdminScreen('/admin/salaire/litiges')?.code, 'ADM-25', 'ADM-25 livrée par P4G-8 sur sa route P0');
+    assert.equal(resolveAdminScreen('/admin/salaire/litiges')?.unitId, 'ADM-25', 'ADM-25 reste une unité distincte de ADM-23');
     assert.equal(resolveAdminScreen('/admin/salaire'), null, 'aucune fiche index salaire : aucune invention');
   });
 
@@ -1759,7 +1781,7 @@ export async function runAdminTests(): Promise<{ name: string; success: boolean;
     assert.equal(typeof ADMIN_SCREEN_COMPONENTS['ADM-41'], 'function', 'notifications (ADM-41) enregistrées');
     assert.equal(typeof ADMIN_SCREEN_COMPONENTS['ADM-42'], 'function', 'gabarits (ADM-42) enregistrés');
     assert.equal(typeof ADMIN_SCREEN_COMPONENTS['ADM-43'], 'function', 'délivrabilité (ADM-43) enregistrée');
-    assert.equal(Object.keys(ADMIN_SCREEN_COMPONENTS).length, 62, '62 fiches livrées (P0 → P4G-7)');
+    assert.equal(Object.keys(ADMIN_SCREEN_COMPONENTS).length, 63, '63 fiches livrées (P0 → P4G-8)');
   });
 
   check('ADM — P4F-2 : notifications, gabarits et délivrabilité suivent les routes réelles et les gaps', () => {
@@ -2685,13 +2707,142 @@ export async function runAdminTests(): Promise<{ name: string; success: boolean;
     }
   });
 
-  check('ADM — non-régression P0 → P4G-3 : routes et fiches précédentes inchangées', () => {
+  await checkAsync('ADM — P4G-8 : unité salaire (contestations & corrections, ADM-25), distinction vérifiée avec Claim/Payment/OTP/rapprochement, diagnostic sans écriture ni solde inventés', async () => {
+    const resolved = resolveAdminScreen('/admin/salaire/litiges');
+    assert.equal(resolved?.code, 'ADM-25', '/admin/salaire/litiges → fiche ADM-25');
+    assert.equal(resolved?.unitId, 'ADM-25', '/admin/salaire/litiges → unité propre ADM-25');
+    assert.deepEqual(resolved?.params, {}, '/admin/salaire/litiges : aucun paramètre de route');
+    assert.equal(unitForScreen('ADM-25'), 'ADM-25', 'ADM-25 : unité exacte du catalogue');
+    assert.equal(typeof ADMIN_SCREEN_COMPONENTS['ADM-25'], 'function', 'ADM-25 : écran enregistré dans registry.tsx');
+    assert.ok(adminGapsFor('ADM-25', '/admin/salaire/litiges').some((line) => line.startsWith('ADM-25')), 'ADM-25 : BACKEND_GAP déclaré');
+
+    const route = resolveRoute('/admin/salaire/litiges');
+    assert.equal(route.kind, 'shell', '/admin/salaire/litiges : routeur P0');
+    if (route.kind === 'shell') {
+      assert.equal(route.shell, 'ADMIN');
+      assert.equal(route.unitId, 'ADM-25');
+      assert.equal(route.notFound, false);
+    }
+
+    // L'unité de production P0 est inchangée : une fiche par unité, non regroupée avec ADM-23/24.
+    const production = PRODUCTION_UNITS.find((unit) => unit.id === 'ADM-25');
+    assert.deepEqual(production?.routes, ['/admin/salaire/litiges'], 'route P0 non modifiée');
+    assert.deepEqual(production?.screenCodes, ['ADM-25'], 'une seule fiche dans ADM-25');
+    assert.deepEqual(production?.canons, ['ADM — salaire (litiges)'], 'canon exact de units.py');
+    const designUnit = ADMIN_DESIGN_UNITS.find((unit) => unit.id === 'ADM-25');
+    const designScreen = ADMIN_DESIGN_SCREENS.find((screen) => screen.code === 'ADM-25');
+    assert.equal(designUnit?.canon, 'ADM — salaire (litiges)');
+    assert.equal(designUnit?.criticality, 'P1');
+    assert.deepEqual(designScreen?.zoneKinds, ['list', 'table', 'kpi', 'cta'], 'zones exactes de la fiche ADM-25');
+    assert.equal(ADMIN_UI_TERMS.SALARY_DISPUTES_CORRECTIONS, 'Salaire — contestations & corrections');
+
+    // Les deux références de design ne sont déclarées par AUCUN contrat serveur.
+    const designApiPaths = (designScreen?.designApi ?? []).map((reference) => {
+      const match = /^(?:GET|POST)\s+([^\s{?]+)/.exec(reference);
+      assert.ok(match, `référence de design illisible : ${reference}`);
+      return match![1];
+    });
+    assert.deepEqual(designApiPaths, ['/admin/salary/disputes', '/admin/salary/disputes/:id/resolve']);
+    for (const path of designApiPaths) {
+      assert.equal(API_ROUTE_CONTRACTS.some((contract) => contract.path === `/api/v1${path}`), false, `${path} ne doit pas être déclaré comme contrat serveur`);
+    }
+    assert.deepEqual(API_ROUTE_CONTRACTS.filter((contract) => contract.path.includes('/admin/salary/')), [], 'aucun contrat serveur /api/v1/admin/salary/*');
+    assert.ok(!ADMIN_API_PATHS.some((path) => path.includes('/admin/salary/')), 'aucun appel frontend vers /api/v1/admin/salary/*');
+
+    // Vérification réelle sur le worker composé :
+    // les deux références de design ne sont pas routées et répondent 404 (NOT_FOUND).
+    const composed = composeWorker(
+      { GOOGLE_CLIENT_ID: 'adm25-client', PERSISTENCE: 'memory', COOKIE_SECURE: 'false' },
+    );
+    const getDisputesRes = await composed.worker.fetch(
+      new Request('https://lelabeur.test/api/v1/admin/salary/disputes?cursor='),
+    );
+    assert.equal(getDisputesRes.status, 404, 'GET /api/v1/admin/salary/disputes répond 404 sur le worker composé');
+    const postResolveRes = await composed.worker.fetch(
+      new Request('https://lelabeur.test/api/v1/admin/salary/disputes/dsp-1/resolve', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ decision: 'FOUNDED', entries: [], motive: 'test' }),
+      }),
+    );
+    assert.equal(postResolveRes.status, 404, 'POST /api/v1/admin/salary/disputes/:id/resolve répond 404 sur le worker composé');
+
+    // Distinction vérifiée dans les sources avec Claim, Payment, OTP et rapprochement :
+    // 1. Claim (SALARY_NOT_RECEIVED / PAYMENT_DISPUTE) n'expose ni montant de Salaire,
+    //    ni montant contesté, ni écriture compensatoire, ni solde avant/après.
+    const claimRecordsSource = readFileSync(new URL('../backend/disputes/records.ts', import.meta.url), 'utf8');
+    assert.ok(claimRecordsSource.includes("'SALARY_NOT_RECEIVED'") && claimRecordsSource.includes("'PAYMENT_DISPUTE'"), 'types Claim vérifiés');
+    assert.ok(!/contestedAmount|compensatoryEntries|balanceBefore|balanceAfter/.test(claimRecordsSource), 'ClaimView ne porte ni montant contesté ni écriture compensatoire ni solde');
+    // 2. PaymentReconciliationCorrectionAttemptRecord reste une proposition RECORDED non appliquée.
+    const reconSource = readFileSync(new URL('../backend/payments/paymentReconciliationBatch.ts', import.meta.url), 'utf8');
+    assert.ok(reconSource.includes("status: 'RECORDED'"), 'la tentative de correction de rapprochement reste RECORDED non appliquée');
+    // 3. Les routes OTP restent réservées à EMPLOYER et CANDIDATE.
+    assert.deepEqual(API_ROUTE_CONTRACTS.find((c) => c.key === 'payments.salary.confirmation.request')?.roles, ['EMPLOYER']);
+    assert.deepEqual(API_ROUTE_CONTRACTS.find((c) => c.key === 'payments.salary.confirmation.confirm')?.roles, ['CANDIDATE']);
+
+    // Inspection de l'écran ADM-25 : aucun appel réseau, aucun formulaire, aucune action active,
+    // aucun montant/solde/taux inventé, et rendu complet des 4 zones + BACKEND_GAP.
+    const source = stripComments(readFileSync(new URL('./screens/salaryDisputes.tsx', import.meta.url), 'utf8'));
+    assert.ok(!/useAdminApi|useAdminResource|useAdminAction|fetch\(|AdminApi/.test(source), 'aucune API absente ni source de substitution appelée');
+    assert.ok(!source.includes('<form') && !source.includes('onClick='), 'aucune commande de résolution ou de correction simulée');
+    assert.ok(source.includes('disabled') && source.includes('data-unavailable-action'), 'actions écrites par la fiche explicitement désactivées');
+    assert.ok(source.includes("value: '—'") && source.includes('data-no-invented-salary-disputes'), 'les indicateurs absents affichent « — », jamais zéro');
+    assert.ok(source.includes('data-salary-dispute-distinctions'), 'distinctions avec Claim, Payment, OTP et rapprochement explicitées');
+    assert.ok(!/localStorage|sessionStorage|new Date\(\)|Math\.random/.test(source), 'aucune donnée locale ou aléatoire');
+    assert.deepEqual(forbiddenTermsIn(displayStringsIn(source).join(' ')), [], 'vocabulaire officiel LE LABEUR respecté');
+
+    // Rendu direct de l'écran ADM-25 (état session ADMIN prête) : les 4 zones de la fiche,
+    // les 3 contrôles désactivés et les BACKEND_GAP sont présents sans terme interdit.
+    const readyHtml = renderToStaticMarkup(
+      <>{Admin25SalaryDisputes({ unitId: 'ADM-25', pathname: '/admin/salaire/litiges', segments: ['salaire', 'litiges'], params: {} })}</>,
+    );
+    for (const kind of ['hero', 'kpi', 'list', 'table', 'cta']) {
+      assert.ok(readyHtml.includes(`data-zone="${kind}"`), `ADM-25 : zone « ${kind} » absente du rendu`);
+    }
+    for (const ref of [
+      'GET /admin/salary/disputes?cursor=',
+      'POST /admin/salary/disputes/:id/resolve {decision, entries, motive}',
+      'ADM-25 · demande de pièce sur contestation salariale',
+    ]) {
+      assert.ok(readyHtml.includes(`data-unavailable-action="${ref}"`), `ADM-25 : contrôle indisponible absent (${ref})`);
+    }
+    assert.ok(readyHtml.includes('data-backend-gap="true"'), 'ADM-25 : BACKEND_GAP absent du rendu');
+    assert.ok(readyHtml.includes('data-no-invented-salary-disputes="true"'), 'ADM-25 : mention de non-simulation absente');
+    assert.ok(readyHtml.includes('data-salary-dispute-distinctions="true"'), 'ADM-25 : distinctions métier absentes');
+    const readyText = readyHtml.replace(/<[^>]*>/g, ' ');
+    assert.deepEqual(forbiddenTermsIn(readyText), [], 'ADM-25 : aucun terme interdit dans le rendu');
+    for (const label of FORBIDDEN_FINANCE_LABELS) {
+      assert.ok(!readyText.includes(label), `ADM-25 : libellé financier interdit rendu (${label})`);
+    }
+
+    // Vérification des lignes BACKEND_GAP d'ADM-25.
+    const gaps25 = ADMIN_UNIT_GAPS['ADM-25'] ?? [];
+    assert.ok(gaps25.length >= 6, 'ADM-25 : au moins 6 lignes de BACKEND_GAP documentées');
+    assert.ok(gaps25.some((line) => line.includes('/admin/salary/disputes') && line.includes('404')), 'ADM-25 : références de design et 404 nommés');
+    assert.ok(gaps25.some((line) => line.includes('SALARY_NOT_RECEIVED') && line.includes('PAYMENT_DISPUTE')), 'ADM-25 : distinction avec Claim nommée');
+    assert.ok(gaps25.some((line) => line.includes('RECORDED') && line.includes('403')), 'ADM-25 : distinction avec rapprochement et OTP nommée');
+
+    // Clôture du catalogue ADMIN : 34 unités ADM PARTIEL, 0 unité ADM non couverte,
+    // et les unités FIN (FIN-01 → FIN-03) demeurent NON_INTEGRE.
+    assert.equal(integrationStatus('ADM-25'), 'PARTIEL', 'ADM-25 : unité livrée en diagnostic par P4G-8');
+    for (const finId of ['FIN-01', 'FIN-02', 'FIN-03']) {
+      assert.equal(integrationStatus(finId), 'NON_INTEGRE', `${finId} : reste NON_INTEGRE (modèle financier réservé)`);
+    }
+  });
+
+  check('ADM — non-régression P0 → P4G-8 : routes et fiches précédentes inchangées', () => {
     const previous: readonly [string, string][] = [
       ['/admin/reputation', 'ADM-34'],
       ['/admin/reputation/contestations', 'ADM-35'],
       ['/admin/remplacements', 'ADM-31'],
       ['/admin/litiges', 'ADM-26'],
       ['/admin/utilisateurs', 'ADM-02'],
+      ['/admin/salaire/confirmations', 'ADM-23'],
+      ['/admin/salaire/preuves/pay-1', 'ADM-24'],
+      ['/admin/salaire/litiges', 'ADM-25'],
+      ['/admin/infra/webrtc', 'ADM-61'],
+      ['/admin/infra/observabilite', 'ADM-62'],
+      ['/admin/infra/statut', 'ADM-63'],
     ];
     for (const [path, code] of previous) {
       assert.equal(resolveAdminScreen(path)?.code, code, `${path} : fiche précédente inchangée`);
