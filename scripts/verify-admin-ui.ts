@@ -1,16 +1,16 @@
 /**
- * P4G-5B-DESIGN-ADMIN-SECURITY-INCIDENTS-AUDIT — vérification UI réelle (Chromium) de
+ * P4G-6-DESIGN-ADMIN-DATA-INFRASTRUCTURE — vérification UI réelle (Chromium) de
  * l'espace supervision livré (P4A + P4B-1 contrats + P4B-2 paiements + P4C
  * salaire + P4D Claims + P4E-1 Remplacements + P4E-2 Réputation + P4F
  * Documents + P4F-2 Notifications + P4G-1 opérations + P4G-2 supervision +
  * P4G-3 sécurité + P4G-4 topologie/Worker edge + P4G-5A contrôles de sécurité
- * + P4G-5B incidents & audit de sécurité).
+ * + P4G-5B incidents & audit de sécurité + P4G-6 données d'infrastructure).
  *
  * Comme le script P2, ce script n'affirme rien sur des données simulées dans
  * l'application : les fixtures HTTP vivent ICI et ne sont jamais activées dans
  * le produit. Ce qui est vérifié dans un navigateur réel :
  *
- *  1. AUCUNE source de données configurée : les 57 fiches ADM rendent leur
+ *  1. AUCUNE source de données configurée : les 59 fiches ADM rendent leur
  *     conteneur (`data-unit`, `data-screen`), la structure déclarée par le
  *     design (`data-sheet-frame`) et le BACKEND_GAP, sans débordement
  *     horizontal à 360 px comme à 1440 px ; aucun terme du Master Design ni
@@ -71,6 +71,12 @@
  * inventée ; aucune étape de procédure présentée comme accomplie ; aucune
  * conclusion juridique ; mesures en « — » ; commandes désactivées ; navigation
  * entre les deux fiches ; refus 401/403 et erreur 500 ; 360/1440 px.
+ * 15. P4G-6 : ADM-59/60 (base PostgreSQL/Hyperdrive et stockage objet) —
+ * aucune requête vers /api/v1/admin/infra/*, vers /healthz ni vers le registre
+ * des Documents (sources écartées) ; mesures en « — » ; aucune latence, pool,
+ * requête lente, réplication, volumétrie, classe, coût ni intégrité de
+ * préfixe inventée ; aucune commande activable ; navigation entre les deux
+ * fiches ; refus 401/403 et erreur 500 ; 360/1440 px.
  *
  * Exécution : `npm run verify:admin-ui`.
  */
@@ -2814,6 +2820,73 @@ try {
       assert.deepEqual(infrastructureRequests, [], 'aucune donnée infra après refus ou erreur de session');
     } finally {
       page.off('request', trackInfrastructureRequests);
+      sessionMode = 'admin';
+    }
+  });
+
+  await check('ADM-59/60 — base PostgreSQL/Hyperdrive et stockage objet diagnostiques, sans mesure, sonde ni action simulée (360/1440 px)', async () => {
+    sessionMode = 'admin';
+    const paths = [['/admin/infra/postgres', 'ADM-59'], ['/admin/infra/r2', 'ADM-60']] as const;
+    const dataInfrastructureRequests: string[] = [];
+    const trackDataInfrastructureRequests = (request: { url(): string }) => {
+      const path = new URL(request.url()).pathname;
+      if (path.startsWith('/api/v1/admin/infra/') || path === '/healthz' || path.startsWith('/api/v1/admin/documents')) {
+        dataInfrastructureRequests.push(request.url());
+      }
+    };
+    page.on('request', trackDataInfrastructureRequests);
+    try {
+      for (const width of [360, 1440]) {
+        await page.setViewportSize({ width, height: 900 });
+        for (const [path, code] of paths) {
+          await page.goto(api.origin + path);
+          const screen = page.locator(`[data-screen="${code}"]`);
+          await screen.waitFor();
+          await screen.locator('[data-backend-gap="true"]').last().waitFor();
+          const text = await screen.innerText();
+          assert.ok(says(text, 'BACKEND_GAP'), `${code} : absence de contrat ADMIN non signalée`);
+          assert.equal(await screen.locator('[data-no-invented-infrastructure]').count(), 1, `${code} : mesures absentes non expliquées`);
+          const values = (await screen.locator('.lbm-admin__kpi-value').allTextContents()).map((value) => value.trim());
+          assert.ok(values.length >= 4 && values.every((value) => value === '—'), `${code} : mesure ou état inventé (${values.join(', ')})`);
+          assert.equal(await screen.locator('form').count(), 0, `${code} : formulaire sans handler`);
+          assert.ok(says(text, '404'), `${code} : référence de design servie ? la vérification réelle n’est pas nommée`);
+          assert.ok(await screen.locator('button[data-unavailable-action]').count() > 0, `${code} : action absente non identifiée`);
+          assert.equal(await screen.locator('button:not([disabled])').count(), 0, `${code} : action d’infrastructure activable`);
+          assert.equal(await screen.locator('table tbody tr').count(), 1, `${code} : une ligne de mesure ne doit pas être suggérée`);
+          assert.ok(says(await screen.locator('table tbody tr').innerText(), 'Aucune'), `${code} : table absente non expliquée`);
+          if (code === 'ADM-60') {
+            assert.equal(await screen.locator('[data-declared-domains]').count(), 1, 'ADM-60 : les domaines déclarés ne sont pas identifiés comme structure');
+          }
+          assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${code} : débordement à ${width}px`);
+          await assertNoForbiddenText(path, text);
+        }
+      }
+      await page.goto(api.origin + '/admin/infra/postgres');
+      const postgres = page.locator('[data-screen="ADM-59"]');
+      await postgres.waitFor();
+      assert.equal(await postgres.locator('a[href="/admin/infra/r2"]').count(), 1, 'navigation vers ADM-60 absente');
+      await postgres.locator('a[href="/admin/infra/r2"]').click();
+      const storage = page.locator('[data-screen="ADM-60"]');
+      await storage.waitFor();
+      assert.equal(await storage.locator('a[href="/admin/infra/postgres"]').count(), 1, 'retour vers ADM-59 absent');
+      assert.deepEqual(dataInfrastructureRequests, [], 'aucune lecture /admin/infra, /healthz ni registre de Documents utilisée comme substitut');
+
+      sessionMode = 'employer';
+      for (const [path, code] of paths) {
+        await page.goto(api.origin + path);
+        await page.locator('[data-state="403"]').waitFor();
+        assert.equal(await page.locator(`[data-screen="${code}"]`).count(), 0, `${code} : accès non-ADMIN rendu`);
+      }
+      sessionMode = 'anonymous';
+      await page.goto(api.origin + paths[0][0]);
+      await page.locator('[data-state="401"]').waitFor();
+      sessionMode = 'error';
+      await page.goto(api.origin + paths[1][0]);
+      await page.locator('[data-state="500"]').waitFor();
+      assert.ok(!(await page.locator('[data-state="500"]').innerText()).includes(SERVER_SECRET), 'erreur de session brute rendue');
+      assert.deepEqual(dataInfrastructureRequests, [], 'aucune donnée d’infrastructure après refus ou erreur de session');
+    } finally {
+      page.off('request', trackDataInfrastructureRequests);
       sessionMode = 'admin';
     }
   });

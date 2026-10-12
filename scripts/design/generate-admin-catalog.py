@@ -46,6 +46,17 @@ Tranches livrées :
   elles ne conviennent ni à un journal d’audit, ni à un registre d’incidents
   de sécurité. Le ledger d’audit réel (automation_audit_ledger) n’a aucune
   route ADMIN et aucune empreinte de chaînage. Les vues sont diagnostiques.
+  P4G-6-DESIGN-ADMIN-DATA-INFRASTRUCTURE : ADM-59/60 (unité exacte
+  « ADM — infra (données : PostgreSQL & stockage objet) »). Les références
+  des fiches (GET /admin/infra/postgres, /slow-queries, /migrations,
+  POST /index-proposals, GET /admin/infra/r2, /prefixes, /retention,
+  POST /verify) ne sont pas déclarées dans routeContracts.ts et ne sont
+  servies par aucun handler : aucun contrat/handler ADMIN de supervision de
+  PostgreSQL/Hyperdrive ni de stockage objet n’installe ces capacités. Le
+  seul point d’entrée lié à la persistance est le rapport public `/healthz`
+  (frontière API observée : mode, joignabilité, sonde, migrations), qui ne
+  fournit ni latence p95, ni pool, ni requêtes lentes, ni réplication et
+  n’est pas une route ADMIN. Les vues sont diagnostiques.
 
 Ce générateur ne produit AUCUN libellé métier : les textes affichés par
 l'interface viennent de `src/admin/vocabulary.ts` (vocabulaire LE LABEUR).
@@ -109,9 +120,8 @@ P4G-5A, ADM-55/56 par P4G-5B).
 Périmètre de la tranche P4G-4 : ADM-57 / ADM-58 (unité exacte `ADM — infra
 (topologie & bord)`). Aucun flux de topologie, de métriques Edge, de déploiement
 ou de commande ADMIN n’est exposé ; les vues sont diagnostiques avec BACKEND_GAP.
-ADM-59/60 (PostgreSQL & R2), ADM-61 (WebRTC/TURN), ADM-62 (observabilité) et
-ADM-63 (statut global/public) restent hors tranche. FIN et RTC restent également
-hors de ce catalogue.
+ADM-61 (WebRTC/TURN), ADM-62 (observabilité) et ADM-63 (statut global/public)
+restent hors tranche. FIN et RTC restent également hors de ce catalogue.
 
 Périmètre de la tranche P4G-5A : ADM-52 / ADM-53 / ADM-54 (unité exacte `ADM —
 sécurité (replay, signatures, rate limits & webhooks)`). Les fiches citent
@@ -133,8 +143,24 @@ de ces routes n’existe dans `src/backend/api/routeContracts.ts` et aucune
 permission ADMIN d’incident ou de journal de sécurité n’est déclarée. Les deux
 contrats qui existent réellement (`admin.audit.list`, `admin.incidents.list`)
 sont des frontières de contrôle à items vides : le générateur ne les transforme
-pas en source de journal ni de registre. ADM-59 → ADM-63 (infrastructure)
+pas en source de journal ni de registre. ADM-61 → ADM-63 (infrastructure)
 restent hors tranche.
+
+Périmètre de la tranche P4G-6 : ADM-59 / ADM-60 (unité exacte `ADM — infra
+(données : PostgreSQL & stockage objet)` = ADM-59 regroupant ADM-59/60, canons
+« ADM — infra (postgres) » et « ADM — infra (R2) »). Les fiches citent
+GET /admin/infra/postgres, GET /admin/infra/postgres/slow-queries,
+GET /admin/infra/postgres/migrations, POST /admin/infra/postgres/index-proposals,
+GET /admin/infra/r2, GET /admin/infra/r2/prefixes, GET /admin/infra/r2/retention
+et POST /admin/infra/r2/verify {prefix} : AUCUNE de ces routes n’existe dans
+`src/backend/api/routeContracts.ts`, aucune n’est servie par un handler
+composé et aucune permission ADMIN d’infrastructure (base de données ou
+stockage) n’est déclarée. Le rapport public `/healthz` décrit la frontière de
+persistance réellement observée par l’API (mode, joignabilité, sonde de
+latence, descripteur sûr, migrations appliquées/en attente) mais il n’expose
+ni latence p95, ni connexions/pool, ni requête lente, ni réplication, ni
+volume/occupation/classe de stockage : ce n’est pas un contrat ADMIN de
+supervision et le générateur ne le transforme pas en source d’écran.
 """
 import json
 import sys
@@ -235,7 +261,13 @@ TRANCHE_P4G5A = {'ADM-52', 'ADM-53', 'ADM-54'}
 # d’incidents de sécurité.
 TRANCHE_P4G5B = {'ADM-55', 'ADM-56'}
 
-TRANCHE_ADMIN = TRANCHE_P4G1 | TRANCHE_P4G2 | TRANCHE_P4G3 | TRANCHE_P4G4 | TRANCHE_P4G5A | TRANCHE_P4G5B | TRANCHE_P4A | TRANCHE_P4B1 | TRANCHE_P4B2 | TRANCHE_P4C | TRANCHE_P4D | TRANCHE_P4E1 | TRANCHE_P4E2 | TRANCHE_P4F | TRANCHE_P4F2
+# P4G-6 : unité exacte de design/llab/units.py « ADM — infra (données :
+# PostgreSQL & stockage objet) » = ADM-59 regroupe ADM-59/60. Aucune route
+# /api/v1/admin/infra/* n’est déclarée ni servie : les références des fiches
+# sont des comparaisons, jamais des capacités serveur.
+TRANCHE_P4G6 = {'ADM-59', 'ADM-60'}
+
+TRANCHE_ADMIN = TRANCHE_P4G1 | TRANCHE_P4G2 | TRANCHE_P4G3 | TRANCHE_P4G4 | TRANCHE_P4G5A | TRANCHE_P4G5B | TRANCHE_P4G6 | TRANCHE_P4A | TRANCHE_P4B1 | TRANCHE_P4B2 | TRANCHE_P4C | TRANCHE_P4D | TRANCHE_P4E1 | TRANCHE_P4E2 | TRANCHE_P4F | TRANCHE_P4F2
 
 families = load_all()
 SCREENS = [s for s in families['ADM'] if s.code in TRANCHE_ADMIN]
@@ -302,7 +334,8 @@ payload = (
     '// P4G-2 SUPERVISION (ADM-47 → ADM-49), P4G-3 SÉCURITÉ (ADM-50 → ADM-51),\n'
     '// P4G-4 INFRASTRUCTURE (ADM-57 → ADM-58),\n'
     '// P4G-5A CONTRÔLES DE SÉCURITÉ (ADM-52 → ADM-54),\n'
-    '// P4G-5B INCIDENTS & AUDIT DE SÉCURITÉ (ADM-55 → ADM-56).\n'
+    '// P4G-5B INCIDENTS & AUDIT DE SÉCURITÉ (ADM-55 → ADM-56),\n'
+    '// P4G-6 DONNÉES D’INFRASTRUCTURE (ADM-59 → ADM-60).\n'
     '// Régénérer : npm run design:admin\n'
     '//\n'
     '// Référence de design UNIQUEMENT : aucun libellé de ce fichier n\'est affiché par\n'

@@ -54,6 +54,21 @@
  * de ces deux fiches est BACKEND_GAP, et aucun signal technique n’est converti
  * en incident ni en vulnérabilité.
  *
+ * P4G-6-DESIGN-ADMIN-DATA-INFRASTRUCTURE (ADM-59/60) : unité exacte
+ * « ADM — infra (données : PostgreSQL & stockage objet) » de `units.py`. Les
+ * huit références de design des deux fiches (postgres, requêtes lentes,
+ * migrations, propositions d’index, stockage, préfixes, vérification de
+ * préfixe, rétention) ne figurent dans aucun contrat serveur et ne sont
+ * servies par aucun handler : elles répondent 404 sur le worker composé
+ * (vérifié avec une session ADMIN). Le rapport public `/healthz` — seule
+ * surface liée à la persistance — décrit la frontière observée par l’API
+ * (mode, joignabilité, sonde, migrations, booléen de binding) mais ne fournit
+ * aucune des mesures des fiches et n’est pas un contrat ADMIN : il n’est pas
+ * utilisé comme substitut. Le registre des Documents n’est pas une
+ * supervision de stockage et n’est pas appelé ici. Aucune mesure, aucun état
+ * de base ni de compartiment, aucune action de réparation, purge, migration
+ * ou configuration n’est simulé : chaque capacité absente est BACKEND_GAP.
+ *
  * P4G-5A-DESIGN-ADMIN-SECURITY-CONTROLS (ADM-52 → ADM-54) : unité exacte
  * « ADM — sécurité (replay, signatures, rate limits & webhooks) ». Le produit
  * contient des protections serveur réelles — classification forensique
@@ -421,6 +436,21 @@ export const ADMIN_UNIT_GAPS: Record<string, readonly string[]> = {
     'ADM-56 · le ledger d’audit ne porte aucune empreinte d’événement, aucun lien vers l’entrée précédente, aucune procédure de vérification de chaîne et aucune contrainte d’immuabilité en base : « chaîne vérifiée », « dernier audit d’intégrité » et « export JSON signé » restent sans source. Aucun verdict d’intégrité n’est affiché et aucune vérification n’est simulée dans le navigateur.',
     'ADM-56 · politique de rétention, stockage froid et journalisation des consultations du journal lui-même (qui a cherché quoi) — aucun contrat ADMIN ni mécanisme consultable ne les confirme. Aucune durée de conservation, aucune valeur probante et aucune trace de consultation ne sont présentées.',
     'ADM-56 · aucune recherche détachée avec notification n’existe côté serveur : l’écran n’affiche aucun champ de filtre, aucune requête n’est envoyée et aucune exécution en tâche de fond n’est annoncée.',
+  ],
+  /* ── P4G-6 · données d’infrastructure : PostgreSQL/Hyperdrive & stockage objet ── */
+  'ADM-59': [
+    'ADM-59 · GET /admin/infra/postgres, GET /admin/infra/postgres/slow-queries, GET /admin/infra/postgres/migrations et POST /admin/infra/postgres/index-proposals — références de design absentes de routeContracts.ts et sans handler ADMIN : aucune latence p95, aucune connexion active ni dimension de pool, aucune requête lente, aucun retard de réplication, aucun historique de migration et aucune proposition d’index ne sont lisibles. Les huit références de l’unité (base et stockage) répondent 404 (vérifié sur le worker composé avec une session ADMIN).',
+    'ADM-59 · GET /healthz est le seul point d’entrée lié à la persistance : ce rapport public décrit la frontière réellement observée par l’API (mode, motif, joignabilité par une sonde, latence de cette sonde, descripteur sûr de cible, migrations appliquées et en attente) et le booléen runtime.hyperdriveBinding (le Worker a-t-il reçu un binding). Il ne porte aucune permission ADMIN et ne fournit ni latence p95, ni connexions, ni requête lente, ni réplication : il n’est pas utilisé comme substitut et son absence dans cet écran ne prouve aucun état de la base.',
+    'ADM-59 · aucune permission ADMIN de base de données ni d’infrastructure n’est déclarée dans la matrice RBAC serveur : les permissions réelles servent les utilisateurs, les contrats, les Claims, les paiements, les Documents, la réputation et les notifications. La garde de session ADMIN existante protège l’écran ; aucune autorisation métier ni route serveur n’est ajoutée.',
+    'ADM-59 · la configuration de persistance du dépôt (pool local borné du Worker, délai d’instruction, descripteur de cible) est un paramètre de composition, pas une mesure : aucun compteur de connexions, aucun pg_stat_statements, aucun plan d’exécution et aucune métrique de requête ne sont exposés en lecture. La dimension du pool n’est jamais présentée comme un nombre de connexions actives.',
+    'ADM-59 · le suivi de réplication, la bascule lecture/écriture et l’estimation d’impact d’une migration n’existent dans aucun contrat serveur : aucun état n’est déduit de la présence de fichiers de migration, d’un manifeste ni d’un résultat de vérification technique.',
+  ],
+  'ADM-60': [
+    'ADM-60 · GET /admin/infra/r2, GET /admin/infra/r2/prefixes, POST /admin/infra/r2/verify {prefix} et GET /admin/infra/r2/retention — références de design absentes de routeContracts.ts et sans handler ADMIN : volume total, nombre d’objets, coût estimé, latence de distribution, erreurs d’accès, répartition chaud / froid / archive, courbe de croissance, table des préfixes logiques et politique de rétention restent inconnus.',
+    'ADM-60 · aucune route ADMIN n’expose le stockage objet : ni nom de compartiment, ni préfixe physique, ni URL présignée, ni listage d’objets. La configuration ne déclare qu’un compartiment du simulateur local et la production est volontairement absente — aucune ressource réelle n’existe dans cette session, et aucun fichier de configuration n’est présenté comme un état de stockage.',
+    'ADM-60 · la seule lecture ADMIN voisine est le registre des Documents (admin.documents.list, permission documents:read:any) : il rend des métadonnées de Document (type, statut, version courante, classe de conservation) et, dans la fiche, les tailles déclarée et reçue d’une version. Ce n’est pas une supervision de stockage — aucune occupation, aucun volume agrégé, aucune classe de stockage, aucune disponibilité de compartiment et aucune latence de distribution n’en sont déduits — et il n’est pas appelé par cet écran.',
+    'ADM-60 · le contrôle d’intégrité technique POST /api/v1/documents/:documentId/versions/:versionId/verify vérifie UNE version de Document (empreinte SHA-256) et rend un verdict technique : il ne réalise ni échantillonnage ni vérification d’un préfixe, ne produit aucun rapport signé et n’est pas appelé ici. Une empreinte vérifiée sur une version n’atteste pas l’intégrité du stockage.',
+    'ADM-60 · aucune purge, aucun nettoyage de fichier orphelin, aucune transition de classe ni alerte de dérive de coût n’existe côté serveur : aucune action n’est proposée, désactivée ou programmée depuis cette vue, et aucun tarif n’est appliqué dans le navigateur.',
   ],
 
 };

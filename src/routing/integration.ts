@@ -82,7 +82,16 @@
  * de chaînage. Aucune donnée n’est appelée ni convertie en mesure → statut
  * PARTIEL.
  *
- * Les unités ADM d’infrastructure restantes (ADM-59 → ADM-63), ainsi que FIN
+ * P4G-6-DESIGN-ADMIN-DATA-INFRASTRUCTURE : ADM-59 (base de données et
+ * regroupement de connexions, stockage objet — 2 fiches ADM-59/60 dans
+ * l’unité exacte « ADM — infra (données : PostgreSQL & stockage objet) ») est
+ * diagnostique : aucune des huit références de design des deux fiches n’est
+ * déclarée ni servie (404 sur le worker composé), aucune permission ADMIN de
+ * base de données ou de stockage n’existe, et le rapport public /healthz ne
+ * fournit aucune des mesures des fiches. Aucune donnée n’est appelée ni
+ * convertie en mesure → statut PARTIEL.
+ *
+ * Les unités ADM d’infrastructure restantes (ADM-61 → ADM-63), ainsi que FIN
  * et RTC, restent non intégrées.
  */
 
@@ -124,9 +133,10 @@ export const PRESTATAIRE_UNIT_IDS: readonly string[] = PRESTATAIRE_DESIGN_UNITS.
  * P4E-2-DESIGN-ADMIN-REPUTATION, P4F-DESIGN-ADMIN-DOCUMENTS,
  * P4F-2-DESIGN-ADMIN-NOTIFICATIONS, P4G-1-DESIGN-ADMIN-OPERATIONS et
  * P4G-2-DESIGN-ADMIN-SUPERVISION, P4G-3-DESIGN-ADMIN-SECURITY,
- * P4G-4-DESIGN-ADMIN-INFRASTRUCTURE, P4G-5A-DESIGN-ADMIN-SECURITY-CONTROLS et
- * P4G-5B-DESIGN-ADMIN-SECURITY-INCIDENTS-AUDIT
- * (29 unités, 57 fiches, dérivées du catalogue généré). P4G-2 rend ADM-47/48/49
+ * P4G-4-DESIGN-ADMIN-INFRASTRUCTURE, P4G-5A-DESIGN-ADMIN-SECURITY-CONTROLS,
+ * P4G-5B-DESIGN-ADMIN-SECURITY-INCIDENTS-AUDIT et
+ * P4G-6-DESIGN-ADMIN-DATA-INFRASTRUCTURE
+ * (30 unités, 59 fiches, dérivées du catalogue généré). P4G-2 rend ADM-47/48/49
  * diagnostiques : les capacités SLO, dead-letter et incidents d’exploitation
  * sont absentes du backend.
  * P4G-3 rend ADM-50/51 diagnostiques : aucune API ADMIN de détection IDOR.
@@ -136,7 +146,10 @@ export const PRESTATAIRE_UNIT_IDS: readonly string[] = PRESTATAIRE_DESIGN_UNITS.
  * webhook n’est installée. P4G-5B rend ADM-55/56 diagnostiques : les contrats
  * admin.audit.list et admin.incidents.list sont des frontières de contrôle à
  * items vides, et le ledger d’audit réel n’est exposé par aucune route ADMIN.
- * ADM-59 → ADM-63 restent non intégrées. Même règle : PARTIEL dès qu'une fiche
+ * P4G-6 rend ADM-59/60 diagnostiques : aucune route ADMIN de supervision de
+ * PostgreSQL/Hyperdrive ni du stockage objet n’est installée, et le rapport
+ * public /healthz ne remplace ni les mesures ni les états des fiches.
+ * ADM-61 → ADM-63 restent non intégrées. Même règle : PARTIEL dès qu'une fiche
  * déclare une capacité absente.
  */
 export const ADMIN_UNIT_IDS: readonly string[] = ADMIN_DESIGN_UNITS.map((unit) => unit.id);
