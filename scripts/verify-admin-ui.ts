@@ -1,17 +1,17 @@
 /**
- * P4G-7-DESIGN-ADMIN-MEDIA-OBSERVABILITY-STATUS — vérification UI réelle
+ * P4G-8-DESIGN-ADMIN-SALARY-DISPUTES — vérification UI réelle
  * (Chromium) de l'espace supervision livré (P4A + P4B-1 contrats + P4B-2
  * paiements + P4C salaire + P4D Claims + P4E-1 Remplacements + P4E-2 Réputation
  * + P4F Documents + P4F-2 Notifications + P4G-1 opérations + P4G-2 supervision +
  * P4G-3 sécurité + P4G-4 topologie/Worker edge + P4G-5A contrôles de sécurité
  * + P4G-5B incidents & audit de sécurité + P4G-6 données d'infrastructure
- * + P4G-7 média, observabilité & statut public).
+ * + P4G-7 média, observabilité & statut public + P4G-8 contestations salariales & corrections).
  *
  * Comme le script P2, ce script n'affirme rien sur des données simulées dans
  * l'application : les fixtures HTTP vivent ICI et ne sont jamais activées dans
  * le produit. Ce qui est vérifié dans un navigateur réel :
  *
- *  1. AUCUNE source de données configurée : les 62 fiches ADM rendent leur
+ *  1. AUCUNE source de données configurée : les 63 fiches ADM rendent leur
  *     conteneur (`data-unit`, `data-screen`), la structure déclarée par le
  *     design (`data-sheet-frame`) et le BACKEND_GAP, sans débordement
  *     horizontal à 360 px comme à 1440 px ; aucun terme du Master Design ni
@@ -86,6 +86,16 @@
  * requête lente, réplication, volumétrie, classe, coût ni intégrité de
  * préfixe inventée ; aucune commande activable ; navigation entre les deux
  * fiches ; refus 401/403 et erreur 500 ; 360/1440 px.
+ * 17. P4G-8 : ADM-25 (Salaire — contestations & corrections, unité propre
+ * « ADM — salaire (litiges) » sur /admin/salaire/litiges) — aucune requête
+ * vers /api/v1/admin/salary/*, vers /api/v1/admin/claims*, vers
+ * /api/v1/admin/payments* ni vers les routes OTP réservées aux parties ;
+ * les 4 repères de volume en « — » ; aucune carte de contestation salariale,
+ * aucun montant contesté, aucun solde avant/après, aucune écriture
+ * compensatoire ni taux de fondement inventé ; distinctions explicites avec
+ * Claim, Payment, OTP et rapprochement ; les 3 actions écrites par la fiche
+ * sont désactivées (data-unavailable-action) ; navigation vers ADM-23, ADM-18,
+ * ADM-19 et ADM-26 ; refus 401/403 et erreur 500 ; 360/1440 px.
  *
  * Exécution : `npm run verify:admin-ui`.
  */
@@ -3174,6 +3184,76 @@ try {
       assert.deepEqual(incidentsAuditRequests, [], 'aucune lecture sensible après refus ou erreur de session');
     } finally {
       page.off('request', trackIncidentsAuditRequests);
+      sessionMode = 'admin';
+    }
+  });
+
+  await check('ADM-25 — contestations salariales & corrections diagnostiques, distinctions Claim/Payment/OTP/rapprochement et aucun solde ni écriture inventés (360/1440 px)', async () => {
+    sessionMode = 'admin';
+    const path = '/admin/salaire/litiges';
+    const code = 'ADM-25';
+    const salaryDisputeRequests: string[] = [];
+    const trackSalaryDisputeRequests = (request: { url(): string }) => {
+      const reqPath = new URL(request.url()).pathname;
+      if (
+        reqPath.startsWith('/api/v1/admin/salary')
+        || reqPath.startsWith('/api/v1/admin/claims')
+        || reqPath.startsWith('/api/v1/admin/payments')
+        || reqPath.startsWith('/api/v1/admin/payment-reconciliation')
+        || reqPath.includes('/salary-confirmation')
+      ) salaryDisputeRequests.push(request.url());
+    };
+    page.on('request', trackSalaryDisputeRequests);
+    try {
+      for (const width of [360, 1440]) {
+        await page.setViewportSize({ width, height: 900 });
+        await page.goto(api.origin + path);
+        const screen = page.locator(`[data-screen="${code}"]`);
+        await screen.waitFor();
+        assert.equal(await screen.getAttribute('data-unit'), 'ADM-25', 'ADM-25 : rattaché à son unité propre ADM-25');
+        await screen.locator('[data-backend-gap="true"]').last().waitFor();
+        const text = await screen.innerText();
+        assert.ok(says(text, 'BACKEND_GAP') && says(text, 'Indisponible'), 'ADM-25 : absence de source ou d’action non signalée');
+        assert.ok(says(text, '404'), 'ADM-25 : la vérification 404 des références de design doit être nommée');
+        assert.equal(await screen.locator('[data-no-invented-salary-disputes="true"]').count(), 1, 'ADM-25 : mention de non-simulation des repères absente');
+        assert.equal(await screen.locator('[data-salary-dispute-distinctions="true"]').count(), 1, 'ADM-25 : distinctions Claim/Payment/OTP/rapprochement absentes');
+        for (const zoneKind of ['hero', 'kpi', 'list', 'table', 'cta']) {
+          assert.ok(await screen.locator(`[data-zone="${zoneKind}"]`).count() >= 1, `ADM-25 : zone ${zoneKind} absente`);
+        }
+        const values = (await screen.locator('.lbm-admin__kpi-value').allTextContents()).map((v) => v.trim());
+        assert.equal(values.length, 4, 'ADM-25 : 4 repères de volume attendus');
+        assert.ok(values.every((v) => v === '—'), `ADM-25 : repère inventé (${values.join(', ')})`);
+        assert.equal(await screen.locator('table tbody tr').count(), 1, 'ADM-25 : aucune ligne d’écriture compensatoire ne doit être inventée');
+        assert.ok(says(await screen.locator('table tbody tr').innerText(), 'Aucune écriture compensatoire'), 'ADM-25 : absence d’écriture compensatoire non expliquée');
+        assert.equal(await screen.locator('form').count(), 0, 'ADM-25 : aucun formulaire sans handler');
+        assert.equal(await screen.locator('input, select, textarea').count(), 0, 'ADM-25 : aucun champ de saisie sans commande serveur');
+        assert.equal(await screen.locator('button[data-unavailable-action]').count(), 3, 'ADM-25 : les 3 actions écrites par la fiche doivent être identifiées');
+        assert.equal(await screen.locator('button:not([disabled])').count(), 0, 'ADM-25 : aucune commande active');
+        assert.equal(await screen.locator('a[href="/admin/salaire/confirmations"]').count(), 1, 'ADM-25 : lien vers ADM-23 présent');
+        assert.equal(await screen.locator('a[href="/admin/paiements"]').count(), 1, 'ADM-25 : lien vers ADM-18 présent');
+        assert.equal(await screen.locator('a[href="/admin/paiements/reconciliation"]').count(), 1, 'ADM-25 : lien vers ADM-19 présent');
+        assert.equal(await screen.locator('a[href="/admin/litiges"]').count(), 1, 'ADM-25 : lien vers ADM-26 présent');
+        assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `ADM-25 : débordement à ${width}px`);
+        await assertNoForbiddenText(path, text);
+      }
+      assert.deepEqual(salaryDisputeRequests, [], 'ADM-25 : aucune requête vers /admin/salary/*, /admin/claims*, /admin/payments* ou OTP utilisée comme substitut');
+
+      sessionMode = 'employer';
+      await page.goto(api.origin + path);
+      await page.locator('[data-state="403"]').waitFor();
+      assert.equal(await page.locator(`[data-screen="${code}"]`).count(), 0, 'ADM-25 : écran rendu pour un Employeur (403 attendu)');
+
+      sessionMode = 'anonymous';
+      await page.goto(api.origin + path);
+      await page.locator('[data-state="401"]').waitFor();
+
+      sessionMode = 'error';
+      await page.goto(api.origin + path);
+      await page.locator('[data-state="500"]').waitFor();
+      assert.ok(!(await page.locator('[data-state="500"]').innerText()).includes(SERVER_SECRET), 'ADM-25 : détail de session divulgué sur 500');
+      assert.deepEqual(salaryDisputeRequests, [], 'ADM-25 : aucune requête métier après refus ou erreur de session');
+    } finally {
+      page.off('request', trackSalaryDisputeRequests);
       sessionMode = 'admin';
     }
   });
