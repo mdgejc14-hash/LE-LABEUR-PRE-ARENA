@@ -5,7 +5,8 @@
 // P4E-2 RÉPUTATION (ADM-34 → ADM-36), P4F DOCUMENTS (ADM-37 → ADM-40),
 // P4F-2 NOTIFICATIONS (ADM-41 → ADM-43), P4G-1 OPÉRATIONS (ADM-44 → ADM-46),
 // P4G-2 SUPERVISION (ADM-47 → ADM-49), P4G-3 SÉCURITÉ (ADM-50 → ADM-51),
-// P4G-4 INFRASTRUCTURE (ADM-57 → ADM-58).
+// P4G-4 INFRASTRUCTURE (ADM-57 → ADM-58),
+// P4G-5A CONTRÔLES DE SÉCURITÉ (ADM-52 → ADM-54).
 // Régénérer : npm run design:admin
 //
 // Référence de design UNIQUEMENT : aucun libellé de ce fichier n'est affiché par
@@ -1471,6 +1472,72 @@ export const ADMIN_DESIGN_UNITS = [
     ]
   },
   {
+    "id": "ADM-52",
+    "canon": "ADM — sécurité (replay, signatures, rate limits & webhooks)",
+    "criticality": "P0",
+    "archetype": "Le temps ne se répète pas",
+    "screenCodes": [
+      "ADM-52",
+      "ADM-53",
+      "ADM-54"
+    ],
+    "routes": [
+      "/admin/securite/replay",
+      "/admin/securite/rate-limits",
+      "/admin/securite/webhooks"
+    ],
+    "zoneKinds": [
+      "cta",
+      "doc",
+      "kpi",
+      "list",
+      "table",
+      "timeline"
+    ],
+    "componentRefs": [
+      "Analyse",
+      "Exemptions",
+      "File",
+      "Rotation",
+      "Simulateur",
+      "Table"
+    ],
+    "stateNames": [
+      "Sain",
+      "Rejeux isolés",
+      "Motif coordonné",
+      "Faux positif",
+      "Nominal",
+      "Étouffement",
+      "Attaque",
+      "Ajusté",
+      "Nominal",
+      "Dégradé",
+      "Panne partenaire",
+      "Incident sécurité"
+    ],
+    "tokens": [
+      "--amber-500",
+      "--clay-500",
+      "--emerald-500",
+      "--mono",
+      "--table",
+      "--violet-500"
+    ],
+    "designApi": [
+      "GET /admin/security/replay?cursor=",
+      "POST /admin/security/replay/:id/qualify",
+      "POST /admin/security/secrets/:id/rotate",
+      "GET /admin/security/rate-limits",
+      "POST /admin/security/rate-limits/:rule/simulate",
+      "POST /admin/security/rate-limits/:rule/apply",
+      "POST /admin/security/unblock {userId, motive}",
+      "GET /admin/security/webhooks",
+      "GET /admin/security/webhooks/:partner/events",
+      "POST /admin/security/webhooks/events/:id/retry"
+    ]
+  },
+  {
     "id": "ADM-57",
     "canon": "ADM — infra (topologie & bord)",
     "criticality": "P0",
@@ -2859,6 +2926,87 @@ export const ADMIN_DESIGN_SCREENS = [
       "--clay-500",
       "--emerald-500",
       "--mono"
+    ]
+  },
+  {
+    "code": "ADM-52",
+    "unitId": "ADM — sécurité (replay, signatures, rate limits & webhooks)",
+    "route": "/admin/securite/replay",
+    "canonicalRoute": "/admin/securite/replay",
+    "role": "ADMIN",
+    "criticality": "P0",
+    "zoneKinds": [
+      "table",
+      "doc",
+      "kpi",
+      "cta"
+    ],
+    "variantOf": null,
+    "designApi": [
+      "GET /admin/security/replay?cursor=",
+      "POST /admin/security/replay/:id/qualify",
+      "POST /admin/security/secrets/:id/rotate"
+    ],
+    "tokens": [
+      "--clay-500",
+      "--violet-500",
+      "--mono",
+      "--table"
+    ]
+  },
+  {
+    "code": "ADM-53",
+    "unitId": "ADM — sécurité (replay, signatures, rate limits & webhooks)",
+    "route": "/admin/securite/rate-limits",
+    "canonicalRoute": "/admin/securite/rate-limits",
+    "role": "ADMIN",
+    "criticality": "P1",
+    "zoneKinds": [
+      "table",
+      "kpi",
+      "list",
+      "cta"
+    ],
+    "variantOf": null,
+    "designApi": [
+      "GET /admin/security/rate-limits",
+      "POST /admin/security/rate-limits/:rule/simulate",
+      "POST /admin/security/rate-limits/:rule/apply",
+      "POST /admin/security/unblock {userId, motive}"
+    ],
+    "tokens": [
+      "--amber-500",
+      "--clay-500",
+      "--violet-500",
+      "--mono",
+      "--table"
+    ]
+  },
+  {
+    "code": "ADM-54",
+    "unitId": "ADM — sécurité (replay, signatures, rate limits & webhooks)",
+    "route": "/admin/securite/webhooks",
+    "canonicalRoute": "/admin/securite/webhooks",
+    "role": "ADMIN",
+    "criticality": "P1",
+    "zoneKinds": [
+      "table",
+      "timeline",
+      "list",
+      "cta"
+    ],
+    "variantOf": null,
+    "designApi": [
+      "GET /admin/security/webhooks",
+      "GET /admin/security/webhooks/:partner/events",
+      "POST /admin/security/webhooks/events/:id/retry"
+    ],
+    "tokens": [
+      "--mono",
+      "--clay-500",
+      "--amber-500",
+      "--emerald-500",
+      "--table"
     ]
   },
   {

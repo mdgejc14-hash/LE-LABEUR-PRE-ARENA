@@ -64,7 +64,15 @@
  * fournisseurs, métriques, test d'envoi et bascule restent BACKEND_GAP →
  * statut PARTIEL.
  *
- * Les unités ADM de sécurité restantes (ADM-52 → ADM-56) et d’infrastructure
+ * P4G-5A-DESIGN-ADMIN-SECURITY-CONTROLS : ADM-52 (rejeux et signatures,
+ * limitation de débit et webhooks — 3 fiches ADM-52 → ADM-54 dans l’unité
+ * exacte « ADM — sécurité (replay, signatures, rate limits & webhooks) ») est
+ * diagnostique : aucune route `/api/v1/admin/security/*` ni permission de
+ * sécurité n’existe ; les protections serveur réelles (classification
+ * forensique, limiteur de débit, vérification de signature du webhook de
+ * paiement) ne sont ni appelées ni converties en mesure → statut PARTIEL.
+ *
+ * Les unités ADM de sécurité restantes (ADM-55 → ADM-56) et d’infrastructure
  * restantes (ADM-59 → ADM-63), ainsi que FIN et RTC, restent non intégrées.
  */
 
@@ -105,15 +113,17 @@ export const PRESTATAIRE_UNIT_IDS: readonly string[] = PRESTATAIRE_DESIGN_UNITS.
  * P4D-DESIGN-ADMIN-CLAIMS, P4E-1-DESIGN-ADMIN-REPLACEMENTS,
  * P4E-2-DESIGN-ADMIN-REPUTATION, P4F-DESIGN-ADMIN-DOCUMENTS,
  * P4F-2-DESIGN-ADMIN-NOTIFICATIONS, P4G-1-DESIGN-ADMIN-OPERATIONS et
- * P4G-2-DESIGN-ADMIN-SUPERVISION, P4G-3-DESIGN-ADMIN-SECURITY et
- * P4G-4-DESIGN-ADMIN-INFRASTRUCTURE (27 unités, 52 fiches, dérivées du
- * catalogue généré). P4G-2 rend ADM-47/48/49 diagnostiques : les capacités SLO,
- * dead-letter et incidents d’exploitation sont absentes du backend.
+ * P4G-2-DESIGN-ADMIN-SUPERVISION, P4G-3-DESIGN-ADMIN-SECURITY,
+ * P4G-4-DESIGN-ADMIN-INFRASTRUCTURE et P4G-5A-DESIGN-ADMIN-SECURITY-CONTROLS
+ * (28 unités, 55 fiches, dérivées du catalogue généré). P4G-2 rend ADM-47/48/49
+ * diagnostiques : les capacités SLO, dead-letter et incidents d’exploitation
+ * sont absentes du backend.
  * P4G-3 rend ADM-50/51 diagnostiques : aucune API ADMIN de détection IDOR.
  * P4G-4 rend ADM-57/58 diagnostiques : aucune API ADMIN de topologie, métriques
- * Edge, déploiements ou actions n’est installée. ADM-59 → ADM-63 et ADM-52 →
- * ADM-56 restent non intégrées. Même règle : PARTIEL dès qu'une fiche déclare
- * une capacité absente.
+ * Edge, déploiements ou actions n’est installée. P4G-5A rend ADM-52/53/54
+ * diagnostiques : aucune API ADMIN de rejeu, de limitation de débit ni de
+ * webhook n’est installée. ADM-59 → ADM-63 et ADM-55 → ADM-56 restent non
+ * intégrées. Même règle : PARTIEL dès qu'une fiche déclare une capacité absente.
  */
 export const ADMIN_UNIT_IDS: readonly string[] = ADMIN_DESIGN_UNITS.map((unit) => unit.id);
 

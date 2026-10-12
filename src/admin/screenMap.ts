@@ -7,7 +7,8 @@
  * ADM-31 → ADM-33 ajoutées au catalogue P4E-1, ADM-34 → ADM-36 ajoutées au
  * catalogue P4E-2, ADM-41 → ADM-43 au catalogue P4F-2, ADM-44 → ADM-46
  * au catalogue P4G-1, ADM-47 → ADM-49 au catalogue P4G-2, ADM-50/51 au
- * catalogue P4G-3 et ADM-57/58 au catalogue P4G-4.
+ * catalogue P4G-3, ADM-57/58 au catalogue P4G-4 et ADM-52 → ADM-54 au
+ * catalogue P4G-5A.
  * Ce module ne contient AUCUN composant : il est importable par la résolution
  * de route sans embarquer l'interface.
  */
