@@ -125,7 +125,7 @@ export function Admin52ReplaySignatures({ unitId, pathname }: AdminUnitProps) {
           {
             label: 'Consulter le journal d’audit',
             reference: 'ADM-56 · /admin/securite/audit',
-            reason: 'Le journal d’audit de sécurité est hors de cette tranche ; aucune trace forensique n’est rendue ici.',
+            reason: 'L’écran du journal d’audit (livré par la même unité de sécurité) ne publie aucune donnée : aucune route ADMIN ne lit le ledger d’audit. Aucune trace forensique n’est rendue ici.',
           },
         ]} />
       </Panel>
@@ -230,7 +230,7 @@ export function Admin54Webhooks({ unitId, pathname }: AdminUnitProps) {
           {
             label: 'Ouvrir un incident',
             reference: 'ADM-55 · /admin/securite/incidents',
-            reason: 'Les incidents de sécurité sont hors de cette tranche ; aucun incident n’est ouvert depuis cet écran.',
+            reason: 'L’écran des incidents de sécurité (livré par la même unité de sécurité) ne publie aucun dossier : aucun incident n’est ouvert ni rouvert depuis cet écran.',
           },
         ]} />
       </Panel>

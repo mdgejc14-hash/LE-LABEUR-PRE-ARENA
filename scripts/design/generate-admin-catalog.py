@@ -39,6 +39,13 @@ Tranches livrées :
   contrat ADMIN de consultation de rejeux, de limitation de débit, de
   webhooks ni d’audit de sécurité n’existe : les API citées par les fiches
   restent des références de design, jamais des capacités serveur.
+  P4G-5B-DESIGN-ADMIN-SECURITY-INCIDENTS-AUDIT : ADM-55/56 (unité exacte
+  « ADM — sécurité (incidents & audit) »). Les deux frontières de contrôle
+  existantes (admin.audit.list avec audit:read, admin.incidents.list avec
+  incidents:read:any) répondent {items: [], persistence: not-configured} :
+  elles ne conviennent ni à un journal d’audit, ni à un registre d’incidents
+  de sécurité. Le ledger d’audit réel (automation_audit_ledger) n’a aucune
+  route ADMIN et aucune empreinte de chaînage. Les vues sont diagnostiques.
 
 Ce générateur ne produit AUCUN libellé métier : les textes affichés par
 l'interface viennent de `src/admin/vocabulary.ts` (vocabulaire LE LABEUR).
@@ -95,8 +102,9 @@ Seule la présentation diagnostique des capacités serveur absentes est intégr�
 aucune API de supervision n’est déduite des routes décrites dans les fiches.
 
 Périmètre de la tranche P4G-3 : ADM-50 / ADM-51 (unité exacte `ADM —
-sécurité (dashboard & IDOR)`). ADM-52/53/54 et ADM-55/56 restent reportés
-et sont traitées par les tranches suivantes (ADM-52/53/54 par P4G-5A).
+sécurité (dashboard & IDOR)`). ADM-52/53/54 et ADM-55/56 restaient reportés à
+cette date et ont été traitées par les tranches suivantes (ADM-52/53/54 par
+P4G-5A, ADM-55/56 par P4G-5B).
 
 Périmètre de la tranche P4G-4 : ADM-57 / ADM-58 (unité exacte `ADM — infra
 (topologie & bord)`). Aucun flux de topologie, de métriques Edge, de déploiement
@@ -114,8 +122,19 @@ n’est déclarée. Le dépôt contient bien des mécanismes serveur internes
 (classification forensique `SECURITY_REPLAY_REJECTED` / `SECURITY_RATE_LIMITED`,
 limitateur `createSecurityRateLimiter`, vérification de signature du webhook de
 paiement) : ce sont des protections, pas une API de supervision — elles ne sont
-ni appelées ni traduites en mesure par l’interface. ADM-55/56 (incidents & audit
-de sécurité) restent hors tranche.
+ni appelées ni traduites en mesure par l’interface.
+
+Périmètre de la tranche P4G-5B : ADM-55 / ADM-56 (unité exacte `ADM — sécurité
+(incidents & audit)`). Les fiches citent GET /admin/security/incidents/:id,
+POST /admin/security/incidents/:id/step, POST /admin/security/incidents/:id/close,
+GET /admin/security/audit, POST /admin/security/audit/search,
+POST /admin/security/audit/verify et GET /admin/security/audit/export : AUCUNE
+de ces routes n’existe dans `src/backend/api/routeContracts.ts` et aucune
+permission ADMIN d’incident ou de journal de sécurité n’est déclarée. Les deux
+contrats qui existent réellement (`admin.audit.list`, `admin.incidents.list`)
+sont des frontières de contrôle à items vides : le générateur ne les transforme
+pas en source de journal ni de registre. ADM-59 → ADM-63 (infrastructure)
+restent hors tranche.
 """
 import json
 import sys
@@ -128,7 +147,7 @@ sys.path.insert(0, str(ROOT / 'design'))
 from llab.content import load_all  # noqa: E402
 from llab.units import unit_of  # noqa: E402
 
-# Fiches ADM livrées par les tranches P4A → P4G-5A (périmètre strict, sélection explicite).
+# Fiches ADM livrées par les tranches P4A → P4G-5B (périmètre strict, sélection explicite).
 TRANCHE_P4A = {
     'ADM-01', 'ADM-02', 'ADM-03', 'ADM-04', 'ADM-05',
     'ADM-06', 'ADM-07', 'ADM-08', 'ADM-09',
@@ -209,7 +228,14 @@ TRANCHE_P4G4 = {'ADM-57', 'ADM-58'}
 # de sécurité : les API des fiches sont des références de comparaison.
 TRANCHE_P4G5A = {'ADM-52', 'ADM-53', 'ADM-54'}
 
-TRANCHE_ADMIN = TRANCHE_P4G1 | TRANCHE_P4G2 | TRANCHE_P4G3 | TRANCHE_P4G4 | TRANCHE_P4G5A | TRANCHE_P4A | TRANCHE_P4B1 | TRANCHE_P4B2 | TRANCHE_P4C | TRANCHE_P4D | TRANCHE_P4E1 | TRANCHE_P4E2 | TRANCHE_P4F | TRANCHE_P4F2
+# P4G-5B : unité exacte de design/llab/units.py « ADM — sécurité (incidents &
+# audit) » = ADM-55 regroupe ADM-55/56. Les contrats existants
+# (`admin.audit.list`, `admin.incidents.list`) sont des frontières de contrôle
+# sans données : ils ne sont pas une source de journal d’audit ni de registre
+# d’incidents de sécurité.
+TRANCHE_P4G5B = {'ADM-55', 'ADM-56'}
+
+TRANCHE_ADMIN = TRANCHE_P4G1 | TRANCHE_P4G2 | TRANCHE_P4G3 | TRANCHE_P4G4 | TRANCHE_P4G5A | TRANCHE_P4G5B | TRANCHE_P4A | TRANCHE_P4B1 | TRANCHE_P4B2 | TRANCHE_P4C | TRANCHE_P4D | TRANCHE_P4E1 | TRANCHE_P4E2 | TRANCHE_P4F | TRANCHE_P4F2
 
 families = load_all()
 SCREENS = [s for s in families['ADM'] if s.code in TRANCHE_ADMIN]
@@ -275,7 +301,8 @@ payload = (
     '// P4F-2 NOTIFICATIONS (ADM-41 → ADM-43), P4G-1 OPÉRATIONS (ADM-44 → ADM-46),\n'
     '// P4G-2 SUPERVISION (ADM-47 → ADM-49), P4G-3 SÉCURITÉ (ADM-50 → ADM-51),\n'
     '// P4G-4 INFRASTRUCTURE (ADM-57 → ADM-58),\n'
-    '// P4G-5A CONTRÔLES DE SÉCURITÉ (ADM-52 → ADM-54).\n'
+    '// P4G-5A CONTRÔLES DE SÉCURITÉ (ADM-52 → ADM-54),\n'
+    '// P4G-5B INCIDENTS & AUDIT DE SÉCURITÉ (ADM-55 → ADM-56).\n'
     '// Régénérer : npm run design:admin\n'
     '//\n'
     '// Référence de design UNIQUEMENT : aucun libellé de ce fichier n\'est affiché par\n'

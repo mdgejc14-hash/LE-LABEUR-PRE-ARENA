@@ -37,6 +37,23 @@
  * de politique ou de purge n'existe : chaque capacité est BACKEND_GAP, jamais
  * simulée. Les BACKEND_GAP ci-dessous nomment ces capacités absentes.
  *
+ * P4G-5B-DESIGN-ADMIN-SECURITY-INCIDENTS-AUDIT (ADM-55/56) : unité exacte
+ * « ADM — sécurité (incidents & audit) ». Deux contrats ADMIN existants ont été
+ * réexaminés et REJETÉS comme source de ces écrans, parce que leur contenu ne
+ * convient pas : `admin.audit.list` (audit:read) et `admin.incidents.list`
+ * (incidents:read:any) répondent tous deux une frontière de contrôle
+ * `{items: [], cursor: null, hasMore: false, persistence: 'not-configured'}`
+ * — vérifié par requête réelle sur le worker composé avec une session ADMIN.
+ * Le ledger d’audit unique du produit (`automation_audit_ledger`) reçoit des
+ * écritures réelles (USER_BLOCKED, SECURITY_ACCESS_DENIED…) mais n’est exposé
+ * par aucune route ADMIN, ne porte aucune empreinte de chaînage ni lien vers
+ * l’entrée précédente et n’a aucune contrainte d’immuabilité. La ressource
+ * « incidents » du produit est un incident CONTRACTUEL arbitré, jamais un
+ * incident de sécurité classifié. Aucune commande d’étape, de preuve, de
+ * recherche, de vérification de chaîne ou d’export n’existe : chaque capacité
+ * de ces deux fiches est BACKEND_GAP, et aucun signal technique n’est converti
+ * en incident ni en vulnérabilité.
+ *
  * P4G-5A-DESIGN-ADMIN-SECURITY-CONTROLS (ADM-52 → ADM-54) : unité exacte
  * « ADM — sécurité (replay, signatures, rate limits & webhooks) ». Le produit
  * contient des protections serveur réelles — classification forensique
@@ -387,6 +404,23 @@ export const ADMIN_UNIT_GAPS: Record<string, readonly string[]> = {
     'ADM-54 · les seuls contrats webhook du produit sont webhooks.payment-provider et webhooks.payment-provider.root (POST entrant public) : ce sont des points de réception, pas une lecture ADMIN de supervision. Ils ne sont pas appelés par cet écran.',
     'ADM-54 · la vérification de signature et d’horodatage est faite par l’adaptateur fournisseur ; un rejet écrit une trace de rejet de signature dans le ledger d’audit des paiements, qu’aucune route ADMIN n’expose. L’absence de ligne ici n’atteste ni l’absence d’événement, ni une signature valide, ni une panne partenaire.',
     'ADM-54 · aucune clé de signature, valeur d’en-tête ni charge utile n’est affichée : aucune route ADMIN ne les fournit et aucune n’est reconstruite ni devinée côté interface.',
+  ],
+  /* ── P4G-5B · incidents de sécurité & journal d’audit ── */
+  'ADM-55': [
+    'ADM-55 · GET /admin/security/incidents/:id, POST /admin/security/incidents/:id/step {step, evidence} et POST /admin/security/incidents/:id/close {postmortem} — références de design absentes de routeContracts.ts et sans handler : aucune classification, sévérité, périmètre, statut, responsable, étape de procédure, preuve ni post-mortem ne sont lisibles ni modifiables. Une requête sur /api/v1/admin/security/incidents/:id répond 404 (vérifié sur le worker composé).',
+    'ADM-55 · GET /api/v1/admin/incidents (admin.incidents.list, incidents:read:any) est déclaré et composé, mais répond une frontière de contrôle {items: [], cursor: null, hasMore: false, persistence: not-configured} : elle ne contient aucun incident, aucune procédure et aucune preuve. Cette route n’est pas appelée par cet écran et son tableau vide ne prouve pas qu’aucun incident de sécurité n’existe.',
+    'ADM-55 · la ressource « incidents » du produit est un incident CONTRACTUEL arbitré (poursuite, annulation ou remplacement d’un Contrat), pas un incident de sécurité : elle n’est pas convertie en classification, en sévérité ni en périmètre. Aucun incident de sécurité n’est déduit de cette ressource.',
+    'ADM-55 · POST /api/v1/admin/incidents/:incidentId/arbitrate (incidents:arbitrate) est déclaré mais aucun handler n’est installé dans la composition du worker : la commande répond 501 et ne correspond à aucune étape de procédure d’incident de sécurité. Elle n’est pas appelée et aucune action équivalente n’est proposée.',
+    'ADM-55 · aucune permission ADMIN d’incident de sécurité n’est déclarée : incidents:read:any et incidents:arbitrate sont les permissions réelles des Claims, de la Réputation et des Documents. La garde de session ADMIN existante protège l’écran ; aucune autorisation métier ni route serveur n’est ajoutée.',
+    'ADM-55 · aucune obligation de notification (personnes concernées, autorités, partenaires, presse), aucune juridiction, aucune échéance légale et aucune conclusion juridique ne sont produites : aucune source serveur ne les fournit. Un signal technique classé par le serveur (refus d’accès, limitation de débit, rejet d’idempotence) n’est ni un incident confirmé, ni une vulnérabilité.',
+  ],
+  'ADM-56': [
+    'ADM-56 · GET /admin/security/audit?cursor=&filters=, POST /admin/security/audit/search {query}, POST /admin/security/audit/verify et GET /admin/security/audit/export — références de design absentes de routeContracts.ts et sans handler : aucune entrée, aucun filtre serveur, aucune vérification de chaîne et aucun export ne sont disponibles. Une requête sur /api/v1/admin/security/audit répond 404 (vérifié sur le worker composé).',
+    'ADM-56 · GET /api/v1/admin/audit (admin.audit.list, audit:read) est déclaré et composé : un ADMIN reçoit 200, sans session 401, sans audit:read 403. Sa réponse est une frontière de contrôle {resource: audit, items: [], cursor: null, hasMore: false, persistence: not-configured} : elle ne lit pas le ledger d’audit et ne contient aucune entrée. Elle n’est pas appelée par cet écran et ses items vides ne constituent pas un journal vide.',
+    'ADM-56 · le ledger d’audit unique du produit (automation_audit_ledger, migrations 0006/0007) reçoit des écritures réelles (USER_BLOCKED, SECURITY_ACCESS_DENIED, SECURITY_RATE_LIMITED…) mais aucune route ADMIN ne les expose en lecture : il n’est pas un journal consultable et n’est pas utilisé comme substitut.',
+    'ADM-56 · le ledger d’audit ne porte aucune empreinte d’événement, aucun lien vers l’entrée précédente, aucune procédure de vérification de chaîne et aucune contrainte d’immuabilité en base : « chaîne vérifiée », « dernier audit d’intégrité » et « export JSON signé » restent sans source. Aucun verdict d’intégrité n’est affiché et aucune vérification n’est simulée dans le navigateur.',
+    'ADM-56 · politique de rétention, stockage froid et journalisation des consultations du journal lui-même (qui a cherché quoi) — aucun contrat ADMIN ni mécanisme consultable ne les confirme. Aucune durée de conservation, aucune valeur probante et aucune trace de consultation ne sont présentées.',
+    'ADM-56 · aucune recherche détachée avec notification n’existe côté serveur : l’écran n’affiche aucun champ de filtre, aucune requête n’est envoyée et aucune exécution en tâche de fond n’est annoncée.',
   ],
 
 };

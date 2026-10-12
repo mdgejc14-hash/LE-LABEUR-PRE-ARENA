@@ -6,7 +6,8 @@
 // P4F-2 NOTIFICATIONS (ADM-41 → ADM-43), P4G-1 OPÉRATIONS (ADM-44 → ADM-46),
 // P4G-2 SUPERVISION (ADM-47 → ADM-49), P4G-3 SÉCURITÉ (ADM-50 → ADM-51),
 // P4G-4 INFRASTRUCTURE (ADM-57 → ADM-58),
-// P4G-5A CONTRÔLES DE SÉCURITÉ (ADM-52 → ADM-54).
+// P4G-5A CONTRÔLES DE SÉCURITÉ (ADM-52 → ADM-54),
+// P4G-5B INCIDENTS & AUDIT DE SÉCURITÉ (ADM-55 → ADM-56).
 // Régénérer : npm run design:admin
 //
 // Référence de design UNIQUEMENT : aucun libellé de ce fichier n'est affiché par
@@ -1538,6 +1539,67 @@ export const ADMIN_DESIGN_UNITS = [
     ]
   },
   {
+    "id": "ADM-55",
+    "canon": "ADM — sécurité (incidents & audit)",
+    "criticality": "P0",
+    "archetype": "Réponse à incident",
+    "screenCodes": [
+      "ADM-55",
+      "ADM-56"
+    ],
+    "routes": [
+      "/admin/securite/incidents",
+      "/admin/securite/audit"
+    ],
+    "zoneKinds": [
+      "cta",
+      "form",
+      "hero",
+      "kpi",
+      "list",
+      "table",
+      "timeline"
+    ],
+    "componentRefs": [
+      "C-06",
+      "Export",
+      "Post-mortem",
+      "Recherche",
+      "Registre",
+      "Table",
+      "Évaluateur"
+    ],
+    "stateNames": [
+      "Qualifié",
+      "Confiné",
+      "Rétabli",
+      "Clos",
+      "Fausse alerte",
+      "Intègre",
+      "Rupture",
+      "Recherche longue",
+      "Export en cours"
+    ],
+    "tokens": [
+      "--clay-500",
+      "--clay-600",
+      "--emerald-500",
+      "--glass-2",
+      "--mono",
+      "--table",
+      "--violet-500"
+    ],
+    "designApi": [
+      "GET /admin/security/incidents/:id",
+      "POST /admin/security/incidents/:id/step {step, evidence}",
+      "POST /admin/security/incidents/:id/close {postmortem}",
+      "GET /admin/security/audit?cursor=&filters=",
+      "POST /admin/security/audit/search {query}",
+      "POST /admin/security/audit/verify",
+      "GET /admin/security/audit/export"
+    ]
+  },
+  {
     "id": "ADM-57",
     "canon": "ADM — infra (topologie & bord)",
     "criticality": "P0",
@@ -3006,6 +3068,60 @@ export const ADMIN_DESIGN_SCREENS = [
       "--clay-500",
       "--amber-500",
       "--emerald-500",
+      "--table"
+    ]
+  },
+  {
+    "code": "ADM-55",
+    "unitId": "ADM — sécurité (incidents & audit)",
+    "route": "/admin/securite/incidents",
+    "canonicalRoute": "/admin/securite/incidents",
+    "role": "ADMIN",
+    "criticality": "P0",
+    "zoneKinds": [
+      "hero",
+      "timeline",
+      "list",
+      "cta"
+    ],
+    "variantOf": null,
+    "designApi": [
+      "GET /admin/security/incidents/:id",
+      "POST /admin/security/incidents/:id/step {step, evidence}",
+      "POST /admin/security/incidents/:id/close {postmortem}"
+    ],
+    "tokens": [
+      "--clay-600",
+      "--clay-500",
+      "--violet-500",
+      "--mono",
+      "--glass-2"
+    ]
+  },
+  {
+    "code": "ADM-56",
+    "unitId": "ADM — sécurité (incidents & audit)",
+    "route": "/admin/securite/audit",
+    "canonicalRoute": "/admin/securite/audit",
+    "role": "ADMIN",
+    "criticality": "P0",
+    "zoneKinds": [
+      "table",
+      "kpi",
+      "form",
+      "cta"
+    ],
+    "variantOf": null,
+    "designApi": [
+      "GET /admin/security/audit?cursor=&filters=",
+      "POST /admin/security/audit/search {query}",
+      "POST /admin/security/audit/verify",
+      "GET /admin/security/audit/export"
+    ],
+    "tokens": [
+      "--mono",
+      "--emerald-500",
+      "--clay-500",
       "--table"
     ]
   },

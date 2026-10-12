@@ -1,9 +1,9 @@
 /**
- * ADM —— registre des écrans livrés (28 unités, 55 fiches — tranches P4A,
+ * ADM —— registre des écrans livrés (29 unités, 57 fiches — tranches P4A,
  * P4B-1, P4B-2, P4C, P4D, P4E-1, P4E-2, P4F, P4F-2, P4G-1, P4G-2, P4G-3,
- * P4G-4 et P4G-5A).
+ * P4G-4, P4G-5A et P4G-5B).
  *
- * Chaque code de fiche ADM-01 → ADM-24, ADM-26 → ADM-54 et ADM-57/58 livré
+ * Chaque code de fiche ADM-01 → ADM-24, ADM-26 → ADM-56 et ADM-57/58 livré
  * par ces tranches est associé à l'écran qui le rend. Les variantes des fiches (mêmes
  * zones, état imposé par la route) réutilisent l'écran canonique, comme le
  * décrit le Master Design.
@@ -40,6 +40,15 @@
  * (classification forensique, limiteur de débit, vérification de signature du
  * webhook de paiement) ne sont ni appelées ni converties en mesure. Les trois
  * écrans sont diagnostiques et déclarent leurs capacités absentes.
+ * P4G-5B ajoute l’unité exacte « ADM — sécurité (incidents & audit) » :
+ * ADM-55 (incidents et procédures) et ADM-56 (journal d’audit). Les deux
+ * contrats qui existent réellement — admin.audit.list (audit:read) et
+ * admin.incidents.list (incidents:read:any) — répondent une frontière de
+ * contrôle à items vides (`persistence: not-configured`) et ne conviennent ni
+ * à un journal d’audit ni à un registre d’incidents de sécurité : ils ne sont
+ * pas appelés. Le ledger d’audit réel n’a aucune route ADMIN, aucune empreinte
+ * de chaînage et aucune contrainte d’immuabilité. Les deux écrans sont
+ * diagnostiques et déclarent leurs capacités absentes.
  *
  * Ce module est le SEUL point d'entrée des routes `/admin/*` des tranches :
  * il résout la fiche depuis le chemin réel, applique la garde de session puis
@@ -62,6 +71,10 @@ import {
   Admin53RateLimits,
   Admin54Webhooks,
 } from './screens/securityControls';
+import {
+  Admin55SecurityIncidents,
+  Admin56SecurityAudit,
+} from './screens/securityIncidentsAudit';
 import { Admin57InfrastructureTopology, Admin58WorkerEdge } from './screens/infrastructure';
 import { Admin01Dashboard } from './screens/overview';
 import { Admin02Users, Admin03UserSheet, Admin04Block, Admin05BlockJournal } from './screens/users';
@@ -173,6 +186,8 @@ export const ADMIN_SCREEN_COMPONENTS: Readonly<Record<string, AdminScreenCompone
   'ADM-52': Admin52ReplaySignatures,
   'ADM-53': Admin53RateLimits,
   'ADM-54': Admin54Webhooks,
+  'ADM-55': Admin55SecurityIncidents,
+  'ADM-56': Admin56SecurityAudit,
   'ADM-57': Admin57InfrastructureTopology,
   'ADM-58': Admin58WorkerEdge,
 };
