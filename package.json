@@ -29,6 +29,8 @@
     "design:prestataire:check": "python3 scripts/design/generate-prestataire-catalog.py --check",
     "design:admin": "python3 scripts/design/generate-admin-catalog.py",
     "design:admin:check": "python3 scripts/design/generate-admin-catalog.py --check",
+    "design:rtc": "python3 scripts/design/generate-rtc-catalog.py",
+    "design:rtc:check": "python3 scripts/design/generate-rtc-catalog.py --check",
     "verify:employer-ui": "tsx scripts/verify-employer-ui.ts",
     "verify:admin-ui": "tsx scripts/verify-admin-ui.ts"
   },

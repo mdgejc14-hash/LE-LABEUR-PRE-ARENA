@@ -45,6 +45,7 @@ import { runRoutingTests } from '../src/routing/routing.test';
 import { runEmployerTests } from '../src/employer/employer.test';
 import { runPrestataireTests } from '../src/prestataire/prestataire.test';
 import { runAdminTests } from '../src/admin/admin.test';
+import { runRtcTests } from '../src/rtc/rtc.test';
 
 interface TestCase {
   name: string;
@@ -100,12 +101,14 @@ async function main(): Promise<void> {
   const employer = await runEmployerTests();
   const prestataire = await runPrestataireTests();
   const admin = await runAdminTests();
+  const rtc = await runRtcTests();
 
   const suites: Array<{ name: string; cases: TestCase[] }> = [
     { name: 'P1 — Public / Auth / System integration', cases: publicAuth },
     { name: 'P2 — Espace employeur (32 unités / 60 fiches : routeur P0, API existantes, états, garde-fous vocabulaire et finance)', cases: employer },
     { name: 'P3 — Espace candidat (26 unités / 52 fiches : routeur P0, API existantes, états, garde-fous vocabulaire et finance)', cases: prestataire },
     { name: 'P4A + P4B-1 + P4B-2 + P4C + P4D + P4E-1 + P4E-2 + P4F + P4F-2 + P4G-1 + P4G-2 + P4G-3 + P4G-4 + P4G-5A + P4G-5B + P4G-6 + P4G-7 + P4G-8 — Espace supervision (34 unités / 63 fiches : routeur P0, API existantes, blocage, qualification, matching, contrats, paiements/déclarations/rapprochement, confirmations de Salaire et preuves, contestations salariales & corrections diagnostiques (ADM-25), Claims/litiges, Remplacements en lecture seule, Réputation ledger/corrections, Documents registre/audit/vérification/quarantaine, notifications In-App, files/jobs/cron, sécurité diagnostique, topologie/Worker edge diagnostiques, contrôles de sécurité diagnostiques (rejeux/limitation de débit/webhooks), incidents & audit de sécurité diagnostiques (frontières de contrôle écartées, ledger d’audit non exposé), données d’infrastructure (PostgreSQL/Hyperdrive, stockage objet) et média/observabilité/statut public diagnostiques, BACKEND_GAP, aucune donnée d’infrastructure, de média, de statut ni de correction salariale simulée, finance et vocabulaire)', cases: admin },
+    { name: 'RTC-1 — Sessions temps réel (5 unités / 8 fiches : routeur P0, webrtc.sessions.* existantes, entrée/clôture, diagnostic ICE sans secret, consentement diagnostique, BACKEND_GAP, aucun média simulé, finance et vocabulaire)', cases: rtc },
     { name: 'Domain deterministic', cases: deterministic.results.map(result => ({ name: result.name, success: result.success, detail: result.details })) },
     { name: 'Final stabilization', cases: stabilization.map(result => ({ name: result.name, success: result.success, detail: result.details })) },
     { name: 'Repository QA 800', cases: massive.results.map(result => ({ name: result.label, success: result.success, detail: result.detail })) },

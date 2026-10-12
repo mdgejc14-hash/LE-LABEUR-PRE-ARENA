@@ -117,7 +117,13 @@
  *
  * Les 34 unités ADM du référentiel (63 fiches) sont désormais toutes livrées
  * et au statut PARTIEL. La création d’ADM-25 ne débloque pas les unités FIN :
- * FIN (FIN-01 → FIN-03) et RTC (RTC-01 → RTC-02) restent non intégrées.
+ * FIN (FIN-01 → FIN-03) reste non intégrée.
+ *
+ * RTC-1 : les 5 unités RTC (RTC-01 préparation & diagnostic ; RTC-02
+ * invitation & connexion ; RTC-04 Session en cours ; RTC-05 résumé &
+ * historique ; RTC-08 consentement — 8 fiches) sont livrées (écran réel,
+ * routes du routeur P0, API webrtc.sessions.* existantes) et portent chacune
+ * au moins une capacité absente déclarée (`src/rtc/gaps.ts`) → statut PARTIEL.
  */
 
 import { PRODUCTION_UNITS, TOTAL_UNITS, UNIT_COUNTS_BY_FAMILY, type ProductionUnit } from '../design-system/generated/productionUnits';
@@ -127,6 +133,8 @@ import { PRESTATAIRE_DESIGN_UNITS } from '../prestataire/catalog';
 import { PRESTATAIRE_UNIT_GAPS } from '../prestataire/gaps';
 import { ADMIN_DESIGN_UNITS } from '../admin/catalog';
 import { ADMIN_UNIT_GAPS } from '../admin/gaps';
+import { RTC_DESIGN_UNITS } from '../rtc/catalog';
+import { RTC_UNIT_GAPS } from '../rtc/gaps';
 
 export type IntegrationStatus = 'NON_INTEGRE' | 'PARTIEL' | 'INTEGRE';
 
@@ -189,6 +197,13 @@ export const PRESTATAIRE_UNIT_IDS: readonly string[] = PRESTATAIRE_DESIGN_UNITS.
  */
 export const ADMIN_UNIT_IDS: readonly string[] = ADMIN_DESIGN_UNITS.map((unit) => unit.id);
 
+/**
+ * Unités RTC livrées par RTC-1 (5 unités, 8 fiches RTC-01 → RTC-08,
+ * dérivées du catalogue généré). Même règle : PARTIEL dès qu'une fiche
+ * déclare une capacité absente.
+ */
+export const RTC_UNIT_IDS: readonly string[] = RTC_DESIGN_UNITS.map((unit) => unit.id);
+
 export const PARTIAL_UNIT_IDS: readonly string[] = [
   ...PARTIAL_PUBLIC_AND_SYSTEM,
   ...EMPLOYER_UNIT_IDS.filter((unitId) =>
@@ -206,6 +221,11 @@ export const PARTIAL_UNIT_IDS: readonly string[] = [
       (screenCode) => (ADMIN_UNIT_GAPS[screenCode] ?? []).length > 0,
     ),
   ),
+  ...RTC_UNIT_IDS.filter((unitId) =>
+    (RTC_DESIGN_UNITS.find((unit) => unit.id === unitId)?.screenCodes ?? []).some(
+      (screenCode) => (RTC_UNIT_GAPS[screenCode] ?? []).length > 0,
+    ),
+  ),
 ];
 
 export function isEmployerUnit(unitId: string | null): boolean {
@@ -218,6 +238,10 @@ export function isPrestataireUnit(unitId: string | null): boolean {
 
 export function isAdminUnit(unitId: string | null): boolean {
   return unitId !== null && ADMIN_UNIT_IDS.includes(unitId);
+}
+
+export function isRtcUnit(unitId: string | null): boolean {
+  return unitId !== null && RTC_UNIT_IDS.includes(unitId);
 }
 
 export function integrationStatus(unitId: string): IntegrationStatus {

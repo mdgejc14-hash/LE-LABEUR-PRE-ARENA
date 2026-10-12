@@ -15,6 +15,7 @@ import '../theme/theme.css';
 import '../../employer/employer.css';
 import '../../prestataire/prestataire.css';
 import '../../admin/admin.css';
+import '../../rtc/rtc.css';
 import { useEffect, useRef, type ReactNode } from 'react';
 import { PRODUCTION_UNITS, UNIT_COUNTS_BY_FAMILY, type ProductionUnit } from '../generated/productionUnits';
 import { FAMILY_LABELS } from '../generated/chrome';
@@ -27,6 +28,8 @@ import { resolvePrestataireScreen } from '../../prestataire/screenMap';
 import { PrestataireRouteFallback } from '../../prestataire/RouteFallback';
 import { resolveAdminScreen } from '../../admin/screenMap';
 import { AdminRouteFallback } from '../../admin/RouteFallback';
+import { resolveRtcScreen } from '../../rtc/screenMap';
+import { RtcRouteFallback } from '../../rtc/RouteFallback';
 import { Suspense, lazy } from 'react';
 
 /** Écrans EMP chargés uniquement quand une route /client/* livrée est atteinte. */
@@ -37,8 +40,11 @@ const PrestataireScreen = lazy(() => import('../../prestataire/registry').then((
 
 /** Écrans ADM chargés uniquement quand une route /admin/* livrée est atteinte. */
 const AdminScreen = lazy(() => import('../../admin/registry').then((module) => ({ default: module.AdminScreen })));
+
+/** Écrans RTC chargés uniquement quand une route /appel* livrée est atteinte. */
+const RtcScreen = lazy(() => import('../../rtc/registry').then((module) => ({ default: module.RtcScreen })));
 import { Link, navigate } from '../../routing/navigation';
-import { ADMIN_UNIT_IDS, integrationStatus } from '../../routing/integration';
+import { ADMIN_UNIT_IDS, RTC_UNIT_IDS, integrationStatus } from '../../routing/integration';
 import { SquircleCard } from '../components/SquircleCard';
 import { StatusSeal } from '../components/StatusSeal';
 import { SHELL_COMPONENTS } from './shells';
@@ -202,6 +208,28 @@ function Content({ route }: { route: ShellRouteResolution }) {
         <PrestataireScreen unitId={route.unitId} pathname={route.pathname} segments={route.segments} />
       </Suspense>
     );
+  }
+
+  /**
+   * Sessions temps réel livrées (RTC-1) : un chemin rattaché à une unité RTC
+   * avec une fiche résolue affiche son écran. Un chemin rattaché à une unité
+   * mais sans fiche livrée garde le repli honnête — aucune page métier n'est
+   * inventée.
+   */
+  if (route.namespace === 'appel' && route.unitId && RTC_UNIT_IDS.includes(route.unitId) && resolveRtcScreen(route.pathname)) {
+    return (
+      <Suspense fallback={<LoadingRoute />}>
+        <RtcScreen unitId={route.unitId} pathname={route.pathname} segments={route.segments} />
+      </Suspense>
+    );
+  }
+
+  /**
+   * Chemin rattaché à une unité RTC mais absent du design : le repli honnête
+   * le dit — aucune fiche n'est inventée.
+   */
+  if (route.namespace === 'appel' && route.unitId && RTC_UNIT_IDS.includes(route.unitId)) {
+    return <RtcRouteFallback unitId={route.unitId} pathname={route.pathname} />;
   }
 
   /**

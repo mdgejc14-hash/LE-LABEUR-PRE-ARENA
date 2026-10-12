@@ -10,6 +10,7 @@ import { PRODUCTION_UNITS } from '../design-system/generated/productionUnits';
 import { resolveEmployerScreen } from '../employer/screenMap';
 import { resolvePrestataireScreen } from '../prestataire/screenMap';
 import { resolveAdminScreen } from '../admin/screenMap';
+import { resolveRtcScreen } from '../rtc/screenMap';
 import { STATE_GUARD_CATALOG, type StateGuardKey } from '../design-system/generated/stateGuardCatalog';
 import { FOUNDATION_DEMO_PAGES, namespaceFor, type NamespaceId, type ShellId } from './routes';
 
@@ -120,6 +121,20 @@ export function resolveRoute(pathname: string): ResolvedRoute {
   if (definition.id === 'admin') {
     const screen = resolveAdminScreen(match.pathname);
     const unitId = screen ? screen.unitId : matchProductionUnit(match.pathname);
+    if (unitId !== null) return { ...base, unitId, state: null, notFound: false };
+  }
+
+  /**
+   * Sessions temps réel livrées (RTC-1) : les fiches RTC livrées portent
+   * leur unité (`RTC-xx`) et l'index `/appels` est l'historique RTC-06.
+   * Aucune autre famille n'est résolue ici.
+   */
+  if (definition.id === 'appel') {
+    const screen = resolveRtcScreen(match.pathname);
+    // La racine « /appel » n'est ni l'index (/appels) ni un écran : sans fiche
+    // résolue, elle garde la 404 de la fondation au lieu d'hériter d'une unité
+    // par simple préfixe de route.
+    const unitId = screen ? screen.unitId : (segments.length > 0 ? matchProductionUnit(match.pathname) : null);
     if (unitId !== null) return { ...base, unitId, state: null, notFound: false };
   }
 
