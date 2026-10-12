@@ -72,8 +72,18 @@
  * forensique, limiteur de débit, vérification de signature du webhook de
  * paiement) ne sont ni appelées ni converties en mesure → statut PARTIEL.
  *
- * Les unités ADM de sécurité restantes (ADM-55 → ADM-56) et d’infrastructure
- * restantes (ADM-59 → ADM-63), ainsi que FIN et RTC, restent non intégrées.
+ * P4G-5B-DESIGN-ADMIN-SECURITY-INCIDENTS-AUDIT : ADM-55 (incidents et
+ * procédures, journal d’audit — 2 fiches ADM-55/56 dans l’unité exacte
+ * « ADM — sécurité (incidents & audit) ») est diagnostique : les deux contrats
+ * existants (admin.audit.list avec audit:read, admin.incidents.list avec
+ * incidents:read:any) répondent une frontière de contrôle à items vides et ne
+ * conviennent ni à un journal d’audit ni à un registre d’incidents de
+ * sécurité ; le ledger d’audit réel n’a aucune route ADMIN et aucune empreinte
+ * de chaînage. Aucune donnée n’est appelée ni convertie en mesure → statut
+ * PARTIEL.
+ *
+ * Les unités ADM d’infrastructure restantes (ADM-59 → ADM-63), ainsi que FIN
+ * et RTC, restent non intégrées.
  */
 
 import { PRODUCTION_UNITS, TOTAL_UNITS, UNIT_COUNTS_BY_FAMILY, type ProductionUnit } from '../design-system/generated/productionUnits';
@@ -114,16 +124,20 @@ export const PRESTATAIRE_UNIT_IDS: readonly string[] = PRESTATAIRE_DESIGN_UNITS.
  * P4E-2-DESIGN-ADMIN-REPUTATION, P4F-DESIGN-ADMIN-DOCUMENTS,
  * P4F-2-DESIGN-ADMIN-NOTIFICATIONS, P4G-1-DESIGN-ADMIN-OPERATIONS et
  * P4G-2-DESIGN-ADMIN-SUPERVISION, P4G-3-DESIGN-ADMIN-SECURITY,
- * P4G-4-DESIGN-ADMIN-INFRASTRUCTURE et P4G-5A-DESIGN-ADMIN-SECURITY-CONTROLS
- * (28 unités, 55 fiches, dérivées du catalogue généré). P4G-2 rend ADM-47/48/49
+ * P4G-4-DESIGN-ADMIN-INFRASTRUCTURE, P4G-5A-DESIGN-ADMIN-SECURITY-CONTROLS et
+ * P4G-5B-DESIGN-ADMIN-SECURITY-INCIDENTS-AUDIT
+ * (29 unités, 57 fiches, dérivées du catalogue généré). P4G-2 rend ADM-47/48/49
  * diagnostiques : les capacités SLO, dead-letter et incidents d’exploitation
  * sont absentes du backend.
  * P4G-3 rend ADM-50/51 diagnostiques : aucune API ADMIN de détection IDOR.
  * P4G-4 rend ADM-57/58 diagnostiques : aucune API ADMIN de topologie, métriques
  * Edge, déploiements ou actions n’est installée. P4G-5A rend ADM-52/53/54
  * diagnostiques : aucune API ADMIN de rejeu, de limitation de débit ni de
- * webhook n’est installée. ADM-59 → ADM-63 et ADM-55 → ADM-56 restent non
- * intégrées. Même règle : PARTIEL dès qu'une fiche déclare une capacité absente.
+ * webhook n’est installée. P4G-5B rend ADM-55/56 diagnostiques : les contrats
+ * admin.audit.list et admin.incidents.list sont des frontières de contrôle à
+ * items vides, et le ledger d’audit réel n’est exposé par aucune route ADMIN.
+ * ADM-59 → ADM-63 restent non intégrées. Même règle : PARTIEL dès qu'une fiche
+ * déclare une capacité absente.
  */
 export const ADMIN_UNIT_IDS: readonly string[] = ADMIN_DESIGN_UNITS.map((unit) => unit.id);
 

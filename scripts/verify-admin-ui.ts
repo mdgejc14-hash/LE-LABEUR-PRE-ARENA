@@ -1,15 +1,16 @@
 /**
- * P4G-5A-DESIGN-ADMIN-SECURITY-CONTROLS — vérification UI réelle (Chromium) de
+ * P4G-5B-DESIGN-ADMIN-SECURITY-INCIDENTS-AUDIT — vérification UI réelle (Chromium) de
  * l'espace supervision livré (P4A + P4B-1 contrats + P4B-2 paiements + P4C
  * salaire + P4D Claims + P4E-1 Remplacements + P4E-2 Réputation + P4F
  * Documents + P4F-2 Notifications + P4G-1 opérations + P4G-2 supervision +
- * P4G-3 sécurité + P4G-4 topologie/Worker edge + P4G-5A contrôles de sécurité).
+ * P4G-3 sécurité + P4G-4 topologie/Worker edge + P4G-5A contrôles de sécurité
+ * + P4G-5B incidents & audit de sécurité).
  *
  * Comme le script P2, ce script n'affirme rien sur des données simulées dans
  * l'application : les fixtures HTTP vivent ICI et ne sont jamais activées dans
  * le produit. Ce qui est vérifié dans un navigateur réel :
  *
- *  1. AUCUNE source de données configurée : les 55 fiches ADM rendent leur
+ *  1. AUCUNE source de données configurée : les 57 fiches ADM rendent leur
  *     conteneur (`data-unit`, `data-screen`), la structure déclarée par le
  *     design (`data-sheet-frame`) et le BACKEND_GAP, sans débordement
  *     horizontal à 360 px comme à 1440 px ; aucun terme du Master Design ni
@@ -63,6 +64,13 @@
  * admin.audit ; mesures en « — » ; aucune détection, règle, partenaire ni file
  * de rejeu inventée ; aucun secret rendu ; commandes désactivées ; navigation
  * entre les trois fiches ; refus 401/403 et erreur 500 ; 360/1440 px.
+ * 14. P4G-5B : ADM-55/56 (incidents et procédures, journal d'audit) — aucune
+ * requête vers /api/v1/admin/security/*, vers admin.audit ni vers
+ * admin.incidents (frontières de contrôle à items vides, écartées) ; aucune
+ * classification, sévérité, chronologie d'incident ni entrée de journal
+ * inventée ; aucune étape de procédure présentée comme accomplie ; aucune
+ * conclusion juridique ; mesures en « — » ; commandes désactivées ; navigation
+ * entre les deux fiches ; refus 401/403 et erreur 500 ; 360/1440 px.
  *
  * Exécution : `npm run verify:admin-ui`.
  */
@@ -2890,6 +2898,98 @@ try {
       assert.deepEqual(securityRequests, [], 'aucune lecture sensible après refus ou erreur de session');
     } finally {
       page.off('request', trackSecurityControlRequests);
+      sessionMode = 'admin';
+    }
+  });
+
+  await check('ADM-55/56 — incidents & audit de sécurité diagnostiques, sans incident, chronologie ni journal inventés (360/1440 px)', async () => {
+    sessionMode = 'admin';
+    const paths = [
+      ['/admin/securite/incidents', 'ADM-55'],
+      ['/admin/securite/audit', 'ADM-56'],
+    ] as const;
+    const incidentsAuditRequests: string[] = [];
+    const trackIncidentsAuditRequests = (request: { url(): string }) => {
+      const path = new URL(request.url()).pathname;
+      if (
+        path.startsWith('/api/v1/admin/security/')
+        || path === '/api/v1/admin/audit'
+        || path === '/api/v1/admin/incidents'
+        || path.startsWith('/api/v1/admin/incidents/')
+      ) incidentsAuditRequests.push(request.url());
+    };
+    page.on('request', trackIncidentsAuditRequests);
+    try {
+      for (const width of [360, 1440]) {
+        await page.setViewportSize({ width, height: 900 });
+        for (const [path, code] of paths) {
+          await page.goto(api.origin + path);
+          const screen = page.locator(`[data-screen="${code}"]`);
+          await screen.waitFor();
+          assert.equal(await screen.getAttribute('data-unit'), 'ADM-55', `${code} : rattaché à l’unité « incidents & audit »`);
+          await screen.locator('[data-backend-gap="true"]').last().waitFor();
+          const text = await screen.innerText();
+          assert.ok(says(text, 'BACKEND_GAP') && says(text, 'Indisponible'), `${code} : absence de source ou d’action non dite`);
+          assert.ok(await screen.locator('[data-no-invented-security]').count() > 0, `${code} : mesures absentes non explicitées`);
+          // ADM-55 ne déclare aucune zone kpi : aucune tuile n'y est inventée.
+          const values = (await screen.locator('.lbm-admin__kpi-value').allTextContents()).map((value) => value.trim());
+          if (code === 'ADM-56') {
+            assert.ok(values.length > 0 && values.every((value) => value === '—'), `${code} : mesure de journal fictive (${values.join(', ')})`);
+          } else {
+            assert.equal(values.length, 0, `${code} : tuile de mesure inventée hors zone déclarée`);
+          }
+          // Aucune entrée de journal ni dossier d'incident n'est présenté.
+          assert.equal(await screen.locator('table tbody tr').count(), code === 'ADM-56' ? 1 : 0, `${code} : lignes de données factices`);
+          if (code === 'ADM-56') {
+            assert.ok(says(await screen.locator('table tbody tr').innerText(), 'BACKEND_GAP'), `${code} : source absente non dite dans le tableau`);
+          }
+          assert.equal(await screen.locator('form').count(), 0, `${code} : formulaire sans handler`);
+          assert.equal(await screen.locator('input, select, textarea').count(), 0, `${code} : champ de saisie sans commande serveur`);
+          assert.ok(await screen.locator('button[data-unavailable-action]').count() > 0, `${code} : commande absente non identifiée`);
+          assert.equal(await screen.locator('button:not([disabled])').count(), 0, `${code} : commande de sécurité activable`);
+          // La procédure ADM-55 est rendue comme ÉCRITE par la fiche : aucune
+          // étape n'est présentée comme franchie.
+          if (code === 'ADM-55') {
+            assert.ok(await screen.locator('[data-declared-procedure]').count() === 1, `${code} : procédure déclarée absente`);
+            assert.equal(await screen.locator('[data-declared-procedure] li[data-done="true"]').count(), 0, `${code} : étape présentée comme accomplie`);
+            assert.ok(await screen.locator('[data-no-invented-legal-conclusion]').count() > 0, `${code} : conclusion juridique non écartée`);
+            // Aucune référence de dossier d'incident n'est affichée (aucune n'existe).
+            assert.equal(await screen.locator('[data-unverified-reference]').count(), 0, `${code} : référence d'incident inventée`);
+          }
+          for (const forbidden of ['SEC-', 'CVE-', 'chain_hash', 'prev_hash']) {
+            assert.ok(!(await screen.innerHTML()).includes(forbidden), `${code} : donnée de sécurité non sourcée rendue (${forbidden})`);
+          }
+          assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${code} : débordement à ${width}px`);
+          await assertNoForbiddenText(path, text);
+        }
+      }
+      // Navigation réelle entre les deux fiches de l'unité, puis retour.
+      await page.goto(api.origin + '/admin/securite/incidents');
+      const incidents = page.locator('[data-screen="ADM-55"]');
+      await incidents.waitFor();
+      assert.equal(await incidents.locator('a[href="/admin/securite/audit"]').count(), 1, 'navigation vers ADM-56 absente');
+      await incidents.locator('a[href="/admin/securite/audit"]').click();
+      await page.locator('[data-screen="ADM-56"]').waitFor();
+      assert.equal(await page.locator('[data-screen="ADM-56"] a[href="/admin/securite/incidents"]').count(), 1, 'retour vers ADM-55 absent');
+
+      assert.deepEqual(incidentsAuditRequests, [], 'aucune frontière de contrôle appelée, aucun journal ni incident de sécurité utilisé comme substitut');
+
+      sessionMode = 'employer';
+      for (const [path, code] of paths) {
+        await page.goto(api.origin + path);
+        await page.locator('[data-state="403"]').waitFor();
+        assert.equal(await page.locator(`[data-screen="${code}"]`).count(), 0, `${code} : écran rendu sans autorisation`);
+      }
+      sessionMode = 'anonymous';
+      await page.goto(api.origin + paths[0][0]);
+      await page.locator('[data-state="401"]').waitFor();
+      sessionMode = 'error';
+      await page.goto(api.origin + paths[1][0]);
+      await page.locator('[data-state="500"]').waitFor();
+      assert.ok(!(await page.locator('[data-state="500"]').innerText()).includes(SERVER_SECRET), 'détail de session divulgué');
+      assert.deepEqual(incidentsAuditRequests, [], 'aucune lecture sensible après refus ou erreur de session');
+    } finally {
+      page.off('request', trackIncidentsAuditRequests);
       sessionMode = 'admin';
     }
   });
