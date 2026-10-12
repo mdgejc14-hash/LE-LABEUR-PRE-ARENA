@@ -1,9 +1,9 @@
 /**
- * ADM —— registre des écrans livrés (29 unités, 57 fiches — tranches P4A,
+ * ADM —— registre des écrans livrés (30 unités, 59 fiches — tranches P4A,
  * P4B-1, P4B-2, P4C, P4D, P4E-1, P4E-2, P4F, P4F-2, P4G-1, P4G-2, P4G-3,
- * P4G-4, P4G-5A et P4G-5B).
+ * P4G-4, P4G-5A, P4G-5B et P4G-6).
  *
- * Chaque code de fiche ADM-01 → ADM-24, ADM-26 → ADM-56 et ADM-57/58 livré
+ * Chaque code de fiche ADM-01 → ADM-24, ADM-26 → ADM-60 livré
  * par ces tranches est associé à l'écran qui le rend. Les variantes des fiches (mêmes
  * zones, état imposé par la route) réutilisent l'écran canonique, comme le
  * décrit le Master Design.
@@ -49,6 +49,15 @@
  * pas appelés. Le ledger d’audit réel n’a aucune route ADMIN, aucune empreinte
  * de chaînage et aucune contrainte d’immuabilité. Les deux écrans sont
  * diagnostiques et déclarent leurs capacités absentes.
+ * P4G-6 ajoute l’unité exacte « ADM — infra (données : PostgreSQL & stockage
+ * objet) » : ADM-59 (base et regroupement de connexions) et ADM-60 (stockage
+ * objet). Aucune des huit références de design de ces deux fiches n’est
+ * déclarée dans routeContracts.ts ni servie par un handler (404 vérifié sur
+ * le worker composé avec une session ADMIN) et aucune permission ADMIN de
+ * base de données ou de stockage n’est déclarée. Le rapport public /healthz
+ * décrit la frontière de persistance réellement observée par l’API, mais il
+ * ne fournit aucune des mesures des fiches et n’est pas appelé. Les deux
+ * écrans sont diagnostiques et déclarent leurs capacités absentes.
  *
  * Ce module est le SEUL point d'entrée des routes `/admin/*` des tranches :
  * il résout la fiche depuis le chemin réel, applique la garde de session puis
@@ -76,6 +85,7 @@ import {
   Admin56SecurityAudit,
 } from './screens/securityIncidentsAudit';
 import { Admin57InfrastructureTopology, Admin58WorkerEdge } from './screens/infrastructure';
+import { Admin59PostgresHyperdrive, Admin60ObjectStorage } from './screens/dataInfrastructure';
 import { Admin01Dashboard } from './screens/overview';
 import { Admin02Users, Admin03UserSheet, Admin04Block, Admin05BlockJournal } from './screens/users';
 import {
@@ -190,6 +200,8 @@ export const ADMIN_SCREEN_COMPONENTS: Readonly<Record<string, AdminScreenCompone
   'ADM-56': Admin56SecurityAudit,
   'ADM-57': Admin57InfrastructureTopology,
   'ADM-58': Admin58WorkerEdge,
+  'ADM-59': Admin59PostgresHyperdrive,
+  'ADM-60': Admin60ObjectStorage,
 };
 
 export function adminScreenCodes(): readonly string[] {

@@ -7,7 +7,8 @@
 // P4G-2 SUPERVISION (ADM-47 → ADM-49), P4G-3 SÉCURITÉ (ADM-50 → ADM-51),
 // P4G-4 INFRASTRUCTURE (ADM-57 → ADM-58),
 // P4G-5A CONTRÔLES DE SÉCURITÉ (ADM-52 → ADM-54),
-// P4G-5B INCIDENTS & AUDIT DE SÉCURITÉ (ADM-55 → ADM-56).
+// P4G-5B INCIDENTS & AUDIT DE SÉCURITÉ (ADM-55 → ADM-56),
+// P4G-6 DONNÉES D’INFRASTRUCTURE (ADM-59 → ADM-60).
 // Régénérer : npm run design:admin
 //
 // Référence de design UNIQUEMENT : aucun libellé de ce fichier n'est affiché par
@@ -1654,6 +1655,62 @@ export const ADMIN_DESIGN_UNITS = [
       "POST /admin/infra/worker/rollback {deploymentId}",
       "POST /admin/infra/worker/deployments/:id/countersign"
     ]
+  },
+  {
+    "id": "ADM-59",
+    "canon": "ADM — infra (données : PostgreSQL & stockage objet)",
+    "criticality": "P0",
+    "archetype": "Le cœur des données",
+    "screenCodes": [
+      "ADM-59",
+      "ADM-60"
+    ],
+    "routes": [
+      "/admin/infra/postgres",
+      "/admin/infra/r2"
+    ],
+    "zoneKinds": [
+      "cta",
+      "kpi",
+      "table",
+      "timeline"
+    ],
+    "componentRefs": [
+      "Barres",
+      "Courbes",
+      "Migrations",
+      "Table",
+      "Vérificateur",
+      "État"
+    ],
+    "stateNames": [
+      "Nominal",
+      "Saturation",
+      "Réplication en retard",
+      "Migration en cours",
+      "Nominal",
+      "Coût élevé",
+      "Erreurs d'accès",
+      "Intégrité compromise"
+    ],
+    "tokens": [
+      "--amber-500",
+      "--clay-500",
+      "--cyan-500",
+      "--emerald-500",
+      "--mono",
+      "--table"
+    ],
+    "designApi": [
+      "GET /admin/infra/postgres",
+      "GET /admin/infra/postgres/slow-queries",
+      "GET /admin/infra/postgres/migrations",
+      "POST /admin/infra/postgres/index-proposals",
+      "GET /admin/infra/r2",
+      "GET /admin/infra/r2/prefixes",
+      "POST /admin/infra/r2/verify {prefix}",
+      "GET /admin/infra/r2/retention"
+    ]
   }
 ] as const;
 
@@ -3177,6 +3234,62 @@ export const ADMIN_DESIGN_SCREENS = [
       "--violet-500",
       "--clay-500",
       "--mono"
+    ]
+  },
+  {
+    "code": "ADM-59",
+    "unitId": "ADM — infra (données : PostgreSQL & stockage objet)",
+    "route": "/admin/infra/postgres",
+    "canonicalRoute": "/admin/infra/postgres",
+    "role": "ADMIN",
+    "criticality": "P0",
+    "zoneKinds": [
+      "kpi",
+      "timeline",
+      "table",
+      "cta"
+    ],
+    "variantOf": null,
+    "designApi": [
+      "GET /admin/infra/postgres",
+      "GET /admin/infra/postgres/slow-queries",
+      "GET /admin/infra/postgres/migrations",
+      "POST /admin/infra/postgres/index-proposals"
+    ],
+    "tokens": [
+      "--cyan-500",
+      "--amber-500",
+      "--clay-500",
+      "--mono",
+      "--table"
+    ]
+  },
+  {
+    "code": "ADM-60",
+    "unitId": "ADM — infra (données : PostgreSQL & stockage objet)",
+    "route": "/admin/infra/r2",
+    "canonicalRoute": "/admin/infra/r2",
+    "role": "ADMIN",
+    "criticality": "P1",
+    "zoneKinds": [
+      "kpi",
+      "timeline",
+      "table",
+      "cta"
+    ],
+    "variantOf": null,
+    "designApi": [
+      "GET /admin/infra/r2",
+      "GET /admin/infra/r2/prefixes",
+      "POST /admin/infra/r2/verify {prefix}",
+      "GET /admin/infra/r2/retention"
+    ],
+    "tokens": [
+      "--cyan-500",
+      "--emerald-500",
+      "--clay-500",
+      "--mono",
+      "--table"
     ]
   }
 ] as const;
