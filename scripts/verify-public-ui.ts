@@ -45,8 +45,10 @@ try {
   let responseStatus = 401;
   let exchangeCount = 0;
   let session = false;
+  const apiRequests: string[] = [];
   await page.route('**/api/v1/**', async (route) => {
     const path = new URL(route.request().url()).pathname;
+    apiRequests.push(`${route.request().method()} ${path}`);
     if (path.endsWith('/google/credential')) { exchangeCount++; if (responseStatus === 200) session = true; }
     if (path.endsWith('/logout')) session = false;
     const success = responseStatus === 200 && session;
@@ -108,6 +110,29 @@ try {
     assert.ok(await page.getByRole('button', { name: 'Créer mon compte', exact: true }).isDisabled());
     await page.goBack(); await page.waitForURL('**/onboarding/profil');
     assert.equal(await page.locator('[data-screen="PUB-03"]').count(), 1);
+  });
+  await check('PUB-05…08 gaps: no data entry, API request, fake success or enabled action; only truthful exits', async () => {
+    const requestsBefore = apiRequests.length;
+    const targets = [
+      { route: '/inscription', screen: 'PUB-05', button: 'Créer mon compte', exit: 'Déjà inscrit ? Se connecter', destination: '/connexion' },
+      { route: '/verifier-otp', screen: 'PUB-06', button: 'Vérifier', exit: 'Changer de numéro', destination: '/inscription' },
+      { route: '/recuperation', screen: 'PUB-07', button: 'Envoyer le lien de récupération', exit: 'Retour connexion', destination: '/connexion' },
+      { route: '/legal', screen: 'PUB-08', button: 'Accepter la version en vigueur', exit: 'Accueil', destination: '/accueil' },
+    ];
+    for (const target of targets) {
+      await page.goto(origin + target.route);
+      await page.locator(`[data-screen="${target.screen}"]`).waitFor();
+      assert.equal(new URL(page.url()).pathname, target.route);
+      assert.ok((await page.locator('body').innerText()).includes(`BACKEND_GAP · ${target.screen}`));
+      assert.equal(await page.locator('input, form').count(), 0, `${target.screen} must not collect data without its API`);
+      assert.ok(await page.getByRole('button', { name: target.button, exact: true }).isDisabled(), `${target.screen} action must be unavailable`);
+      assert.ok(!(await page.locator('body').innerText()).includes('Succès'), `${target.screen} must not show a success state`);
+      await page.getByRole('link', { name: target.exit, exact: true }).click();
+      await page.waitForURL(`**${target.destination}`);
+    }
+    await page.goto(origin + '/legal');
+    assert.ok(await page.getByRole('button', { name: 'Télécharger le document', exact: true }).isDisabled());
+    assert.equal(apiRequests.length, requestsBefore, 'gapped Public/Auth screens must make no API requests');
   });
   await check('Boot reduced-motion exits, keyboard skip works, offline has real exit', async () => {
     await page.emulateMedia({ reducedMotion: 'reduce' });

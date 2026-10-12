@@ -8,7 +8,8 @@ import { SystemFeedback } from './SystemFeedback';
 import { HttpApiClient, ApiClientError } from '../repositories/apiClient';
 import { STATE_GUARD_CATALOG } from '../design-system/generated/stateGuardCatalog';
 import { resolveRoute } from '../routing/resolveRoute';
-import { API_ROUTE_CONTRACTS } from '../backend/api/routeContracts';
+import { API_ROUTE_CONTRACTS, findApiRoute } from '../backend/api/routeContracts';
+import { PUBLIC_AUTH_GAPS, PUBLIC_AUTH_GAP_ROUTES } from './gaps';
 
 export async function runPublicTests() {
   const results: { name: string; success: boolean; detail?: string }[] = [];
@@ -25,6 +26,18 @@ export async function runPublicTests() {
       if (route.kind === 'shell') { assert.equal(route.shell, 'PUBLIC'); assert.equal(route.unitId, screen.code); }
     }
     for (const path of ['/', '/old', '/connexion/other']) assert.equal(resolveRoute(path).kind, 'legacy');
+  });
+  await check('PUB-05…08: every declared signup, OTP, recovery and legal operation is a real BACKEND_GAP', () => {
+    assert.deepEqual(Object.keys(PUBLIC_AUTH_GAPS), ['PUB-05', 'PUB-06', 'PUB-07', 'PUB-08']);
+    assert.equal(PUBLIC_AUTH_GAP_ROUTES.length, 12);
+    for (const operation of PUBLIC_AUTH_GAP_ROUTES) {
+      assert.equal(findApiRoute(operation.method, operation.path), undefined,
+        `${operation.screenCode} unexpectedly resolved ${operation.method} ${operation.path}`);
+    }
+    const salaryOtp = findApiRoute('POST', '/api/v1/payments/payment-test/salary-confirmation');
+    assert.equal(salaryOtp?.key, 'payments.salary.confirmation.confirm');
+    assert.deepEqual(salaryOtp?.roles, ['CANDIDATE']);
+    assert.equal(salaryOtp?.permission, undefined);
   });
   for (const entry of STATE_GUARD_CATALOG) await check(`SYS ${entry.key}: glyph, factual copy, truthful exit and no unsupported actions`, () => {
     const html = renderToStaticMarkup(<SystemFeedback state={entry.key} correlationId="req-abc-12345" />);
@@ -53,6 +66,16 @@ export async function runPublicTests() {
     assert.equal(user.role, 'CANDIDATE');
     await api.logout();
     assert.deepEqual(calls.map((call) => call.url.pathname), ['/api/v1/auth/google/credential', '/api/v1/auth/session', '/api/v1/auth/logout']);
+    const usedContracts = ['auth.google.credential', 'auth.session', 'auth.logout'].map((key) => {
+      const route = API_ROUTE_CONTRACTS.find((item) => item.key === key);
+      assert.ok(route, `${key} contract missing`);
+      return { key: route.key, method: route.method, path: route.path, authentication: route.authentication, scope: route.scope, permission: 'permission' in route ? route.permission : undefined };
+    });
+    assert.deepEqual(usedContracts, [
+      { key: 'auth.google.credential', method: 'POST', path: '/api/v1/auth/google/credential', authentication: 'public', scope: 'public', permission: undefined },
+      { key: 'auth.session', method: 'GET', path: '/api/v1/auth/session', authentication: 'required', scope: 'self', permission: undefined },
+      { key: 'auth.logout', method: 'POST', path: '/api/v1/auth/logout', authentication: 'required', scope: 'self', permission: undefined },
+    ]);
     for (const call of calls) {
       assert.equal(call.init.credentials, 'include'); assert.equal(call.init.cache, 'no-store');
       assert.ok(API_ROUTE_CONTRACTS.some((route) => route.path === call.url.pathname));
