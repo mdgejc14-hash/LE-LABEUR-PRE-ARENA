@@ -69,6 +69,27 @@
  * de base ni de compartiment, aucune action de réparation, purge, migration
  * ou configuration n’est simulé : chaque capacité absente est BACKEND_GAP.
  *
+ * P4G-7-DESIGN-ADMIN-MEDIA-OBSERVABILITY-STATUS (ADM-61, ADM-62, ADM-63) :
+ * trois unités exactes de `units.py`, une fiche par unité — « ADM — infra
+ * (webrtc/turn) », « ADM — infra (observabilité) » et « ADM — infra
+ * (statut) ». Les onze références de design des trois fiches ne figurent dans
+ * aucun contrat serveur et ne sont servies par aucun handler : elles répondent
+ * 404 sur le worker composé (vérifié avec une session ADMIN réelle). Les
+ * sessions média réellement exposées par le produit sont des routes de
+ * PARTICIPANT (scope self/participant, rôles EMPLOYER/CANDIDATE — une session
+ * ADMIN reçoit 403) et ne portent ni qualité média, ni relais, ni coût :
+ * aucune n’est appelée ni convertie en mesure. `admin.calls.list` est déclaré
+ * mais sans handler (501) : ce n’est pas un registre d’appel média. La
+ * frontière de contrôle `admin.stats.read` répond `{metrics: {}}` avec
+ * `persistence: not-configured` : ce n’est pas de l’observabilité. Le rapport
+ * public `/healthz` décrit la seule frontière API/persistance observée
+ * (mode, joignabilité, sonde, migrations, booléen de binding) et ne publie
+ * aucun état de composant : il n’est pas une page de statut et n’est pas
+ * utilisé comme substitut. Aucune session, aucun relais, aucune trace, aucune
+ * alerte, aucun état de composant, aucun incident public, aucune maintenance
+ * et aucune opération de réparation ou de publication n’est simulé : chaque
+ * capacité absente est BACKEND_GAP.
+ *
  * P4G-5A-DESIGN-ADMIN-SECURITY-CONTROLS (ADM-52 → ADM-54) : unité exacte
  * « ADM — sécurité (replay, signatures, rate limits & webhooks) ». Le produit
  * contient des protections serveur réelles — classification forensique
@@ -451,6 +472,31 @@ export const ADMIN_UNIT_GAPS: Record<string, readonly string[]> = {
     'ADM-60 · la seule lecture ADMIN voisine est le registre des Documents (admin.documents.list, permission documents:read:any) : il rend des métadonnées de Document (type, statut, version courante, classe de conservation) et, dans la fiche, les tailles déclarée et reçue d’une version. Ce n’est pas une supervision de stockage — aucune occupation, aucun volume agrégé, aucune classe de stockage, aucune disponibilité de compartiment et aucune latence de distribution n’en sont déduits — et il n’est pas appelé par cet écran.',
     'ADM-60 · le contrôle d’intégrité technique POST /api/v1/documents/:documentId/versions/:versionId/verify vérifie UNE version de Document (empreinte SHA-256) et rend un verdict technique : il ne réalise ni échantillonnage ni vérification d’un préfixe, ne produit aucun rapport signé et n’est pas appelé ici. Une empreinte vérifiée sur une version n’atteste pas l’intégrité du stockage.',
     'ADM-60 · aucune purge, aucun nettoyage de fichier orphelin, aucune transition de classe ni alerte de dérive de coût n’existe côté serveur : aucune action n’est proposée, désactivée ou programmée depuis cette vue, et aucun tarif n’est appliqué dans le navigateur.',
+  ],
+  /* ── P4G-7 · média, observabilité & statut d’infrastructure ── */
+  'ADM-61': [
+    'ADM-61 · GET /admin/infra/webrtc, GET /admin/infra/webrtc/sessions?cursor=, GET /admin/infra/webrtc/quality et GET /admin/infra/webrtc/costs — références de design absentes de routeContracts.ts et sans handler ADMIN : aucune session active, aucun taux d’établissement, aucune latence, aucune perte de paquets, aucun recours au relais et aucun coût média ne sont lisibles. Les quatre références répondent 404 (vérifié sur le worker composé avec une session ADMIN réelle).',
+    'ADM-61 · les sessions média du produit (webrtc.sessions.*) sont des routes de PARTICIPANT : scope self/participant, rôles EMPLOYER / CANDIDATE. Une session ADMIN reçoit 403 sur GET /api/v1/my/webrtc-sessions (vérifié) : il n’existe aucune vue d’ensemble ADMIN, et ces réponses ne portent ni qualité média (latence, gigue, perte, MOS), ni relais utilisé, ni coût. Elles ne sont pas appelées ni converties en mesure par cet écran.',
+    'ADM-61 · aucune permission ADMIN de média ni d’infrastructure n’est déclarée dans la matrice RBAC serveur. La garde de session ADMIN existante protège l’écran ; aucune autorisation métier, aucune route serveur et aucune configuration TURN n’est ajoutée ou modifiée.',
+    'ADM-61 · GET /api/v1/admin/calls (admin.calls.list, calls:read:any) est déclaré mais AUCUN handler n’est installé : la commande répond 501 (vérifié). Ce n’est ni un registre de sessions média ni une source de qualité ; elle n’est pas appelée.',
+    'ADM-61 · aucune URL de serveur STUN/TURN, aucun identifiant, aucune adresse d’accès et aucun secret de signalisation n’est affiché (§3.6). L’état de configuration ICE réel du produit (AVAILABLE / NOT_CONFIGURED / BLOCKED_EXTERNAL_ACCESS) est réservé aux participants et n’est pas exposé ici : aucun relais, aucune bascule et aucune panne ne sont déduits d’un fichier de configuration.',
+    'ADM-61 · l’état de consentement d’enregistrement (RTC-05) n’est exposé par aucune route ADMIN et aucun contenu de session n’est consultable dans cet espace : aucune durée, aucun enregistrement et aucune qualité ne sont présentés comme observés.',
+  ],
+  'ADM-62': [
+    'ADM-62 · GET /admin/infra/observability, GET /admin/infra/observability/alerts et POST /admin/infra/observability/alerts/:id/simulate — références de design absentes de routeContracts.ts et sans handler ADMIN : aucune couverture de traces, aucun inventaire d’alertes, aucune condition, aucun seuil, aucun taux d’action, aucun coût et aucune simulation ne sont lisibles. Les trois références répondent 404 (vérifié sur le worker composé avec une session ADMIN réelle).',
+    'ADM-62 · l’observabilité interne existe bien côté serveur — journal structuré, règles de rédaction (OBSERVABILITY_REDACTION_RULES), identifiant de corrélation, ligne d’observabilité écrite à chaque déclenchement planifié — mais ce sont des mécanismes internes, pas une API : aucune route ADMIN ne les expose en lecture et aucune mesure n’en est déduite.',
+    'ADM-62 · GET /api/v1/admin/stats (admin.stats.read, stats:read) est déclaré et composé : un ADMIN reçoit 200 avec {resource: stats, scope: admin, persistence: not-configured, metrics: {}} (vérifié). C’est une frontière de contrôle sans mesure : ni couverture, ni alerte, ni seuil, ni coût. Elle n’est pas appelée par cet écran et ses métriques vides ne prouvent ni un bruit faible ni une couverture suffisante.',
+    'ADM-62 · aucun état de traçage par chemin critique n’est exposé : ni trace orpheline, ni span manquant, ni journal sans corrélation, ni métrique sans seuil. Aucun contrôle de qualité n’est recalculé dans le navigateur à partir des journaux techniques.',
+    'ADM-62 · aucune simulation d’alerte en environnement isolé n’existe : aucun déclenchement de test n’est exécutable et aucun bac à sable n’est annoncé. Aucune cible de bruit (moins de 5 alertes/jour) n’est présentée comme tenue ou manquée, faute de mesure.',
+    'ADM-62 · aucune permission ADMIN d’observabilité n’est déclarée dans la matrice RBAC serveur. La garde de session ADMIN existante protège l’écran ; aucune autorisation métier, aucun seuil et aucune rétention ne sont ajoutés ou modifiés.',
+  ],
+  'ADM-63': [
+    'ADM-63 · GET /admin/status/components, POST /admin/status/updates {template, body}, POST /admin/status/maintenance {window, impact} et GET /admin/status/public-preview — références de design absentes de routeContracts.ts et sans handler ADMIN : aucun état de composant, aucun incident public, aucune maintenance planifiée et aucun aperçu ne sont lisibles ni publiables. Les quatre références répondent 404 (vérifié sur le worker composé avec une session ADMIN réelle).',
+    'ADM-63 · aucune page de statut publique n’est servie : les états de composants sont déclarés par la fiche comme DÉRIVÉS de la télémétrie et jamais saisis à la main — faute de télémétrie publiée, aucun état n’est affiché et aucun état n’est saisi ici. La liste des composants (API, applications, paiements, documents, appels, notifications) est rendue comme structure, jamais comme relevé.',
+    'ADM-63 · GET /healthz est un rapport public de la frontière API/persistance (status, persistence.mode/reason/reachable/latencyMs/migrations, runtime.hyperdriveBinding) : il ne publie aucun composant de service, aucun état dérivé de télémétrie, aucun incident, aucune maintenance ni aucune mise à jour horodatée. Ce n’est pas une page de statut et il n’est pas utilisé comme substitut ; son absence dans cet écran ne dit rien de la disponibilité des services.',
+    'ADM-63 · l’écran de maintenance public (PUB-10) appartient à l’espace public : aucune route ADMIN ne le prépare, ne le planifie ni ne le publie, et rien n’est annoncé aux utilisateurs depuis cette vue. Aucun report automatique d’échéance, aucune fenêtre de 24 h et aucun gabarit contrôlé ne sont présentés comme actifs.',
+    'ADM-63 · aucun détecteur d’écart entre télémétrie et page publique n’existe : ni écart détecté, ni délai médian de publication, ni taux de respect des mises à jour annoncées ne sont calculés. Aucune conclusion d’honnêteté ou de synchronisation n’est affichée faute de source.',
+    'ADM-63 · aucune permission ADMIN de statut public n’est déclarée dans la matrice RBAC serveur. La garde de session ADMIN existante protège l’écran ; aucune autorisation métier, aucune route serveur et aucune configuration du Worker edge ne sont ajoutées ou modifiées.',
   ],
 
 };

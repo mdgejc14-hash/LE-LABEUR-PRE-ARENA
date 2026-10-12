@@ -9,6 +9,7 @@
 // P4G-5A CONTRÔLES DE SÉCURITÉ (ADM-52 → ADM-54),
 // P4G-5B INCIDENTS & AUDIT DE SÉCURITÉ (ADM-55 → ADM-56),
 // P4G-6 DONNÉES D’INFRASTRUCTURE (ADM-59 → ADM-60).
+// P4G-7 MÉDIA, OBSERVABILITÉ & STATUT (ADM-61 → ADM-63).
 // Régénérer : npm run design:admin
 //
 // Référence de design UNIQUEMENT : aucun libellé de ce fichier n'est affiché par
@@ -1711,6 +1712,131 @@ export const ADMIN_DESIGN_UNITS = [
       "POST /admin/infra/r2/verify {prefix}",
       "GET /admin/infra/r2/retention"
     ]
+  },
+  {
+    "id": "ADM-61",
+    "canon": "ADM — infra (webrtc/turn)",
+    "criticality": "P1",
+    "archetype": "La voix du travail",
+    "screenCodes": [
+      "ADM-61"
+    ],
+    "routes": [
+      "/admin/infra/webrtc"
+    ],
+    "zoneKinds": [
+      "cta",
+      "kpi",
+      "table",
+      "timeline"
+    ],
+    "componentRefs": [
+      "Bandes",
+      "Indicateur",
+      "Table"
+    ],
+    "stateNames": [
+      "Nominal",
+      "Dégradé régional",
+      "Session critique en difficulté",
+      "Panne TURN"
+    ],
+    "tokens": [
+      "--amber-500",
+      "--clay-500",
+      "--cyan-500",
+      "--mono",
+      "--table"
+    ],
+    "designApi": [
+      "GET /admin/infra/webrtc",
+      "GET /admin/infra/webrtc/sessions?cursor=",
+      "GET /admin/infra/webrtc/quality",
+      "GET /admin/infra/webrtc/costs"
+    ]
+  },
+  {
+    "id": "ADM-62",
+    "canon": "ADM — infra (observabilité)",
+    "criticality": "P1",
+    "archetype": "Voir l'invisible",
+    "screenCodes": [
+      "ADM-62"
+    ],
+    "routes": [
+      "/admin/infra/observabilite"
+    ],
+    "zoneKinds": [
+      "cta",
+      "kpi",
+      "list",
+      "table"
+    ],
+    "componentRefs": [
+      "Couverture",
+      "Coût",
+      "Table"
+    ],
+    "stateNames": [
+      "Sain",
+      "Bruyant",
+      "Aveugle",
+      "Coût en dérive"
+    ],
+    "tokens": [
+      "--cyan-500",
+      "--mono",
+      "--table",
+      "--violet-500"
+    ],
+    "designApi": [
+      "GET /admin/infra/observability",
+      "GET /admin/infra/observability/alerts",
+      "POST /admin/infra/observability/alerts/:id/simulate"
+    ]
+  },
+  {
+    "id": "ADM-63",
+    "canon": "ADM — infra (statut)",
+    "criticality": "P0",
+    "archetype": "Dire la vérité en public",
+    "screenCodes": [
+      "ADM-63"
+    ],
+    "routes": [
+      "/admin/infra/statut"
+    ],
+    "zoneKinds": [
+      "cta",
+      "kpi",
+      "list",
+      "timeline"
+    ],
+    "componentRefs": [
+      "Composants",
+      "Détecteur",
+      "Gabarits",
+      "Historique"
+    ],
+    "stateNames": [
+      "Synchronisé",
+      "Écart",
+      "Maintenance planifiée",
+      "Incident majeur"
+    ],
+    "tokens": [
+      "--clay-500",
+      "--emerald-500",
+      "--glass-1",
+      "--mono",
+      "--violet-500"
+    ],
+    "designApi": [
+      "GET /admin/status/components",
+      "POST /admin/status/updates {template, body}",
+      "POST /admin/status/maintenance {window, impact}",
+      "GET /admin/status/public-preview"
+    ]
   }
 ] as const;
 
@@ -3290,6 +3416,88 @@ export const ADMIN_DESIGN_SCREENS = [
       "--clay-500",
       "--mono",
       "--table"
+    ]
+  },
+  {
+    "code": "ADM-61",
+    "unitId": "ADM — infra (webrtc/turn)",
+    "route": "/admin/infra/webrtc",
+    "canonicalRoute": "/admin/infra/webrtc",
+    "role": "ADMIN",
+    "criticality": "P1",
+    "zoneKinds": [
+      "kpi",
+      "timeline",
+      "table",
+      "cta"
+    ],
+    "variantOf": null,
+    "designApi": [
+      "GET /admin/infra/webrtc",
+      "GET /admin/infra/webrtc/sessions?cursor=",
+      "GET /admin/infra/webrtc/quality",
+      "GET /admin/infra/webrtc/costs"
+    ],
+    "tokens": [
+      "--cyan-500",
+      "--amber-500",
+      "--clay-500",
+      "--mono",
+      "--table"
+    ]
+  },
+  {
+    "code": "ADM-62",
+    "unitId": "ADM — infra (observabilité)",
+    "route": "/admin/infra/observabilite",
+    "canonicalRoute": "/admin/infra/observabilite",
+    "role": "ADMIN",
+    "criticality": "P1",
+    "zoneKinds": [
+      "kpi",
+      "table",
+      "list",
+      "cta"
+    ],
+    "variantOf": null,
+    "designApi": [
+      "GET /admin/infra/observability",
+      "GET /admin/infra/observability/alerts",
+      "POST /admin/infra/observability/alerts/:id/simulate"
+    ],
+    "tokens": [
+      "--violet-500",
+      "--cyan-500",
+      "--mono",
+      "--table"
+    ]
+  },
+  {
+    "code": "ADM-63",
+    "unitId": "ADM — infra (statut)",
+    "route": "/admin/infra/statut",
+    "canonicalRoute": "/admin/infra/statut",
+    "role": "ADMIN",
+    "criticality": "P0",
+    "zoneKinds": [
+      "list",
+      "timeline",
+      "kpi",
+      "cta"
+    ],
+    "variantOf": null,
+    "designApi": [
+      "GET /admin/status/components",
+      "POST /admin/status/updates {template, body}",
+      "POST /admin/status/maintenance {window, impact}",
+      "GET /admin/status/public-preview"
+    ],
+    "tokens": [
+      "--emerald-500",
+      "--clay-500",
+      "--violet-500",
+      "--mono",
+      "--glass-1"
     ]
   }
 ] as const;
