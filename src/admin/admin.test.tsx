@@ -32,7 +32,8 @@
  *     Réputation, ADM-41 → ADM-43 Notifications, ADM-57/58 Infrastructure,
  *     ADM-52 → ADM-54 contrôles de sécurité, ADM-55/56 incidents & audit de
  *     sécurité, ADM-59/60 données d'infrastructure et ADM-61/62/63 média,
- *     observabilité et statut public, autres ADM/FIN/RTC non intégrées ;
+ *     observabilité et statut public, autres ADM/FIN non intégrées, RTC livré
+ *     ensuite par RTC-1 ;
  * 11. responsive, accessibilité (table sémantique) et reduced-motion (CSS) ;
  * 12. P4B-1 contrats : routes ADM réelles du registre et des Claims, statuts
  *     et types de Claim en parité exacte avec le serveur, segments du registre
@@ -118,7 +119,7 @@
  *     aux parties (403 pour ADMIN) ; aucun montant contesté, aucun solde
  *     avant/après, aucune écriture compensatoire, aucun remboursement, retenue
  *     ou versement simulé ; les 34 unités ADM sont désormais PARTIEL et FIN
- *     (FIN-01 → FIN-03) comme RTC restent NON_INTEGRE.
+ *     (FIN-01 → FIN-03) reste NON_INTEGRE (RTC livré ensuite par RTC-1).
  */
 
 import React from 'react';
@@ -250,7 +251,7 @@ import type {
   PaymentReconciliationVerdict,
 } from '../backend/persistence/paymentReconciliationRecords';
 import { resolveRoute } from '../routing/resolveRoute';
-import { ADMIN_UNIT_IDS, integrationStatus, isAdminUnit, PARTIAL_UNIT_IDS } from '../routing/integration';
+import { ADMIN_UNIT_IDS, integrationStatus, isAdminUnit, PARTIAL_UNIT_IDS, RTC_UNIT_IDS } from '../routing/integration';
 import { PRODUCTION_UNITS } from '../design-system/generated/productionUnits';
 import { ApiClientError } from '../repositories/apiClient';
 
@@ -650,7 +651,7 @@ export async function runAdminTests(): Promise<{ name: string; success: boolean;
     }
   });
 
-  check('ADM — intégration : 34 unités ADM PARTIEL (P4A → P4G-8), EMP/PRE/PUB/SYS inchangés, FIN/RTC non intégrées', () => {
+  check('ADM — intégration : 34 unités ADM PARTIEL (P4A → P4G-8), EMP/PRE/PUB/SYS inchangés, FIN non intégrée, RTC livré en RTC-1', () => {
     assert.equal(ADMIN_UNIT_IDS.length, 34);
     for (const unitId of ADMIN_UNIT_IDS) {
       assert.equal(integrationStatus(unitId), 'PARTIEL', `${unitId} doit être PARTIEL`);
@@ -660,10 +661,13 @@ export async function runAdminTests(): Promise<{ name: string; success: boolean;
     for (const unit of PRODUCTION_UNITS) {
       if (unit.family === 'EMP' || unit.family === 'PUB' || unit.family === 'SYS' || unit.family === 'PRE') continue;
       if (ADMIN_UNIT_IDS.includes(unit.id)) continue;
+      // RTC-1 a livré les 5 unités RTC depuis P4G-8 : elles sont PARTIEL.
+      if (RTC_UNIT_IDS.includes(unit.id)) continue;
       assert.equal(integrationStatus(unit.id), 'NON_INTEGRE', `${unit.id} ne doit pas être touchée par cette tranche`);
     }
     assert.equal(isAdminUnit('EMP-01'), false);
     assert.equal(integrationStatus('EMP-01'), 'PARTIEL', 'EMP-01 est livrée par P2-DESIGN-EMPLOYER');
+    assert.equal(integrationStatus('RTC-01'), 'PARTIEL', 'RTC-01 (pré-appel & diagnostic) est livrée par RTC-1');
     // P4B-1 : unités contrats ; P4B-2 : unités paiements exactes de units.py.
     assert.equal(integrationStatus('ADM-13'), 'PARTIEL', 'ADM-13 (registre des contrats) est livrée par P4B-1');
     assert.equal(integrationStatus('ADM-14'), 'PARTIEL', 'ADM-14 (fiche, incidents & journal) est livrée par P4B-1');

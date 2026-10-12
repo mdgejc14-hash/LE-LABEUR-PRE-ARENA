@@ -34,7 +34,7 @@ import { notificationDomain } from './screens/overview';
 import { toOfferDraft, EMPTY_OFFER_DRAFT } from './draft';
 import { API_ROUTE_CONTRACTS } from '../backend/api/routeContracts';
 import { resolveRoute } from '../routing/resolveRoute';
-import { ADMIN_UNIT_IDS, EMPLOYER_UNIT_IDS, integrationStatus, isEmployerUnit } from '../routing/integration';
+import { ADMIN_UNIT_IDS, EMPLOYER_UNIT_IDS, RTC_UNIT_IDS, integrationStatus, isEmployerUnit } from '../routing/integration';
 import { PRODUCTION_UNITS } from '../design-system/generated/productionUnits';
 import { ApiClientError } from '../repositories/apiClient';
 import type { NotificationView } from './api';
@@ -296,7 +296,7 @@ export async function runEmployerTests(): Promise<{ name: string; success: boole
     }
   });
 
-  check('EMP — intégration : 32 unités EMP PARTIEL, PRE livré en P3 et 16 unités ADM livrées en P4A/P4B-1/P4B-2/P4C/P4D, FIN/RTC inchangés', () => {
+  check('EMP — intégration : 32 unités EMP PARTIEL, PRE livré en P3 et 16 unités ADM livrées en P4A/P4B-1/P4B-2/P4C/P4D, FIN inchangé, RTC livré en RTC-1', () => {
     assert.equal(EMPLOYER_UNIT_IDS.length, 32);
     for (const unitId of EMPLOYER_UNIT_IDS) {
       assert.equal(integrationStatus(unitId), 'PARTIEL', `${unitId} doit être PARTIEL`);
@@ -305,9 +305,11 @@ export async function runEmployerTests(): Promise<{ name: string; success: boole
     for (const unit of PRODUCTION_UNITS) {
       // P3-DESIGN-PRESTATAIRE a livré les 26 unités PRE depuis cette tranche EMP,
       // et les tranches P4A, P4B-1, P4B-2, P4C et P4D ont livré 16 unités ADM : elles sont
-      // PARTIEL, comme PUB/SYS/EMP. Seules les autres ADM, FIN et RTC restent non intégrées.
+      // PARTIEL, comme PUB/SYS/EMP — ainsi que les 5 unités RTC livrées par RTC-1.
+      // Seules les autres ADM et FIN restent non intégrées.
       if (unit.family === 'EMP' || unit.family === 'PUB' || unit.family === 'SYS' || unit.family === 'PRE') continue;
       if (ADMIN_UNIT_IDS.includes(unit.id)) continue;
+      if (RTC_UNIT_IDS.includes(unit.id)) continue;
       assert.equal(integrationStatus(unit.id), 'NON_INTEGRE', `${unit.id} ne doit pas être touchée par cette tranche`);
     }
     assert.equal(isEmployerUnit('PRE-01'), false);
@@ -316,6 +318,7 @@ export async function runEmployerTests(): Promise<{ name: string; success: boole
     assert.equal(integrationStatus('ADM-13'), 'PARTIEL', 'ADM-13 (contrats) est livrée par P4B-1-DESIGN-ADMIN-CONTRACTS');
     assert.equal(integrationStatus('ADM-18'), 'PARTIEL', 'ADM-18 (Paiements et rapprochement) est livrée par P4B-2');
     assert.equal(integrationStatus('ADM-20'), 'PARTIEL', 'ADM-20 (anomalies, déclarations et incidents) est livrée par P4B-2');
+    assert.equal(integrationStatus('RTC-01'), 'PARTIEL', 'RTC-01 est livrée par RTC-1');
   });
 
   check('EMP — erreurs : projection en états StateGuard, corrélation sûre uniquement', () => {
