@@ -141,7 +141,12 @@ export type IntegrationStatus = 'NON_INTEGRE' | 'PARTIEL' | 'INTEGRE';
 /** Unités intégrées : vide — aucun écran n'est intégralement couvert par le backend. */
 export const INTEGRATED_UNIT_IDS: readonly string[] = [];
 
-/** Unités PUB/SYS livrées en P1 avec capacités déclarées absentes. */
+/**
+ * Unités PUB/SYS livrées en P1 puis complétées par PUB-AUTH-2. Les dix fiches PUB
+ * (`PUB-01` → `PUB-10`) déclarent désormais explicitement leurs capacités
+ * backend absentes dans `src/public/gaps.ts` (26 opérations vérifiées absentes de
+ * `routeContracts.ts`) : le statut reste PARTIEL, jamais INTEGRE.
+ */
 const PARTIAL_PUBLIC_AND_SYSTEM: readonly string[] = PRODUCTION_UNITS.filter((unit) => unit.family === 'PUB' || unit.family === 'SYS').map(
   (unit) => unit.id,
 );

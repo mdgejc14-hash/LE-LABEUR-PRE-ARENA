@@ -1,5 +1,9 @@
 # P1-DESIGN-PUBLIC-AUTH — livraison partielle et contrôlée
 
+> Suite : `docs/P1-PUB-AUTH-2_ECRANS-PUBLIC-RESTANTS.md` (PUB-01, PUB-02, PUB-03,
+> PUB-04, PUB-09, PUB-10 — finitions visuelles et faits serveur réels). Les fiches
+> PUB-05 → PUB-08 de ce document restent la référence et n'ont pas été rouvertes.
+
 ## Base, périmètre et migration
 
 - Checkpoint exact : `b5514454bd44deec8aca5981c67de3b8e781bdb2`.

@@ -399,6 +399,16 @@
   letter-spacing: var(--micro-tracking);
 }
 
+/* Le libellé d'un sceau se replie aux limites de MOT, jamais lettre par lettre.
+   Sans cela, un conteneur qui autorise `overflow-wrap: anywhere` (ex. .lbm-public)
+   donne un min-content de 1 caractère : le hero étroit coupait « 403 » en trois lignes.
+   `break-word` conserve un min-content mesurable, donc la rangée se replie
+   (`.lbm-state__hero`, `flex-wrap`) au lieu de rogner le titre ou de déborder. */
+.lbm-seal__label {
+  min-width: 0;
+  overflow-wrap: break-word;
+}
+
 .lbm-seal__mark {
   position: relative;
   display: inline-block;
@@ -514,6 +524,7 @@
 
 .lbm-state__hero {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--space-16);
 }
@@ -954,4 +965,70 @@
     background-image: none;
     background-color: rgba(255, 255, 255, 0.03);
   }
+}
+
+/* ───────────────────────── Échelle display (fiches PUB-01 / PUB-02) ───────────────────────── */
+/*
+ * Les zones PUB-01 (sceau en --display-1) et PUB-02 (promesse en --display-2) nomment
+ * l'échelle display des tokens. Deux classes utilitaires STRICTEMENT dérivées des
+ * variables générées : aucune valeur nouvelle, aucune taille écrite en dur.
+ */
+
+.lbm-display-1 {
+  font-size: var(--display-1-size);
+  font-weight: var(--display-1-weight);
+  line-height: var(--display-1-line-height);
+  letter-spacing: var(--display-1-tracking);
+}
+
+.lbm-display-2 {
+  font-size: var(--display-2-size);
+  font-weight: var(--display-2-weight);
+  line-height: var(--display-2-line-height);
+  letter-spacing: var(--display-2-tracking);
+}
+
+/* ───────────────────────── C-14 KineticText ───────────────────────── */
+/*
+ * Révélation jouée UNE fois (aucune animation infinie) : l'état de base est visible,
+ * l'animation part d'un texte masqué puis le découvre. Sous prefers-reduced-motion,
+ * le bloc global annule les animations : la phrase apparaît immédiatement.
+ * Le découpage par mot garantit que le retour à la ligne reste celui du texte.
+ */
+
+.lbm-kinetic {
+  display: inline-block;
+}
+
+.lbm-kinetic__word {
+  display: inline-block;
+  white-space: nowrap;
+}
+
+.lbm-kinetic__char {
+  display: inline-block;
+  animation: lbm-kinetic-reveal var(--duration-micro) var(--ease-labeur-out) both;
+  animation-delay: var(--kinetic-delay, 0ms);
+}
+
+@keyframes lbm-kinetic-reveal {
+  from {
+    opacity: 0;
+    clip-path: inset(0 100% 0 0);
+  }
+  to {
+    opacity: 1;
+    clip-path: inset(0 0 0 0);
+  }
+}
+
+/* ───────────────────────── C-15 ParticleCanvas ───────────────────────── */
+
+.lbm-particle {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
 }
