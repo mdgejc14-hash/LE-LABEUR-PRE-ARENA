@@ -1,9 +1,9 @@
 /**
- * ADM —— registre des écrans livrés (30 unités, 59 fiches — tranches P4A,
+ * ADM —— registre des écrans livrés (33 unités, 62 fiches — tranches P4A,
  * P4B-1, P4B-2, P4C, P4D, P4E-1, P4E-2, P4F, P4F-2, P4G-1, P4G-2, P4G-3,
- * P4G-4, P4G-5A, P4G-5B et P4G-6).
+ * P4G-4, P4G-5A, P4G-5B, P4G-6 et P4G-7).
  *
- * Chaque code de fiche ADM-01 → ADM-24, ADM-26 → ADM-60 livré
+ * Chaque code de fiche ADM-01 → ADM-24, ADM-26 → ADM-63 livré
  * par ces tranches est associé à l'écran qui le rend. Les variantes des fiches (mêmes
  * zones, état imposé par la route) réutilisent l'écran canonique, comme le
  * décrit le Master Design.
@@ -49,7 +49,7 @@
  * pas appelés. Le ledger d’audit réel n’a aucune route ADMIN, aucune empreinte
  * de chaînage et aucune contrainte d’immuabilité. Les deux écrans sont
  * diagnostiques et déclarent leurs capacités absentes.
- * P4G-6 ajoute l’unité exacte « ADM — infra (données : PostgreSQL & stockage
+ *  P4G-6 ajoute l’unité exacte « ADM — infra (données : PostgreSQL & stockage
  * objet) » : ADM-59 (base et regroupement de connexions) et ADM-60 (stockage
  * objet). Aucune des huit références de design de ces deux fiches n’est
  * déclarée dans routeContracts.ts ni servie par un handler (404 vérifié sur
@@ -58,6 +58,17 @@
  * décrit la frontière de persistance réellement observée par l’API, mais il
  * ne fournit aucune des mesures des fiches et n’est pas appelé. Les deux
  * écrans sont diagnostiques et déclarent leurs capacités absentes.
+ *  P4G-7 ajoute les trois dernières unités d’infrastructure, une fiche par
+ * unité : ADM-61 (WebRTC & TURN), ADM-62 (observabilité) et ADM-63 (statut
+ * global & page publique). Aucune des onze références de design de ces fiches
+ * n’est déclarée dans routeContracts.ts ni servie par un handler (404 vérifié
+ * sur le worker composé avec une session ADMIN réelle) et aucune permission
+ * ADMIN de média, d’observabilité ou de statut public n’est déclarée. Les
+ * sessions média réelles sont des routes de participant (une session ADMIN
+ * reçoit 403), admin.calls.list reste sans handler (501) et la frontière de
+ * contrôle admin.stats.read répond {metrics: {}} : aucune de ces surfaces
+ * n’est appelée ni convertie en mesure. Les trois écrans sont diagnostiques
+ * et déclarent leurs capacités absentes.
  *
  * Ce module est le SEUL point d'entrée des routes `/admin/*` des tranches :
  * il résout la fiche depuis le chemin réel, applique la garde de session puis
@@ -86,6 +97,11 @@ import {
 } from './screens/securityIncidentsAudit';
 import { Admin57InfrastructureTopology, Admin58WorkerEdge } from './screens/infrastructure';
 import { Admin59PostgresHyperdrive, Admin60ObjectStorage } from './screens/dataInfrastructure';
+import {
+  Admin61WebRtcTurn,
+  Admin62Observability,
+  Admin63GlobalStatus,
+} from './screens/mediaObservabilityStatus';
 import { Admin01Dashboard } from './screens/overview';
 import { Admin02Users, Admin03UserSheet, Admin04Block, Admin05BlockJournal } from './screens/users';
 import {
@@ -202,6 +218,9 @@ export const ADMIN_SCREEN_COMPONENTS: Readonly<Record<string, AdminScreenCompone
   'ADM-58': Admin58WorkerEdge,
   'ADM-59': Admin59PostgresHyperdrive,
   'ADM-60': Admin60ObjectStorage,
+  'ADM-61': Admin61WebRtcTurn,
+  'ADM-62': Admin62Observability,
+  'ADM-63': Admin63GlobalStatus,
 };
 
 export function adminScreenCodes(): readonly string[] {

@@ -8,8 +8,8 @@
  * catalogue P4E-2, ADM-41 → ADM-43 au catalogue P4F-2, ADM-44 → ADM-46
  * au catalogue P4G-1, ADM-47 → ADM-49 au catalogue P4G-2, ADM-50/51 au
  * catalogue P4G-3, ADM-57/58 au catalogue P4G-4, ADM-52 → ADM-54 au
- * catalogue P4G-5A, ADM-55/56 au catalogue P4G-5B et ADM-59/60 au
- * catalogue P4G-6.
+ * catalogue P4G-5A, ADM-55/56 au catalogue P4G-5B, ADM-59/60 au
+ * catalogue P4G-6 et ADM-61 → ADM-63 au catalogue P4G-7.
  * Ce module ne contient AUCUN composant : il est importable par la résolution
  * de route sans embarquer l'interface.
  */
@@ -18,7 +18,7 @@ import { ADMIN_DESIGN_SCREENS, ADMIN_DESIGN_UNITS } from './catalog';
 import { ADMIN_UNIT_GAPS } from './gaps';
 
 export interface ResolvedAdminScreen {
-  /** Code de fiche ADM livré par l'une des tranches P4A à P4G-6. */
+  /** Code de fiche ADM livré par l'une des tranches P4A à P4G-7. */
   readonly code: string;
   /** Unité de production qui contient cette fiche (regroupement `units.py`). */
   readonly unitId: string;

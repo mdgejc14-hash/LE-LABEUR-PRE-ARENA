@@ -57,6 +57,22 @@ Tranches livrées :
   (frontière API observée : mode, joignabilité, sonde, migrations), qui ne
   fournit ni latence p95, ni pool, ni requêtes lentes, ni réplication et
   n’est pas une route ADMIN. Les vues sont diagnostiques.
+  P4G-7-DESIGN-ADMIN-MEDIA-OBSERVABILITY-STATUS : ADM-61, ADM-62 et ADM-63,
+  une fiche par unité de production — « ADM — infra (webrtc/turn) »
+  (canon « ADM — infra (webrtc/turn) »), « ADM — infra (observabilité) » et
+  « ADM — infra (statut) ». Les onze références de design
+  (GET /admin/infra/webrtc, /sessions, /quality, /costs,
+  GET /admin/infra/observability, /alerts,
+  POST /admin/infra/observability/alerts/:id/simulate,
+  GET /admin/status/components, POST /admin/status/updates, /maintenance,
+  GET /admin/status/public-preview) ne sont déclarées dans AUCUN contrat
+  serveur et aucune n’est servie par un handler composé (404 vérifié avec une
+  session ADMIN réelle). Les sessions WebRTC réellement exposées par le
+  produit sont réservées aux participants (scope self/participant, rôles
+  EMPLOYER/CANDIDATE) et ne portent ni qualité média, ni relais TURN, ni coût.
+  Le rapport public `/healthz` et la frontière de contrôle `admin.stats.read`
+  (`{metrics: {}}`, persistence not-configured) ne fournissent aucune des
+  mesures de l’observabilité. Les trois vues sont diagnostiques.
 
 Ce générateur ne produit AUCUN libellé métier : les textes affichés par
 l'interface viennent de `src/admin/vocabulary.ts` (vocabulaire LE LABEUR).
@@ -121,7 +137,8 @@ Périmètre de la tranche P4G-4 : ADM-57 / ADM-58 (unité exacte `ADM — infra
 (topologie & bord)`). Aucun flux de topologie, de métriques Edge, de déploiement
 ou de commande ADMIN n’est exposé ; les vues sont diagnostiques avec BACKEND_GAP.
 ADM-61 (WebRTC/TURN), ADM-62 (observabilité) et ADM-63 (statut global/public)
-restent hors tranche. FIN et RTC restent également hors de ce catalogue.
+restaient hors tranche à cette date et ont été traitées par la tranche P4G-7.
+FIN et RTC restent hors de ce catalogue.
 
 Périmètre de la tranche P4G-5A : ADM-52 / ADM-53 / ADM-54 (unité exacte `ADM —
 sécurité (replay, signatures, rate limits & webhooks)`). Les fiches citent
@@ -144,7 +161,7 @@ permission ADMIN d’incident ou de journal de sécurité n’est déclarée. Le
 contrats qui existent réellement (`admin.audit.list`, `admin.incidents.list`)
 sont des frontières de contrôle à items vides : le générateur ne les transforme
 pas en source de journal ni de registre. ADM-61 → ADM-63 (infrastructure)
-restent hors tranche.
+restaient hors tranche à cette date et ont été traitées par la tranche P4G-7.
 
 Périmètre de la tranche P4G-6 : ADM-59 / ADM-60 (unité exacte `ADM — infra
 (données : PostgreSQL & stockage objet)` = ADM-59 regroupant ADM-59/60, canons
@@ -267,7 +284,16 @@ TRANCHE_P4G5B = {'ADM-55', 'ADM-56'}
 # sont des comparaisons, jamais des capacités serveur.
 TRANCHE_P4G6 = {'ADM-59', 'ADM-60'}
 
-TRANCHE_ADMIN = TRANCHE_P4G1 | TRANCHE_P4G2 | TRANCHE_P4G3 | TRANCHE_P4G4 | TRANCHE_P4G5A | TRANCHE_P4G5B | TRANCHE_P4G6 | TRANCHE_P4A | TRANCHE_P4B1 | TRANCHE_P4B2 | TRANCHE_P4C | TRANCHE_P4D | TRANCHE_P4E1 | TRANCHE_P4E2 | TRANCHE_P4F | TRANCHE_P4F2
+# P4G-7 : trois unités exactes de design/llab/units.py, une fiche par unité —
+# ADM-61 « ADM — infra (webrtc/turn) », ADM-62 « ADM — infra (observabilité) »
+# et ADM-63 « ADM — infra (statut) ». Les onze références de design
+# (/api/v1/admin/infra/webrtc*, /api/v1/admin/infra/observability*,
+# /api/v1/admin/status/*) ne sont déclarées dans aucun contrat et ne sont
+# servies par aucun handler : elles restent des comparaisons, jamais des
+# capacités serveur.
+TRANCHE_P4G7 = {'ADM-61', 'ADM-62', 'ADM-63'}
+
+TRANCHE_ADMIN = TRANCHE_P4G1 | TRANCHE_P4G2 | TRANCHE_P4G3 | TRANCHE_P4G4 | TRANCHE_P4G5A | TRANCHE_P4G5B | TRANCHE_P4G6 | TRANCHE_P4G7 | TRANCHE_P4A | TRANCHE_P4B1 | TRANCHE_P4B2 | TRANCHE_P4C | TRANCHE_P4D | TRANCHE_P4E1 | TRANCHE_P4E2 | TRANCHE_P4F | TRANCHE_P4F2
 
 families = load_all()
 SCREENS = [s for s in families['ADM'] if s.code in TRANCHE_ADMIN]
@@ -336,6 +362,7 @@ payload = (
     '// P4G-5A CONTRÔLES DE SÉCURITÉ (ADM-52 → ADM-54),\n'
     '// P4G-5B INCIDENTS & AUDIT DE SÉCURITÉ (ADM-55 → ADM-56),\n'
     '// P4G-6 DONNÉES D’INFRASTRUCTURE (ADM-59 → ADM-60).\n'
+    '// P4G-7 MÉDIA, OBSERVABILITÉ & STATUT (ADM-61 → ADM-63).\n'
     '// Régénérer : npm run design:admin\n'
     '//\n'
     '// Référence de design UNIQUEMENT : aucun libellé de ce fichier n\'est affiché par\n'

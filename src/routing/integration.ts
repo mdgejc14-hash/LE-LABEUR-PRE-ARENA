@@ -91,8 +91,21 @@
  * fournit aucune des mesures des fiches. Aucune donnée n’est appelée ni
  * convertie en mesure → statut PARTIEL.
  *
- * Les unités ADM d’infrastructure restantes (ADM-61 → ADM-63), ainsi que FIN
- * et RTC, restent non intégrées.
+ * P4G-7-DESIGN-ADMIN-MEDIA-OBSERVABILITY-STATUS : ADM-61 (WebRTC & TURN),
+ * ADM-62 (observabilité) et ADM-63 (statut global & page publique) — une fiche
+ * par unité de production selon « ADM — infra (webrtc/turn) », « ADM — infra
+ * (observabilité) » et « ADM — infra (statut) » de `units.py`. Les onze
+ * références de design des trois fiches ne sont déclarées dans aucun contrat
+ * ni servies par un handler (404 sur le worker composé avec une session ADMIN
+ * réelle) ; les sessions média réelles sont réservées aux participants (403
+ * pour un ADMIN), admin.calls.list reste sans handler (501) et la frontière de
+ * contrôle admin.stats.read répond {metrics: {}}. Aucune donnée n’est appelée
+ * ni convertie en mesure → statut PARTIEL.
+ *
+ * Les 33 unités ADM du catalogue livré (62 fiches) sont couvertes. L’unité
+ * ADM-25 « ADM — salaire (litiges) » est déclarée par le routeur P0 mais reste
+ * hors catalogue — aucune tranche ne la livre, donc NON_INTEGRE — et FIN comme
+ * RTC restent non intégrées.
  */
 
 import { PRODUCTION_UNITS, TOTAL_UNITS, UNIT_COUNTS_BY_FAMILY, type ProductionUnit } from '../design-system/generated/productionUnits';
@@ -134,9 +147,10 @@ export const PRESTATAIRE_UNIT_IDS: readonly string[] = PRESTATAIRE_DESIGN_UNITS.
  * P4F-2-DESIGN-ADMIN-NOTIFICATIONS, P4G-1-DESIGN-ADMIN-OPERATIONS et
  * P4G-2-DESIGN-ADMIN-SUPERVISION, P4G-3-DESIGN-ADMIN-SECURITY,
  * P4G-4-DESIGN-ADMIN-INFRASTRUCTURE, P4G-5A-DESIGN-ADMIN-SECURITY-CONTROLS,
- * P4G-5B-DESIGN-ADMIN-SECURITY-INCIDENTS-AUDIT et
- * P4G-6-DESIGN-ADMIN-DATA-INFRASTRUCTURE
- * (30 unités, 59 fiches, dérivées du catalogue généré). P4G-2 rend ADM-47/48/49
+ * P4G-5B-DESIGN-ADMIN-SECURITY-INCIDENTS-AUDIT,
+ * P4G-6-DESIGN-ADMIN-DATA-INFRASTRUCTURE et
+ * P4G-7-DESIGN-ADMIN-MEDIA-OBSERVABILITY-STATUS
+ * (33 unités, 62 fiches, dérivées du catalogue généré). P4G-2 rend ADM-47/48/49
  * diagnostiques : les capacités SLO, dead-letter et incidents d’exploitation
  * sont absentes du backend.
  * P4G-3 rend ADM-50/51 diagnostiques : aucune API ADMIN de détection IDOR.
@@ -149,7 +163,10 @@ export const PRESTATAIRE_UNIT_IDS: readonly string[] = PRESTATAIRE_DESIGN_UNITS.
  * P4G-6 rend ADM-59/60 diagnostiques : aucune route ADMIN de supervision de
  * PostgreSQL/Hyperdrive ni du stockage objet n’est installée, et le rapport
  * public /healthz ne remplace ni les mesures ni les états des fiches.
- * ADM-61 → ADM-63 restent non intégrées. Même règle : PARTIEL dès qu'une fiche
+ * P4G-7 rend ADM-61/62/63 diagnostiques : aucune API ADMIN de média, de
+ * qualité d’appel, d’observabilité ni de statut public n’est installée ; les
+ * sessions média réelles sont réservées aux participants et le rapport public
+ * /healthz n’est pas une page de statut. Même règle : PARTIEL dès qu'une fiche
  * déclare une capacité absente.
  */
 export const ADMIN_UNIT_IDS: readonly string[] = ADMIN_DESIGN_UNITS.map((unit) => unit.id);

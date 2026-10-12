@@ -1,16 +1,17 @@
 /**
- * P4G-6-DESIGN-ADMIN-DATA-INFRASTRUCTURE — vérification UI réelle (Chromium) de
- * l'espace supervision livré (P4A + P4B-1 contrats + P4B-2 paiements + P4C
- * salaire + P4D Claims + P4E-1 Remplacements + P4E-2 Réputation + P4F
- * Documents + P4F-2 Notifications + P4G-1 opérations + P4G-2 supervision +
+ * P4G-7-DESIGN-ADMIN-MEDIA-OBSERVABILITY-STATUS — vérification UI réelle
+ * (Chromium) de l'espace supervision livré (P4A + P4B-1 contrats + P4B-2
+ * paiements + P4C salaire + P4D Claims + P4E-1 Remplacements + P4E-2 Réputation
+ * + P4F Documents + P4F-2 Notifications + P4G-1 opérations + P4G-2 supervision +
  * P4G-3 sécurité + P4G-4 topologie/Worker edge + P4G-5A contrôles de sécurité
- * + P4G-5B incidents & audit de sécurité + P4G-6 données d'infrastructure).
+ * + P4G-5B incidents & audit de sécurité + P4G-6 données d'infrastructure
+ * + P4G-7 média, observabilité & statut public).
  *
  * Comme le script P2, ce script n'affirme rien sur des données simulées dans
  * l'application : les fixtures HTTP vivent ICI et ne sont jamais activées dans
  * le produit. Ce qui est vérifié dans un navigateur réel :
  *
- *  1. AUCUNE source de données configurée : les 59 fiches ADM rendent leur
+ *  1. AUCUNE source de données configurée : les 62 fiches ADM rendent leur
  *     conteneur (`data-unit`, `data-screen`), la structure déclarée par le
  *     design (`data-sheet-frame`) et le BACKEND_GAP, sans débordement
  *     horizontal à 360 px comme à 1440 px ; aucun terme du Master Design ni
@@ -71,7 +72,15 @@
  * inventée ; aucune étape de procédure présentée comme accomplie ; aucune
  * conclusion juridique ; mesures en « — » ; commandes désactivées ; navigation
  * entre les deux fiches ; refus 401/403 et erreur 500 ; 360/1440 px.
- * 15. P4G-6 : ADM-59/60 (base PostgreSQL/Hyperdrive et stockage objet) —
+ * 15. P4G-7 : ADM-61/62/63 (WebRTC & TURN, observabilité, statut global &
+ * page publique) — aucune requête vers /api/v1/admin/infra/*,
+ * /api/v1/admin/status*, /api/v1/my/webrtc-sessions, /api/v1/webrtc-sessions*,
+ * /api/v1/admin/calls, /api/v1/admin/stats ni /healthz (sources écartées) ;
+ * mesures en « — » ; aucune session, aucun relais TURN, aucune trace, aucune
+ * alerte, aucun état de composant ni incident public inventé ; aucun gabarit de
+ * publication ni maintenance simulée ; commandes désactivées ; navigation
+ * entre les trois fiches ; refus 401/403 et erreur 500 ; 360/1440 px.
+ * 16. P4G-6 : ADM-59/60 (base PostgreSQL/Hyperdrive et stockage objet) —
  * aucune requête vers /api/v1/admin/infra/*, vers /healthz ni vers le registre
  * des Documents (sources écartées) ; mesures en « — » ; aucune latence, pool,
  * requête lente, réplication, volumétrie, classe, coût ni intégrité de
@@ -2820,6 +2829,108 @@ try {
       assert.deepEqual(infrastructureRequests, [], 'aucune donnée infra après refus ou erreur de session');
     } finally {
       page.off('request', trackInfrastructureRequests);
+      sessionMode = 'admin';
+    }
+  });
+
+  await check('ADM-61/62/63 — média, observabilité et statut public diagnostiques, sans session, alerte ni état de composant inventés (360/1440 px)', async () => {
+    sessionMode = 'admin';
+    const paths = [
+      ['/admin/infra/webrtc', 'ADM-61', 6],
+      ['/admin/infra/observabilite', 'ADM-62', 4],
+      ['/admin/infra/statut', 'ADM-63', 3],
+    ] as const;
+    const unavailableSources: string[] = [];
+    const trackUnavailableSources = (request: { url(): string }) => {
+      const path = new URL(request.url()).pathname;
+      if (
+        path.startsWith('/api/v1/admin/infra/')
+        || path.startsWith('/api/v1/admin/status')
+        || path.startsWith('/api/v1/my/webrtc-sessions')
+        || path.startsWith('/api/v1/webrtc-sessions')
+        || path === '/api/v1/admin/calls'
+        || path === '/api/v1/admin/stats'
+        || path === '/healthz'
+      ) unavailableSources.push(request.url());
+    };
+    page.on('request', trackUnavailableSources);
+    try {
+      for (const width of [360, 1440]) {
+        await page.setViewportSize({ width, height: 900 });
+        for (const [path, code, kpiCount] of paths) {
+          await page.goto(api.origin + path);
+          const screen = page.locator(`[data-screen="${code}"]`);
+          await screen.waitFor();
+          assert.equal(await screen.getAttribute('data-unit'), code, `${code} : une fiche par unité de production`);
+          await screen.locator('[data-backend-gap="true"]').last().waitFor();
+          const text = await screen.innerText();
+          assert.ok(says(text, 'BACKEND_GAP'), `${code} : absence de contrat ADMIN non signalée`);
+          assert.ok(says(text, 'Indisponible'), `${code} : action ou état indisponible non dit`);
+          // Aucune mesure : les repères de la fiche restent indisponibles, jamais 0.
+          const values = (await screen.locator('.lbm-admin__kpi-value').allTextContents()).map((value) => value.trim());
+          assert.equal(values.length, kpiCount, `${code} : nombre de repères de la fiche`);
+          assert.ok(values.every((value) => value === '—'), `${code} : mesure ou état inventé (${values.join(', ')})`);
+          assert.equal(await screen.locator('form').count(), 0, `${code} : formulaire sans handler`);
+          assert.equal(await screen.locator('input, select, textarea').count(), 0, `${code} : champ de saisie sans commande serveur`);
+          assert.ok(await screen.locator('button[data-unavailable-action]').count() > 0, `${code} : action absente non identifiée`);
+          assert.equal(await screen.locator('button:not([disabled])').count(), 0, `${code} : action d’infrastructure activable`);
+          const html = await screen.innerHTML();
+          for (const forbidden of ['turn:', 'stun:', 'iceServers', 'credential', 'chain_hash']) {
+            assert.ok(!html.includes(forbidden), `${code} : donnée de relais, secret ou journal non sourcé rendu (${forbidden})`);
+          }
+          // Aucune identité de participant, aucune adresse d'accès.
+          assert.equal(await screen.locator('[data-declared-domains], [data-unverified-reference]').count(), 0, `${code} : élément d'une autre tranche rendu`);
+          if (code === 'ADM-63') {
+            // Composants rendus comme STRUCTURE : aucun état dérivé, aucun état saisi.
+            assert.equal(await screen.locator('[data-declared-components]').count(), 1, `${code} : composants déclarés non identifiés comme structure`);
+            const components = await screen.locator('[data-declared-components] + .lbm-admin__list .lbm-admin__row').count();
+            assert.equal(components, 6, `${code} : les six composants écrits par la fiche`);
+            const componentText = await screen.locator('[data-declared-components] + .lbm-admin__list').innerText();
+            assert.equal((componentText.match(/État indisponible/g) ?? []).length, 6, `${code} : un état est présenté pour un composant`);
+            for (const state of ['Opérationnel', 'opérationnel', 'Dégradé', 'Panne']) {
+              assert.ok(!componentText.includes(state), `${code} : état de composant inventé (${state})`);
+            }
+            assert.equal(await screen.locator('table').count(), 0, `${code} : aucune table n’est déclarée par la fiche`);
+          } else {
+            // Aucune session, aucune alerte : le tableau ne porte que son avis d'absence.
+            assert.equal(await screen.locator('table tbody tr').count(), 1, `${code} : une ligne de mesure ne doit pas être suggérée`);
+            assert.ok(says(await screen.locator('table tbody tr').innerText(), 'Aucune'), `${code} : source absente non dite dans le tableau`);
+          }
+          assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${code} : débordement à ${width}px`);
+          await assertNoForbiddenText(path, text);
+        }
+      }
+      // Navigation réelle entre les fiches, puis retour.
+      await page.goto(api.origin + '/admin/infra/webrtc');
+      const media = page.locator('[data-screen="ADM-61"]');
+      await media.waitFor();
+      assert.equal(await media.locator('a[href="/admin/infra/statut"]').count(), 1, 'navigation vers ADM-63 absente');
+      await media.locator('a[href="/admin/infra/statut"]').click();
+      const status = page.locator('[data-screen="ADM-63"]');
+      await status.waitFor();
+      assert.equal(await status.locator('a[href="/admin/infra/webrtc"]').count(), 1, 'retour vers ADM-61 absent');
+      await page.goto(api.origin + '/admin/infra/observabilite');
+      const observability = page.locator('[data-screen="ADM-62"]');
+      await observability.waitFor();
+      assert.equal(await observability.locator('a[href="/admin/infra"]').count(), 1, 'navigation vers la topologie absente');
+      assert.deepEqual(unavailableSources, [], 'aucune lecture média, télémétrie, statut, /healthz ni frontière de contrôle utilisée comme substitut');
+
+      sessionMode = 'employer';
+      for (const [path, code] of paths) {
+        await page.goto(api.origin + path);
+        await page.locator('[data-state="403"]').waitFor();
+        assert.equal(await page.locator(`[data-screen="${code}"]`).count(), 0, `${code} : accès non-ADMIN rendu`);
+      }
+      sessionMode = 'anonymous';
+      await page.goto(api.origin + paths[0][0]);
+      await page.locator('[data-state="401"]').waitFor();
+      sessionMode = 'error';
+      await page.goto(api.origin + paths[1][0]);
+      await page.locator('[data-state="500"]').waitFor();
+      assert.ok(!(await page.locator('[data-state="500"]').innerText()).includes(SERVER_SECRET), 'erreur de session brute rendue');
+      assert.deepEqual(unavailableSources, [], 'aucune donnée média ni de statut après refus ou erreur de session');
+    } finally {
+      page.off('request', trackUnavailableSources);
       sessionMode = 'admin';
     }
   });
