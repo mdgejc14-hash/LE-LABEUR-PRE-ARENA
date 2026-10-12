@@ -36,6 +36,16 @@
  * Aucune route de décision de vérification, de quarantaine, de journal d'accès,
  * de politique ou de purge n'existe : chaque capacité est BACKEND_GAP, jamais
  * simulée. Les BACKEND_GAP ci-dessous nomment ces capacités absentes.
+ *
+ * P4G-5A-DESIGN-ADMIN-SECURITY-CONTROLS (ADM-52 → ADM-54) : unité exacte
+ * « ADM — sécurité (replay, signatures, rate limits & webhooks) ». Le produit
+ * contient des protections serveur réelles — classification forensique
+ * (SECURITY_REPLAY_REJECTED, SECURITY_RATE_LIMITED, SECURITY_ACCESS_DENIED…),
+ * limiteur de débit à fenêtres glissantes et vérification de signature du
+ * webhook de paiement — mais AUCUNE API ADMIN de supervision : ni lecture des
+ * rejeux, ni règles ni statistiques de limitation de débit, ni consultation ni
+ * rejeu de webhooks. Ces protections internes ne sont ni appelées ni traduites
+ * en mesure : chaque capacité de supervision est BACKEND_GAP.
  */
 
 export const ADMIN_UNIT_GAPS: Record<string, readonly string[]> = {
@@ -354,6 +364,29 @@ export const ADMIN_UNIT_GAPS: Record<string, readonly string[]> = {
     'ADM-58 · GET /admin/infra/worker et GET /admin/infra/worker/deployments — absents du catalogue de routes et sans handler : invocations, latences, erreurs 5xx, cache, règles effectives, liste et part de trafic des déploiements restent inconnus.',
     'ADM-58 · POST /admin/infra/worker/rollback et POST /admin/infra/worker/deployments/:id/countersign — absents : aucun retour arrière ni contre-signature ne peut être exécuté depuis l’interface.',
     'ADM-58 · /healthz ne renvoie pas les métriques Edge ni un état de déploiement. Les fichiers de configuration et le code du Worker ne prouvent pas qu’un Worker est déployé ou sain en production.',
+  ],
+  /* ── P4G-5A · contrôles de sécurité : rejeu, limitation de débit, webhooks ── */
+  'ADM-52': [
+    'ADM-52 · GET /admin/security/replay?cursor= — référence de design absente de routeContracts.ts et sans handler ADMIN : aucun rejeu, aucune signature invalide, aucun token réutilisé ni horodatage décalé n’est consultable. Le tableau vide n’atteste pas l’absence de rejeu.',
+    'ADM-52 · POST /admin/security/replay/:id/qualify — absent : aucune détection n’est qualifiable et aucune fenêtre de tolérance n’est ajustable depuis l’interface.',
+    'ADM-52 · POST /admin/security/secrets/:id/rotate — absent : aucune rotation de secret n’est exécutable. Aucun secret, aucune version ni date de rotation n’est exposé, même partiellement : aucun état de rotation n’est affiché faute de source.',
+    'ADM-52 · le serveur ne classe SECURITY_REPLAY_REJECTED que sur IDEMPOTENCY_CONFLICT ou sur un conflit 409 de clé d’idempotence : ce rejet d’idempotence n’est PAS une détection de rejeu de signature et n’est jamais présenté comme tel ici.',
+    'ADM-52 · les événements forensiques de sécurité sont écrits dans le ledger d’audit existant par le puits d’audit forensique, installé uniquement avec une persistance PostgreSQL durable ; aucune route ADMIN ne les expose en lecture.',
+    'ADM-52 · admin.audit.list (audit:read) renvoie une frontière de contrôle à items vides et persistence=not-configured : ce n’est pas un journal de détections et il n’est pas utilisé comme substitut.',
+  ],
+  'ADM-53': [
+    'ADM-53 · GET /admin/security/rate-limits — référence de design absente de routeContracts.ts et sans handler ADMIN : aucune règle, portée, seuil, fenêtre, volume déclenché, blocage ni contestation d’utilisateur n’est lisible.',
+    'ADM-53 · POST /admin/security/rate-limits/:rule/simulate, POST /admin/security/rate-limits/:rule/apply et POST /admin/security/unblock — absents : aucun simulateur, aucun ajustement de règle et aucun déblocage d’utilisateur n’est exécutable depuis l’interface.',
+    'ADM-53 · la limitation de débit réelle est le limiteur interne de src/backend/api/security.ts : fenêtres glissantes conservées en mémoire par compartiment, route et sujet, avec 7 compartiments par défaut. Ces compteurs ne sont ni persistés ni exposés : aucun volume, aucun blocage et aucun taux de faux positifs n’en est déduit.',
+    'ADM-53 · un refus 429 est classé SECURITY_RATE_LIMITED dans le ledger d’audit forensique ; aucune route ADMIN ne lit ces événements et aucun compteur n’est calculé dans le navigateur.',
+    'ADM-53 · aucune permission ADMIN de limitation de débit ni d’exemption de partenaire n’est déclarée dans la matrice RBAC serveur. La garde de session ADMIN existante protège l’écran ; aucune autorisation métier ni route serveur n’est ajoutée.',
+  ],
+  'ADM-54': [
+    'ADM-54 · GET /admin/security/webhooks et GET /admin/security/webhooks/:partner/events — références de design absentes de routeContracts.ts et sans handler ADMIN : aucun partenaire, volume 24 h, latence médiane, taux d’échec, état de signature ni dernier succès n’est consultable.',
+    'ADM-54 · POST /admin/security/webhooks/events/:id/retry — absent : aucun rejeu d’événement échoué n’est déclenchable depuis l’interface et aucune file de rejeu n’est lisible.',
+    'ADM-54 · les seuls contrats webhook du produit sont webhooks.payment-provider et webhooks.payment-provider.root (POST entrant public) : ce sont des points de réception, pas une lecture ADMIN de supervision. Ils ne sont pas appelés par cet écran.',
+    'ADM-54 · la vérification de signature et d’horodatage est faite par l’adaptateur fournisseur ; un rejet écrit une trace de rejet de signature dans le ledger d’audit des paiements, qu’aucune route ADMIN n’expose. L’absence de ligne ici n’atteste ni l’absence d’événement, ni une signature valide, ni une panne partenaire.',
+    'ADM-54 · aucune clé de signature, valeur d’en-tête ni charge utile n’est affichée : aucune route ADMIN ne les fournit et aucune n’est reconstruite ni devinée côté interface.',
   ],
 
 };

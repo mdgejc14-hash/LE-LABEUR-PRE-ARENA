@@ -1,15 +1,15 @@
 /**
- * P4G-4-DESIGN-ADMIN-INFRASTRUCTURE — vérification UI réelle (Chromium) de
+ * P4G-5A-DESIGN-ADMIN-SECURITY-CONTROLS — vérification UI réelle (Chromium) de
  * l'espace supervision livré (P4A + P4B-1 contrats + P4B-2 paiements + P4C
  * salaire + P4D Claims + P4E-1 Remplacements + P4E-2 Réputation + P4F
  * Documents + P4F-2 Notifications + P4G-1 opérations + P4G-2 supervision +
- * P4G-3 sécurité + P4G-4 topologie/Worker edge).
+ * P4G-3 sécurité + P4G-4 topologie/Worker edge + P4G-5A contrôles de sécurité).
  *
  * Comme le script P2, ce script n'affirme rien sur des données simulées dans
  * l'application : les fixtures HTTP vivent ICI et ne sont jamais activées dans
  * le produit. Ce qui est vérifié dans un navigateur réel :
  *
- *  1. AUCUNE source de données configurée : les 52 fiches ADM rendent leur
+ *  1. AUCUNE source de données configurée : les 55 fiches ADM rendent leur
  *     conteneur (`data-unit`, `data-screen`), la structure déclarée par le
  *     design (`data-sheet-frame`) et le BACKEND_GAP, sans débordement
  *     horizontal à 360 px comme à 1440 px ; aucun terme du Master Design ni
@@ -58,6 +58,11 @@
  * 12. P4G-2 : routes ADM-47/48/49, aucune requête ops, mesures absentes en « — »,
  * aucune liste de DLQ/incidents assimilée à zéro, référence incident non vérifiée,
  * actions non implémentées désactivées, navigation, refus 401/403 et erreur 500.
+ * 13. P4G-5A : ADM-52/53/54 (rejeux, limitation de débit, webhooks) — aucune
+ * requête vers /api/v1/admin/security/*, vers le webhook de paiement ni vers
+ * admin.audit ; mesures en « — » ; aucune détection, règle, partenaire ni file
+ * de rejeu inventée ; aucun secret rendu ; commandes désactivées ; navigation
+ * entre les trois fiches ; refus 401/403 et erreur 500 ; 360/1440 px.
  *
  * Exécution : `npm run verify:admin-ui`.
  */
@@ -2801,6 +2806,90 @@ try {
       assert.deepEqual(infrastructureRequests, [], 'aucune donnée infra après refus ou erreur de session');
     } finally {
       page.off('request', trackInfrastructureRequests);
+      sessionMode = 'admin';
+    }
+  });
+
+  await check('ADM-52/53/54 — rejeux, limitation de débit et webhooks diagnostiques, sans détection ni mesure inventée (360/1440 px)', async () => {
+    sessionMode = 'admin';
+    const paths = [
+      ['/admin/securite/replay', 'ADM-52'],
+      ['/admin/securite/rate-limits', 'ADM-53'],
+      ['/admin/securite/webhooks', 'ADM-54'],
+    ] as const;
+    const securityRequests: string[] = [];
+    const trackSecurityControlRequests = (request: { url(): string }) => {
+      const path = new URL(request.url()).pathname;
+      if (
+        path.startsWith('/api/v1/admin/security/')
+        || path.includes('/webhooks/')
+        || path === '/api/v1/admin/audit'
+        || path === '/api/v1/admin/incidents'
+      ) securityRequests.push(request.url());
+    };
+    page.on('request', trackSecurityControlRequests);
+    try {
+      for (const width of [360, 1440]) {
+        await page.setViewportSize({ width, height: 900 });
+        for (const [path, code] of paths) {
+          await page.goto(api.origin + path);
+          const screen = page.locator(`[data-screen="${code}"]`);
+          await screen.waitFor();
+          // `data-unit` et `data-screen` sont portés par le même conteneur :
+          // l'unité de production exacte est lue sur l'attribut.
+          assert.equal(await screen.getAttribute('data-unit'), 'ADM-52', `${code} : rattaché à l’unité ADM-52`);
+          await screen.locator('[data-backend-gap="true"]').last().waitFor();
+          const text = await screen.innerText();
+          assert.ok(says(text, 'BACKEND_GAP') && says(text, 'Indisponible'), `${code} : absence de source ou d’action non dite`);
+          assert.ok(await screen.locator('[data-no-invented-security]').count() > 0, `${code} : mesures absentes non explicitées`);
+          // ADM-54 ne déclare aucune zone kpi dans sa fiche : aucune tuile n’y est inventée.
+          if (code !== 'ADM-54') {
+            const values = (await screen.locator('.lbm-admin__kpi-value').allTextContents()).map((value) => value.trim());
+            assert.ok(values.length > 0 && values.every((value) => value === '—'), `${code} : mesure de sécurité fictive (${values.join(', ')})`);
+          }
+          assert.equal(await screen.locator('table tbody tr').count(), 1, `${code} : liste de détections factice`);
+          assert.ok(says(await screen.locator('table tbody tr').innerText(), 'BACKEND_GAP'), `${code} : source absente non dite dans le tableau`);
+          assert.equal(await screen.locator('form').count(), 0, `${code} : formulaire sans handler`);
+          assert.ok(await screen.locator('button[data-unavailable-action]').count() > 0, `${code} : commande absente non identifiée`);
+          assert.equal(await screen.locator('button:not([disabled])').count(), 0, `${code} : commande de sécurité activable`);
+          // Aucune donnée sensible : ni secret, ni clé, ni en-tête de signature.
+          for (const forbidden of ['x-webhook-signature', 'PRIVATE KEY', 'sk_live']) {
+            assert.ok(!(await screen.innerHTML()).toLowerCase().includes(forbidden.toLowerCase()), `${code} : donnée sensible rendue`);
+          }
+          assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${code} : débordement à ${width}px`);
+          await assertNoForbiddenText(path, text);
+        }
+      }
+      // Navigation réelle entre les trois fiches de l'unité, puis retour.
+      await page.goto(api.origin + '/admin/securite/replay');
+      const replay = page.locator('[data-screen="ADM-52"]');
+      await replay.waitFor();
+      assert.equal(await replay.locator('a[href="/admin/securite/rate-limits"]').count(), 1, 'navigation vers ADM-53 absente');
+      await replay.locator('a[href="/admin/securite/rate-limits"]').click();
+      await page.locator('[data-screen="ADM-53"]').waitFor();
+      assert.equal(await page.locator('[data-screen="ADM-53"] a[href="/admin/securite/webhooks"]').count(), 1, 'navigation vers ADM-54 absente');
+      await page.locator('[data-screen="ADM-53"] a[href="/admin/securite/webhooks"]').click();
+      await page.locator('[data-screen="ADM-54"]').waitFor();
+      assert.equal(await page.locator('[data-screen="ADM-54"] a[href="/admin/securite/replay"]').count(), 1, 'retour vers ADM-52 absent');
+
+      assert.deepEqual(securityRequests, [], 'aucune API de sécurité absente appelée, aucun webhook de paiement ni journal d’audit utilisé comme substitut');
+
+      sessionMode = 'employer';
+      for (const [path, code] of paths) {
+        await page.goto(api.origin + path);
+        await page.locator('[data-state="403"]').waitFor();
+        assert.equal(await page.locator(`[data-screen="${code}"]`).count(), 0, `${code} : écran rendu sans autorisation`);
+      }
+      sessionMode = 'anonymous';
+      await page.goto(api.origin + paths[0][0]);
+      await page.locator('[data-state="401"]').waitFor();
+      sessionMode = 'error';
+      await page.goto(api.origin + paths[1][0]);
+      await page.locator('[data-state="500"]').waitFor();
+      assert.ok(!(await page.locator('[data-state="500"]').innerText()).includes(SERVER_SECRET), 'détail de session divulgué');
+      assert.deepEqual(securityRequests, [], 'aucune lecture sensible après refus ou erreur de session');
+    } finally {
+      page.off('request', trackSecurityControlRequests);
       sessionMode = 'admin';
     }
   });
