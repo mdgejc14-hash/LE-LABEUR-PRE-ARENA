@@ -1,0 +1,15 @@
+%% 06 — Sessions temps réel (RTC). Références : src/rtc/screens/*, src/backend/webrtc/webrtcRepository.ts.
+flowchart TD
+  R06["RTC-06 /appels — historique<br/>webrtc.sessions.mine.list · create ✔ pg"] -->|"POST /webrtc-sessions (contrat ACTIVE requis, webrtcRepository.ts:548)"| C["Session CREATED"]
+  C -->|"outbox WEBRTC_SESSION_INVITED → notification In-App"| INV["Invitation"]
+  R06 --> R01["RTC-01 /appel/:id/preparation<br/>webrtc.sessions.read · join ✔"]
+  R01 --> R08["RTC-08 consentement<br/>diagnostic, aucun contrat de consentement"]
+  R01 --> R07["RTC-07 diagnostic<br/>webrtc.sessions.ice-configuration ✔"]
+  R01 -->|"join → CONNECTING (l.670)"| R03["RTC-03 /appel/:id/connexion"]
+  R03 -.->|"NON IMPLÉMENTÉ côté UI : signaling.send/poll, credentials.create, transport-connected jamais appelés"| MEDIA(["Aucun média : pas d'offer/answer/ICE dans l'UI"])
+  MEDIA -.->|"ACTIVE exige deux transport-connected (l.824)"| R04["RTC-04 /appel/:id — session active<br/>webrtc.sessions.close ✔"]
+  R04 -->|"close → CLOSED"| R05["RTC-05 /appel/:id/fin"]
+  R05 --> R06
+  CRON["cron : expiration / purge (cronQueue)"] -->|"EXPIRED"| R05
+  EMPPRE["Écrans EMP / PRE"] -.->|"aucun lien vers /appel ou /appels"| R06
+  CALLS["calls.* (8 contrats)"] -.->|"501 — ancien modèle d'appels sans handler"| X(["STOP"])

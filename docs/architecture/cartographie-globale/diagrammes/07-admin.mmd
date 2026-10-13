@@ -1,0 +1,17 @@
+%% 07 — Espace ADMIN : domaines, contrats réellement appelés, écrans diagnostiques (sans API).
+flowchart LR
+  A["ADMIN — garde client role=ADMIN (admin/hooks.ts:128)<br/>garde serveur : 24 permissions (0002_role_permissions_seed.sql)"]
+  A --> U["Utilisateurs ADM-02..05<br/>admin.users.list ✔ · admin.users.block ✔ pg<br/>admin.users.unblock 501"]
+  A --> Q["Qualification ADM-06..09<br/>matching.qualification.review(.list) ✔ pg"]
+  A --> M["Matching ADM-10..12<br/>admin.match-events.list 501 — écrans sans API"]
+  A --> C["Contrats ADM-13..17<br/>admin.contracts.list ✔"]
+  A --> P["Paiements ADM-18..25<br/>admin.payments.* ✔ pg · rapprochement ✔ pg"]
+  A --> L["Litiges ADM-26..30<br/>admin.claims.* ✔ pg"]
+  A --> R["Remplacements ADM-31..33<br/>lecture ✔ pg · assign/transfer/finalize 501"]
+  A --> RP["Réputation ADM-34..36<br/>admin.reputation.* ✔ pg"]
+  A --> D["Documents ADM-37..40<br/>admin.documents.* ✔ seulement avec stockage objet"]
+  A --> N["Notifications ADM-41..43<br/>admin.notifications.list ✔ pg"]
+  A -.-> O["Ops ADM-44..49<br/>aucun contrat — écrans diagnostiques"]
+  A -.-> S["Sécurité ADM-50..56<br/>aucun contrat — écrans diagnostiques"]
+  A -.-> I["Infra ADM-57..63<br/>aucun contrat — écrans diagnostiques"]
+  U -.->|"identityWorker.ts : admin.*.list/stats = frontières de contrôle vides en mode mémoire"| EMPTY(["Listes vides hors PostgreSQL"])
