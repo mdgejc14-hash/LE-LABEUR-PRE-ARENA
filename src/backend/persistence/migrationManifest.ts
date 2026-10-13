@@ -13,6 +13,8 @@ export const EXPECTED_MIGRATION_IDS: readonly string[] = [
   '0003_core_nucleus_alignment',
   // P0-E5 : table `proposals` (propositions d'embauche).
   '0004_proposals',
+  // P0-F : lien proposition → contrat + unicités du cycle CONTRAT.
+  '0005_contract_lifecycle',
 ];
 
 export const SCHEMA_MIGRATIONS_TABLE = 'schema_migrations';

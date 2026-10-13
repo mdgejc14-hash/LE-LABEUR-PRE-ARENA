@@ -472,11 +472,27 @@ export function createSqlApplicationStore(db: SqlQueryExecutor): ApplicationStor
         return translateSqlError(error, 'applications', `Statut « ${status} » refusé pour la candidature ${applicationId}.`);
       }
     },
+
+    async attachContract(applicationId, contractId, updatedAt) {
+      // Garde `contract_id IS NULL` : une candidature ne peut être liée qu'à un
+      // seul contrat, même en cas de créations concurrentes.
+      const result = await db.query<ApplicationRow>(
+        `UPDATE applications
+            SET contract_id = $2,
+                updated_at = $3
+          WHERE id = $1
+            AND contract_id IS NULL
+        RETURNING *`,
+        [applicationId, contractId, updatedAt],
+      );
+      return result.rows[0] ? toApplicationRecord(result.rows[0]) : null;
+    },
   };
 }
 
 interface ContractRow {
   id: string;
+  proposal_id: string | null;
   offer_id: string | null;
   application_id: string | null;
   employer_id: string;
@@ -538,6 +554,7 @@ function toContractRow(row: ContractRow): ContractRecord {
     history: readJsonArray<ContractRecord['history'][number]>(row.history, 'contracts', 'history', []),
     createdAt: readTimestamp(row.created_at),
     updatedAt: readTimestamp(row.updated_at),
+    ...(readNullableString(row.proposal_id) !== undefined ? { proposalId: readNullableString(row.proposal_id) } : {}),
     ...(readNullableString(row.application_id) !== undefined ? { applicationId: readNullableString(row.application_id) } : {}),
     ...(readNullableDate(row.end_date) !== undefined ? { endDate: readNullableDate(row.end_date) } : {}),
     ...(readNullableString(row.additional_notes) !== undefined ? { additionalNotes: readNullableString(row.additional_notes) } : {}),
@@ -549,7 +566,7 @@ function toContractRow(row: ContractRow): ContractRecord {
   };
 }
 
-export function createSqlContractStore(db: PostgreSqlDatabase): ContractStore {
+export function createSqlContractStore(db: SqlQueryExecutor): ContractStore {
   return {
     async create(record) {
       assertStatusDomain(record.status, CONTRACT_STATUS_VALUES, 'contracts');
@@ -557,7 +574,7 @@ export function createSqlContractStore(db: PostgreSqlDatabase): ContractStore {
       try {
         result = await db.query<ContractRow>(
         `INSERT INTO contracts (
-           id, offer_id, application_id, employer_id, candidate_id, status,
+           id, proposal_id, offer_id, application_id, employer_id, candidate_id, status,
            monthly_salary, currency, start_date, end_date, current_month, duration_months,
            periodicity, mission_description, location, conditions, additional_notes,
            employer_signed, employee_signed, employer_signed_at, employee_signed_at,
@@ -565,16 +582,17 @@ export function createSqlContractStore(db: PostgreSqlDatabase): ContractStore {
            monthly_checkpoints, commission_ledger, payment_schedule, history,
            replacement_id, replaced_contract_id, incident_id, created_at, updated_at
          ) VALUES (
-           $1, $2, $3, $4, $5, $6,
-           $7, $8, $9, $10, $11, $12,
-           $13, $14, $15, $16::jsonb, $17,
-           $18, $19, $20, $21,
-           $22, $23, $24,
-           $25::jsonb, $26::jsonb, $27::jsonb, $28::jsonb,
-           $29, $30, $31, $32, $33
+           $1, $2, $3, $4, $5, $6, $7,
+           $8, $9, $10, $11, $12, $13,
+           $14, $15, $16, $17::jsonb, $18,
+           $19, $20, $21, $22,
+           $23, $24, $25,
+           $26::jsonb, $27::jsonb, $28::jsonb, $29::jsonb,
+           $30, $31, $32, $33, $34
          ) RETURNING *`,
         [
           record.id,
+          record.proposalId ?? null,
           record.offerId,
           record.applicationId ?? null,
           record.employerId,
@@ -620,6 +638,74 @@ export function createSqlContractStore(db: PostgreSqlDatabase): ContractStore {
       return result.rows[0] ? toContractRow(result.rows[0]) : null;
     },
 
+    async findByIdForUpdate(contractId) {
+      // Verrou de ligne réel : deux transitions concurrentes sur le même contrat
+      // (signatures, activation, fin, rupture) sont sérialisées par PostgreSQL.
+      const result = await db.query<ContractRow>(
+        'SELECT * FROM contracts WHERE id = $1 FOR UPDATE',
+        [contractId],
+      );
+      return result.rows[0] ? toContractRow(result.rows[0]) : null;
+    },
+
+    async compareAndSetStatus(contractId, expectedStatus, patch) {
+      assertStatusDomain(patch.status, CONTRACT_STATUS_VALUES, 'contracts');
+      assertStatusDomain(expectedStatus, CONTRACT_STATUS_VALUES, 'contracts');
+      try {
+        const result = await db.query<ContractRow>(
+          // `SEND` (DRAFT → SIGNATURE) est la signature de l'employeur dans le
+          // modèle réel : le drapeau et l'horodatage sont posés atomiquement
+          // avec le statut, dans la même écriture. Les autres transitions ne
+          // touchent aucun drapeau ($6 vaut alors NULL).
+          `UPDATE contracts
+              SET status = $2,
+                  updated_at = $3,
+                  employer_signed = CASE WHEN $6::text = 'EMPLOYER' THEN true ELSE employer_signed END,
+                  employer_signed_at = CASE WHEN $6::text = 'EMPLOYER' THEN $3 ELSE employer_signed_at END,
+                  employee_signed = CASE WHEN $6::text = 'EMPLOYEE' THEN true ELSE employee_signed END,
+                  employee_signed_at = CASE WHEN $6::text = 'EMPLOYEE' THEN $3 ELSE employee_signed_at END,
+                  history = history || $4::jsonb
+            WHERE id = $1
+              AND status = $5
+          RETURNING *`,
+          [
+            contractId,
+            patch.status,
+            patch.updatedAt,
+            JSON.stringify([patch.historyEntry]),
+            expectedStatus,
+            patch.signatureParty ?? null,
+          ],
+        );
+        return result.rows[0] ? toContractRow(result.rows[0]) : null;
+      } catch (error) {
+        return translateSqlError(
+          error,
+          'contracts',
+          `Statut « ${patch.status} » refusé pour le contrat ${contractId}.`,
+        );
+      }
+    },
+
+    async sign(contractId, party, patch) {
+      // Colonne et garde fixées par la partie (union fermée, aucune valeur libre) :
+      // une signature n'est jamais écrite deux fois et jamais après activation.
+      const column = party === 'EMPLOYER' ? 'employer' : 'employee';
+      const result = await db.query<ContractRow>(
+        `UPDATE contracts
+            SET ${column}_signed = true,
+                ${column}_signed_at = $2,
+                updated_at = $2,
+                history = history || $3::jsonb
+          WHERE id = $1
+            AND status = 'SIGNATURE'
+            AND ${column}_signed = false
+        RETURNING *`,
+        [contractId, patch.signedAt, JSON.stringify([patch.historyEntry])],
+      );
+      return result.rows[0] ? toContractRow(result.rows[0]) : null;
+    },
+
     async listByEmployer(employerId, limit) {
       const result = await db.query<ContractRow>(
         'SELECT * FROM contracts WHERE employer_id = $1 ORDER BY updated_at DESC, id ASC LIMIT $2',
@@ -633,6 +719,26 @@ export function createSqlContractStore(db: PostgreSqlDatabase): ContractStore {
         'SELECT * FROM contracts WHERE candidate_id = $1 ORDER BY updated_at DESC, id ASC LIMIT $2',
         [employeeId, clampStoreLimit(limit)],
       );
+      return result.rows.map(toContractRow);
+    },
+
+    async listAll(limit, afterId) {
+      const bounded = clampStoreLimit(limit);
+      const result = afterId
+        ? await db.query<ContractRow>(
+            `SELECT *
+               FROM contracts
+              WHERE (updated_at, id) < (
+                SELECT c.updated_at, c.id FROM contracts AS c WHERE c.id = $1
+              )
+              ORDER BY updated_at DESC, id ASC
+              LIMIT $2`,
+            [afterId, bounded],
+          )
+        : await db.query<ContractRow>(
+            'SELECT * FROM contracts ORDER BY updated_at DESC, id ASC LIMIT $1',
+            [bounded],
+          );
       return result.rows.map(toContractRow);
     },
 
@@ -811,6 +917,21 @@ export function createSqlProposalStore(db: SqlQueryExecutor): ProposalStore {
             [bounded],
           );
       return result.rows.map(toProposalRecord);
+    },
+
+    async attachContract(proposalId, contractId, updatedAt) {
+      // Garde `contract_id IS NULL` : une proposition ACCEPTED ne peut produire
+      // qu'un seul contrat, même si deux créations sont concurrentes.
+      const result = await db.query<ProposalRow>(
+        `UPDATE proposals
+            SET contract_id = $2,
+                updated_at = $3
+          WHERE id = $1
+            AND contract_id IS NULL
+        RETURNING *`,
+        [proposalId, contractId, updatedAt],
+      );
+      return result.rows[0] ? toProposalRecord(result.rows[0]) : null;
     },
   };
 }

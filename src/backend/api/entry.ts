@@ -13,10 +13,11 @@
  * CANDIDATURES pour la soumission, la consultation de l'offre propriétaire
  * (P0-E3) et le premier cycle de décision EXAMINE / SHORTLIST / REJECT /
  * WITHDRAW (P0-E4) ; PROPOSITIONS pour l'émission, l'acceptation, la
- * déclinaison, l'expiration et la lecture ADMIN (P0-E5) ; les autres opérations
- * métier — contrats, paiements, commissions, plaintes, remplacements,
- * notifications générales — restent fermées. Le mode DEMO demeure séparé,
- * inchangé et par défaut.
+ * déclinaison, l'expiration et la lecture ADMIN (P0-E5) ; CONTRATS pour la
+ * création depuis une proposition acceptée, la signature, l'activation, la fin
+ * et la rupture motivée (P0-F) ; les autres opérations métier — paiements,
+ * commissions, plaintes, remplacements, notifications générales — restent
+ * fermées. Le mode DEMO demeure séparé, inchangé et par défaut.
  */
 
 import type { DatabaseHealthProbe, PostgreSqlDatabase } from '../services/database';
@@ -39,6 +40,7 @@ import { readMigrationState } from '../persistence/migrationState';
 import { createPostgresDatabase } from '../persistence/postgresDatabase';
 import {
   createSqlApplicationStore,
+  createSqlContractStore,
   createSqlCoreStores,
   createSqlOfferStore,
   createSqlProposalStore,
@@ -61,6 +63,12 @@ import {
   type OpenProposalRepository,
   type ProposalRepositoryStores,
 } from '../repositories/proposalRepository';
+import {
+  createContractApiHandlers,
+  createContractRepository,
+  type ContractRepositoryStores,
+  type OpenContractRepository,
+} from '../repositories/contractRepository';
 
 export interface WorkerEnvironment extends WorkerPersistenceEnvironment {
   GOOGLE_CLIENT_ID?: string;
@@ -105,6 +113,8 @@ export interface WorkerComposition {
   applications?: OpenApplicationRepository;
   /** P0-E5 : émission, acceptation, déclinaison, expiration et lecture ADMIN. */
   proposals?: OpenProposalRepository;
+  /** P0-F : création depuis proposition acceptée, envoi, signature, activation, fin, rupture. */
+  contracts?: OpenContractRepository;
 }
 
 /** Serveur/test only: allows deterministic verification without changing env or DEMO behavior. */
@@ -339,7 +349,43 @@ export function composeWorker(
   const proposalHandlers = proposalRepository
     ? createProposalApiHandlers(proposalRepository)
     : {};
-  const domainHandlers = { ...offerHandlers, ...applicationHandlers, ...proposalHandlers };
+
+  const runContractInTransaction = persistence.database
+    ? async <T>(operation: (stores: ContractRepositoryStores) => Promise<T>): Promise<T> => {
+        return persistence.database!.run(async tx => operation({
+          contracts: createSqlContractStore(tx),
+          proposals: createSqlProposalStore(tx),
+          applications: createSqlApplicationStore(tx),
+          offers: createSqlOfferStore(tx),
+          users: createSqlUserStore(tx),
+        }));
+      }
+    : undefined;
+
+  const contractRepository = persistence.core
+    ? createContractRepository({
+        stores: {
+          contracts: persistence.core.contracts,
+          proposals: persistence.core.proposals,
+          applications: persistence.core.applications,
+          offers: persistence.core.offers,
+          users: stores.users,
+        },
+        runInTransaction: runContractInTransaction,
+        now: overrides.now,
+      })
+    : undefined;
+
+  const contractHandlers = contractRepository
+    ? createContractApiHandlers(contractRepository)
+    : {};
+
+  const domainHandlers = {
+    ...offerHandlers,
+    ...applicationHandlers,
+    ...proposalHandlers,
+    ...contractHandlers,
+  };
 
   return {
     mode,
@@ -348,6 +394,7 @@ export function composeWorker(
     offers: offerRepository,
     applications: applicationRepository,
     proposals: proposalRepository,
+    contracts: contractRepository,
     health,
     probe: persistence.probe,
     target: persistence.target,

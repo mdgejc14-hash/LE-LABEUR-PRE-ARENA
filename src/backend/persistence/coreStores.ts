@@ -210,6 +210,13 @@ export function createInMemoryCoreStores(seed: InMemoryCoreStoreSeed = {}): Core
       applications.set(applicationId, updated);
       return { ...updated };
     },
+    async attachContract(applicationId, contractId, updatedAt) {
+      const record = applications.get(applicationId);
+      if (!record || record.contractId) return null;
+      const updated: ApplicationRecord = { ...record, contractId, updatedAt };
+      applications.set(applicationId, updated);
+      return { ...updated };
+    },
   };
 
   const contractStore: ContractStore = {
@@ -224,6 +231,49 @@ export function createInMemoryCoreStores(seed: InMemoryCoreStoreSeed = {}): Core
     async findById(contractId) {
       const record = contracts.get(contractId);
       return record ? { ...record } : null;
+    },
+    async findByIdForUpdate(contractId) {
+      // Aucun verrou de ligne en mémoire : le compare-and-set / sign ci-dessous
+      // restent les garanties d'atomicité de cet adaptateur.
+      return contractStore.findById(contractId);
+    },
+    async compareAndSetStatus(contractId, expectedStatus, patch) {
+      assertStatusDomain(patch.status, CONTRACT_STATUS_VALUES, 'contracts');
+      assertStatusDomain(expectedStatus, CONTRACT_STATUS_VALUES, 'contracts');
+      const record = contracts.get(contractId);
+      if (!record || record.status !== expectedStatus) return null;
+      const updated: ContractRecord = {
+        ...record,
+        status: patch.status,
+        updatedAt: patch.updatedAt,
+        history: [...record.history, { ...patch.historyEntry }],
+        // `SEND` pose la signature employeur dans la même écriture (modèle réel).
+        ...(patch.signatureParty === 'EMPLOYER'
+          ? { employerSigned: true, employerSignedAt: patch.updatedAt }
+          : {}),
+        ...(patch.signatureParty === 'EMPLOYEE'
+          ? { employeeSigned: true, employeeSignedAt: patch.updatedAt }
+          : {}),
+      };
+      contracts.set(contractId, updated);
+      return { ...updated, history: updated.history.map(entry => ({ ...entry })) };
+    },
+    async sign(contractId, party, patch) {
+      const record = contracts.get(contractId);
+      if (!record) return null;
+      if (record.status !== 'SIGNATURE') return null;
+      if (party === 'EMPLOYER' && record.employerSigned) return null;
+      if (party === 'EMPLOYEE' && record.employeeSigned) return null;
+      const updated: ContractRecord = {
+        ...record,
+        updatedAt: patch.signedAt,
+        history: [...record.history, { ...patch.historyEntry }],
+        ...(party === 'EMPLOYER'
+          ? { employerSigned: true, employerSignedAt: patch.signedAt }
+          : { employeeSigned: true, employeeSignedAt: patch.signedAt }),
+      };
+      contracts.set(contractId, updated);
+      return { ...updated, history: updated.history.map(entry => ({ ...entry })) };
     },
     async listByEmployer(employerId, limit) {
       const bounded = clampStoreLimit(limit);
@@ -240,6 +290,18 @@ export function createInMemoryCoreStores(seed: InMemoryCoreStoreSeed = {}): Core
         .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt) || left.id.localeCompare(right.id))
         .slice(0, bounded)
         .map(contract => ({ ...contract }));
+    },
+    async listAll(limit, afterId) {
+      const bounded = clampStoreLimit(limit);
+      const ordered = [...contracts.values()]
+        .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt) || left.id.localeCompare(right.id));
+      let start = 0;
+      if (afterId) {
+        const cursorIndex = ordered.findIndex(contract => contract.id === afterId);
+        if (cursorIndex < 0) return [];
+        start = cursorIndex + 1;
+      }
+      return ordered.slice(start, start + bounded).map(contract => ({ ...contract }));
     },
     async updateStatus(contractId, status, updatedAt) {
       assertStatusDomain(status, CONTRACT_STATUS_VALUES, 'contracts');
@@ -294,6 +356,13 @@ export function createInMemoryCoreStores(seed: InMemoryCoreStoreSeed = {}): Core
         start = cursorIndex + 1;
       }
       return ordered.slice(start, start + bounded).map(proposal => ({ ...proposal }));
+    },
+    async attachContract(proposalId, contractId, updatedAt) {
+      const record = proposals.get(proposalId);
+      if (!record || record.contractId) return null;
+      const updated: ProposalRecord = { ...record, contractId, updatedAt };
+      proposals.set(proposalId, updated);
+      return { ...updated };
     },
   };
 

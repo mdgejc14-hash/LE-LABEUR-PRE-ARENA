@@ -165,7 +165,20 @@ export type OutboxEventType =
   | 'PROPOSAL_SENT'
   | 'PROPOSAL_ACCEPTED'
   | 'PROPOSAL_DECLINED'
-  | 'PROPOSAL_EXPIRED';
+  | 'PROPOSAL_EXPIRED'
+  /**
+   * P0-F — cycle CONTRAT : types DÉCLARÉS pour le futur moteur transactional
+   * Outbox/Queue, non encore produits. P0-F persiste uniquement la transition
+   * dans la transaction PostgreSQL; aucun événement n'est écrit, aucune file
+   * n'est créée, aucun consumer n'est installé, aucune notification n'est émise.
+   * Contrats documentés : `src/domain/contractTransitions.ts`
+   * (`DOCUMENTED_CONTRACT_EVENTS`).
+   */
+  | 'CONTRACT_CREATED'
+  | 'CONTRACT_SENT'
+  | 'CONTRACT_ACTIVATED'
+  | 'CONTRACT_ENDED'
+  | 'CONTRACT_TERMINATED';
 
 export interface OutboxEvent {
   id: string;

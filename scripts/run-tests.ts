@@ -20,6 +20,8 @@ import { runApplicationDecisionTests } from '../src/backend/api/applicationDecis
 import { runApplicationTransitionTests } from '../src/domain/applicationTransitions.test';
 import { runProposalDomainTests } from '../src/backend/api/proposals.test';
 import { runProposalTransitionTests } from '../src/domain/proposalTransitions.test';
+import { runContractTransitionTests } from '../src/domain/contractTransitions.test';
+import { runContractDomainTests } from '../src/backend/api/contracts.test';
 
 interface TestCase {
   name: string;
@@ -50,6 +52,8 @@ async function main(): Promise<void> {
   const applicationDecisions = await runApplicationDecisionTests();
   const proposalMatrix = runProposalTransitionTests();
   const proposalDomain = await runProposalDomainTests();
+  const contractMatrix = runContractTransitionTests();
+  const contractDomain = await runContractDomainTests();
 
   const suites: Array<{ name: string; cases: TestCase[] }> = [
     { name: 'Domain deterministic', cases: deterministic.results.map(result => ({ name: result.name, success: result.success, detail: result.details })) },
@@ -74,6 +78,8 @@ async function main(): Promise<void> {
     { name: 'P0-E4 — cycle de décision CANDIDATURE (examen, shortlist, rejet, retrait; PostgreSQL, autorisation, idempotence, concurrence, rollback)', cases: applicationDecisions },
     { name: 'P0-E5 — cycle PROPOSITION (statuts réels, transitions ouvertes et refusées, éligibilité, événements documentés)', cases: proposalMatrix },
     { name: 'P0-E5 — émission et cycle PROPOSITION (PostgreSQL, autorisation, ownership, idempotence, concurrence, rollback, lecture ADMIN)', cases: proposalDomain },
+    { name: 'P0-F — matrice CONTRAT (statuts réels, transitions ouvertes et refusées, signature, protection M1, événements documentés)', cases: contractMatrix.map(result => ({ name: result.name, success: result.success, detail: result.details })) },
+    { name: 'P0-F — cycle CONTRAT (création depuis ACCEPTED, envoi, signature, activation, fin, terminaison; PostgreSQL, autorisation, idempotence, concurrence, rollback)', cases: contractDomain },
   ];
 
   let total = 0;

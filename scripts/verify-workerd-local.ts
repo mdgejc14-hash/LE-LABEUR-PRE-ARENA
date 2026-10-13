@@ -15,7 +15,11 @@
  *  - le cycle de décision P0-E4 (examine, shortlist, rejet refusé à un tiers,
  *    withdraw) s'exécute sous workerd et persiste dans PostgreSQL ;
  *  - le cycle PROPOSITION P0-E5 (émission, acceptation, expiration, REVISE
- *    fermé, tiers refusé) s'exécute sous workerd et persiste dans PostgreSQL.
+ *    fermé, tiers refusé) s'exécute sous workerd et persiste dans PostgreSQL ;
+ *  - le cycle CONTRAT P0-F (création depuis une proposition ACCEPTED, envoi,
+ *    double signature, activation, fin COMPLETED, rupture TERMINATED en M2,
+ *    protection M1, états terminaux) s'exécute sous workerd et persiste dans
+ *    PostgreSQL.
  *
  * Ce que ce script NE prouve PAS :
  *  - il n'y a ni compte Cloudflare, ni Hyperdrive déployé, ni `wrangler deploy`,
@@ -189,7 +193,7 @@ async function main(): Promise<void> {
     await check('Migrations réelles appliquées avant démarrage du Worker', async () => {
       const client = toPostgresClientPort(pool);
       const applied = await applyMigrations(client, loadMigrations(MIGRATIONS_DIR));
-      assert(applied.applied.length === 4, `4 migrations attendues, reçues ${applied.applied.length}`);
+      assert(applied.applied.length === 5, `5 migrations attendues, reçues ${applied.applied.length}`);
     });
 
     const logStream = (chunk: Buffer | string) => writeFileSync(wranglerLog, chunk, { flag: 'a' });
@@ -571,11 +575,12 @@ async function main(): Promise<void> {
       });
       assert(closed.status === 409, `proposition close : 409 attendu, reçu ${closed.status}`);
 
-      // 4. Aucune conséquence hors périmètre : ni contrat, ni offre FILLED.
+      // 4. Frontière exacte : l'acceptation seule ne crée aucun contrat (la
+      //    création est une action P0-F explicite), ni offre FILLED.
       const contracts = await pool.query<{ count: string }>(
         'SELECT count(*)::text AS count FROM contracts WHERE application_id = $1', [application.id],
       );
-      assert(Number(contracts.rows[0]?.count ?? 0) === 0, 'aucun contrat créé par P0-E5');
+      assert(Number(contracts.rows[0]?.count ?? 0) === 0, 'l’acceptation P0-E5 ne crée aucun contrat (création explicite en P0-F)');
       const offerRow = await pool.query<{ status: string }>('SELECT status FROM offers WHERE id = $1', [offer.id]);
       assert(offerRow.rows[0]?.status === 'ACTIVE', 'l’offre reste ACTIVE (aucun FILLED en P0-E5)');
 
@@ -602,6 +607,181 @@ async function main(): Promise<void> {
         body: JSON.stringify({ action: 'ACCEPT' }),
       });
       assert(acceptExpired.status === 409, `proposition expirée : 409 attendu, reçu ${acceptExpired.status}`);
+    });
+
+    await check('P0-F workerd → PostgreSQL : contrat créé depuis ACCEPTED, envoyé, signé, activé, terminé (COMPLETED) et rompu (TERMINATED, M2)', async () => {
+      const ownerHeaders = (key: string) => ({
+        cookie: `${SESSION_COOKIE_NAME}=${employerCookie}`,
+        'content-type': 'application/json',
+        'Idempotency-Key': key,
+      });
+      const workerHeaders = (key: string) => ({
+        cookie: `${SESSION_COOKIE_NAME}=${sessionCookie}`,
+        'content-type': 'application/json',
+        'Idempotency-Key': key,
+      });
+
+      /** Chaîne réelle offre → candidature → proposition acceptée → contrat ACTIVE. */
+      const buildActiveContract = async (suffix: string): Promise<{
+        contractId: string;
+        offerId: string;
+        applicationId: string;
+      }> => {
+        const offerResponse = await fetch(`${base}/api/v1/offers`, {
+          method: 'POST',
+          headers: ownerHeaders(`p0f-workerd-offer-${suffix}`),
+          body: JSON.stringify({
+            title: `Offre workerd P0-F ${suffix}`,
+            contractType: 'CDI',
+            remuneration: 175000,
+            currency: 'FCFA',
+            location: 'Cotonou',
+            summary: 'Offre utilisée pour vérifier le cycle CONTRAT worker réel.',
+          }),
+        });
+        assert(offerResponse.status === 201, `création offre ${suffix} : 201 attendu, reçu ${offerResponse.status}`);
+        const offer = await offerResponse.json() as { id: string; status: string };
+        assert(offer.status === 'ACTIVE', 'offre ACTIVE attendue');
+
+        const applicationResponse = await fetch(`${base}/api/v1/offers/${offer.id}/applications`, {
+          method: 'POST',
+          headers: workerHeaders(`p0f-workerd-application-${suffix}`),
+          body: JSON.stringify({ note: `Candidature CONTRAT ${suffix}.` }),
+        });
+        assert(applicationResponse.status === 201, `soumission ${suffix} : 201 attendu, reçue ${applicationResponse.status}`);
+        const application = await applicationResponse.json() as { id: string; status: string };
+
+        const proposalResponse = await fetch(`${base}/api/v1/conversations/cnv_p0f_workerd/proposals`, {
+          method: 'POST',
+          headers: ownerHeaders(`p0f-workerd-proposal-${suffix}`),
+          body: JSON.stringify({
+            offerId: offer.id,
+            applicationId: application.id,
+            missionTitle: `Mission workerd P0-F ${suffix}`,
+            amount: 175000,
+            currency: 'FCFA',
+            periodicity: 'Mensuel',
+            startDate: '01 Novembre 2026',
+            durationMonths: 6,
+            location: 'Cotonou',
+            conditions: ['Temps plein'],
+          }),
+        });
+        assert(proposalResponse.status === 201, `proposition ${suffix} : 201 attendu, reçue ${proposalResponse.status}`);
+        const proposal = await proposalResponse.json() as { id: string };
+
+        const accepted = await fetch(`${base}/api/v1/proposals/${proposal.id}/respond`, {
+          method: 'POST',
+          headers: workerHeaders(`p0f-workerd-accept-${suffix}`),
+          body: JSON.stringify({ action: 'ACCEPT' }),
+        });
+        assert(accepted.status === 200, `acceptation ${suffix} : 200 attendu, reçue ${accepted.status}`);
+
+        const created = await fetch(`${base}/api/v1/contracts`, {
+          method: 'POST',
+          headers: ownerHeaders(`p0f-workerd-contract-${suffix}`),
+          body: JSON.stringify({ proposalId: proposal.id }),
+        });
+        assert(created.status === 201, `création contrat ${suffix} : 201 attendu, reçue ${created.status}`);
+        const contract = await created.json() as { id: string; status: string };
+        assert(contract.status === 'DRAFT', `DRAFT attendu, reçu ${contract.status}`);
+
+        const sent = await fetch(`${base}/api/v1/contracts/${contract.id}/send`, {
+          method: 'POST',
+          headers: ownerHeaders(`p0f-workerd-send-${suffix}`),
+          body: '{}',
+        });
+        assert(sent.status === 200, `envoi ${suffix} : 200 attendu, reçu ${sent.status}`);
+        const signed = await fetch(`${base}/api/v1/contracts/${contract.id}/sign`, {
+          method: 'POST',
+          headers: workerHeaders(`p0f-workerd-sign-${suffix}`),
+          body: '{}',
+        });
+        assert(signed.status === 200, `signature salarié ${suffix} : 200 attendue, reçue ${signed.status}`);
+        const activated = await fetch(`${base}/api/v1/contracts/${contract.id}/activate`, {
+          method: 'POST',
+          headers: ownerHeaders(`p0f-workerd-activate-${suffix}`),
+          body: '{}',
+        });
+        assert(activated.status === 200, `activation ${suffix} : 200 attendue, reçue ${activated.status}`);
+        assert(((await activated.json()) as { status: string }).status === 'ACTIVE', `ACTIVE attendu (${suffix})`);
+
+        return { contractId: contract.id, offerId: offer.id, applicationId: application.id };
+      };
+
+      // 1. Cycle nominal : DRAFT → SIGNATURE → ACTIVE → COMPLETED.
+      const completed = await buildActiveContract('completed-001');
+      const storedDraft = await pool.query<{
+        status: string; proposal_id: string | null; application_id: string | null;
+        employer_signed: boolean; employee_signed: boolean;
+      }>(
+        'SELECT status, proposal_id, application_id, employer_signed, employee_signed FROM contracts WHERE id = $1',
+        [completed.contractId],
+      );
+      assert(storedDraft.rows[0]?.proposal_id !== null && storedDraft.rows[0]?.application_id !== null, 'liens proposition/candidature persistés');
+      assert(storedDraft.rows[0]?.employer_signed === true && storedDraft.rows[0]?.employee_signed === true, 'double signature persistée');
+
+      const ended = await fetch(`${base}/api/v1/contracts/${completed.contractId}/end`, {
+        method: 'POST',
+        headers: ownerHeaders('p0f-workerd-end-001'),
+        body: '{}',
+      });
+      assert(ended.status === 200, `fin 200 attendue, reçue ${ended.status}`);
+      assert(((await ended.json()) as { status: string }).status === 'COMPLETED', 'COMPLETED attendu (ENDED du plan)');
+      const endReplay = await fetch(`${base}/api/v1/contracts/${completed.contractId}/end`, {
+        method: 'POST',
+        headers: ownerHeaders('p0f-workerd-end-002'),
+        body: '{}',
+      });
+      assert(endReplay.status === 409, `fin après fin : 409 attendu, reçu ${endReplay.status}`);
+      const activateAfterEnd = await fetch(`${base}/api/v1/contracts/${completed.contractId}/activate`, {
+        method: 'POST',
+        headers: ownerHeaders('p0f-workerd-activate-after-end-001'),
+        body: '{}',
+      });
+      assert(activateAfterEnd.status === 409, `ENDED → ACTIVE interdit : 409 attendu, reçu ${activateAfterEnd.status}`);
+
+      // 2. Rupture : M1 protégé, M2 autorisé et persisté.
+      const terminated = await buildActiveContract('terminated-001');
+      const inFirstMonth = await fetch(`${base}/api/v1/contracts/${terminated.contractId}/terminate`, {
+        method: 'POST',
+        headers: ownerHeaders('p0f-workerd-terminate-m1-001'),
+        body: JSON.stringify({ reason: 'Rupture M1 interdite.' }),
+      });
+      assert(inFirstMonth.status === 409, `terminaison M1 : 409 attendu, reçu ${inFirstMonth.status}`);
+      await pool.query('UPDATE contracts SET current_month = 2 WHERE id = $1', [terminated.contractId]);
+      const termination = await fetch(`${base}/api/v1/contracts/${terminated.contractId}/terminate`, {
+        method: 'POST',
+        headers: ownerHeaders('p0f-workerd-terminate-001'),
+        body: JSON.stringify({ reason: 'Fin de mission anticipée convenue (vérification workerd).' }),
+      });
+      assert(termination.status === 200, `terminaison M2 : 200 attendue, reçue ${termination.status}`);
+      assert(((await termination.json()) as { status: string }).status === 'TERMINATED', 'TERMINATED attendu');
+      const signAfterTerminate = await fetch(`${base}/api/v1/contracts/${terminated.contractId}/sign`, {
+        method: 'POST',
+        headers: workerHeaders('p0f-workerd-sign-after-terminate-001'),
+        body: '{}',
+      });
+      assert(signAfterTerminate.status === 409, `signature après terminaison : 409 attendu, reçue ${signAfterTerminate.status}`);
+
+      // 3. Historique et absence d'automatisation post-contrat.
+      const historyRow = await pool.query<{ status: string; history: unknown }>(
+        'SELECT status, history FROM contracts WHERE id = $1', [completed.contractId],
+      );
+      assert(historyRow.rows[0]?.status === 'COMPLETED', 'COMPLETED persisté par workerd');
+      const contractHistory = (typeof historyRow.rows[0]?.history === 'string'
+        ? JSON.parse(String(historyRow.rows[0]?.history))
+        : historyRow.rows[0]?.history) as Array<{ event: string }>;
+      for (const event of ['CONTRACT_CREATED', 'EMPLOYER_SIGNED', 'EMPLOYEE_SIGNED', 'CONTRACT_ACTIVATED_BILATERAL', 'CONTRACT_COMPLETED']) {
+        assert(contractHistory.some(entry => entry.event === event), `événement ${event} absent de l’historique persisté`);
+      }
+      const offerRow = await pool.query<{ status: string }>('SELECT status FROM offers WHERE id = $1', [completed.offerId]);
+      assert(offerRow.rows[0]?.status === 'ACTIVE', 'FILLED reste l’étape d’automatisation post-contrat à venir');
+      const applicationRow = await pool.query<{ status: string; contract_id: string | null }>(
+        'SELECT status, contract_id FROM applications WHERE id = $1', [completed.applicationId],
+      );
+      assert(applicationRow.rows[0]?.status === 'PENDING', 'HIRED/CONTRACTED restent l’étape d’automatisation post-contrat');
+      assert(applicationRow.rows[0]?.contract_id === completed.contractId, 'candidature rattachée à son contrat');
     });
 
     await check('workerd → PostgreSQL : session relue, /me résolu, logout révoqué en base', async () => {

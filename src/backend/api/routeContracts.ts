@@ -60,7 +60,11 @@ export const API_ROUTE_CONTRACTS = [
   { key: 'contracts.mine.list', method: 'GET', path: '/api/v1/my/contracts', authentication: 'required', scope: 'self', collection: true },
   { key: 'contracts.read', method: 'GET', path: '/api/v1/contracts/:contractId', authentication: 'required', scope: 'owner' },
   { key: 'contracts.create', method: 'POST', path: '/api/v1/contracts', authentication: 'required', scope: 'owner', roles: ['EMPLOYER'], idempotency: true, auditOnMutation: true },
+  { key: 'contracts.send', method: 'POST', path: '/api/v1/contracts/:contractId/send', authentication: 'required', scope: 'owner', roles: ['EMPLOYER'], idempotency: true, auditOnMutation: true },
   { key: 'contracts.sign', method: 'POST', path: '/api/v1/contracts/:contractId/sign', authentication: 'required', scope: 'owner', idempotency: true, auditOnMutation: true },
+  { key: 'contracts.activate', method: 'POST', path: '/api/v1/contracts/:contractId/activate', authentication: 'required', scope: 'owner', roles: ['EMPLOYER'], idempotency: true, auditOnMutation: true },
+  { key: 'contracts.end', method: 'POST', path: '/api/v1/contracts/:contractId/end', authentication: 'required', scope: 'owner', roles: ['EMPLOYER'], idempotency: true, auditOnMutation: true },
+  { key: 'contracts.terminate', method: 'POST', path: '/api/v1/contracts/:contractId/terminate', authentication: 'required', scope: 'owner', roles: ['EMPLOYER'], idempotency: true, auditOnMutation: true },
   { key: 'contracts.monthly-action', method: 'POST', path: '/api/v1/contracts/:contractId/monthly-actions', authentication: 'required', scope: 'owner', idempotency: true, auditOnMutation: true },
 
   { key: 'payments.mine.list', method: 'GET', path: '/api/v1/my/payments', authentication: 'required', scope: 'self', collection: true },

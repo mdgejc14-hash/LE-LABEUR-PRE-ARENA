@@ -50,16 +50,17 @@ export type ServerCreateProposalInput = Omit<MissionProposal,
   'id' | 'conversationId' | 'contractId' | 'employerId' | 'employeeId' | 'employerName' | 'employeeName' | 'status' | 'sentAt' | 'updatedAt'
 >;
 
+/**
+ * P0-F — création d'un contrat depuis une proposition ACCEPTED.
+ *
+ * Seule la proposition d'origine est fournie : `offerId`, `applicationId`,
+ * `employerId`, `employeeId` et **toutes les modalités acceptées** (montant,
+ * devise, périodicité, date de début, durée, lieu, conditions) sont dérivés
+ * côté serveur de la chaîne persistée Offer → Application → Proposal. Aucun
+ * acteur ni aucun montant ne peut donc être imposé par le client.
+ */
 export interface ServerCreateContractInput {
-  offerId: string;
-  applicationId: string;
-  startDate: string;
-  durationMonths: number;
-  monthlySalary: number;
-  periodicity: string;
-  conditions: string[];
-  missionDescription: string;
-  location: string;
+  proposalId: string;
   additionalNotes?: string;
 }
 
@@ -144,8 +145,19 @@ export interface ServerContractRepository {
   getMyContracts(actor: AuthenticatedActor, page: { cursor: string | null; limit: number }): Promise<CursorPage<Contract>>;
   getAdminContracts(actor: AuthenticatedActor, page: { cursor: string | null; limit: number }): Promise<CursorPage<Contract>>;
   getContract(actor: AuthenticatedActor, contractId: string): Promise<Contract | null>;
+  /** P0-F — création depuis une proposition ACCEPTED (statut initial `DRAFT`). */
   createContract(actor: AuthenticatedActor, data: ServerCreateContractInput, command: ProductionCommandContext): Promise<Contract>;
+  /** P0-F — envoi `DRAFT → SIGNATURE` (l'employeur appose sa signature). */
+  sendContract(actor: AuthenticatedActor, contractId: string, command: ProductionCommandContext): Promise<Contract>;
+  /** P0-F — signature de la partie concernée (`SIGNATURE`, une seule fois par partie). */
   signContract(actor: AuthenticatedActor, contractId: string, command: ProductionCommandContext): Promise<Contract>;
+  /** P0-F — activation `SIGNATURE (double signature) → ACTIVE`. */
+  activateContract(actor: AuthenticatedActor, contractId: string, command: ProductionCommandContext): Promise<Contract>;
+  /** P0-F — fin normale `ACTIVE → COMPLETED` (plan : ENDED). */
+  endContract(actor: AuthenticatedActor, contractId: string, command: ProductionCommandContext): Promise<Contract>;
+  /** P0-F — rupture motivée `ACTIVE → TERMINATED` (protection M1 conservée). */
+  terminateContract(actor: AuthenticatedActor, contractId: string, reason: string, command: ProductionCommandContext): Promise<Contract>;
+  /** Cycle paiements/mensuel — HORS P0-F (reste 501). */
   confirmMonthlyAction(actor: AuthenticatedActor, contractId: string, input: unknown, command: ProductionCommandContext): Promise<Contract>;
 }
 

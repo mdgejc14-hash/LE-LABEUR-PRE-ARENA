@@ -182,6 +182,27 @@ export interface ProposalTransitionPatch {
   revisionNotes?: string;
 }
 
+/** Transition atomique d'un contrat (P0-F) : statut cible + horodatage + historique AJOUTÉ. */
+export interface ContractTransitionPatch {
+  status: ContractStatus;
+  updatedAt: string;
+  /** Entrée AJOUTÉE au tableau `history` côté SQL (`history || jsonb`), jamais réécrite. */
+  historyEntry: ContractHistoryEntry;
+  /**
+   * P0-F — `SEND` porte la signature de l'employeur dans le modèle réel :
+   * le compare-and-set pose alors le drapeau et l'horodatage de cette partie
+   * **dans la même écriture** que le changement de statut. Absent pour les
+   * autres transitions (aucune signature implicite).
+   */
+  signatureParty?: 'EMPLOYER' | 'EMPLOYEE';
+}
+
+/** Signature d'une partie (P0-F) : drapeau + horodatage + historique AJOUTÉ. */
+export interface ContractSignaturePatch {
+  signedAt: string;
+  historyEntry: ContractHistoryEntry;
+}
+
 export interface ProposalStore {
   create(record: ProposalRecord): Promise<ProposalRecord>;
   findById(proposalId: string): Promise<ProposalRecord | null>;
@@ -204,10 +225,16 @@ export interface ProposalStore {
   ): Promise<ProposalRecord | null>;
   /** Lecture ADMIN (route existante `admin.proposals.list`), keyset par (sentAt, id). */
   listAll(limit?: number, afterId?: string | null): Promise<ProposalRecord[]>;
+  /**
+   * P0-F — lie la proposition acceptée à son contrat (`proposals.contract_id`).
+   * Retourne `null` si la ligne n'existe pas ou si elle est déjà liée : une
+   * création concurrente a gagné, l'appelant relit et refuse (409).
+   */
+  attachContract(proposalId: string, contractId: string, updatedAt: string): Promise<ProposalRecord | null>;
 }
 
 export type ContractRecord = Pick<Contract,
-  | 'id' | 'offerId' | 'applicationId' | 'employerId' | 'employeeId' | 'status'
+  | 'id' | 'proposalId' | 'offerId' | 'applicationId' | 'employerId' | 'employeeId' | 'status'
   | 'monthlySalary' | 'currency' | 'startDate' | 'endDate' | 'currentMonth' | 'durationMonths'
   | 'periodicity' | 'missionDescription' | 'location' | 'conditions' | 'additionalNotes'
   | 'employerSigned' | 'employeeSigned' | 'employerSignedAt' | 'employeeSignedAt'
@@ -215,6 +242,9 @@ export type ContractRecord = Pick<Contract,
   | 'monthlyCheckpoints' | 'commissionLedger' | 'paymentSchedule' | 'history'
   | 'replacementId' | 'replacedContractId' | 'incidentId'
 > & { createdAt: string; updatedAt: string };
+
+/** Entrée d'historique d'un contrat (même forme que `Contract['history']`). */
+export type ContractHistoryEntry = Contract['history'][number];
 
 /* ------------------------------------------------------------------ */
 /* Ports de stockage                                                  */
@@ -277,13 +307,47 @@ export interface ApplicationStore {
     updatedAt: string,
     contractId?: string | null,
   ): Promise<ApplicationRecord | null>;
+  /**
+   * P0-F — lie la candidature à son contrat (`applications.contract_id`), sans
+   * changer son statut (HIRED / CONTRACTED restent l'étape d'automatisation
+   * post-contrat). Retourne `null` si la candidature est déjà liée à un contrat.
+   */
+  attachContract(applicationId: string, contractId: string, updatedAt: string): Promise<ApplicationRecord | null>;
 }
 
 export interface ContractStore {
   create(record: ContractRecord): Promise<ContractRecord>;
   findById(contractId: string): Promise<ContractRecord | null>;
+  /**
+   * P0-F — verrou pessimiste de la ligne contrat (`SELECT … FOR UPDATE`).
+   * Sérialise deux transitions concurrentes ; l'adaptateur mémoire rend
+   * simplement la ligne courante (processus unique, sans verrou).
+   */
+  findByIdForUpdate(contractId: string): Promise<ContractRecord | null>;
   listByEmployer(employerId: string, limit?: number): Promise<ContractRecord[]>;
   listByEmployee(employeeId: string, limit?: number): Promise<ContractRecord[]>;
+  /** Transition conditionnelle (compare-and-set) : `null` si le statut a changé. */
+  compareAndSetStatus(
+    contractId: string,
+    expectedStatus: ContractStatus,
+    patch: ContractTransitionPatch,
+  ): Promise<ContractRecord | null>;
+  /**
+   * P0-F — signature d'une partie : `UPDATE … WHERE id = $1 AND status = 'SIGNATURE'
+   * AND <party>_signed = false`, donc jamais deux fois la même signature et jamais
+   * après activation/clôture. Retourne `null` si la garde a échoué.
+   */
+  sign(
+    contractId: string,
+    party: 'EMPLOYER' | 'EMPLOYEE',
+    patch: ContractSignaturePatch,
+  ): Promise<ContractRecord | null>;
+  /** Lecture ADMIN (route existante `admin.contracts.list`), keyset par (updatedAt, id). */
+  listAll(limit?: number, afterId?: string | null): Promise<ContractRecord[]>;
+  /**
+   * Transition de statut simple (port existant, conservé) — les transitions
+   * P0-F passent par `compareAndSetStatus` / `sign`, qui ajoutent l'historique.
+   */
   updateStatus(contractId: string, status: ContractStatus, updatedAt: string): Promise<ContractRecord | null>;
 }
 

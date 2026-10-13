@@ -535,6 +535,12 @@ export interface Contract {
   offerId: string;
   offerTitle: string;
   applicationId?: string;
+  /**
+   * P0-F — proposition d'embauche ACCEPTED à l'origine du contrat.
+   * Un seul contrat peut être créé par proposition (invariant persisté par
+   * `migrations/0005_contract_lifecycle.sql`).
+   */
+  proposalId?: string;
   employerId: string;
   employerName: string;
   employerPublicId?: string;

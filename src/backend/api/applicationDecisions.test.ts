@@ -729,21 +729,18 @@ export async function runApplicationDecisionTests(): Promise<OfferTestResult[]> 
 
     /* ---------------- 10. PÉRIMÈTRE ET SÉPARATION DEMO/API ---------------- */
 
-    await check('P0-E4 Périmètre: contrats, paiements, incidents et messages restent fermés (501)', async () => {
-      // Les propositions ont été ouvertes par P0-E5 (`/conversations/:id/proposals`
-      // n'est plus un handler absent) ; ce test conserve la frontière fermée des
-      // autres domaines, sans affaiblir le contrôle P0-E4.
+    await check('P0-E4 Périmètre: paiements, incidents, remplacements et messages restent fermés (501)', async () => {
+      // Les propositions ont été ouvertes par P0-E5 (`/conversations/:id/proposals`)
+      // et les contrats par P0-F (`/contracts` n'est plus un handler absent) ; ce
+      // test conserve la frontière fermée des autres domaines, sans affaiblir le
+      // contrôle P0-E4.
       const closed = await Promise.all([
         harness.worker.fetch(authRequest('/api/v1/conversations/cnv_p0e4/messages', employerToken, {
           method: 'POST',
           headers: { 'content-type': 'application/json', 'Idempotency-Key': 'p0e4-closed-messages-001' },
           body: '{}',
         })),
-        harness.worker.fetch(authRequest('/api/v1/contracts', employerToken, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json', 'Idempotency-Key': 'p0e4-closed-contracts-001' },
-          body: '{}',
-        })),
+        harness.worker.fetch(authRequest('/api/v1/replacements/rep_p0e4_absent', employerToken)),
         harness.worker.fetch(authRequest('/api/v1/payments/commission-declarations', employerToken, {
           method: 'POST',
           headers: { 'content-type': 'application/json', 'Idempotency-Key': 'p0e4-closed-payments-001' },
