@@ -1,0 +1,27 @@
+%% 09 — Infrastructure et dépendances de services (wrangler.toml, entry.ts, cloudflareEntry.ts).
+flowchart TB
+  subgraph DEV["wrangler.toml — env dev"]
+    D1["GOOGLE_CLIENT_ID = '' → composition fermée"]
+    D2["Hyperdrive id 0000… (placeholder, wrangler.toml:65-67)"]
+    D3["R2 DOCUMENTS_BUCKET = simulateur local (wrangler.toml:83-85)"]
+  end
+  subgraph PROD["wrangler.toml — env production"]
+    P1["GOOGLE_CLIENT_ID = '' → composition fermée"]
+    P2["binding Hyperdrive commenté (wrangler.toml:161) → composition fermée faute de base"]
+    P3["binding R2 commenté (wrangler.toml:176) → documents 501"]
+    P4["cron */5 → drain 25"]
+  end
+  CE["cloudflareEntry.ts"] --> ENTRY["composeWorker (entry.ts)"]
+  ENTRY -->|"PERSISTENCE=memory"| MEM["offres · candidatures · propositions · contrats · identité"]
+  ENTRY -->|"PERSISTENCE=postgres"| PGC["+ litiges · remplacements · matching · réputation · paiements · rapprochement · notifications · WebRTC · confirmation salaire · admin.users.block"]
+  ENTRY -->|"DOCUMENTS_BUCKET présent"| DOC["+ documents (15 contrats)"]
+  PGC --> HD[("Hyperdrive → PostgreSQL")]
+  DOC --> R2[("R2")]
+  ENTRY -.->|"PAYMENT_PRE_DUE_LEAD_TIME_MS sans défaut"| J1["rappel pré-échéance désactivé"]
+  ENTRY -.->|"CLAIM_EVIDENCE_DEADLINE_MS sans défaut"| J2["échéance de preuve non planifiée"]
+  ENTRY -.->|"registre fournisseurs vide"| PP["paiement externe"]
+  ENTRY -.->|"canaux null"| CH["push / email"]
+  ENTRY -.->|"override uniquement"| ICE["ICE / TURN"]
+  RL["Rate limiter : Map en mémoire par isolat (createSecurityRateLimiter, security.ts:176-198)"] -.->|"non partagé entre isolats — À VÉRIFIER en charge"| ENTRY
+  FE["Hébergement frontend + proxy same-origin /api/v1"] -.->|"NON DÉCLARÉ dans wrangler.toml (pas d'assets) — À VÉRIFIER"| CE
+  Q["Cloudflare Queue"] -.->|"ABSENTE : outbox/jobs en tables PostgreSQL"| PGC

@@ -1,0 +1,16 @@
+%% 08 — Chaîne type frontend → API → handler → service → données (exemple vérifié : EMP-29 signature de contrat).
+flowchart LR
+  R["Route /client/contrats/:id<br/>resolveRoute → EMP-29"] --> SM["screenMap.ts<br/>resolveEmployerScreen"]
+  SM --> REG["registry.tsx<br/>EMPLOYER_SCREEN_COMPONENTS['EMP-29']"]
+  REG --> UB["UnitBoundary<br/>garde client EMPLOYER non BLOQUÉ"]
+  UB --> CMP["Employer29ContractFolio<br/>src/employer/screens/contracts.tsx:298"]
+  CMP --> HK["useEmployerResource / mutation<br/>src/employer/hooks.ts"]
+  HK --> API["EmployerApi.signContract<br/>src/employer/api.ts"]
+  API -->|"POST /api/v1/contracts/:id/sign + Idempotency-Key"| WK["worker.ts : contrat contracts.sign<br/>session · rôle · idempotence"]
+  WK --> HD["createContractApiHandlers<br/>contractRepository.ts:1439"]
+  HD --> REPO["signContract<br/>contractRepository.ts:837"]
+  REPO --> ST["sqlCoreStores — contracts"]
+  ST --> DB[("contracts (drapeaux employerSigned / employeeSigned)")]
+  REPO -.->|"aucun événement : seul CONTRACT_ACTIVATED est écrit dans l'outbox (contractRepository.ts:518-566)"| OB["Outbox"]
+  OB -.->|"CONTRACT_SIGNED listé dans NOTIFICATION_AUTOMATION_EVENT_TYPES mais jamais émis"| NT["notifications"]
+  T1["Tests : suite P0-F cycle CONTRAT (31/31 PASS) · employer.test.tsx"] -.-> HD
