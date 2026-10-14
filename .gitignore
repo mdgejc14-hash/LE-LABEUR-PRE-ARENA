@@ -2,7 +2,6 @@ node_modules/
 dist/
 .env
 .env.local
-package-lock.json
 
 # Cloudflare / Wrangler : jamais de secrets locaux dans le dépôt
 .wrangler/
