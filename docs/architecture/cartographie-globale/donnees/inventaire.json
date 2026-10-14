@@ -1,0 +1,2988 @@
+{
+ "source": {
+  "head": "c759c0f8453b9ff81a2a4cfde9bcf12a50e504a3"
+ },
+ "counts": {
+  "designStates": 211,
+  "designCanons": 177,
+  "contracts": 160,
+  "units": 120,
+  "publicScreens": 10,
+  "stateGuard": 15,
+  "familyScreens": {
+   "EMP": 60,
+   "PRE": 52,
+   "ADM": 63,
+   "RTC": 8
+  },
+  "registry": {
+   "EMP": 60,
+   "PRE": 52,
+   "ADM": 63,
+   "RTC": 8
+  },
+  "handlersStatic": 121,
+  "probe": {
+   "closed": {
+    "ATTEINT": 0,
+    "ABSENT": 11,
+    "NON_SONDÉ": 149
+   },
+   "memory": {
+    "ATTEINT": 29,
+    "ABSENT": 82,
+    "NON_SONDÉ": 49
+   },
+   "postgres": {
+    "ATTEINT": 106,
+    "ABSENT": 54,
+    "NON_SONDÉ": 0
+   },
+   "postgresR2": {
+    "ATTEINT": 121,
+    "ABSENT": 39,
+    "NON_SONDÉ": 0
+   }
+  },
+  "screenStatus": {
+   "PUB": {
+    "RACCORDÉ_PARTIEL": 3,
+    "FRONTEND_PARTIEL": 4,
+    "NON_IMPLÉMENTÉ": 3
+   },
+   "EMP": {
+    "RACCORDÉ_PARTIEL": 58,
+    "FRONTEND_PARTIEL": 2
+   },
+   "PRE": {
+    "RACCORDÉ_PARTIEL": 50,
+    "FRONTEND_PARTIEL": 2
+   },
+   "ADM": {
+    "RACCORDÉ_PARTIEL": 29,
+    "FRONTEND_PARTIEL": 34
+   },
+   "RTC": {
+    "RACCORDÉ_PARTIEL": 8
+   },
+   "SYS": {
+    "ÉTAT_FRONTEND": 15
+   },
+   "FIN": {
+    "BLOQUÉ_EN_ATTENTE_DÉCISION": 3
+   }
+  },
+  "contractsWithoutScreen": 68,
+  "unknownTransitions": 12
+ },
+ "staticVsDynamicHandlerMismatch": [],
+ "rateLimitOrphans": [
+  "auth.google.login",
+  "documents.signed-download-url.create",
+  "documents.upload-grants.create",
+  "payments.reconcile",
+  "payments.salary.confirm",
+  "webrtc.sessions.credentials.issue"
+ ],
+ "frontendUnmatchedPaths": [],
+ "legacyApiCalls": [
+  {
+   "line": 147,
+   "http": "GET",
+   "path": "/auth/session",
+   "contracts": [
+    "auth.session"
+   ]
+  },
+  {
+   "line": 149,
+   "http": "GET",
+   "path": "/me",
+   "contracts": [
+    "me.read"
+   ]
+  },
+  {
+   "line": 151,
+   "http": "POST",
+   "path": "/auth/google/credential",
+   "contracts": [
+    "auth.google.credential"
+   ]
+  },
+  {
+   "line": 155,
+   "http": "POST",
+   "path": "/auth/logout",
+   "contracts": [
+    "auth.logout"
+   ]
+  },
+  {
+   "line": 159,
+   "http": "GET",
+   "path": "/users/me",
+   "contracts": [
+    "users.me.read",
+    "users.profile.read"
+   ]
+  },
+  {
+   "line": 160,
+   "http": "PATCH",
+   "path": "/users/me",
+   "contracts": [
+    "users.me.update"
+   ]
+  },
+  {
+   "line": 161,
+   "http": "GET",
+   "path": "/users/:p",
+   "contracts": [
+    "users.me.read",
+    "users.profile.read"
+   ]
+  },
+  {
+   "line": 170,
+   "http": "GET",
+   "path": "/offers/:p",
+   "contracts": [
+    "offers.public.read"
+   ]
+  },
+  {
+   "line": 173,
+   "http": "POST",
+   "path": "/offers",
+   "contracts": [
+    "offers.create"
+   ]
+  },
+  {
+   "line": 175,
+   "http": "PATCH",
+   "path": "/offers/:p/status",
+   "contracts": [
+    "offers.status.update"
+   ]
+  },
+  {
+   "line": 178,
+   "http": "GET",
+   "path": "/my/favorites",
+   "contracts": [
+    "offers.favorites.list"
+   ]
+  },
+  {
+   "line": 180,
+   "http": "POST",
+   "path": "/offers/:p/favorite",
+   "contracts": [
+    "offers.favorites.toggle"
+   ]
+  },
+  {
+   "line": 189,
+   "http": "GET",
+   "path": "/applications/:p",
+   "contracts": [
+    "applications.read"
+   ]
+  },
+  {
+   "line": 191,
+   "http": "POST",
+   "path": "/offers/:p/applications",
+   "contracts": [
+    "applications.create"
+   ]
+  },
+  {
+   "line": 195,
+   "http": "POST",
+   "path": "/applications/:p/withdraw",
+   "contracts": [
+    "applications.withdraw"
+   ]
+  },
+  {
+   "line": 197,
+   "http": "POST",
+   "path": "/applications/:p/examine",
+   "contracts": [
+    "applications.examine"
+   ]
+  },
+  {
+   "line": 199,
+   "http": "POST",
+   "path": "/applications/:p/shortlist",
+   "contracts": [
+    "applications.shortlist"
+   ]
+  },
+  {
+   "line": 201,
+   "http": "POST",
+   "path": "/applications/:p/reject",
+   "contracts": [
+    "applications.reject"
+   ]
+  },
+  {
+   "line": 206,
+   "http": "POST",
+   "path": "/conversations/:p/proposals",
+   "contracts": [
+    "proposals.create"
+   ]
+  },
+  {
+   "line": 208,
+   "http": "POST",
+   "path": "/proposals/:p/respond",
+   "contracts": [
+    "proposals.respond"
+   ]
+  },
+  {
+   "line": 213,
+   "http": "GET",
+   "path": "/contracts/:p",
+   "contracts": [
+    "contracts.read"
+   ]
+  },
+  {
+   "line": 215,
+   "http": "POST",
+   "path": "/contracts",
+   "contracts": [
+    "contracts.create"
+   ]
+  },
+  {
+   "line": 217,
+   "http": "POST",
+   "path": "/contracts/:p/sign",
+   "contracts": [
+    "contracts.sign"
+   ]
+  },
+  {
+   "line": 219,
+   "http": "POST",
+   "path": "/contracts/:p/monthly-actions",
+   "contracts": [
+    "contracts.monthly-action"
+   ]
+  },
+  {
+   "line": 224,
+   "http": "GET",
+   "path": "/payments/:p",
+   "contracts": [
+    "payments.read"
+   ]
+  },
+  {
+   "line": 227,
+   "http": "POST",
+   "path": "/payments/commission-declarations",
+   "contracts": [
+    "payments.commission.declare"
+   ]
+  },
+  {
+   "line": 236,
+   "http": "GET",
+   "path": "/incidents/:p",
+   "contracts": [
+    "incidents.read"
+   ]
+  },
+  {
+   "line": 238,
+   "http": "POST",
+   "path": "/incidents",
+   "contracts": [
+    "incidents.report"
+   ]
+  },
+  {
+   "line": 243,
+   "http": "GET",
+   "path": "/replacements/:p",
+   "contracts": [
+    "replacements.read"
+   ]
+  },
+  {
+   "line": 245,
+   "http": "POST",
+   "path": "/replacements/:p/offer",
+   "contracts": [
+    "replacements.offer.create"
+   ]
+  },
+  {
+   "line": 253,
+   "http": "POST",
+   "path": "/conversations",
+   "contracts": [
+    "messages.conversation.create"
+   ]
+  },
+  {
+   "line": 256,
+   "http": "POST",
+   "path": "/conversations/:p/messages",
+   "contracts": [
+    "messages.send"
+   ]
+  },
+  {
+   "line": 258,
+   "http": "POST",
+   "path": "/conversations/:p/messages",
+   "contracts": [
+    "messages.send"
+   ]
+  },
+  {
+   "line": 260,
+   "http": "POST",
+   "path": "/conversations/:p/read",
+   "contracts": [
+    "messages.read"
+   ]
+  },
+  {
+   "line": 266,
+   "http": "POST",
+   "path": "/notifications/:p/read",
+   "contracts": [
+    "notifications.read"
+   ]
+  },
+  {
+   "line": 268,
+   "http": "POST",
+   "path": "/my/notifications/read-all",
+   "contracts": [
+    "notifications.read-all"
+   ]
+  },
+  {
+   "line": 286,
+   "http": "GET",
+   "path": "/admin/stats",
+   "contracts": [
+    "admin.stats.read"
+   ]
+  },
+  {
+   "line": 287,
+   "http": "POST",
+   "path": "/admin/users/:p/block",
+   "contracts": [
+    "admin.users.block"
+   ]
+  },
+  {
+   "line": 288,
+   "http": "POST",
+   "path": "/admin/users/:p/unblock",
+   "contracts": [
+    "admin.users.unblock"
+   ]
+  },
+  {
+   "line": 289,
+   "http": "POST",
+   "path": "/admin/payments/:p/approve",
+   "contracts": [
+    "admin.payments.approve"
+   ]
+  },
+  {
+   "line": 290,
+   "http": "POST",
+   "path": "/admin/payments/:p/reject",
+   "contracts": [
+    "admin.payments.reject"
+   ]
+  },
+  {
+   "line": 291,
+   "http": "POST",
+   "path": "/admin/incidents/:p/arbitrate",
+   "contracts": [
+    "admin.incidents.arbitrate"
+   ]
+  },
+  {
+   "line": 305,
+   "http": "GET",
+   "path": "/resources/:p",
+   "contracts": [
+    "resources.published.read"
+   ]
+  },
+  {
+   "line": 307,
+   "http": "POST",
+   "path": "/documents/upload-grants",
+   "contracts": [
+    "documents.upload-grant"
+   ]
+  },
+  {
+   "line": 309,
+   "http": "POST",
+   "path": "/documents/:p/signed-download-url",
+   "contracts": [
+    "documents.signed-download"
+   ]
+  },
+  {
+   "line": 315,
+   "http": "POST",
+   "path": "/calls",
+   "contracts": [
+    "calls.create"
+   ]
+  },
+  {
+   "line": 317,
+   "http": "POST",
+   "path": "/calls/:p/accept",
+   "contracts": [
+    "calls.accept"
+   ]
+  },
+  {
+   "line": 319,
+   "http": "POST",
+   "path": "/calls/:p/reject",
+   "contracts": [
+    "calls.reject"
+   ]
+  },
+  {
+   "line": 321,
+   "http": "POST",
+   "path": "/calls/:p/end",
+   "contracts": [
+    "calls.end"
+   ]
+  },
+  {
+   "line": 322,
+   "http": "POST",
+   "path": "/calls/:p/ice-configuration",
+   "contracts": [
+    "calls.ice-configuration"
+   ]
+  },
+  {
+   "line": 323,
+   "http": "POST",
+   "path": "/calls/:p/signaling-credential",
+   "contracts": [
+    "calls.call-signaling-credential"
+   ]
+  },
+  {
+   "line": 323,
+   "http": "POST",
+   "path": "/calls/signaling-credential",
+   "contracts": [
+    "calls.signaling-credential"
+   ]
+  },
+  {
+   "line": 332,
+   "http": "POST",
+   "path": "/webrtc-sessions",
+   "contracts": [
+    "webrtc.sessions.create"
+   ]
+  },
+  {
+   "line": 333,
+   "http": "GET",
+   "path": "/webrtc-sessions/:p",
+   "contracts": [
+    "webrtc.sessions.read"
+   ]
+  },
+  {
+   "line": 334,
+   "http": "POST",
+   "path": "/webrtc-sessions/:p/join",
+   "contracts": [
+    "webrtc.sessions.join"
+   ]
+  },
+  {
+   "line": 335,
+   "http": "POST",
+   "path": "/webrtc-sessions/:p/credentials",
+   "contracts": [
+    "webrtc.sessions.credentials.create"
+   ]
+  },
+  {
+   "line": 336,
+   "http": "POST",
+   "path": "/webrtc-sessions/:p/ice-configuration",
+   "contracts": [
+    "webrtc.sessions.ice-configuration"
+   ]
+  },
+  {
+   "line": 338,
+   "http": "POST",
+   "path": "/webrtc-sessions/:p/signaling",
+   "contracts": [
+    "webrtc.sessions.signaling.send"
+   ]
+  },
+  {
+   "line": 343,
+   "http": "GET",
+   "path": "/webrtc-sessions/:p/signaling",
+   "contracts": [
+    "webrtc.sessions.signaling.poll"
+   ]
+  },
+  {
+   "line": 348,
+   "http": "POST",
+   "path": "/webrtc-sessions/:p/connected",
+   "contracts": [
+    "webrtc.sessions.transport-connected"
+   ]
+  },
+  {
+   "line": 353,
+   "http": "POST",
+   "path": "/webrtc-sessions/:p/close",
+   "contracts": [
+    "webrtc.sessions.close"
+   ]
+  },
+  {
+   "line": 163,
+   "http": "GET",
+   "path": "/directory/candidates",
+   "contracts": [
+    "users.candidates.list"
+   ]
+  },
+  {
+   "line": 164,
+   "http": "GET",
+   "path": "/directory/employers",
+   "contracts": [
+    "users.employers.list"
+   ]
+  },
+  {
+   "line": 169,
+   "http": "GET",
+   "path": "/offers",
+   "contracts": [
+    "offers.public.list"
+   ]
+  },
+  {
+   "line": 171,
+   "http": "GET",
+   "path": "/my/offers",
+   "contracts": [
+    "offers.mine.list"
+   ]
+  },
+  {
+   "line": 186,
+   "http": "GET",
+   "path": "/my/applications",
+   "contracts": [
+    "applications.mine.list"
+   ]
+  },
+  {
+   "line": 187,
+   "http": "GET",
+   "path": "/employer/applications",
+   "contracts": [
+    "applications.employer.list"
+   ]
+  },
+  {
+   "line": 188,
+   "http": "GET",
+   "path": "/offers/:p/applications",
+   "contracts": [
+    "applications.offer.list"
+   ]
+  },
+  {
+   "line": 212,
+   "http": "GET",
+   "path": "/my/contracts",
+   "contracts": [
+    "contracts.mine.list"
+   ]
+  },
+  {
+   "line": 223,
+   "http": "GET",
+   "path": "/my/payments",
+   "contracts": [
+    "payments.mine.list"
+   ]
+  },
+  {
+   "line": 225,
+   "http": "GET",
+   "path": "/contracts/:p/payments",
+   "contracts": [
+    "payments.contract.list"
+   ]
+  },
+  {
+   "line": 231,
+   "http": "GET",
+   "path": "/my/schedules",
+   "contracts": [
+    "schedules.mine.list"
+   ]
+  },
+  {
+   "line": 235,
+   "http": "GET",
+   "path": "/my/incidents",
+   "contracts": [
+    "incidents.mine.list"
+   ]
+  },
+  {
+   "line": 242,
+   "http": "GET",
+   "path": "/my/replacements",
+   "contracts": [
+    "replacements.mine.list"
+   ]
+  },
+  {
+   "line": 251,
+   "http": "GET",
+   "path": "/my/conversations",
+   "contracts": [
+    "messages.conversations.mine"
+   ]
+  },
+  {
+   "line": 254,
+   "http": "GET",
+   "path": "/conversations/:p/messages",
+   "contracts": [
+    "messages.conversation.list"
+   ]
+  },
+  {
+   "line": 264,
+   "http": "GET",
+   "path": "/my/notifications",
+   "contracts": [
+    "notifications.mine.list"
+   ]
+  },
+  {
+   "line": 272,
+   "http": "GET",
+   "path": "/admin/:p",
+   "contracts": [
+    "admin.claims.list",
+    "admin.documents.list",
+    "admin.calls.list",
+    "admin.match-events.list",
+    "admin.communication-events.list",
+    "admin.whatsapp-events.list",
+    "admin.users.list",
+    "admin.offers.list",
+    "admin.applications.list",
+    "admin.proposals.list",
+    "admin.contracts.list",
+    "admin.payments.list",
+    "admin.schedules.list",
+    "admin.incidents.list",
+    "admin.replacements.list",
+    "admin.notifications.list",
+    "admin.audit.list",
+    "admin.stats.read"
+   ]
+  },
+  {
+   "line": 299,
+   "http": "GET",
+   "path": "/admin/audit",
+   "contracts": [
+    "admin.audit.list"
+   ]
+  },
+  {
+   "line": 303,
+   "http": "GET",
+   "path": "/my/documents",
+   "contracts": [
+    "documents.mine.list"
+   ]
+  },
+  {
+   "line": 304,
+   "http": "GET",
+   "path": "/resources",
+   "contracts": [
+    "resources.published.list"
+   ]
+  },
+  {
+   "line": 313,
+   "http": "GET",
+   "path": "/my/calls",
+   "contracts": [
+    "calls.mine.list"
+   ]
+  },
+  {
+   "line": 330,
+   "http": "GET",
+   "path": "/my/webrtc-sessions",
+   "contracts": [
+    "webrtc.sessions.mine.list"
+   ]
+  }
+ ],
+ "integration": {
+  "PUB-01": "PARTIEL",
+  "PUB-02": "PARTIEL",
+  "PUB-03": "PARTIEL",
+  "PUB-04": "PARTIEL",
+  "PUB-05": "PARTIEL",
+  "PUB-06": "PARTIEL",
+  "PUB-07": "PARTIEL",
+  "PUB-08": "PARTIEL",
+  "PUB-09": "PARTIEL",
+  "PUB-10": "PARTIEL",
+  "EMP-01": "PARTIEL",
+  "EMP-02": "PARTIEL",
+  "EMP-03": "PARTIEL",
+  "EMP-04": "PARTIEL",
+  "EMP-05": "PARTIEL",
+  "EMP-06": "PARTIEL",
+  "EMP-10": "PARTIEL",
+  "EMP-11": "PARTIEL",
+  "EMP-12": "PARTIEL",
+  "EMP-14": "PARTIEL",
+  "EMP-15": "PARTIEL",
+  "EMP-16": "PARTIEL",
+  "EMP-17": "PARTIEL",
+  "EMP-18": "PARTIEL",
+  "EMP-21": "PARTIEL",
+  "EMP-23": "PARTIEL",
+  "EMP-24": "PARTIEL",
+  "EMP-29": "PARTIEL",
+  "EMP-30": "PARTIEL",
+  "EMP-31": "PARTIEL",
+  "EMP-37": "PARTIEL",
+  "EMP-39": "PARTIEL",
+  "EMP-40": "PARTIEL",
+  "EMP-41": "PARTIEL",
+  "EMP-43": "PARTIEL",
+  "EMP-45": "PARTIEL",
+  "EMP-48": "PARTIEL",
+  "EMP-49": "PARTIEL",
+  "EMP-52": "PARTIEL",
+  "EMP-56": "PARTIEL",
+  "EMP-58": "PARTIEL",
+  "EMP-59": "PARTIEL",
+  "PRE-01": "PARTIEL",
+  "PRE-02": "PARTIEL",
+  "PRE-03": "PARTIEL",
+  "PRE-04": "PARTIEL",
+  "PRE-05": "PARTIEL",
+  "PRE-06": "PARTIEL",
+  "PRE-07": "PARTIEL",
+  "PRE-08": "PARTIEL",
+  "PRE-10": "PARTIEL",
+  "PRE-11": "PARTIEL",
+  "PRE-14": "PARTIEL",
+  "PRE-16": "PARTIEL",
+  "PRE-17": "PARTIEL",
+  "PRE-21": "PARTIEL",
+  "PRE-24": "PARTIEL",
+  "PRE-28": "PARTIEL",
+  "PRE-29": "PARTIEL",
+  "PRE-32": "PARTIEL",
+  "PRE-34": "PARTIEL",
+  "PRE-38": "PARTIEL",
+  "PRE-40": "PARTIEL",
+  "PRE-41": "PARTIEL",
+  "PRE-42": "PARTIEL",
+  "PRE-45": "PARTIEL",
+  "PRE-47": "PARTIEL",
+  "PRE-48": "PARTIEL",
+  "ADM-01": "PARTIEL",
+  "ADM-02": "PARTIEL",
+  "ADM-04": "PARTIEL",
+  "ADM-06": "PARTIEL",
+  "ADM-08": "PARTIEL",
+  "ADM-10": "PARTIEL",
+  "ADM-11": "PARTIEL",
+  "ADM-13": "PARTIEL",
+  "ADM-14": "PARTIEL",
+  "ADM-16": "PARTIEL",
+  "ADM-18": "PARTIEL",
+  "ADM-20": "PARTIEL",
+  "ADM-23": "PARTIEL",
+  "ADM-25": "PARTIEL",
+  "ADM-26": "PARTIEL",
+  "ADM-27": "PARTIEL",
+  "ADM-29": "PARTIEL",
+  "ADM-31": "PARTIEL",
+  "ADM-34": "PARTIEL",
+  "ADM-35": "PARTIEL",
+  "ADM-37": "PARTIEL",
+  "ADM-38": "PARTIEL",
+  "ADM-41": "PARTIEL",
+  "ADM-44": "PARTIEL",
+  "ADM-47": "PARTIEL",
+  "ADM-48": "PARTIEL",
+  "ADM-50": "PARTIEL",
+  "ADM-52": "PARTIEL",
+  "ADM-55": "PARTIEL",
+  "ADM-57": "PARTIEL",
+  "ADM-59": "PARTIEL",
+  "ADM-61": "PARTIEL",
+  "ADM-62": "PARTIEL",
+  "ADM-63": "PARTIEL",
+  "RTC-01": "PARTIEL",
+  "RTC-02": "PARTIEL",
+  "RTC-04": "PARTIEL",
+  "RTC-05": "PARTIEL",
+  "RTC-08": "PARTIEL",
+  "SYS-01": "PARTIEL",
+  "SYS-02": "PARTIEL",
+  "SYS-03": "PARTIEL",
+  "SYS-05": "PARTIEL",
+  "SYS-06": "PARTIEL",
+  "SYS-07": "PARTIEL",
+  "SYS-08": "PARTIEL",
+  "SYS-09": "PARTIEL",
+  "SYS-10": "PARTIEL",
+  "SYS-14": "PARTIEL",
+  "FIN-01": "NON_INTEGRE",
+  "FIN-02": "NON_INTEGRE",
+  "FIN-03": "NON_INTEGRE"
+ },
+ "resolved": [
+  {
+   "route": "/",
+   "concrete": "/",
+   "kind": "legacy",
+   "namespace": null,
+   "resolvedUnit": null,
+   "state": null,
+   "notFound": null,
+   "screenCode": null
+  },
+  {
+   "route": "/accueil",
+   "concrete": "/accueil",
+   "kind": "shell",
+   "namespace": "public",
+   "resolvedUnit": "PUB-02",
+   "state": null,
+   "notFound": false,
+   "screenCode": null
+  },
+  {
+   "route": "/onboarding/profil",
+   "concrete": "/onboarding/profil",
+   "kind": "shell",
+   "namespace": "public",
+   "resolvedUnit": "PUB-03",
+   "state": null,
+   "notFound": false,
+   "screenCode": null
+  },
+  {
+   "route": "/connexion",
+   "concrete": "/connexion",
+   "kind": "shell",
+   "namespace": "public",
+   "resolvedUnit": "PUB-04",
+   "state": null,
+   "notFound": false,
+   "screenCode": null
+  },
+  {
+   "route": "/inscription",
+   "concrete": "/inscription",
+   "kind": "shell",
+   "namespace": "public",
+   "resolvedUnit": "PUB-05",
+   "state": null,
+   "notFound": false,
+   "screenCode": null
+  },
+  {
+   "route": "/verifier-otp",
+   "concrete": "/verifier-otp",
+   "kind": "shell",
+   "namespace": "public",
+   "resolvedUnit": "PUB-06",
+   "state": null,
+   "notFound": false,
+   "screenCode": null
+  },
+  {
+   "route": "/recuperation",
+   "concrete": "/recuperation",
+   "kind": "shell",
+   "namespace": "public",
+   "resolvedUnit": "PUB-07",
+   "state": null,
+   "notFound": false,
+   "screenCode": null
+  },
+  {
+   "route": "/legal",
+   "concrete": "/legal",
+   "kind": "shell",
+   "namespace": "public",
+   "resolvedUnit": "PUB-08",
+   "state": null,
+   "notFound": false,
+   "screenCode": null
+  },
+  {
+   "route": "/compte-bloque",
+   "concrete": "/compte-bloque",
+   "kind": "shell",
+   "namespace": "public",
+   "resolvedUnit": "PUB-09",
+   "state": null,
+   "notFound": false,
+   "screenCode": null
+  },
+  {
+   "route": "/maintenance",
+   "concrete": "/maintenance",
+   "kind": "shell",
+   "namespace": "public",
+   "resolvedUnit": "PUB-10",
+   "state": null,
+   "notFound": false,
+   "screenCode": null
+  },
+  {
+   "route": "/client",
+   "concrete": "/client",
+   "kind": "shell",
+   "namespace": "client",
+   "resolvedUnit": "EMP-01",
+   "state": null,
+   "notFound": false,
+   "screenCode": "EMP-01"
+  },
+  {
+   "route": "/client/notifications",
+   "concrete": "/client/notifications",
+   "kind": "shell",
+   "namespace": "client",
+   "resolvedUnit": "EMP-02",
+   "state": null,
+   "notFound": false,
+   "screenCode": "EMP-02"
+  },
+  {
+   "route": "/client/profil",
+   "concrete": "/client/profil",
+   "kind": "shell",
+   "namespace": "client",
+   "resolvedUnit": "EMP-03",
+   "state": null,
+   "notFound": false,
+   "screenCode": "EMP-03"
+  },
+  {
+   "route": "/client/parametres",
+   "concrete": "/client/parametres",
+   "kind": "shell",
+   "namespace": "client",
+   "resolvedUnit": "EMP-04",
+   "state": null,
+   "notFound": false,
+   "screenCode": "EMP-04"
+  },
+  {
+   "route": "/client/missions",
+   "concrete": "/client/missions",
+   "kind": "shell",
+   "namespace": "client",
+   "resolvedUnit": "EMP-05",
+   "state": null,
+   "notFound": false,
+   "screenCode": "EMP-05"
+  },
+  {
+   "route": "/client/missions/nouvelle/1",
+   "concrete": "/client/missions/nouvelle/1",
+   "kind": "shell",
+   "namespace": "client",
+   "resolvedUnit": "EMP-06",
+   "state": null,
+   "notFound": false,
+   "screenCode": "EMP-06"
+  },
+  {
+   "route": "/client/missions/nouvelle/2",
+   "concrete": "/client/missions/nouvelle/2",
+   "kind": "shell",
+   "namespace": "client",
+   "resolvedUnit": "EMP-06",
+   "state": null,
+   "notFound": false,
+   "screenCode": "EMP-07"
+  },
+  {
+   "route": "/client/missions/nouvelle/3",
+   "concrete": "/client/missions/nouvelle/3",
+   "kind": "shell",
+   "namespace": "client",
+   "resolvedUnit": "EMP-06",
+   "state": null,
+   "notFound": false,
+   "screenCode": "EMP-08"
+  },
+  {
+   "route": "/client/missions/nouvelle/4",
+   "concrete": "/client/missions/nouvelle/4",
+   "kind": "shell",
+   "namespace": "client",
+   "resolvedUnit": "EMP-06",
+   "state": null,
+   "notFound": false,
+   "screenCode": "EMP-09"
+  },
+  {
+   "route": "/client/missions/:id/qualification",
+   "concrete": "/client/missions/x1/qualification",
+   "kind": "shell",
+   "namespace": "client",
+   "resolvedUnit": "EMP-10",
+   "state": null,
+   "notFound": false,
+   "screenCode": "EMP-10"
+  },
+  {
+   "route": "/client/missions/:id/tarification",
+   "concrete": "/client/missions/x1/tarification",
+   "kind": "shell",
+   "namespace": "client",
+   "resolvedUnit": "EMP-11",
+   "state": null,
+   "notFound": false,
+   "screenCode": "EMP-11"
+  },
+  {
+   "route": "/client/missions/:id/apercu",
+   "concrete": "/client/missions/x1/apercu",
+   "kind": "shell",
+   "namespace": "client",
+   "resolvedUnit": "EMP-12",
+   "state": null,
+   "notFound": false,
+   "screenCode": "EMP-12"
+  },
+  {
+   "route": "/client/missions/:id/publiee",
+   "concrete": "/client/missions/x1/publiee",
+   "kind": "shell",
+   "namespace": "client",
+   "resolvedUnit": "EMP-12",
+   "state": null,
+   "notFound": false,
+   "screenCode": "EMP-13"
+  },
+  {
+   "route": "/client/missions/:id",
+   "concrete": "/client/missions/x1",
+   "kind": "shell",
+   "namespace": "client",
+   "resolvedUnit": "EMP-14",
+   "state": null,
+   "notFound": false,
+   "screenCode": "EMP-14"
+  },
+  {
+   "route": "/client/missions/:id/modifier",
+   "concrete": "/client/missions/x1/modifier",
+   "kind": "shell",
+   "namespace": "client",
+   "resolvedUnit": "EMP-15",
+   "state": null,
+   "notFound": false,
+   "screenCode": "EMP-15"
+  },
+  {
+   "route": "/client/missions/:id/candidatures",
+   "concrete": "/client/missions/x1/candidatures",
+   "kind": "shell",
+   "namespace": "client",
+   "resolvedUnit": "EMP-16",
+   "state": null,
+   "notFound": false,
+   "screenCode": "EMP-16"
+  },
+  {
+   "route": "/client/missions/:id/filtres",
+   "concrete": "/client/missions/x1/filtres",
+   "kind": "shell",
+   "namespace": "client",
+   "resolvedUnit": "EMP-16",
+   "state": null,
+   "notFound": false,
+   "screenCode": "EMP-20"
+  },
+  {
+   "route": "/client/candidats/:id",
+   "concrete": "/client/candidats/x1",
+   "kind": "shell",
+   "namespace": "client",
+   "resolvedUnit": "EMP-17",
+   "state": null,
+   "notFound": false,
+   "screenCode": "EMP-17"
+  },
+  {
+   "route": "/client/missions/:id/matching",
+   "concrete": "/client/missions/x1/matching",
+   "kind": "shell",
+   "namespace": "client",
+   "resolvedUnit": "EMP-18",
+   "state": null,
+   "notFound": false,
+   "screenCode": "EMP-18"
+  },
+  {
+   "route": "/client/missions/:id/matching/explication",
+   "concrete": "/client/missions/x1/matching/explication",
+   "kind": "shell",
+   "namespace": "client",
+   "resolvedUnit": "EMP-18",
+   "state": null,
+   "notFound": false,
+   "screenCode": "EMP-19"
+  },
+  {
+   "route": "/client/missions/:id/selection",
+   "concrete": "/client/missions/x1/selection",
+   "kind": "shell",
+   "namespace": "client",
+   "resolvedUnit": "EMP-21",
+   "state": null,
+   "notFound": false,
+   "screenCode": "EMP-21"
+  },
+  {
+   "route": "/client/missions/:id/selection/confirmee",
+   "concrete": "/client/missions/x1/selection/confirmee",
+   "kind": "shell",
+   "namespace": "client",
+   "resolvedUnit": "EMP-21",
+   "state": null,
+   "notFound": false,
+   "screenCode": "EMP-22"
+  },
+  {
+   "route": "/client/propositions",
+   "concrete": "/client/propositions",
+   "kind": "shell",
+   "namespace": "client",
+   "resolvedUnit": "EMP-23",
+   "state": null,
+   "notFound": false,
+   "screenCode": "EMP-23"
+  },
+  {
+   "route": "/client/propositions/expirees",
+   "concrete": "/client/propositions/expirees",
+   "kind": "shell",
+   "namespace": "client",
+   "resolvedUnit": "EMP-23",
+   "state": null,
+   "notFound": false,
+   "screenCode": "EMP-26"
+  },
+  {
+   "route": "/client/propositions/:id",
+   "concrete": "/client/propositions/x1",
+   "kind": "shell",
+   "namespace": "client",
+   "resolvedUnit": "EMP-24",
+   "state": null,
+   "notFound": false,
+   "screenCode": "EMP-24"
+  },
+  {
+   "route": "/client/propositions/:id/contre",
+   "concrete": "/client/propositions/x1/contre",
+   "kind": "shell",
+   "namespace": "client",
+   "resolvedUnit": "EMP-24",
+   "state": null,
+   "notFound": false,
+   "screenCode": "EMP-25"
+  },
+  {
+   "route": "/client/propositions/acceptees",
+   "concrete": "/client/propositions/acceptees",
+   "kind": "shell",
+   "namespace": "client",
+   "resolvedUnit": "EMP-24",
+   "state": null,
+   "notFound": false,
+   "screenCode": "EMP-27"
+  },
+  {
+   "route": "/client/propositions/:id/retrait",
+   "concrete": "/client/propositions/x1/retrait",
+   "kind": "shell",
+   "namespace": "client",
+   "resolvedUnit": "EMP-24",
+   "state": null,
+   "notFound": false,
+   "screenCode": "EMP-28"
+  },
+  {
+   "route": "/client/contrats/:id",
+   "concrete": "/client/contrats/x1",
+   "kind": "shell",
+   "namespace": "client",
+   "resolvedUnit": "EMP-29",
+   "state": null,
+   "notFound": false,
+   "screenCode": "EMP-29"
+  },
+  {
+   "route": "/client/contrats/:id/actif",
+   "concrete": "/client/contrats/x1/actif",
+   "kind": "shell",
+   "namespace": "client",
+   "resolvedUnit": "EMP-29",
+   "state": null,
+   "notFound": false,
+   "screenCode": "EMP-32"
+  },
+  {
+   "route": "/client/contrats/:id/termine",
+   "concrete": "/client/contrats/x1/termine",
+   "kind": "shell",
+   "namespace": "client",
+   "resolvedUnit": "EMP-29",
+   "state": null,
+   "notFound": false,
+   "screenCode": "EMP-33"
+  },
+  {
+   "route": "/client/contrats/:id/resilie",
+   "concrete": "/client/contrats/x1/resilie",
+   "kind": "shell",
+   "namespace": "client",
+   "resolvedUnit": "EMP-29",
+   "state": null,
+   "notFound": false,
+   "screenCode": "EMP-34"
+  },
+  {
+   "route": "/client/contrats/:id/remplace",
+   "concrete": "/client/contrats/x1/remplace",
+   "kind": "shell",
+   "namespace": "client",
+   "resolvedUnit": "EMP-29",
+   "state": null,
+   "notFound": false,
+   "screenCode": "EMP-35"
+  },
+  {
+   "route": "/client/contrats/:id/versions/:v",
+   "concrete": "/client/contrats/x1/versions/x1",
+   "kind": "shell",
+   "namespace": "client",
+   "resolvedUnit": "EMP-30",
+   "state": null,
+   "notFound": false,
+   "screenCode": "EMP-30"
+  },
+  {
+   "route": "/client/contrats/:id/historique",
+   "concrete": "/client/contrats/x1/historique",
+   "kind": "shell",
+   "namespace": "client",
+   "resolvedUnit": "EMP-30",
+   "state": null,
+   "notFound": false,
+   "screenCode": "EMP-36"
+  },
+  {
+   "route": "/client/contrats/:id/signer",
+   "concrete": "/client/contrats/x1/signer",
+   "kind": "shell",
+   "namespace": "client",
+   "resolvedUnit": "EMP-31",
+   "state": null,
+   "notFound": false,
+   "screenCode": "EMP-31"
+  },
+  {
+   "route": "/client/missions/:id/execution",
+   "concrete": "/client/missions/x1/execution",
+   "kind": "shell",
+   "namespace": "client",
+   "resolvedUnit": "EMP-37",
+   "state": null,
+   "notFound": false,
+   "screenCode": "EMP-37"
+  },
+  {
+   "route": "/client/evidence/:id",
+   "concrete": "/client/evidence/x1",
+   "kind": "shell",
+   "namespace": "client",
+   "resolvedUnit": "EMP-37",
+   "state": null,
+   "notFound": false,
+   "screenCode": "EMP-38"
+  },
+  {
+   "route": "/client/missions/:id/litige/nouveau",
+   "concrete": "/client/missions/x1/litige/nouveau",
+   "kind": "shell",
+   "namespace": "client",
+   "resolvedUnit": "EMP-39",
+   "state": null,
+   "notFound": false,
+   "screenCode": "EMP-39"
+  },
+  {
+   "route": "/client/missions/:id/litige",
+   "concrete": "/client/missions/x1/litige",
+   "kind": "shell",
+   "namespace": "client",
+   "resolvedUnit": "EMP-40",
+   "state": null,
+   "notFound": false,
+   "screenCode": "EMP-40"
+  },
+  {
+   "route": "/client/paiements",
+   "concrete": "/client/paiements",
+   "kind": "shell",
+   "namespace": "client",
+   "resolvedUnit": "EMP-41",
+   "state": null,
+   "notFound": false,
+   "screenCode": "EMP-41"
+  },
+  {
+   "route": "/client/paiements/:id",
+   "concrete": "/client/paiements/x1",
+   "kind": "shell",
+   "namespace": "client",
+   "resolvedUnit": "EMP-41",
+   "state": null,
+   "notFound": false,
+   "screenCode": "EMP-42"
+  },
+  {
+   "route": "/client/paiements/plan",
+   "concrete": "/client/paiements/plan",
+   "kind": "shell",
+   "namespace": "client",
+   "resolvedUnit": "EMP-41",
+   "state": null,
+   "notFound": false,
+   "screenCode": "EMP-47"
+  },
+  {
+   "route": "/client/paiements/declaration",
+   "concrete": "/client/paiements/declaration",
+   "kind": "shell",
+   "namespace": "client",
+   "resolvedUnit": "EMP-43",
+   "state": null,
+   "notFound": false,
+   "screenCode": "EMP-43"
+  },
+  {
+   "route": "/client/paiements/declarations/:id/verification",
+   "concrete": "/client/paiements/declarations/x1/verification",
+   "kind": "shell",
+   "namespace": "client",
+   "resolvedUnit": "EMP-43",
+   "state": null,
+   "notFound": false,
+   "screenCode": "EMP-44"
+  },
+  {
+   "route": "/client/paiements/historique",
+   "concrete": "/client/paiements/historique",
+   "kind": "shell",
+   "namespace": "client",
+   "resolvedUnit": "EMP-45",
+   "state": null,
+   "notFound": false,
+   "screenCode": "EMP-45"
+  },
+  {
+   "route": "/client/paiements/:id/recu",
+   "concrete": "/client/paiements/x1/recu",
+   "kind": "shell",
+   "namespace": "client",
+   "resolvedUnit": "EMP-45",
+   "state": null,
+   "notFound": false,
+   "screenCode": "EMP-46"
+  },
+  {
+   "route": "/client/paiements/:id/litige",
+   "concrete": "/client/paiements/x1/litige",
+   "kind": "shell",
+   "namespace": "client",
+   "resolvedUnit": "EMP-48",
+   "state": null,
+   "notFound": false,
+   "screenCode": "EMP-48"
+  },
+  {
+   "route": "/client/litiges/:id",
+   "concrete": "/client/litiges/x1",
+   "kind": "shell",
+   "namespace": "client",
+   "resolvedUnit": "EMP-49",
+   "state": null,
+   "notFound": false,
+   "screenCode": "EMP-49"
+  },
+  {
+   "route": "/client/litiges/:id/preuves",
+   "concrete": "/client/litiges/x1/preuves",
+   "kind": "shell",
+   "namespace": "client",
+   "resolvedUnit": "EMP-49",
+   "state": null,
+   "notFound": false,
+   "screenCode": "EMP-50"
+  },
+  {
+   "route": "/client/litiges/:id/resolution",
+   "concrete": "/client/litiges/x1/resolution",
+   "kind": "shell",
+   "namespace": "client",
+   "resolvedUnit": "EMP-49",
+   "state": null,
+   "notFound": false,
+   "screenCode": "EMP-51"
+  },
+  {
+   "route": "/client/litiges/:id/escalade",
+   "concrete": "/client/litiges/x1/escalade",
+   "kind": "shell",
+   "namespace": "client",
+   "resolvedUnit": "EMP-52",
+   "state": null,
+   "notFound": false,
+   "screenCode": "EMP-52"
+  },
+  {
+   "route": "/client/litiges/:id/attente",
+   "concrete": "/client/litiges/x1/attente",
+   "kind": "shell",
+   "namespace": "client",
+   "resolvedUnit": "EMP-52",
+   "state": null,
+   "notFound": false,
+   "screenCode": "EMP-53"
+  },
+  {
+   "route": "/client/litiges/:id/decision",
+   "concrete": "/client/litiges/x1/decision",
+   "kind": "shell",
+   "namespace": "client",
+   "resolvedUnit": "EMP-52",
+   "state": null,
+   "notFound": false,
+   "screenCode": "EMP-54"
+  },
+  {
+   "route": "/client/litiges/:id/cloture",
+   "concrete": "/client/litiges/x1/cloture",
+   "kind": "shell",
+   "namespace": "client",
+   "resolvedUnit": "EMP-52",
+   "state": null,
+   "notFound": false,
+   "screenCode": "EMP-55"
+  },
+  {
+   "route": "/client/missions/:id/remplacement",
+   "concrete": "/client/missions/x1/remplacement",
+   "kind": "shell",
+   "namespace": "client",
+   "resolvedUnit": "EMP-56",
+   "state": null,
+   "notFound": false,
+   "screenCode": "EMP-56"
+  },
+  {
+   "route": "/client/missions/:id/remplacement/conditions",
+   "concrete": "/client/missions/x1/remplacement/conditions",
+   "kind": "shell",
+   "namespace": "client",
+   "resolvedUnit": "EMP-56",
+   "state": null,
+   "notFound": false,
+   "screenCode": "EMP-57"
+  },
+  {
+   "route": "/client/missions/:id/remplacement/selection",
+   "concrete": "/client/missions/x1/remplacement/selection",
+   "kind": "shell",
+   "namespace": "client",
+   "resolvedUnit": "EMP-58",
+   "state": null,
+   "notFound": false,
+   "screenCode": "EMP-58"
+  },
+  {
+   "route": "/client/missions/:id/remplacement/confirmation",
+   "concrete": "/client/missions/x1/remplacement/confirmation",
+   "kind": "shell",
+   "namespace": "client",
+   "resolvedUnit": "EMP-59",
+   "state": null,
+   "notFound": false,
+   "screenCode": "EMP-59"
+  },
+  {
+   "route": "/client/contrats/:id/successeur",
+   "concrete": "/client/contrats/x1/successeur",
+   "kind": "shell",
+   "namespace": "client",
+   "resolvedUnit": "EMP-59",
+   "state": null,
+   "notFound": false,
+   "screenCode": "EMP-60"
+  },
+  {
+   "route": "/prestataire",
+   "concrete": "/prestataire",
+   "kind": "shell",
+   "namespace": "prestataire",
+   "resolvedUnit": "PRE-01",
+   "state": null,
+   "notFound": false,
+   "screenCode": "PRE-01"
+  },
+  {
+   "route": "/prestataire/notifications",
+   "concrete": "/prestataire/notifications",
+   "kind": "shell",
+   "namespace": "prestataire",
+   "resolvedUnit": "PRE-02",
+   "state": null,
+   "notFound": false,
+   "screenCode": "PRE-02"
+  },
+  {
+   "route": "/prestataire/profil",
+   "concrete": "/prestataire/profil",
+   "kind": "shell",
+   "namespace": "prestataire",
+   "resolvedUnit": "PRE-03",
+   "state": null,
+   "notFound": false,
+   "screenCode": "PRE-03"
+  },
+  {
+   "route": "/prestataire/parametres",
+   "concrete": "/prestataire/parametres",
+   "kind": "shell",
+   "namespace": "prestataire",
+   "resolvedUnit": "PRE-04",
+   "state": null,
+   "notFound": false,
+   "screenCode": "PRE-04"
+  },
+  {
+   "route": "/prestataire/missions",
+   "concrete": "/prestataire/missions",
+   "kind": "shell",
+   "namespace": "prestataire",
+   "resolvedUnit": "PRE-05",
+   "state": null,
+   "notFound": false,
+   "screenCode": "PRE-05"
+  },
+  {
+   "route": "/prestataire/missions/filtres",
+   "concrete": "/prestataire/missions/filtres",
+   "kind": "shell",
+   "namespace": "prestataire",
+   "resolvedUnit": "PRE-06",
+   "state": null,
+   "notFound": false,
+   "screenCode": "PRE-06"
+  },
+  {
+   "route": "/prestataire/missions/:id",
+   "concrete": "/prestataire/missions/x1",
+   "kind": "shell",
+   "namespace": "prestataire",
+   "resolvedUnit": "PRE-07",
+   "state": null,
+   "notFound": false,
+   "screenCode": "PRE-07"
+  },
+  {
+   "route": "/prestataire/missions/:id/postuler",
+   "concrete": "/prestataire/missions/x1/postuler",
+   "kind": "shell",
+   "namespace": "prestataire",
+   "resolvedUnit": "PRE-08",
+   "state": null,
+   "notFound": false,
+   "screenCode": "PRE-08"
+  },
+  {
+   "route": "/prestataire/candidatures/envoyee",
+   "concrete": "/prestataire/candidatures/envoyee",
+   "kind": "shell",
+   "namespace": "prestataire",
+   "resolvedUnit": "PRE-08",
+   "state": null,
+   "notFound": false,
+   "screenCode": "PRE-09"
+  },
+  {
+   "route": "/prestataire/candidatures/:id",
+   "concrete": "/prestataire/candidatures/x1",
+   "kind": "shell",
+   "namespace": "prestataire",
+   "resolvedUnit": "PRE-10",
+   "state": null,
+   "notFound": false,
+   "screenCode": "PRE-10"
+  },
+  {
+   "route": "/prestataire/candidatures/:id/depot",
+   "concrete": "/prestataire/candidatures/x1/depot",
+   "kind": "shell",
+   "namespace": "prestataire",
+   "resolvedUnit": "PRE-10",
+   "state": null,
+   "notFound": false,
+   "screenCode": "PRE-12"
+  },
+  {
+   "route": "/prestataire/candidatures/:id/questions",
+   "concrete": "/prestataire/candidatures/x1/questions",
+   "kind": "shell",
+   "namespace": "prestataire",
+   "resolvedUnit": "PRE-10",
+   "state": null,
+   "notFound": false,
+   "screenCode": "PRE-13"
+  },
+  {
+   "route": "/prestataire/candidatures",
+   "concrete": "/prestataire/candidatures",
+   "kind": "shell",
+   "namespace": "prestataire",
+   "resolvedUnit": "PRE-11",
+   "state": null,
+   "notFound": false,
+   "screenCode": "PRE-11"
+  },
+  {
+   "route": "/prestataire/candidatures/archive",
+   "concrete": "/prestataire/candidatures/archive",
+   "kind": "shell",
+   "namespace": "prestataire",
+   "resolvedUnit": "PRE-11",
+   "state": null,
+   "notFound": false,
+   "screenCode": "PRE-15"
+  },
+  {
+   "route": "/prestataire/candidatures/:id/retrait",
+   "concrete": "/prestataire/candidatures/x1/retrait",
+   "kind": "shell",
+   "namespace": "prestataire",
+   "resolvedUnit": "PRE-14",
+   "state": null,
+   "notFound": false,
+   "screenCode": "PRE-14"
+  },
+  {
+   "route": "/prestataire/propositions",
+   "concrete": "/prestataire/propositions",
+   "kind": "shell",
+   "namespace": "prestataire",
+   "resolvedUnit": "PRE-16",
+   "state": null,
+   "notFound": false,
+   "screenCode": "PRE-16"
+  },
+  {
+   "route": "/prestataire/propositions/historique",
+   "concrete": "/prestataire/propositions/historique",
+   "kind": "shell",
+   "namespace": "prestataire",
+   "resolvedUnit": "PRE-16",
+   "state": null,
+   "notFound": false,
+   "screenCode": "PRE-20"
+  },
+  {
+   "route": "/prestataire/propositions/:id",
+   "concrete": "/prestataire/propositions/x1",
+   "kind": "shell",
+   "namespace": "prestataire",
+   "resolvedUnit": "PRE-17",
+   "state": null,
+   "notFound": false,
+   "screenCode": "PRE-17"
+  },
+  {
+   "route": "/prestataire/propositions/:id/acceptation",
+   "concrete": "/prestataire/propositions/x1/acceptation",
+   "kind": "shell",
+   "namespace": "prestataire",
+   "resolvedUnit": "PRE-17",
+   "state": null,
+   "notFound": false,
+   "screenCode": "PRE-18"
+  },
+  {
+   "route": "/prestataire/propositions/:id/contre",
+   "concrete": "/prestataire/propositions/x1/contre",
+   "kind": "shell",
+   "namespace": "prestataire",
+   "resolvedUnit": "PRE-17",
+   "state": null,
+   "notFound": false,
+   "screenCode": "PRE-19"
+  },
+  {
+   "route": "/prestataire/contrats/:id",
+   "concrete": "/prestataire/contrats/x1",
+   "kind": "shell",
+   "namespace": "prestataire",
+   "resolvedUnit": "PRE-21",
+   "state": null,
+   "notFound": false,
+   "screenCode": "PRE-21"
+  },
+  {
+   "route": "/prestataire/contrats/:id/lecture",
+   "concrete": "/prestataire/contrats/x1/lecture",
+   "kind": "shell",
+   "namespace": "prestataire",
+   "resolvedUnit": "PRE-21",
+   "state": null,
+   "notFound": false,
+   "screenCode": "PRE-22"
+  },
+  {
+   "route": "/prestataire/contrats/:id/versions/:v",
+   "concrete": "/prestataire/contrats/x1/versions/x1",
+   "kind": "shell",
+   "namespace": "prestataire",
+   "resolvedUnit": "PRE-21",
+   "state": null,
+   "notFound": false,
+   "screenCode": "PRE-23"
+  },
+  {
+   "route": "/prestataire/contrats/:id/actif",
+   "concrete": "/prestataire/contrats/x1/actif",
+   "kind": "shell",
+   "namespace": "prestataire",
+   "resolvedUnit": "PRE-21",
+   "state": null,
+   "notFound": false,
+   "screenCode": "PRE-25"
+  },
+  {
+   "route": "/prestataire/contrats/:id/avenants/:aid",
+   "concrete": "/prestataire/contrats/x1/avenants/x1",
+   "kind": "shell",
+   "namespace": "prestataire",
+   "resolvedUnit": "PRE-21",
+   "state": null,
+   "notFound": false,
+   "screenCode": "PRE-26"
+  },
+  {
+   "route": "/prestataire/contrats/:id/resiliation",
+   "concrete": "/prestataire/contrats/x1/resiliation",
+   "kind": "shell",
+   "namespace": "prestataire",
+   "resolvedUnit": "PRE-21",
+   "state": null,
+   "notFound": false,
+   "screenCode": "PRE-27"
+  },
+  {
+   "route": "/prestataire/contrats/:id/signer",
+   "concrete": "/prestataire/contrats/x1/signer",
+   "kind": "shell",
+   "namespace": "prestataire",
+   "resolvedUnit": "PRE-24",
+   "state": null,
+   "notFound": false,
+   "screenCode": "PRE-24"
+  },
+  {
+   "route": "/prestataire/missions/:id/execution",
+   "concrete": "/prestataire/missions/x1/execution",
+   "kind": "shell",
+   "namespace": "prestataire",
+   "resolvedUnit": "PRE-28",
+   "state": null,
+   "notFound": false,
+   "screenCode": "PRE-28"
+  },
+  {
+   "route": "/prestataire/missions/:id/validations",
+   "concrete": "/prestataire/missions/x1/validations",
+   "kind": "shell",
+   "namespace": "prestataire",
+   "resolvedUnit": "PRE-28",
+   "state": null,
+   "notFound": false,
+   "screenCode": "PRE-31"
+  },
+  {
+   "route": "/prestataire/missions/:id/jalons",
+   "concrete": "/prestataire/missions/x1/jalons",
+   "kind": "shell",
+   "namespace": "prestataire",
+   "resolvedUnit": "PRE-29",
+   "state": null,
+   "notFound": false,
+   "screenCode": "PRE-29"
+  },
+  {
+   "route": "/prestataire/evidence/nouvelle",
+   "concrete": "/prestataire/evidence/nouvelle",
+   "kind": "shell",
+   "namespace": "prestataire",
+   "resolvedUnit": "PRE-29",
+   "state": null,
+   "notFound": false,
+   "screenCode": "PRE-30"
+  },
+  {
+   "route": "/prestataire/salaire",
+   "concrete": "/prestataire/salaire",
+   "kind": "shell",
+   "namespace": "prestataire",
+   "resolvedUnit": "PRE-32",
+   "state": null,
+   "notFound": false,
+   "screenCode": "PRE-32"
+  },
+  {
+   "route": "/prestataire/salaire/echeances",
+   "concrete": "/prestataire/salaire/echeances",
+   "kind": "shell",
+   "namespace": "prestataire",
+   "resolvedUnit": "PRE-32",
+   "state": null,
+   "notFound": false,
+   "screenCode": "PRE-33"
+  },
+  {
+   "route": "/prestataire/salaire/retard",
+   "concrete": "/prestataire/salaire/retard",
+   "kind": "shell",
+   "namespace": "prestataire",
+   "resolvedUnit": "PRE-32",
+   "state": null,
+   "notFound": false,
+   "screenCode": "PRE-36"
+  },
+  {
+   "route": "/prestataire/salaire/:id/relance",
+   "concrete": "/prestataire/salaire/x1/relance",
+   "kind": "shell",
+   "namespace": "prestataire",
+   "resolvedUnit": "PRE-32",
+   "state": null,
+   "notFound": false,
+   "screenCode": "PRE-37"
+  },
+  {
+   "route": "/prestataire/salaire/:id/declare",
+   "concrete": "/prestataire/salaire/x1/declare",
+   "kind": "shell",
+   "namespace": "prestataire",
+   "resolvedUnit": "PRE-34",
+   "state": null,
+   "notFound": false,
+   "screenCode": "PRE-34"
+  },
+  {
+   "route": "/prestataire/salaire/:id/verification",
+   "concrete": "/prestataire/salaire/x1/verification",
+   "kind": "shell",
+   "namespace": "prestataire",
+   "resolvedUnit": "PRE-34",
+   "state": null,
+   "notFound": false,
+   "screenCode": "PRE-35"
+  },
+  {
+   "route": "/prestataire/salaire/:id/otp",
+   "concrete": "/prestataire/salaire/x1/otp",
+   "kind": "shell",
+   "namespace": "prestataire",
+   "resolvedUnit": "PRE-38",
+   "state": null,
+   "notFound": false,
+   "screenCode": "PRE-38"
+  },
+  {
+   "route": "/prestataire/salaire/:id/recu",
+   "concrete": "/prestataire/salaire/x1/recu",
+   "kind": "shell",
+   "namespace": "prestataire",
+   "resolvedUnit": "PRE-38",
+   "state": null,
+   "notFound": false,
+   "screenCode": "PRE-39"
+  },
+  {
+   "route": "/prestataire/missions/:id/remplacement",
+   "concrete": "/prestataire/missions/x1/remplacement",
+   "kind": "shell",
+   "namespace": "prestataire",
+   "resolvedUnit": "PRE-40",
+   "state": null,
+   "notFound": false,
+   "screenCode": "PRE-40"
+  },
+  {
+   "route": "/prestataire/missions/:id/remplacement/conditions",
+   "concrete": "/prestataire/missions/x1/remplacement/conditions",
+   "kind": "shell",
+   "namespace": "prestataire",
+   "resolvedUnit": "PRE-41",
+   "state": null,
+   "notFound": false,
+   "screenCode": "PRE-41"
+  },
+  {
+   "route": "/prestataire/remplacements/:id/transition",
+   "concrete": "/prestataire/remplacements/x1/transition",
+   "kind": "shell",
+   "namespace": "prestataire",
+   "resolvedUnit": "PRE-41",
+   "state": null,
+   "notFound": false,
+   "screenCode": "PRE-43"
+  },
+  {
+   "route": "/prestataire/remplacements/:id/reprise",
+   "concrete": "/prestataire/remplacements/x1/reprise",
+   "kind": "shell",
+   "namespace": "prestataire",
+   "resolvedUnit": "PRE-41",
+   "state": null,
+   "notFound": false,
+   "screenCode": "PRE-44"
+  },
+  {
+   "route": "/prestataire/remplacements/:id/decision",
+   "concrete": "/prestataire/remplacements/x1/decision",
+   "kind": "shell",
+   "namespace": "prestataire",
+   "resolvedUnit": "PRE-42",
+   "state": null,
+   "notFound": false,
+   "screenCode": "PRE-42"
+  },
+  {
+   "route": "/prestataire/reputation",
+   "concrete": "/prestataire/reputation",
+   "kind": "shell",
+   "namespace": "prestataire",
+   "resolvedUnit": "PRE-45",
+   "state": null,
+   "notFound": false,
+   "screenCode": "PRE-45"
+  },
+  {
+   "route": "/prestataire/reputation/ledger",
+   "concrete": "/prestataire/reputation/ledger",
+   "kind": "shell",
+   "namespace": "prestataire",
+   "resolvedUnit": "PRE-45",
+   "state": null,
+   "notFound": false,
+   "screenCode": "PRE-46"
+  },
+  {
+   "route": "/prestataire/reputation/contestation",
+   "concrete": "/prestataire/reputation/contestation",
+   "kind": "shell",
+   "namespace": "prestataire",
+   "resolvedUnit": "PRE-47",
+   "state": null,
+   "notFound": false,
+   "screenCode": "PRE-47"
+  },
+  {
+   "route": "/prestataire/documents",
+   "concrete": "/prestataire/documents",
+   "kind": "shell",
+   "namespace": "prestataire",
+   "resolvedUnit": "PRE-48",
+   "state": null,
+   "notFound": false,
+   "screenCode": "PRE-48"
+  },
+  {
+   "route": "/prestataire/documents/:id/versions/nouvelle",
+   "concrete": "/prestataire/documents/x1/versions/nouvelle",
+   "kind": "shell",
+   "namespace": "prestataire",
+   "resolvedUnit": "PRE-48",
+   "state": null,
+   "notFound": false,
+   "screenCode": "PRE-49"
+  },
+  {
+   "route": "/prestataire/documents/:id/verification",
+   "concrete": "/prestataire/documents/x1/verification",
+   "kind": "shell",
+   "namespace": "prestataire",
+   "resolvedUnit": "PRE-48",
+   "state": null,
+   "notFound": false,
+   "screenCode": "PRE-50"
+  },
+  {
+   "route": "/prestataire/documents/:id/rejet",
+   "concrete": "/prestataire/documents/x1/rejet",
+   "kind": "shell",
+   "namespace": "prestataire",
+   "resolvedUnit": "PRE-48",
+   "state": null,
+   "notFound": false,
+   "screenCode": "PRE-51"
+  },
+  {
+   "route": "/prestataire/documents/:id/historique",
+   "concrete": "/prestataire/documents/x1/historique",
+   "kind": "shell",
+   "namespace": "prestataire",
+   "resolvedUnit": "PRE-48",
+   "state": null,
+   "notFound": false,
+   "screenCode": "PRE-52"
+  },
+  {
+   "route": "/admin",
+   "concrete": "/admin",
+   "kind": "shell",
+   "namespace": "admin",
+   "resolvedUnit": "ADM-01",
+   "state": null,
+   "notFound": false,
+   "screenCode": "ADM-01"
+  },
+  {
+   "route": "/admin/utilisateurs",
+   "concrete": "/admin/utilisateurs",
+   "kind": "shell",
+   "namespace": "admin",
+   "resolvedUnit": "ADM-02",
+   "state": null,
+   "notFound": false,
+   "screenCode": "ADM-02"
+  },
+  {
+   "route": "/admin/utilisateurs/:id",
+   "concrete": "/admin/utilisateurs/x1",
+   "kind": "shell",
+   "namespace": "admin",
+   "resolvedUnit": "ADM-02",
+   "state": null,
+   "notFound": false,
+   "screenCode": "ADM-03"
+  },
+  {
+   "route": "/admin/utilisateurs/:id/blocage",
+   "concrete": "/admin/utilisateurs/x1/blocage",
+   "kind": "shell",
+   "namespace": "admin",
+   "resolvedUnit": "ADM-04",
+   "state": null,
+   "notFound": false,
+   "screenCode": "ADM-04"
+  },
+  {
+   "route": "/admin/blocages",
+   "concrete": "/admin/blocages",
+   "kind": "shell",
+   "namespace": "admin",
+   "resolvedUnit": "ADM-04",
+   "state": null,
+   "notFound": false,
+   "screenCode": "ADM-05"
+  },
+  {
+   "route": "/admin/qualification",
+   "concrete": "/admin/qualification",
+   "kind": "shell",
+   "namespace": "admin",
+   "resolvedUnit": "ADM-06",
+   "state": null,
+   "notFound": false,
+   "screenCode": "ADM-06"
+  },
+  {
+   "route": "/admin/qualification/:id",
+   "concrete": "/admin/qualification/x1",
+   "kind": "shell",
+   "namespace": "admin",
+   "resolvedUnit": "ADM-06",
+   "state": null,
+   "notFound": false,
+   "screenCode": "ADM-07"
+  },
+  {
+   "route": "/admin/qualification/:id/decision",
+   "concrete": "/admin/qualification/x1/decision",
+   "kind": "shell",
+   "namespace": "admin",
+   "resolvedUnit": "ADM-08",
+   "state": null,
+   "notFound": false,
+   "screenCode": "ADM-08"
+  },
+  {
+   "route": "/admin/qualification/historique",
+   "concrete": "/admin/qualification/historique",
+   "kind": "shell",
+   "namespace": "admin",
+   "resolvedUnit": "ADM-08",
+   "state": null,
+   "notFound": false,
+   "screenCode": "ADM-09"
+  },
+  {
+   "route": "/admin/matching",
+   "concrete": "/admin/matching",
+   "kind": "shell",
+   "namespace": "admin",
+   "resolvedUnit": "ADM-10",
+   "state": null,
+   "notFound": false,
+   "screenCode": "ADM-10"
+  },
+  {
+   "route": "/admin/matching/rulesets",
+   "concrete": "/admin/matching/rulesets",
+   "kind": "shell",
+   "namespace": "admin",
+   "resolvedUnit": "ADM-10",
+   "state": null,
+   "notFound": false,
+   "screenCode": "ADM-12"
+  },
+  {
+   "route": "/admin/matching/runs/:id",
+   "concrete": "/admin/matching/runs/x1",
+   "kind": "shell",
+   "namespace": "admin",
+   "resolvedUnit": "ADM-11",
+   "state": null,
+   "notFound": false,
+   "screenCode": "ADM-11"
+  },
+  {
+   "route": "/admin/contrats",
+   "concrete": "/admin/contrats",
+   "kind": "shell",
+   "namespace": "admin",
+   "resolvedUnit": "ADM-13",
+   "state": null,
+   "notFound": false,
+   "screenCode": "ADM-13"
+  },
+  {
+   "route": "/admin/contrats/:id",
+   "concrete": "/admin/contrats/x1",
+   "kind": "shell",
+   "namespace": "admin",
+   "resolvedUnit": "ADM-14",
+   "state": null,
+   "notFound": false,
+   "screenCode": "ADM-14"
+  },
+  {
+   "route": "/admin/contrats/:id/incidents",
+   "concrete": "/admin/contrats/x1/incidents",
+   "kind": "shell",
+   "namespace": "admin",
+   "resolvedUnit": "ADM-14",
+   "state": null,
+   "notFound": false,
+   "screenCode": "ADM-15"
+  },
+  {
+   "route": "/admin/contrats/:id/journal",
+   "concrete": "/admin/contrats/x1/journal",
+   "kind": "shell",
+   "namespace": "admin",
+   "resolvedUnit": "ADM-14",
+   "state": null,
+   "notFound": false,
+   "screenCode": "ADM-17"
+  },
+  {
+   "route": "/admin/contrats/:id/revision-forcee",
+   "concrete": "/admin/contrats/x1/revision-forcee",
+   "kind": "shell",
+   "namespace": "admin",
+   "resolvedUnit": "ADM-16",
+   "state": null,
+   "notFound": false,
+   "screenCode": "ADM-16"
+  },
+  {
+   "route": "/admin/paiements",
+   "concrete": "/admin/paiements",
+   "kind": "shell",
+   "namespace": "admin",
+   "resolvedUnit": "ADM-18",
+   "state": null,
+   "notFound": false,
+   "screenCode": "ADM-18"
+  },
+  {
+   "route": "/admin/paiements/reconciliation",
+   "concrete": "/admin/paiements/reconciliation",
+   "kind": "shell",
+   "namespace": "admin",
+   "resolvedUnit": "ADM-18",
+   "state": null,
+   "notFound": false,
+   "screenCode": "ADM-19"
+  },
+  {
+   "route": "/admin/paiements/anomalies",
+   "concrete": "/admin/paiements/anomalies",
+   "kind": "shell",
+   "namespace": "admin",
+   "resolvedUnit": "ADM-20",
+   "state": null,
+   "notFound": false,
+   "screenCode": "ADM-20"
+  },
+  {
+   "route": "/admin/paiements/declarations-externes",
+   "concrete": "/admin/paiements/declarations-externes",
+   "kind": "shell",
+   "namespace": "admin",
+   "resolvedUnit": "ADM-20",
+   "state": null,
+   "notFound": false,
+   "screenCode": "ADM-21"
+  },
+  {
+   "route": "/admin/paiements/incidents/:id",
+   "concrete": "/admin/paiements/incidents/x1",
+   "kind": "shell",
+   "namespace": "admin",
+   "resolvedUnit": "ADM-20",
+   "state": null,
+   "notFound": false,
+   "screenCode": "ADM-22"
+  },
+  {
+   "route": "/admin/salaire/confirmations",
+   "concrete": "/admin/salaire/confirmations",
+   "kind": "shell",
+   "namespace": "admin",
+   "resolvedUnit": "ADM-23",
+   "state": null,
+   "notFound": false,
+   "screenCode": "ADM-23"
+  },
+  {
+   "route": "/admin/salaire/preuves/:id",
+   "concrete": "/admin/salaire/preuves/x1",
+   "kind": "shell",
+   "namespace": "admin",
+   "resolvedUnit": "ADM-23",
+   "state": null,
+   "notFound": false,
+   "screenCode": "ADM-24"
+  },
+  {
+   "route": "/admin/salaire/litiges",
+   "concrete": "/admin/salaire/litiges",
+   "kind": "shell",
+   "namespace": "admin",
+   "resolvedUnit": "ADM-25",
+   "state": null,
+   "notFound": false,
+   "screenCode": "ADM-25"
+  },
+  {
+   "route": "/admin/litiges",
+   "concrete": "/admin/litiges",
+   "kind": "shell",
+   "namespace": "admin",
+   "resolvedUnit": "ADM-26",
+   "state": null,
+   "notFound": false,
+   "screenCode": "ADM-26"
+  },
+  {
+   "route": "/admin/litiges/:id",
+   "concrete": "/admin/litiges/x1",
+   "kind": "shell",
+   "namespace": "admin",
+   "resolvedUnit": "ADM-27",
+   "state": null,
+   "notFound": false,
+   "screenCode": "ADM-27"
+  },
+  {
+   "route": "/admin/litiges/:id/pieces",
+   "concrete": "/admin/litiges/x1/pieces",
+   "kind": "shell",
+   "namespace": "admin",
+   "resolvedUnit": "ADM-27",
+   "state": null,
+   "notFound": false,
+   "screenCode": "ADM-28"
+  },
+  {
+   "route": "/admin/litiges/:id/decision",
+   "concrete": "/admin/litiges/x1/decision",
+   "kind": "shell",
+   "namespace": "admin",
+   "resolvedUnit": "ADM-29",
+   "state": null,
+   "notFound": false,
+   "screenCode": "ADM-29"
+  },
+  {
+   "route": "/admin/litiges/decisions",
+   "concrete": "/admin/litiges/decisions",
+   "kind": "shell",
+   "namespace": "admin",
+   "resolvedUnit": "ADM-29",
+   "state": null,
+   "notFound": false,
+   "screenCode": "ADM-30"
+  },
+  {
+   "route": "/admin/remplacements",
+   "concrete": "/admin/remplacements",
+   "kind": "shell",
+   "namespace": "admin",
+   "resolvedUnit": "ADM-31",
+   "state": null,
+   "notFound": false,
+   "screenCode": "ADM-31"
+  },
+  {
+   "route": "/admin/remplacements/:id",
+   "concrete": "/admin/remplacements/x1",
+   "kind": "shell",
+   "namespace": "admin",
+   "resolvedUnit": "ADM-31",
+   "state": null,
+   "notFound": false,
+   "screenCode": "ADM-32"
+  },
+  {
+   "route": "/admin/remplacements/:id/arbitrage",
+   "concrete": "/admin/remplacements/x1/arbitrage",
+   "kind": "shell",
+   "namespace": "admin",
+   "resolvedUnit": "ADM-31",
+   "state": null,
+   "notFound": false,
+   "screenCode": "ADM-33"
+  },
+  {
+   "route": "/admin/reputation",
+   "concrete": "/admin/reputation",
+   "kind": "shell",
+   "namespace": "admin",
+   "resolvedUnit": "ADM-34",
+   "state": null,
+   "notFound": false,
+   "screenCode": "ADM-34"
+  },
+  {
+   "route": "/admin/reputation/audit",
+   "concrete": "/admin/reputation/audit",
+   "kind": "shell",
+   "namespace": "admin",
+   "resolvedUnit": "ADM-34",
+   "state": null,
+   "notFound": false,
+   "screenCode": "ADM-36"
+  },
+  {
+   "route": "/admin/reputation/contestations",
+   "concrete": "/admin/reputation/contestations",
+   "kind": "shell",
+   "namespace": "admin",
+   "resolvedUnit": "ADM-35",
+   "state": null,
+   "notFound": false,
+   "screenCode": "ADM-35"
+  },
+  {
+   "route": "/admin/documents",
+   "concrete": "/admin/documents",
+   "kind": "shell",
+   "namespace": "admin",
+   "resolvedUnit": "ADM-37",
+   "state": null,
+   "notFound": false,
+   "screenCode": "ADM-37"
+  },
+  {
+   "route": "/admin/documents/audit",
+   "concrete": "/admin/documents/audit",
+   "kind": "shell",
+   "namespace": "admin",
+   "resolvedUnit": "ADM-37",
+   "state": null,
+   "notFound": false,
+   "screenCode": "ADM-40"
+  },
+  {
+   "route": "/admin/documents/:id/verification",
+   "concrete": "/admin/documents/x1/verification",
+   "kind": "shell",
+   "namespace": "admin",
+   "resolvedUnit": "ADM-38",
+   "state": null,
+   "notFound": false,
+   "screenCode": "ADM-38"
+  },
+  {
+   "route": "/admin/documents/quarantaine",
+   "concrete": "/admin/documents/quarantaine",
+   "kind": "shell",
+   "namespace": "admin",
+   "resolvedUnit": "ADM-38",
+   "state": null,
+   "notFound": false,
+   "screenCode": "ADM-39"
+  },
+  {
+   "route": "/admin/notifications",
+   "concrete": "/admin/notifications",
+   "kind": "shell",
+   "namespace": "admin",
+   "resolvedUnit": "ADM-41",
+   "state": null,
+   "notFound": false,
+   "screenCode": "ADM-41"
+  },
+  {
+   "route": "/admin/notifications/gabarits",
+   "concrete": "/admin/notifications/gabarits",
+   "kind": "shell",
+   "namespace": "admin",
+   "resolvedUnit": "ADM-41",
+   "state": null,
+   "notFound": false,
+   "screenCode": "ADM-42"
+  },
+  {
+   "route": "/admin/notifications/delivrabilite",
+   "concrete": "/admin/notifications/delivrabilite",
+   "kind": "shell",
+   "namespace": "admin",
+   "resolvedUnit": "ADM-41",
+   "state": null,
+   "notFound": false,
+   "screenCode": "ADM-43"
+  },
+  {
+   "route": "/admin/ops/queues",
+   "concrete": "/admin/ops/queues",
+   "kind": "shell",
+   "namespace": "admin",
+   "resolvedUnit": "ADM-44",
+   "state": null,
+   "notFound": false,
+   "screenCode": "ADM-44"
+  },
+  {
+   "route": "/admin/ops/queues/:name",
+   "concrete": "/admin/ops/queues/x1",
+   "kind": "shell",
+   "namespace": "admin",
+   "resolvedUnit": "ADM-44",
+   "state": null,
+   "notFound": false,
+   "screenCode": "ADM-45"
+  },
+  {
+   "route": "/admin/ops/cron",
+   "concrete": "/admin/ops/cron",
+   "kind": "shell",
+   "namespace": "admin",
+   "resolvedUnit": "ADM-44",
+   "state": null,
+   "notFound": false,
+   "screenCode": "ADM-46"
+  },
+  {
+   "route": "/admin/ops/slo",
+   "concrete": "/admin/ops/slo",
+   "kind": "shell",
+   "namespace": "admin",
+   "resolvedUnit": "ADM-47",
+   "state": null,
+   "notFound": false,
+   "screenCode": "ADM-47"
+  },
+  {
+   "route": "/admin/ops/incidents/:id",
+   "concrete": "/admin/ops/incidents/x1",
+   "kind": "shell",
+   "namespace": "admin",
+   "resolvedUnit": "ADM-47",
+   "state": null,
+   "notFound": false,
+   "screenCode": "ADM-49"
+  },
+  {
+   "route": "/admin/ops/dead-letter",
+   "concrete": "/admin/ops/dead-letter",
+   "kind": "shell",
+   "namespace": "admin",
+   "resolvedUnit": "ADM-48",
+   "state": null,
+   "notFound": false,
+   "screenCode": "ADM-48"
+  },
+  {
+   "route": "/admin/securite",
+   "concrete": "/admin/securite",
+   "kind": "shell",
+   "namespace": "admin",
+   "resolvedUnit": "ADM-50",
+   "state": null,
+   "notFound": false,
+   "screenCode": "ADM-50"
+  },
+  {
+   "route": "/admin/securite/idor",
+   "concrete": "/admin/securite/idor",
+   "kind": "shell",
+   "namespace": "admin",
+   "resolvedUnit": "ADM-50",
+   "state": null,
+   "notFound": false,
+   "screenCode": "ADM-51"
+  },
+  {
+   "route": "/admin/securite/replay",
+   "concrete": "/admin/securite/replay",
+   "kind": "shell",
+   "namespace": "admin",
+   "resolvedUnit": "ADM-52",
+   "state": null,
+   "notFound": false,
+   "screenCode": "ADM-52"
+  },
+  {
+   "route": "/admin/securite/rate-limits",
+   "concrete": "/admin/securite/rate-limits",
+   "kind": "shell",
+   "namespace": "admin",
+   "resolvedUnit": "ADM-52",
+   "state": null,
+   "notFound": false,
+   "screenCode": "ADM-53"
+  },
+  {
+   "route": "/admin/securite/webhooks",
+   "concrete": "/admin/securite/webhooks",
+   "kind": "shell",
+   "namespace": "admin",
+   "resolvedUnit": "ADM-52",
+   "state": null,
+   "notFound": false,
+   "screenCode": "ADM-54"
+  },
+  {
+   "route": "/admin/securite/incidents",
+   "concrete": "/admin/securite/incidents",
+   "kind": "shell",
+   "namespace": "admin",
+   "resolvedUnit": "ADM-55",
+   "state": null,
+   "notFound": false,
+   "screenCode": "ADM-55"
+  },
+  {
+   "route": "/admin/securite/audit",
+   "concrete": "/admin/securite/audit",
+   "kind": "shell",
+   "namespace": "admin",
+   "resolvedUnit": "ADM-55",
+   "state": null,
+   "notFound": false,
+   "screenCode": "ADM-56"
+  },
+  {
+   "route": "/admin/infra",
+   "concrete": "/admin/infra",
+   "kind": "shell",
+   "namespace": "admin",
+   "resolvedUnit": "ADM-57",
+   "state": null,
+   "notFound": false,
+   "screenCode": "ADM-57"
+  },
+  {
+   "route": "/admin/infra/worker",
+   "concrete": "/admin/infra/worker",
+   "kind": "shell",
+   "namespace": "admin",
+   "resolvedUnit": "ADM-57",
+   "state": null,
+   "notFound": false,
+   "screenCode": "ADM-58"
+  },
+  {
+   "route": "/admin/infra/postgres",
+   "concrete": "/admin/infra/postgres",
+   "kind": "shell",
+   "namespace": "admin",
+   "resolvedUnit": "ADM-59",
+   "state": null,
+   "notFound": false,
+   "screenCode": "ADM-59"
+  },
+  {
+   "route": "/admin/infra/r2",
+   "concrete": "/admin/infra/r2",
+   "kind": "shell",
+   "namespace": "admin",
+   "resolvedUnit": "ADM-59",
+   "state": null,
+   "notFound": false,
+   "screenCode": "ADM-60"
+  },
+  {
+   "route": "/admin/infra/webrtc",
+   "concrete": "/admin/infra/webrtc",
+   "kind": "shell",
+   "namespace": "admin",
+   "resolvedUnit": "ADM-61",
+   "state": null,
+   "notFound": false,
+   "screenCode": "ADM-61"
+  },
+  {
+   "route": "/admin/infra/observabilite",
+   "concrete": "/admin/infra/observabilite",
+   "kind": "shell",
+   "namespace": "admin",
+   "resolvedUnit": "ADM-62",
+   "state": null,
+   "notFound": false,
+   "screenCode": "ADM-62"
+  },
+  {
+   "route": "/admin/infra/statut",
+   "concrete": "/admin/infra/statut",
+   "kind": "shell",
+   "namespace": "admin",
+   "resolvedUnit": "ADM-63",
+   "state": null,
+   "notFound": false,
+   "screenCode": "ADM-63"
+  },
+  {
+   "route": "/appel/:id/preparation",
+   "concrete": "/appel/x1/preparation",
+   "kind": "shell",
+   "namespace": "appel",
+   "resolvedUnit": "RTC-01",
+   "state": null,
+   "notFound": false,
+   "screenCode": "RTC-01"
+  },
+  {
+   "route": "/appel/:id/diagnostic",
+   "concrete": "/appel/x1/diagnostic",
+   "kind": "shell",
+   "namespace": "appel",
+   "resolvedUnit": "RTC-01",
+   "state": null,
+   "notFound": false,
+   "screenCode": "RTC-07"
+  },
+  {
+   "route": "/appel/:id/invitation",
+   "concrete": "/appel/x1/invitation",
+   "kind": "shell",
+   "namespace": "appel",
+   "resolvedUnit": "RTC-02",
+   "state": null,
+   "notFound": false,
+   "screenCode": "RTC-02"
+  },
+  {
+   "route": "/appel/:id/connexion",
+   "concrete": "/appel/x1/connexion",
+   "kind": "shell",
+   "namespace": "appel",
+   "resolvedUnit": "RTC-02",
+   "state": null,
+   "notFound": false,
+   "screenCode": "RTC-03"
+  },
+  {
+   "route": "/appel/:id",
+   "concrete": "/appel/x1",
+   "kind": "shell",
+   "namespace": "appel",
+   "resolvedUnit": "RTC-04",
+   "state": null,
+   "notFound": false,
+   "screenCode": "RTC-04"
+  },
+  {
+   "route": "/appel/:id/fin",
+   "concrete": "/appel/x1/fin",
+   "kind": "shell",
+   "namespace": "appel",
+   "resolvedUnit": "RTC-05",
+   "state": null,
+   "notFound": false,
+   "screenCode": "RTC-05"
+  },
+  {
+   "route": "/appels",
+   "concrete": "/appels",
+   "kind": "shell",
+   "namespace": "appel",
+   "resolvedUnit": "RTC-05",
+   "state": null,
+   "notFound": false,
+   "screenCode": "RTC-06"
+  },
+  {
+   "route": "/appel/:id/consentement",
+   "concrete": "/appel/x1/consentement",
+   "kind": "shell",
+   "namespace": "appel",
+   "resolvedUnit": "RTC-08",
+   "state": null,
+   "notFound": false,
+   "screenCode": "RTC-08"
+  },
+  {
+   "route": "/etat/chargement",
+   "concrete": "/etat/chargement",
+   "kind": "shell",
+   "namespace": "etat",
+   "resolvedUnit": null,
+   "state": "loading",
+   "notFound": false,
+   "screenCode": null
+  },
+  {
+   "route": "/etat/hors-ligne",
+   "concrete": "/etat/hors-ligne",
+   "kind": "shell",
+   "namespace": "etat",
+   "resolvedUnit": null,
+   "state": "offline",
+   "notFound": false,
+   "screenCode": null
+  },
+  {
+   "route": "/etat/401",
+   "concrete": "/etat/401",
+   "kind": "shell",
+   "namespace": "etat",
+   "resolvedUnit": null,
+   "state": "401",
+   "notFound": false,
+   "screenCode": null
+  },
+  {
+   "route": "/etat/403",
+   "concrete": "/etat/403",
+   "kind": "shell",
+   "namespace": "etat",
+   "resolvedUnit": null,
+   "state": "403",
+   "notFound": false,
+   "screenCode": null
+  },
+  {
+   "route": "/etat/404",
+   "concrete": "/etat/404",
+   "kind": "shell",
+   "namespace": "etat",
+   "resolvedUnit": null,
+   "state": "404",
+   "notFound": false,
+   "screenCode": null
+  },
+  {
+   "route": "/etat/409",
+   "concrete": "/etat/409",
+   "kind": "shell",
+   "namespace": "etat",
+   "resolvedUnit": null,
+   "state": "409",
+   "notFound": false,
+   "screenCode": null
+  },
+  {
+   "route": "/etat/422",
+   "concrete": "/etat/422",
+   "kind": "shell",
+   "namespace": "etat",
+   "resolvedUnit": null,
+   "state": "422",
+   "notFound": false,
+   "screenCode": null
+  },
+  {
+   "route": "/etat/429",
+   "concrete": "/etat/429",
+   "kind": "shell",
+   "namespace": "etat",
+   "resolvedUnit": null,
+   "state": "429",
+   "notFound": false,
+   "screenCode": null
+  },
+  {
+   "route": "/etat/limites",
+   "concrete": "/etat/limites",
+   "kind": "shell",
+   "namespace": "etat",
+   "resolvedUnit": null,
+   "state": "limites",
+   "notFound": false,
+   "screenCode": null
+  },
+  {
+   "route": "/etat/500",
+   "concrete": "/etat/500",
+   "kind": "shell",
+   "namespace": "etat",
+   "resolvedUnit": null,
+   "state": "500",
+   "notFound": false,
+   "screenCode": null
+  },
+  {
+   "route": "/etat/502",
+   "concrete": "/etat/502",
+   "kind": "shell",
+   "namespace": "etat",
+   "resolvedUnit": null,
+   "state": "502",
+   "notFound": false,
+   "screenCode": null
+  },
+  {
+   "route": "/etat/503",
+   "concrete": "/etat/503",
+   "kind": "shell",
+   "namespace": "etat",
+   "resolvedUnit": null,
+   "state": "503",
+   "notFound": false,
+   "screenCode": null
+  },
+  {
+   "route": "/etat/504",
+   "concrete": "/etat/504",
+   "kind": "shell",
+   "namespace": "etat",
+   "resolvedUnit": null,
+   "state": "504",
+   "notFound": false,
+   "screenCode": null
+  },
+  {
+   "route": "/etat/maintenance",
+   "concrete": "/etat/maintenance",
+   "kind": "shell",
+   "namespace": "etat",
+   "resolvedUnit": null,
+   "state": "maintenance",
+   "notFound": false,
+   "screenCode": null
+  },
+  {
+   "route": "/etat/425",
+   "concrete": "/etat/425",
+   "kind": "shell",
+   "namespace": "etat",
+   "resolvedUnit": null,
+   "state": "425",
+   "notFound": false,
+   "screenCode": null
+  },
+  {
+   "route": "/ouverture",
+   "concrete": "/ouverture",
+   "kind": "shell",
+   "namespace": "public",
+   "resolvedUnit": "PUB-01",
+   "state": null,
+   "notFound": false,
+   "screenCode": null
+  }
+ ],
+ "routeResolutionMismatch": []
+}

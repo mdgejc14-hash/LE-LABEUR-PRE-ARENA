@@ -1,0 +1,141 @@
+%% LE LABEUR — Architecture globale (dérivée du code réel au commit cd0dd63)
+%% Statuts : [RE] réellement implémenté · [PA] partiel · [CO] contrat/préparé seulement · [AB] absent
+%% Ce diagramme décrit ce que le code permet de confirmer, pas l'architecture cible.
+
+flowchart TB
+  subgraph BROWSER["NAVIGATEUR — bundle Vite (same-origin)"]
+    direction TB
+    HTML["index.html<br/>GSI Google + polices"] --> MAIN["main.tsx<br/>bootstrapRepositoryMode()"]
+    MAIN --> APP["App.tsx<br/>aiguillage par screen"]
+
+    subgraph CONTEXT["Contexte applicatif [RE]"]
+      CTX["AppContext.tsx (1197 l.)<br/>état global + navigation en mémoire"]
+      ROUT["sessionRouting.ts<br/>rôle d'affichage / restauration"]
+    end
+
+    subgraph SCREENS["Écrans [RE]"]
+      S_PUB["Splash · Onboarding · RoleSelection · Auth"]
+      S_CAND["Discover · OfferDetail · CandidateApplications · Favorites"]
+      S_EMP["EmployerDashboard · EmployerOffers · EmployerApplications"]
+      S_MSG["Messages · ChatDetail · Talents · TalentDetail · Profile"]
+      S_PAY["Contracts · EmployerPayments"]
+      S_ADM["AdminDashboardScreen (+ AdminPaymentsVerification)"]
+      S_DEAD["screens/admin/* : 11 fichiers NON IMPORTÉS [AB]"]
+    end
+
+    subgraph COMPONENTS["Composants [RE]"]
+      C_CALLS["AudioCallScreen · IncomingCallBanner"]
+      C_CONTRACT["ContractGenerationModal"]
+      C_RES["ResourceCatalogSheet"]
+      C_QA["ScenarioDrawer (démo)"]
+    end
+
+    APP --> CTX
+    APP --> SCREENS
+    SCREENS --> COMPONENTS
+    CTX --> ROUT
+  end
+
+  subgraph MODE["Frontière de mode — provider.ts / mode.ts [RE]"]
+    PROV["appRepositories (Proxy)"]
+    DEC{"resolveRepositoryMode<br/>VITE_DEMO_MODE=false ET<br/>VITE_API_BASE_PATH same-origin ?"}
+    DEC -- non --> MOCK_ADAPTER["adaptateur MOCK"]
+    DEC -- oui --> API_ADAPTER["adaptateur API (legacyApiAdapter)"]
+  end
+
+  CTX --> PROV --> DEC
+
+  subgraph DEMO["MODE DEMO — exécution par défaut"]
+    MOCK["MockService (3492 l.)<br/>14 ports, autorisations, règles, audit, notifications [RE]"]
+    LS[("localStorage<br/>19 clés lelabeur_v5_* [RE]")]
+    SEEDS["mockData.ts (1240 l.)<br/>jeux de démonstration"]
+    MOCK --> LS
+    SEEDS --> MOCK
+  end
+
+  subgraph API_CLIENT["MODE API — client préparé"]
+    LAPI["legacyApiAdapter<br/>ignore actorId/role du client ; 501 si route absente [PA]"]
+    HTTP["HttpApiClient<br/>same-origin, credentials:include, Idempotency-Key [RE]"]
+    APIR["ApiRepository (~80 méthodes typées) [RE]"]
+    LAPI --> HTTP --> APIR
+  end
+
+  MOCK_ADAPTER --> MOCK
+  API_ADAPTER --> LAPI
+
+  subgraph CF["CLOUDFLARE WORKER — code présent, NON DÉPLOYÉ [CO/NV]"]
+    ENTRY["api/entry.ts<br/>composeWorker(env, database?)"]
+    CLOSED["mode 'closed' : aucun GOOGLE_CLIENT_ID [RE]"]
+    MEMORY["mode 'memory' : stores mémoire [RE]"]
+    POSTGRES["mode 'postgres' : stores SQL [CO]"]
+    WK["api/worker.ts<br/>RBAC · erreurs typées · pagination bornée · clé d'idempotence"]
+    IW["api/identityWorker.ts<br/>auth.google(.credential) · auth.session · auth.logout · me.read<br/>+ admin.users.list réelle + 8 stubs ADMIN de contrôle"]
+    CAT["routeContracts.ts<br/>89 contrats de routes"]
+    MISS["Handlers métier : ABSENTS → 501 [AB]"]
+    ENTRY --> CLOSED
+    ENTRY --> MEMORY
+    ENTRY --> POSTGRES
+    ENTRY --> WK --> IW
+    WK --> CAT
+    WK --> MISS
+  end
+
+  APIR -->|"/api/v1 (same-origin)"| WK
+
+  subgraph IDENT["Identité serveur [RE]"]
+    GOOG["googleVerifier : RS256 + JWKS Google<br/>iss/aud/exp/email_verified"]
+    SESS["sessionService : jeton 256 bits, SHA-256 persisté, TTL 12 h"]
+    COOK["cookies : __Host-lelabeur_session HttpOnly/Secure/SameSite=Lax"]
+    RBAC["security.ts : requireAuth/Role/Permission/Ownership/Participant"]
+    PERM["permissions.ts : 24 permissions ADMIN"]
+  end
+  IW --> SESS
+  SESS --> GOOG
+  IW --> COOK
+  WK --> RBAC
+  RBAC --> PERM
+
+  subgraph PORTS["Ports serveur NON BRANCHÉS [CO]"]
+    DB["PostgreSqlDatabase (Hyperdrive) — aucune connexion"]
+    OBJ["ObjectStorage (R2) — aucun bucket"]
+    OUT["OutboxRepository / Queue — aucun binding"]
+    CRON["J3_SCHEDULER_CONTRACT — aucun Cron"]
+    TX["TransactionBoundary — aucune implémentation"]
+    DOC["DocumentRepository / DocumentService"]
+  end
+  POSTGRES -.-> DB
+  SESS -.-> DB
+  MISS -.-> OBJ
+  MISS -.-> OUT
+  MISS -.-> CRON
+  MISS -.-> TX
+
+  subgraph CALLS["Appels audio [PA/CO]"]
+    CALS["CallService + WebRTCCallService [RE]<br/>RTCPeerConnection, getUserMedia, mute"]
+    SIG["SignalingTransport : wss + token ≤ 300 s [RE]"]
+    SIGSRV["cloudflare-worker-template.ts<br/>HMAC + SignalingDurableObject — template non déployé [CO]"]
+    TURN["ICE/TURN : STUN public, TURN court en démo [PA]"]
+    CALS --> SIG
+    SIG -.->|"jamais déployé"| SIGSRV
+    CALS --> TURN
+  end
+
+  C_CALLS --> CALS
+  CALLS -.->|"en MODE API : 501"| MISS
+  CALLS -.->|"en MODE DEMO : VITE_SIGNALING_TOKEN requis (≤ 5 min), sinon échec explicite"| TURN
+
+  subgraph EXT["SERVICES EXTERNES"]
+    GIDS["Google Identity Services (script navigateur) [RE]"]
+    GJWKS["Google JWKS (fetch Worker) [RE]"]
+    NOEXT["Email · SMS · WhatsApp · Gemini : AUCUN fournisseur branché [AB]"]
+  end
+  HTML --> GIDS
+  GOOG --> GJWKS
+
+  subgraph DATA["Données embarquées [RE]"]
+    BGEO["beninLocations : 12/77/24/94<br/>cibles 546/5295 — isComplete=false"]
+    BCAT["activityCatalog : domaines + métiers"]
+    RES["resources/pdfLoader : aucun PDF présent → catalogue vide [PA]"]
+  end
+  SCREENS --> DATA
+  MISS -.-> RES

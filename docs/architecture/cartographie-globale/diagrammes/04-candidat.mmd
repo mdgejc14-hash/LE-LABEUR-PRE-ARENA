@@ -1,0 +1,20 @@
+%% 04 — Parcours Candidat / Prestataire (namespace /prestataire).
+flowchart TD
+  P01["PRE-01 /prestataire — tableau de bord<br/>applications.mine.list 501 · matching.profile.read ✔ pg"] --> P05["PRE-05 /prestataire/missions<br/>offers.public.list ✔"]
+  P01 --> P03["PRE-03/04 profil & paramètres<br/>matching.profile.read/update ✔ pg"]
+  P05 --> P07["PRE-07 détail mission<br/>offers.public.read ✔"]
+  P07 --> P08["PRE-08 postuler<br/>POST applications.create ✔ (corps : note seule)"]
+  P08 --> P09["PRE-09 candidature envoyée"]
+  P09 -.->|"applications.read 501 : relecture impossible"| X1(["Suivi limité à la réponse de création"])
+  P11["PRE-11 mes candidatures<br/>applications.mine.list 501"] -.-> X2(["STOP — liste vide (501)"])
+  P10["PRE-10/12..14 suivi & retrait<br/>applications.withdraw ✔"]
+  P16["PRE-16..20 propositions"] -.->|"aucune lecture candidat des propositions ; proposals.respond jamais appelé"| X3(["STOP — acceptation impossible depuis l'UI"])
+  P21["PRE-21..27 contrat<br/>contracts.read · sign · confirm-execution ✔"] --> P24["PRE-24 signer<br/>contracts.sign ✔"]
+  P16 -.->|"lien /prestataire/contrats : route hors design → repli"| FB(["PrestataireRouteFallback"])
+  P21 --> P28["PRE-28..31 exécution<br/>contracts.mine.list ✔ (aucun dépôt de preuve)"]
+  P21 --> P32["PRE-32/33 salaire attendu<br/>payments.mine.list ✔ pg · schedules.mine.list 501"]
+  P32 --> P38["PRE-38 OTP réception salaire<br/>payments.salary.confirmation.confirm ✔ pg"]
+  P32 --> P36["PRE-36/37 retard & contestation<br/>claims.create ✔ pg"]
+  P40["PRE-40..44 remplacement<br/>replacements.mine.list/read ✔ pg"]
+  P45["PRE-45..47 réputation<br/>reputation.mine.read · entries.list ✔ pg"]
+  P48["PRE-48..52 documents<br/>documents.* ✔ seulement avec stockage objet"]

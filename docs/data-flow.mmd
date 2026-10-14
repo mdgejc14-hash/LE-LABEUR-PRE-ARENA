@@ -1,0 +1,189 @@
+%% LE LABEUR — Diagramme de flux de données (DFD)
+%% Acteurs · processus · magasins de données · systèmes externes.
+%% Frontières explicites : ce qui est branché vs ce qui est contractuel (pointillés).
+
+flowchart LR
+  %% ---------------- ACTEURS ----------------
+  ACT_C["👤 CANDIDATE"]
+  ACT_E["👤 EMPLOYER"]
+  ACT_A["👤 ADMIN"]
+  ACT_QA["🧪 Console QA démo"]
+
+  %% ---------------- PROCESSUS ----------------
+  subgraph P1["Processus — Authentification & session"]
+    PR_AUTH["P01 Vérifier identité<br/>(email démo / Google)"]
+    PR_ROLE["P02 Déterminer rôle et permissions"]
+    PR_SESS["P03 Ouvrir / fermer session"]
+  end
+
+  subgraph P2["Processus — Marché du travail"]
+    PR_OFF["P04 Publier / gérer une offre"]
+    PR_SEARCH["P05 Rechercher et filtrer des offres"]
+    PR_APPS["P06 Postuler / retirer une candidature"]
+    PR_REVIEW["P07 Examiner : shortlist / rejeter"]
+  end
+
+  subgraph P3["Processus — Relation et contractualisation"]
+    PR_MSG["P08 Messagerie contextuelle<br/>(texte, vocal, lecture)"]
+    PR_PROP["P09 Proposer une mission / répondre"]
+    PR_CONTRACT["P10 Générer et signer un contrat"]
+    PR_ACTIVATE["P11 Activer le contrat<br/>et pourvoir l'offre"]
+  end
+
+  subgraph P4["Processus — Paiements"]
+    PR_SCHED["P12 Construire et faire progresser l'échéancier<br/>(M1 25 % · M2+ 0 %)"]
+    PR_SAL["P13 Déclarer la réception du salaire<br/>CONFIRM / CONTEST"]
+    PR_COMM["P14 Déclarer et vérifier la commission LE LABEUR"]
+    PR_J3["P15 Détecter le retard J+3"]
+    PR_DECL["P16 Déclaration de paiement externe<br/>DRAFT → SUBMITTED"]
+    PR_REVIEW_PAY["P17 Décider ADMIN<br/>APPROVED / REJECTED"]
+    PR_BLOCK["P18 Bloquer / débloquer un compte"]
+  end
+
+  subgraph P5["Processus — Incidents et remplacements"]
+    PR_INC["P19 Signaler un incident"]
+    PR_ARB["P20 Arbitrer un incident"]
+    PR_REPL["P21 Sourcer et installer un remplaçant"]
+    PR_DISSOC["P22 Fin de mission M2+"]
+  end
+
+  subgraph P6["Processus — Appels audio"]
+    PR_CALL["P23 Établir un appel WebRTC"]
+    PR_CRED["P24 Émettre les credentials signaling/ICE"]
+  end
+
+  subgraph P7["Processus — Transverses"]
+    PR_NOTIF["P25 Émettre et dédupliquer une notification"]
+    PR_AUDIT["P26 Écrire une trace d'audit"]
+    PR_RBAC["P27 Contrôler rôle, propriété et statut de compte"]
+  end
+
+  %% ---------------- MAGASINS ----------------
+  DS_LS[("D1 localStorage<br/>19 clés lelabeur_v5_*<br/>[RE]")]
+  DS_MEM[("D2 Mémoire du MockService<br/>état de session de l'onglet<br/>[RE]")]
+  DS_SQL[("D3 PostgreSQL (Hyperdrive)<br/>9 tables déclarées, non appliquées<br/>[CO]")]
+  DS_R2[("D4 R2 — documents et preuves<br/>aucun bucket<br/>[CO]")]
+  DS_OUT[("D5 Outbox / Queue<br/>contrat seulement<br/>[CO]")]
+  DS_NOTIF[("D6 Notifications persistées<br/>jamais lues par l'UI<br/>[PA]")]
+  DS_AUD[("D7 Journal d'audit<br/>chargé mais non affiché<br/>[PA]")]
+  DS_GEO[("D8 Référentiels embarqués<br/>géographie 12/77/24/94 · métiers<br/>[RE]")]
+  DS_RES[("D9 Ressources PDF<br/>aucun fichier présent<br/>[PA]")]
+  DS_QA[("D10 Résultats QA<br/>en mémoire<br/>[RE]")]
+
+  %% ---------------- EXTERNES ----------------
+  EX_GIS["Google Identity Services<br/>[RE]"]
+  EX_JWKS["Google JWKS<br/>[RE]"]
+  EX_TURN["TURN/STUN<br/>[PA]"]
+  EX_NONE["Email · SMS · WhatsApp · Gemini<br/>[AB]"]
+
+  %% ---------------- FLUX ACTEURS → PROCESSUS ----------------
+  ACT_C --> PR_AUTH
+  ACT_E --> PR_AUTH
+  ACT_A --> PR_AUTH
+  ACT_QA --> PR_QA["P28 Exécuter des scénarios QA<br/>(retourne 'non exécuté')"]
+
+  PR_AUTH --> PR_ROLE --> PR_SESS
+  PR_AUTH <--> EX_GIS
+
+  ACT_C --> PR_SEARCH
+  ACT_E --> PR_OFF
+  ACT_C --> PR_APPS
+  ACT_E --> PR_REVIEW
+  ACT_C --> PR_MSG
+  ACT_E --> PR_MSG
+  ACT_E --> PR_PROP
+  ACT_C --> PR_PROP
+  ACT_E --> PR_CONTRACT
+  PR_CONTRACT --> PR_ACTIVATE
+  ACT_C --> PR_CALL
+  ACT_E --> PR_CALL
+  ACT_A --> PR_ARB
+  ACT_A --> PR_REVIEW_PAY
+  ACT_A --> PR_COMM
+  ACT_A --> PR_BLOCK
+  ACT_A --> PR_REPL
+  ACT_A --> PR_DISSOC
+
+  %% ---------------- PROCESSUS → MAGASINS ----------------
+  PR_SESS --> DS_MEM
+  PR_OFF --> PR_RBAC
+  PR_APPS --> PR_RBAC
+  PR_REVIEW --> PR_RBAC
+  PR_MSG --> PR_RBAC
+  PR_PROP --> PR_RBAC
+  PR_CONTRACT --> PR_RBAC
+  PR_SAL --> PR_RBAC
+  PR_COMM --> PR_RBAC
+  PR_DECL --> PR_RBAC
+  PR_ARB --> PR_RBAC
+  PR_REPL --> PR_RBAC
+  PR_BLOCK --> PR_RBAC
+
+  PR_RBAC --> DS_MEM
+  DS_MEM --> DS_LS
+  DS_LS --> DS_MEM
+
+  PR_OFF --> DS_MEM
+  PR_APPS --> DS_MEM
+  PR_REVIEW --> DS_MEM
+  PR_MSG --> DS_MEM
+  PR_PROP --> DS_MEM
+  PR_CONTRACT --> DS_MEM
+  PR_ACTIVATE --> PR_SCHED
+  PR_SCHED --> DS_MEM
+  PR_SAL --> DS_MEM
+  PR_COMM --> DS_MEM
+  PR_DECL --> DS_MEM
+  PR_REVIEW_PAY --> DS_MEM
+  PR_INC --> DS_MEM
+  PR_ARB --> DS_MEM
+  PR_REPL --> DS_MEM
+  PR_DISSOC --> DS_MEM
+  PR_BLOCK --> DS_MEM
+  PR_CALL --> DS_MEM
+
+  %% ---------------- TRANSVERSES ----------------
+  PR_SCHED --> PR_NOTIF
+  PR_SAL --> PR_NOTIF
+  PR_COMM --> PR_NOTIF
+  PR_J3 --> PR_NOTIF
+  PR_INC --> PR_NOTIF
+  PR_ARB --> PR_NOTIF
+  PR_REPL --> PR_NOTIF
+  PR_BLOCK --> PR_NOTIF
+  PR_ACTIVATE --> PR_NOTIF
+  PR_MSG -.->|"AUCUNE notification émise"| PR_NOTIF
+  PR_DECL -.->|"AUCUNE notification émise"| PR_NOTIF
+  PR_REVIEW_PAY -.->|"AUCUNE notification émise"| PR_NOTIF
+  PR_NOTIF --> DS_NOTIF
+  DS_NOTIF -.->|"aucun écran de lecture"| ACT_C
+  DS_NOTIF -.->|"aucun écran de lecture"| ACT_E
+  DS_NOTIF -.->|"aucun écran de lecture"| ACT_A
+
+  PR_RBAC --> PR_AUDIT
+  PR_AUDIT --> DS_AUD
+  DS_AUD -.->|"non rendu"| ACT_A
+
+  PR_J3 -.->|"déclenché uniquement par une lecture<br/>aucun Cron"| DS_MEM
+
+  %% ---------------- APPELS ----------------
+  PR_CALL --> PR_CRED
+  PR_CRED --> EX_TURN
+  PR_CRED -.->|"MODE API : 501"| DS_SQL
+  PR_CALL --> DS_MEM
+
+  %% ---------------- RÉFÉRENTIELS ----------------
+  DS_GEO --> PR_SEARCH
+  DS_GEO --> PR_OFF
+  DS_RES --> DS_LS
+  PR_QA --> DS_QA
+
+  %% ---------------- CIBLE NON BRANCHÉE ----------------
+  DS_MEM -.->|"aucun transfert réel aujourd'hui"| DS_SQL
+  DS_SQL -.-> DS_OUT
+  DS_OUT -.-> PR_NOTIF
+  PR_DECL -.-> DS_R2
+  PR_AUDIT -.-> DS_SQL
+  PR_SESS -.-> DS_SQL
+  EX_JWKS -.-> PR_AUTH
+  EX_NONE -.-> PR_NOTIF

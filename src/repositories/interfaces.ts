@@ -16,6 +16,8 @@ import {
   CallRecord,
   CommunicationEvent,
   ResourceDocument,
+  PaymentDeclaration,
+  PaymentDeclarationInput,
 } from '../types';
 
 export interface RevenueMetrics {
@@ -169,7 +171,7 @@ export interface MessageRepository {
   markConversationAsRead(conversationId: string, actorId: string): Promise<void>;
   createOrGetConversation(
     userId: string,
-    targetUser: { id: string; name: string; role: UserRole; avatarUrl: string },
+    targetUser: { id: string; publicId?: string; name: string; role: UserRole; avatarUrl: string },
     context: { contextType: 'OFFER' | 'APPLICATION' | 'PROPOSAL' | 'CONTRACT' | 'INCIDENT' | 'REPLACEMENT'; contextTitle: string; contextRefId: string }
   ): Promise<Conversation>;
 }
@@ -213,6 +215,34 @@ export interface PaymentRepository {
   verifyCommissionPayment(paymentId: string, actorId: string): Promise<CommissionPaymentRecord>;
   rejectCommissionPayment(paymentId: string, reason: string, actorId: string): Promise<CommissionPaymentRecord>;
   getRevenueMetrics(actorId: string): Promise<RevenueMetrics>;
+  /**
+   * PHASES 4A/4B — déclaration de paiement externe (côté EMPLOYEUR uniquement).
+   * Même abstraction Repository que le reste du domaine : un seul système de
+   * stockage, aucun magasin parallèle.
+   */
+  createPaymentDeclaration(input: PaymentDeclarationInput, actorId: string, idempotencyKey?: string): Promise<PaymentDeclaration>;
+  getPaymentDeclaration(paymentId: string, actorId: string): Promise<PaymentDeclaration | null>;
+  listEmployerPayments(employerId: string, actorId: string): Promise<PaymentDeclaration[]>;
+  updatePaymentDeclaration(paymentId: string, patch: Partial<PaymentDeclarationInput>, actorId: string): Promise<PaymentDeclaration>;
+  submitPaymentDeclaration(paymentId: string, actorId: string): Promise<PaymentDeclaration>;
+  /**
+   * PHASE 4C — consultation administrative, strictement en lecture seule.
+   * `listSubmittedPaymentDeclarations` expose à l'ADMIN les déclarations que
+   * les employeurs ont soumises ; `getSubmittedPaymentDeclaration` en ouvre le
+   * détail. Aucune de ces deux opérations ne produit de transition de statut.
+   */
+  listSubmittedPaymentDeclarations(actorId: string): Promise<PaymentDeclaration[]>;
+  getSubmittedPaymentDeclaration(paymentId: string, actorId: string): Promise<PaymentDeclaration | null>;
+  /**
+   * PHASE 4D — décision administrative sur une déclaration SUBMITTED.
+   * ADMIN uniquement : `approvePaymentDeclaration` passe le dossier en
+   * APPROVED, `rejectPaymentDeclaration` le passe en REJECTED et exige un
+   * motif. Les deux opérations horodatent la décision (`reviewedAt`) et en
+   * conservent l'auteur (`reviewedBy`), sans jamais modifier le propriétaire
+   * des données ni l'historique du dossier.
+   */
+  approvePaymentDeclaration(paymentId: string, actorId: string): Promise<PaymentDeclaration>;
+  rejectPaymentDeclaration(paymentId: string, actorId: string, rejectionReason: string): Promise<PaymentDeclaration>;
 }
 
 export interface NotificationRepository {

@@ -1,0 +1,51 @@
+%% 01 — Architecture générale (code au commit c759c0f). Trait plein = lien vérifié dans le code ; pointillé = NON IMPLÉMENTÉ / NON CONFIGURÉ / À VÉRIFIER.
+flowchart LR
+  subgraph NAV["Navigateur — bundle Vite"]
+    MAIN["src/main.tsx<br/>bootstrapRepositoryMode()"]
+    AR["AppRouter<br/>src/routing/AppRouter.tsx"]
+    LEG["Application legacy « / »<br/>src/App.tsx + AppContext<br/>MODE DEMO par défaut"]
+    SH["ShellRoute<br/>src/design-system/shells/ShellRoute.tsx"]
+    PUB["Public/Auth — src/public"]
+    EMP["/client — src/employer"]
+    PRE["/prestataire — src/prestataire"]
+    ADM["/admin — src/admin"]
+    RTC["/appel, /appels — src/rtc"]
+    SYS["/etat — StateGuard"]
+    HTTP["HttpApiClient same-origin /api/v1<br/>src/repositories/apiClient.ts"]
+  end
+  MAIN --> AR
+  AR -->|"namespaceFor() = null (routes.ts)"| LEG
+  AR -->|"namespace connu"| SH
+  SH --> PUB
+  SH --> EMP
+  SH --> PRE
+  SH --> ADM
+  SH --> RTC
+  SH --> SYS
+  PUB -->|"MODE API seulement : VITE_DEMO_MODE=false + VITE_API_BASE_PATH (mode.ts:25)"| HTTP
+  EMP -->|"idem (employer/hooks.ts:24)"| HTTP
+  PRE -->|"idem (prestataire/hooks.ts:24)"| HTTP
+  ADM -->|"idem (admin/hooks.ts:27)"| HTTP
+  RTC -->|"idem (rtc/hooks.ts:24)"| HTTP
+  LEG -->|"idem (bootstrap/appBootstrap.ts)"| HTTP
+
+  subgraph CF["Cloudflare Worker — main = src/backend/worker/cloudflareEntry.ts"]
+    ENTRY["composeWorker()<br/>src/backend/api/entry.ts"]
+    WK["Pipeline API<br/>contrat · session · rate-limit · RBAC · idempotence<br/>src/backend/api/worker.ts"]
+    H["Handlers de domaine<br/>121 / 160 contrats (pg + stockage objet)"]
+    CRON["scheduled() — cron */5<br/>drain outbox / jobs"]
+    HZ["/healthz"]
+  end
+  HTTP -.->|"À VÉRIFIER : aucun routage SPA ↔ Worker versionné (ni proxy Vite, ni [assets] wrangler)"| WK
+  ENTRY --> WK
+  WK --> H
+  ENTRY --> CRON
+  ENTRY --> HZ
+  H --> PG[("PostgreSQL via Hyperdrive<br/>migrations 0001–0018")]
+  CRON --> PG
+  HZ --> PG
+  H -.->|"DOCUMENTS_BUCKET : simulateur local seulement (wrangler.toml:83) ; absent en production (:176)"| R2[("R2 — documents")]
+  H -->|"vérification du jeton GSI si GOOGLE_CLIENT_ID non vide"| GOOG["Google Identity"]
+  H -.->|"NON CONFIGURÉ : aucun fournisseur enregistré"| PAYP["Fournisseurs de paiement"]
+  H -.->|"NON CONFIGURÉ : canaux push/email null"| PUSH["Push / Email"]
+  H -.->|"override de configuration uniquement"| TURN["ICE / TURN"]

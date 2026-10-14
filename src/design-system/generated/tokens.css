@@ -1,0 +1,176 @@
+/* GÉNÉRÉ PAR scripts/design/generate-frontend-tokens.py — NE PAS ÉDITER À LA MAIN.
+   Source : design/llab/tokens.py. Régénérer : npm run design:tokens. */
+:root {
+  /* Fondations (Noir OLED, Basalte) */
+  --surface-0: #050507;
+  --surface-1: #0A0A0F;
+  --surface-2: #101018;
+  --surface-3: #17171F;
+  --surface-4: #1E1E28;
+  --stroke-sub: rgba(255,255,255,0.08);
+  --stroke-mid: rgba(255,255,255,0.14);
+  --stroke-sup: rgba(255,255,255,0.22);
+  /* Dorure néon (statut, valeur, contrat) */
+  --gold-200: #FFE9BD;
+  --gold-300: #FFD47A;
+  --gold-400: #E5A93C;
+  --gold-500: #FFB800;
+  --gold-600: #C98F1F;
+  --gold-aura: rgba(255,184,0,0.16);
+  --grad-gold: linear-gradient(135deg,#FFE9BD 0%,#FFB800 46%,#C98F1F 100%);
+  /* Émeraude luminescente (vérité, validation, succès) */
+  --emerald-200: #B8FFE4;
+  --emerald-400: #3BFFB8;
+  --emerald-500: #00F5A0;
+  --emerald-600: #00C97F;
+  --emerald-aura: rgba(0,245,160,0.14);
+  --grad-emerald: linear-gradient(135deg,#B8FFE4 0%,#00F5A0 52%,#00C97F 100%);
+  /* Signaux (alertes, refus, système) */
+  --amber-500: #FFB020;
+  --clay-500: #FF5C7A;
+  --clay-600: #D93A5C;
+  --violet-500: #7A5CFF;
+  --cyan-500: #5CC8FF;
+  --slate-500: #6E6E7E;
+  /* Typographie couleur (contrastes AA/AAA vérifiés sur --surface-0) */
+  --text-hi: #F5F5F7;
+  --text-mid: #A9A9B8;
+  --text-lo: #6E6E7E;
+  --text-gold: #FFD47A;
+  --text-sign: #B8FFE4;
+  /* Verre (niveaux 1→4) : teinte, flou, saturation */
+  --glass-1-tint: rgba(255,255,255,0.04);
+  --glass-1-blur: 12px;
+  --glass-1-saturate: 140%;
+  --glass-2-tint: rgba(255,255,255,0.07);
+  --glass-2-blur: 20px;
+  --glass-2-saturate: 160%;
+  --glass-3-tint: rgba(255,255,255,0.10);
+  --glass-3-blur: 32px;
+  --glass-3-saturate: 180%;
+  --glass-4-tint: rgba(255,255,255,0.16);
+  --glass-4-blur: 48px;
+  --glass-4-saturate: 200%;
+  /* Matériaux */
+  --rim-alpha-min: 0.06;
+  --rim-alpha-max: 0.18;
+  --grain-opacity: 0.03;
+  --grain-base-frequency: 0.8;
+  /* Typographie : familles */
+  --family-display: 'Space Grotesk';
+  --family-text: 'Inter';
+  --family-mono: 'JetBrains Mono';
+  /* Typographie : échelle */
+  --display-1-size: 48px;
+  --display-1-weight: 700;
+  --display-1-line-height: 52px;
+  --display-1-tracking: -0.02em;
+  --display-2-size: 40px;
+  --display-2-weight: 700;
+  --display-2-line-height: 46px;
+  --display-2-tracking: -0.02em;
+  --title-1-size: 28px;
+  --title-1-weight: 600;
+  --title-1-line-height: 34px;
+  --title-1-tracking: -0.01em;
+  --title-2-size: 22px;
+  --title-2-weight: 600;
+  --title-2-line-height: 28px;
+  --title-2-tracking: -0.01em;
+  --title-3-size: 18px;
+  --title-3-weight: 600;
+  --title-3-line-height: 24px;
+  --title-3-tracking: 0em;
+  --headline-size: 18px;
+  --headline-weight: 500;
+  --headline-line-height: 26px;
+  --headline-tracking: 0em;
+  --body-size: 16px;
+  --body-weight: 400;
+  --body-line-height: 24px;
+  --body-tracking: 0em;
+  --callout-size: 15px;
+  --callout-weight: 500;
+  --callout-line-height: 22px;
+  --callout-tracking: 0em;
+  --caption-size: 13px;
+  --caption-weight: 500;
+  --caption-line-height: 18px;
+  --caption-tracking: 0.01em;
+  --micro-size: 11px;
+  --micro-weight: 600;
+  --micro-line-height: 14px;
+  --micro-tracking: 0.06em;
+  --caps-size: 11px;
+  --caps-weight: 700;
+  --caps-line-height: 14px;
+  --caps-tracking: 0.12em;
+  --price-size: 34px;
+  --price-weight: 700;
+  --price-line-height: 38px;
+  --price-tracking: -0.01em;
+  /* Espacement (unité 4 px) */
+  --space-unit: 4px;
+  --space-2: 2px;
+  --space-4: 4px;
+  --space-6: 6px;
+  --space-8: 8px;
+  --space-12: 12px;
+  --space-16: 16px;
+  --space-20: 20px;
+  --space-24: 24px;
+  --space-32: 32px;
+  --space-40: 40px;
+  --space-48: 48px;
+  --space-64: 64px;
+  --space-80: 80px;
+  --space-96: 96px;
+  /* Grille (mobile / tablette / desktop) */
+  --grid-mobile-columns: 4;
+  --grid-mobile-gutter: 16px;
+  --grid-mobile-margin: 20px;
+  --grid-tablet-columns: 8;
+  --grid-tablet-gutter: 20px;
+  --grid-tablet-margin: 32px;
+  --grid-desktop-columns: 12;
+  --grid-desktop-gutter: 24px;
+  --grid-desktop-margin: 40px;
+  --grid-max-width: 1180px;
+  /* Rayons et squircles */
+  --r-2: 4px;
+  --r-3: 8px;
+  --r-4: 12px;
+  --r-5: 16px;
+  --r-6: 20px;
+  --r-7: 24px;
+  --r-full: 999px;
+  --squircle-14: 14px;
+  --squircle-22: 22px;
+  --squircle-28: 28px;
+  --squircle-34: 34px;
+  --squircle-exponent: 4.2;
+  /* Élévation (ombres) et rim */
+  --elevation-1: 0px 1px 2px rgba(0,0,0,0.40);
+  --rim-alpha-1: 0.06;
+  --elevation-2: 0px 8px 24px rgba(0,0,0,0.55);
+  --rim-alpha-2: 0.1;
+  --elevation-3: 0px 16px 48px rgba(0,0,0,0.65);
+  --rim-alpha-3: 0.14;
+  --elevation-4: 0px 24px 72px rgba(0,0,0,0.72);
+  --rim-alpha-4: 0.18;
+  /* Mouvement : courbes et durées */
+  --ease-labeur-out: cubic-bezier(0.22, 1.0, 0.36, 1.0);
+  --ease-labeur-inout: cubic-bezier(0.65, 0.0, 0.35, 1.0);
+  --ease-anticipate: cubic-bezier(0.68, -0.55, 0.27, 1.55);
+  --duration-micro: 120ms;
+  --duration-base: 240ms;
+  --duration-page: 420ms;
+  --duration-cinematique: 640ms;
+  --duration-halo-pulse: 2400ms;
+  /* Accessibilité : focus et cibles tactiles */
+  --focus-ring-width: 2px;
+  --focus-halo-width: 4px;
+  --focus-halo-alpha: 0.24;
+  --touch-target-mobile: 44px;
+  --touch-target-desktop: 40px;
+}

@@ -1,26 +1,12 @@
-import { CallStatus, CallDirection, UserRole } from '../../types';
+import type { CallStatus, CallDirection, UserRole } from '../../types';
 
-export const getRTCConfiguration = (): RTCConfiguration => {
-  const iceServers: RTCIceServer[] = [];
+/** TURN credentials must be short-lived API responses, never VITE_* secrets. */
+export const getRTCConfiguration = (dynamicIceServers: readonly RTCIceServer[] = []): RTCConfiguration => {
   const envStun = typeof import.meta !== 'undefined' ? (import.meta as any).env?.VITE_STUN_SERVER : null;
-  if (envStun) {
-    iceServers.push({ urls: envStun });
-  } else {
-    iceServers.push({ urls: 'stun:stun.l.google.com:19302' });
-  }
-
-  const envTurn = typeof import.meta !== 'undefined' ? (import.meta as any).env?.VITE_TURN_SERVER : null;
-  const envTurnUser = typeof import.meta !== 'undefined' ? (import.meta as any).env?.VITE_TURN_USERNAME : '';
-  const envTurnCred = typeof import.meta !== 'undefined' ? (import.meta as any).env?.VITE_TURN_CREDENTIAL : '';
-
-  if (envTurn) {
-    iceServers.push({
-      urls: envTurn,
-      username: envTurnUser,
-      credential: envTurnCred,
-    });
-  }
-
+  const iceServers: RTCIceServer[] = [
+    { urls: envStun || 'stun:stun.l.google.com:19302' },
+    ...dynamicIceServers,
+  ];
   return {
     iceServers,
     iceCandidatePoolSize: 2,

@@ -1,0 +1,329 @@
+{
+  "mission": "P0-LOAD-TESTS-3",
+  "kind": "REVALIDATION_CIBLEE_I2_I3_I4_I7",
+  "notOfficialCampaign": true,
+  "startedAtIso": "2026-10-08T09:02:50.317Z",
+  "finishedAtIso": "2026-10-08T09:03:01.993Z",
+  "persistence": "postgres-server",
+  "businessClockIso": "2026-10-05T14:00:00.000Z",
+  "population": {
+    "usersSimulated": 200,
+    "pairs": 100,
+    "journeysCompleted": 100,
+    "journeysFailed": 0
+  },
+  "queue": {
+    "boundedPhase": {
+      "converged": false,
+      "stoppedReason": "max-passes",
+      "passCount": 2,
+      "limitPerPass": 5,
+      "maxPasses": 2,
+      "depthBefore": {
+        "outboxByStatus": {
+          "PENDING": 400
+        },
+        "jobsByStatus": {},
+        "totalOutbox": 400,
+        "totalJobs": 0
+      },
+      "depthAfter": {
+        "outboxByStatus": {
+          "PENDING": 390,
+          "PROCESSED": 10
+        },
+        "jobsByStatus": {},
+        "totalOutbox": 400,
+        "totalJobs": 0
+      },
+      "totals": {
+        "eventsClaimed": 10,
+        "eventsCompleted": 10,
+        "eventsDuplicates": 0,
+        "eventsRetried": 0,
+        "eventsDeadLettered": 0,
+        "jobsClaimed": 0,
+        "jobsCompleted": 0,
+        "jobsRetried": 0,
+        "jobsFailed": 0,
+        "paymentsSwept": 0
+      }
+    },
+    "fullPhase": {
+      "converged": true,
+      "stoppedReason": "empty-pass",
+      "passCount": 8,
+      "depthAfter": {
+        "outboxByStatus": {
+          "PROCESSED": 1300
+        },
+        "jobsByStatus": {
+          "PENDING": 800,
+          "COMPLETED": 600
+        },
+        "totalOutbox": 1300,
+        "totalJobs": 1400
+      },
+      "totals": {
+        "eventsClaimed": 1290,
+        "eventsCompleted": 1290,
+        "eventsDuplicates": 0,
+        "eventsRetried": 0,
+        "eventsDeadLettered": 0,
+        "jobsClaimed": 600,
+        "jobsCompleted": 600,
+        "jobsRetried": 0,
+        "jobsFailed": 0,
+        "paymentsSwept": 300
+      }
+    }
+  },
+  "integrityBoundedDrain": {
+    "summary": {
+      "checks": 7,
+      "passed": 6,
+      "failed": 1
+    },
+    "results": [
+      {
+        "name": "I1 population et effets métier 1:1 avec les parcours (aucun double effet)",
+        "success": true,
+        "detail": "OK"
+      },
+      {
+        "name": "I2 aucune double transition : historique sans répétition de cycle de vie ni entrée identique (applications.action, contracts.event+description)",
+        "success": true,
+        "detail": "OK"
+      },
+      {
+        "name": "I3 état final métier attendu : candidatures REVIEW, contrats ACTIVE (1 activation), propositions ACCEPTED",
+        "success": true,
+        "detail": "OK"
+      },
+      {
+        "name": "I4 aucune duplication de notification (clé de déduplication recipient_id + dedupe_key)",
+        "success": true,
+        "detail": "OK"
+      },
+      {
+        "name": "I5 aucune duplication de réputation (clé de déduplication)",
+        "success": true,
+        "detail": "OK"
+      },
+      {
+        "name": "I6 aucun contournement d'idempotence (compteurs d'idempotence exacts)",
+        "success": false,
+        "detail": "commandes d'idempotence CONTRACT_ACTIVATED: attendu 100, reçu 0"
+      },
+      {
+        "name": "I7 file d'automatisation : aucune anomalie (RETRYABLE/DEAD_LETTER/FAILED/RUNNING) ni échec de convergence",
+        "success": true,
+        "detail": "BACKLOG_NON_DRAINE: BACKLOG NON DRAINÉ: 390 élément(s) échu(s) PENDING (outbox=390, jobs=0) — drain NON convergé (raison: max-passes, 2 passes) ; jobs PENDING à échéance future=0, outbox PENDING futur=0 (normal sous horloge fixe)"
+      }
+    ]
+  },
+  "integrityFullDrain": {
+    "summary": {
+      "checks": 7,
+      "passed": 7,
+      "failed": 0
+    },
+    "results": [
+      {
+        "name": "I1 population et effets métier 1:1 avec les parcours (aucun double effet)",
+        "success": true,
+        "detail": "OK"
+      },
+      {
+        "name": "I2 aucune double transition : historique sans répétition de cycle de vie ni entrée identique (applications.action, contracts.event+description)",
+        "success": true,
+        "detail": "OK"
+      },
+      {
+        "name": "I3 état final métier attendu : candidatures REVIEW, contrats ACTIVE (1 activation), propositions ACCEPTED",
+        "success": true,
+        "detail": "OK"
+      },
+      {
+        "name": "I4 aucune duplication de notification (clé de déduplication recipient_id + dedupe_key)",
+        "success": true,
+        "detail": "OK"
+      },
+      {
+        "name": "I5 aucune duplication de réputation (clé de déduplication)",
+        "success": true,
+        "detail": "OK"
+      },
+      {
+        "name": "I6 aucun contournement d'idempotence (compteurs d'idempotence exacts)",
+        "success": true,
+        "detail": "OK"
+      },
+      {
+        "name": "I7 file d'automatisation : aucune anomalie (RETRYABLE/DEAD_LETTER/FAILED/RUNNING) ni échec de convergence",
+        "success": true,
+        "detail": "FUTURE_PENDING: aucun résidu échu ; jobs PENDING à échéance future=800, outbox PENDING futur=0 (normal sous horloge fixe)"
+      }
+    ]
+  },
+  "measurementsFullDrain": {
+    "users": 200,
+    "sessions": 200,
+    "offers": 100,
+    "missionQualifications": 100,
+    "candidateMatchingProfiles": 100,
+    "applications": 100,
+    "applicationsReview": 100,
+    "matchingRuns": 100,
+    "proposals": 100,
+    "proposalsAccepted": 100,
+    "contracts": 100,
+    "contractsActive": 100,
+    "notifications": 1400,
+    "reputationEntries": 0,
+    "outboxTotal": 1300,
+    "outboxProcessed": 1300,
+    "outboxPending": 0,
+    "outboxRetryable": 0,
+    "outboxDeadLetter": 0,
+    "outboxContractActivatedEvents": 100,
+    "outboxNotificationEvents": 300,
+    "jobsTotal": 1400,
+    "jobsCompleted": 600,
+    "jobsPending": 800,
+    "jobsFailed": 0,
+    "idempotencyRows": 1000,
+    "idempotencyContractActivation": 100,
+    "jobsPendingDue": 0,
+    "jobsPendingFuture": 800,
+    "jobsRunning": 0,
+    "outboxPendingDue": 0,
+    "outboxPendingFuture": 0,
+    "expectedPairs": 100
+  },
+  "negativeControls": {
+    "oldI2ContractsActionKey_duplicatedContracts": 100,
+    "oldI3StatusActivated_contracts": 0,
+    "newI3StatusActive_contracts": 100
+  },
+  "i4Measurement": {
+    "notifications": 1400,
+    "notificationRequiredEvents": 300,
+    "distinctOutboxEventTypes": 7,
+    "note": "Ratio informatif : la relation événement↔notification n'est pas 1:1 ; seul l'absence de doublon (recipient_id, dedupe_key) est asserté."
+  },
+  "i2Sensitivity": {
+    "beforeInjection": {
+      "success": true,
+      "detail": "OK"
+    },
+    "afterInjection": {
+      "success": false,
+      "detail": "cycle de vie dupliqué: 1 contrat(s) ; entrée identique répétée: 2 contrat(s)"
+    },
+    "injected": "une entrée PAYMENT_DUE identique répétée (contrat A) ; une entrée CONTRACT_CREATED recopiée (contrat B)",
+    "ok": true
+  },
+  "i2DiagnosticFullDrain": {
+    "duplicatedEventsByType": [
+      {
+        "event": "PAYMENT_DUE",
+        "contracts": "100",
+        "maxPerContract": "3"
+      }
+    ],
+    "sampleContractHistory": [
+      {
+        "id": "log_cx7rzk50as9nk2pad5v770myqt",
+        "actor": "LOADTEST Société Synthétique 00061",
+        "event": "CONTRACT_CREATED",
+        "timestamp": "2026-10-05T14:00:00.000Z",
+        "description": "Contrat préparé en brouillon depuis la proposition acceptée prp_gpxzjj68nydd64xbqpgerb2cwb."
+      },
+      {
+        "id": "log_d98xrb4w95xvp6fxv7meq68drb",
+        "actor": "usr_pew3cscx9xe9p6bscdkp2gyqzz",
+        "event": "EMPLOYER_SIGNED",
+        "timestamp": "2026-10-05T14:00:00.000Z",
+        "description": "Contrat envoyé pour signature par usr_pew3cscx9xe9p6bscdkp2gyqzz ; signature employeur enregistrée."
+      },
+      {
+        "id": "log_91685gtvjaz7747wgtrbfnhe1r",
+        "actor": "LOADTEST Candidat Synthétique 00061",
+        "event": "EMPLOYEE_SIGNED",
+        "timestamp": "2026-10-05T14:00:00.000Z",
+        "description": "Accord signé par le salarié (LOADTEST Candidat Synthétique 00061)."
+      },
+      {
+        "id": "log_q64gtz444w9h4gka1mt3b1hjrv",
+        "actor": "usr_pew3cscx9xe9p6bscdkp2gyqzz",
+        "event": "CONTRACT_ACTIVATED_BILATERAL",
+        "timestamp": "2026-10-05T14:00:00.000Z",
+        "description": "Double signature bilatérale complétée : contrat actif."
+      },
+      {
+        "id": "log_5mfs14601m8nwzdhkptkxbqe28",
+        "actor": "Système LE LABEUR",
+        "event": "PAYMENT_SCHEDULE_CREATED",
+        "timestamp": "2026-10-05T14:00:00.000Z",
+        "description": "Échéancier créé automatiquement à l’activation : 6 période(s) (MONTHLY), salaire 291667 FCFA, commission M1 72917 FCFA (25 %). Aucun paiement effectué."
+      },
+      {
+        "id": "log_edrzah85707czqrvheqabha130",
+        "actor": "SYSTEM",
+        "event": "PAYMENT_DUE",
+        "timestamp": "2026-10-05T14:00:00.000Z",
+        "description": "Échéance atteinte : paiement devenu DUE — Mois 01, commission 72917 FCFA."
+      },
+      {
+        "id": "log_ddnpfhrqqa10ykmedh3wnjcn48",
+        "actor": "SYSTEM",
+        "event": "PAYMENT_DUE",
+        "timestamp": "2026-10-05T14:00:00.000Z",
+        "description": "Échéance atteinte : paiement devenu DUE — Mois 01, salaire 218750 FCFA."
+      },
+      {
+        "id": "log_je50fnvvq2r3rfpjg2ds81rbkp",
+        "actor": "SYSTEM",
+        "event": "PAYMENT_DUE",
+        "timestamp": "2026-10-05T14:00:00.000Z",
+        "description": "Échéance atteinte : paiement devenu DUE — Mois 02, salaire 291667 FCFA."
+      }
+    ]
+  },
+  "classificationUnitCases": {
+    "ok": true,
+    "cases": [
+      {
+        "name": "backlog échu + drain borné",
+        "expected": "BACKLOG_NON_DRAINE",
+        "actual": "BACKLOG_NON_DRAINE"
+      },
+      {
+        "name": "jobs futurs seuls + convergé",
+        "expected": "FUTURE_PENDING",
+        "actual": "FUTURE_PENDING"
+      },
+      {
+        "name": "DEAD_LETTER",
+        "expected": "ANOMALIE",
+        "actual": "ANOMALIE"
+      },
+      {
+        "name": "échu alors que drain déclaré convergé",
+        "expected": "ECHEC_CONVERGENCE",
+        "actual": "ECHEC_CONVERGENCE"
+      },
+      {
+        "name": "échu sans état de drain",
+        "expected": "ECHEC_CONVERGENCE",
+        "actual": "ECHEC_CONVERGENCE"
+      },
+      {
+        "name": "aucun résidu",
+        "expected": "NONE",
+        "actual": "NONE"
+      }
+    ]
+  }
+}

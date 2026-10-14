@@ -472,6 +472,7 @@ export async function runAllDeterministicTests(): Promise<{ passed: boolean; res
     stored.status = 'REPLACEMENT_REQUESTED';
     const forged = { ...stored, offerTitle: 'Offre forgée', employerName: 'Faux employeur' };
     const rep = await mockService.createReplacementFromIncident(forged, 'user-admin-1');
+    if (!rep.urgentOfferId) throw new Error('Offre urgente DEMO absente');
     const offer = await mockService.getOfferById(rep.urgentOfferId);
     const contract = await mockService.getContractById(stored.contractId);
     const pass = Boolean(offer && offer.title.includes(stored.offerTitle) && !offer.title.includes('Offre forgée') && offer.employerId === stored.employerId && contract?.replacementId === rep.id);

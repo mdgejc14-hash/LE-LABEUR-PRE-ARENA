@@ -1,0 +1,69 @@
+/* Page composition only; all visual primitives, typography and motion come from P0. */
+.lbm-public { width: 100%; max-width: var(--grid-max-width); margin-inline: auto; display: grid; gap: var(--space-24); overflow-wrap: anywhere; }
+.lbm-public__grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-16); }
+.lbm-public__notice { padding: var(--space-16); color: var(--text-mid); border-radius: var(--squircle-14); }
+.lbm-public__notice p { margin: 0; }
+.lbm-public__notice .lbm-kicker { color: var(--text-mid); }
+.lbm-public__gap { padding: var(--space-16); border: 1px dashed var(--amber-500); border-radius: var(--squircle-14); display: grid; gap: var(--space-8); }
+.lbm-public__gap p { margin: 0; }
+.lbm-public__actions, .lbm-public__links { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-16); }
+.lbm-public__links { border-top: 1px solid var(--stroke-mid); padding-top: var(--space-24); }
+.lbm-public a { display: inline-flex; align-items: center; min-height: var(--touch-target-mobile); color: var(--text-gold); text-decoration: underline; text-underline-offset: 4px; }
+.lbm-public__stack { display: grid; gap: var(--space-20); min-width: 0; }
+.lbm-public__roles { border: 0; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-16); min-width: 0; }
+.lbm-public__roles legend { padding-block: var(--space-12); }
+.lbm-public__role { display: grid; gap: var(--space-16); padding: var(--space-24); border: 2px solid var(--stroke-mid); border-radius: var(--squircle-28); background: var(--surface-2); cursor: pointer; }
+/* Sélection : l'anneau prend la couleur du profil choisi (or Client / émeraude Prestataire), comme la fiche. */
+.lbm-public__role[data-role='EMPLOYER']:has(:checked) { border-color: var(--gold-500); }
+.lbm-public__role[data-role='CANDIDATE']:has(:checked) { border-color: var(--emerald-500); }
+.lbm-public__role:has(:checked) { box-shadow: var(--elevation-2); }
+/* La carte non choisie recule (aucune désaturation du texte : la lisibilité reste conforme AA). */
+.lbm-public__roles:has(:checked) .lbm-public__role:not(:has(:checked)) { opacity: 0.72; }
+.lbm-public__role:has(:focus-visible) { outline: 2px solid var(--gold-500); outline-offset: 4px; }
+.lbm-public__role input { width: 24px; height: 24px; accent-color: var(--gold-500); }
+.lbm-public__role[data-role='CANDIDATE'] input { accent-color: var(--emerald-500); }
+/* Morph du CTA : la couleur suit le profil armé (fiche PUB-03 « morph du CTA »). */
+.lbm-public__cta--emerald.lbm-neo--primary { background-color: var(--emerald-500); }
+.lbm-public__price { margin: 0; font-variant-numeric: tabular-nums; }
+.lbm-public__price > div { display: flex; justify-content: space-between; gap: var(--space-16); padding-block: var(--space-12); }
+.lbm-public__price > div:last-child { border-top: 1px dashed var(--gold-500); }
+.lbm-public__price dd { margin: 0; white-space: nowrap; }
+/* Zones décoratives : le champ particulaire (C-15) est hors flux, la scène porte la position. */
+.lbm-public__stage { position: relative; display: grid; gap: var(--space-16); overflow: hidden; isolation: isolate; }
+.lbm-public__stage > * { position: relative; }
+.lbm-public__stage > .lbm-particle { position: absolute; }
+.lbm-public__splash { min-height: 65vh; place-content: center; cursor: pointer; }
+.lbm-public__emblem { display: grid; place-items: center; gap: var(--space-16); text-align: center; }
+/* Variante « Forge » de C-04 (fiche PUB-01) : anneau conique animé, SANS libellé visible.
+   Le libellé du composant reste dans le DOM (contrat C-04) mais l'emblème est décoratif :
+   les mots « LE LABEUR » sont portés par le titre kinetic. */
+.lbm-public__emblem-seal .lbm-seal__label { display: none; }
+.lbm-public__emblem-seal .lbm-seal__mark { width: 104px; height: 104px; }
+.lbm-public__emblem-seal .lbm-seal__ring { animation: lbm-public-forge 640ms var(--ease-labeur-out) 1 both; }
+.lbm-public__wordmark { margin: 0; color: var(--text-hi); }
+.lbm-public__hero { padding-block: var(--space-24) var(--space-32); }
+.lbm-public__promise { margin: 0; max-width: 24ch; }
+.lbm-public__facts { display: grid; gap: var(--space-8); }
+.lbm-public__facts p { margin: 0; }
+.lbm-public__splash-action { display: flex; justify-content: center; }
+.lbm-public__skip:not(:focus-visible) { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); }
+
+@keyframes lbm-public-forge {
+  from { transform: rotate(-140deg); opacity: 0.35; }
+  to { transform: rotate(0deg); opacity: 1; }
+}
+
+@media (max-width: 600px) {
+  .lbm-public__grid, .lbm-public__roles { grid-template-columns: minmax(0, 1fr); }
+  .lbm-public__role { padding: var(--space-16); }
+  .lbm-public__actions { align-items: stretch; flex-direction: column; }
+}
+
+/* Fiche PUB-02, état « Prefers-contrast » : surfaces opaques, décor désactivé. */
+@media (prefers-contrast: more) {
+  .lbm-public .lbm-glass { background-color: var(--surface-3); }
+  .lbm-public .lbm-particle { display: none; }
+  .lbm-public__emblem-seal .lbm-seal__ring { background: var(--gold-500); }
+}
+
+.lbm-public .lbm-glass.lbm-panel { padding: var(--space-20); border-radius: var(--squircle-22); }

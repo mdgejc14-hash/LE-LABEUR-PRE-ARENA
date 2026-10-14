@@ -1,0 +1,1370 @@
+{
+ "EMP": {
+  "session": {
+   "line": 139,
+   "calls": [
+    {
+     "http": "GET",
+     "path": "/auth/session",
+     "contracts": [
+      "auth.session"
+     ]
+    }
+   ]
+  },
+  "myOffers": {
+   "line": 162,
+   "calls": [
+    {
+     "http": "GET",
+     "path": "/my/offers",
+     "contracts": [
+      "offers.mine.list"
+     ]
+    }
+   ]
+  },
+  "createOffer": {
+   "line": 166,
+   "calls": [
+    {
+     "http": "POST",
+     "path": "/offers",
+     "contracts": [
+      "offers.create"
+     ]
+    }
+   ]
+  },
+  "setOfferStatus": {
+   "line": 170,
+   "calls": [
+    {
+     "http": "PATCH",
+     "path": "/offers/:p/status",
+     "contracts": [
+      "offers.status.update"
+     ]
+    }
+   ]
+  },
+  "offerApplications": {
+   "line": 181,
+   "calls": [
+    {
+     "http": "GET",
+     "path": "/offers/:p/applications",
+     "contracts": [
+      "applications.offer.list"
+     ]
+    }
+   ]
+  },
+  "applicationAction": {
+   "line": 185,
+   "calls": [
+    {
+     "http": "POST",
+     "path": "/applications/:p/:p",
+     "contracts": [
+      "applications.withdraw",
+      "applications.examine",
+      "applications.shortlist",
+      "applications.reject"
+     ]
+    }
+   ]
+  },
+  "qualification": {
+   "line": 193,
+   "calls": [
+    {
+     "http": "GET",
+     "path": "/offers/:p/qualification",
+     "contracts": [
+      "matching.qualification.read"
+     ]
+    }
+   ]
+  },
+  "submitQualification": {
+   "line": 197,
+   "calls": [
+    {
+     "http": "POST",
+     "path": "/offers/:p/qualification",
+     "contracts": [
+      "matching.qualification.submit"
+     ]
+    }
+   ]
+  },
+  "createMatchingRun": {
+   "line": 206,
+   "calls": [
+    {
+     "http": "POST",
+     "path": "/offers/:p/matching-runs",
+     "contracts": [
+      "matching.runs.create"
+     ]
+    }
+   ]
+  },
+  "matchingRun": {
+   "line": 215,
+   "calls": [
+    {
+     "http": "GET",
+     "path": "/matching-runs/:p",
+     "contracts": [
+      "matching.runs.read"
+     ]
+    }
+   ]
+  },
+  "myContracts": {
+   "line": 221,
+   "calls": [
+    {
+     "http": "GET",
+     "path": "/my/contracts",
+     "contracts": [
+      "contracts.mine.list"
+     ]
+    }
+   ]
+  },
+  "contract": {
+   "line": 225,
+   "calls": [
+    {
+     "http": "GET",
+     "path": "/contracts/:p",
+     "contracts": [
+      "contracts.read"
+     ]
+    }
+   ]
+  },
+  "sendContract": {
+   "line": 230,
+   "calls": [
+    {
+     "http": "POST",
+     "path": "/contracts/:p/send",
+     "contracts": [
+      "contracts.send"
+     ]
+    }
+   ]
+  },
+  "confirmContractExecution": {
+   "line": 239,
+   "calls": [
+    {
+     "http": "POST",
+     "path": "/contracts/:p/confirm-execution",
+     "contracts": [
+      "contracts.confirm-execution"
+     ]
+    }
+   ]
+  },
+  "signContract": {
+   "line": 248,
+   "calls": [
+    {
+     "http": "POST",
+     "path": "/contracts/:p/sign",
+     "contracts": [
+      "contracts.sign"
+     ]
+    }
+   ]
+  },
+  "terminateContract": {
+   "line": 256,
+   "calls": [
+    {
+     "http": "POST",
+     "path": "/contracts/:p/terminate",
+     "contracts": [
+      "contracts.terminate"
+     ]
+    }
+   ]
+  },
+  "myPayments": {
+   "line": 267,
+   "calls": [
+    {
+     "http": "GET",
+     "path": "/my/payments",
+     "contracts": [
+      "payments.mine.list"
+     ]
+    }
+   ]
+  },
+  "payment": {
+   "line": 271,
+   "calls": [
+    {
+     "http": "GET",
+     "path": "/payments/:p",
+     "contracts": [
+      "payments.read"
+     ]
+    }
+   ]
+  },
+  "contractPayments": {
+   "line": 275,
+   "calls": [
+    {
+     "http": "GET",
+     "path": "/contracts/:p/payments",
+     "contracts": [
+      "payments.contract.list"
+     ]
+    }
+   ]
+  },
+  "declareCommission": {
+   "line": 280,
+   "calls": [
+    {
+     "http": "POST",
+     "path": "/payments/commission-declarations",
+     "contracts": [
+      "payments.commission.declare"
+     ]
+    }
+   ]
+  },
+  "declareSalary": {
+   "line": 290,
+   "calls": [
+    {
+     "http": "POST",
+     "path": "/payments/salary-declarations",
+     "contracts": [
+      "payments.salary.declare"
+     ]
+    }
+   ]
+  },
+  "requestSalaryConfirmation": {
+   "line": 300,
+   "calls": [
+    {
+     "http": "POST",
+     "path": "/payments/:p/salary-confirmation-request",
+     "contracts": [
+      "payments.salary.confirmation.request"
+     ]
+    }
+   ]
+  },
+  "closeMissionPayments": {
+   "line": 308,
+   "calls": [
+    {
+     "http": "POST",
+     "path": "/contracts/:p/payments/close-mission",
+     "contracts": [
+      "payments.close-mission"
+     ]
+    }
+   ]
+  },
+  "myClaims": {
+   "line": 318,
+   "calls": [
+    {
+     "http": "GET",
+     "path": "/my/claims",
+     "contracts": [
+      "claims.mine.list"
+     ]
+    }
+   ]
+  },
+  "claim": {
+   "line": 322,
+   "calls": [
+    {
+     "http": "GET",
+     "path": "/claims/:p",
+     "contracts": [
+      "claims.read"
+     ]
+    }
+   ]
+  },
+  "createClaim": {
+   "line": 326,
+   "calls": [
+    {
+     "http": "POST",
+     "path": "/claims",
+     "contracts": [
+      "claims.create"
+     ]
+    }
+   ]
+  },
+  "submitClaimEvidence": {
+   "line": 330,
+   "calls": [
+    {
+     "http": "POST",
+     "path": "/claims/:p/evidence-requests/:p/submit",
+     "contracts": [
+      "claims.evidence.submit"
+     ]
+    }
+   ]
+  },
+  "myReplacements": {
+   "line": 339,
+   "calls": [
+    {
+     "http": "GET",
+     "path": "/my/replacements",
+     "contracts": [
+      "replacements.mine.list"
+     ]
+    }
+   ]
+  },
+  "replacement": {
+   "line": 343,
+   "calls": [
+    {
+     "http": "GET",
+     "path": "/replacements/:p",
+     "contracts": [
+      "replacements.read"
+     ]
+    }
+   ]
+  },
+  "publishReplacementOffer": {
+   "line": 348,
+   "calls": [
+    {
+     "http": "POST",
+     "path": "/replacements/:p/offer",
+     "contracts": [
+      "replacements.offer.create"
+     ]
+    }
+   ]
+  },
+  "myNotifications": {
+   "line": 359,
+   "calls": [
+    {
+     "http": "GET",
+     "path": "/my/notifications",
+     "contracts": [
+      "notifications.mine.list"
+     ]
+    }
+   ]
+  },
+  "markNotificationRead": {
+   "line": 368,
+   "calls": [
+    {
+     "http": "POST",
+     "path": "/notifications/:p/read",
+     "contracts": [
+      "notifications.read"
+     ]
+    }
+   ]
+  },
+  "markAllNotificationsRead": {
+   "line": 376,
+   "calls": [
+    {
+     "http": "POST",
+     "path": "/my/notifications/read-all",
+     "contracts": [
+      "notifications.read-all"
+     ]
+    }
+   ]
+  }
+ },
+ "PRE": {
+  "session": {
+   "line": 152,
+   "calls": [
+    {
+     "http": "GET",
+     "path": "/auth/session",
+     "contracts": [
+      "auth.session"
+     ]
+    }
+   ]
+  },
+  "offers": {
+   "line": 178,
+   "calls": [
+    {
+     "http": "GET",
+     "path": "/offers",
+     "contracts": [
+      "offers.public.list"
+     ]
+    }
+   ]
+  },
+  "offer": {
+   "line": 182,
+   "calls": [
+    {
+     "http": "GET",
+     "path": "/offers/:p",
+     "contracts": [
+      "offers.public.read"
+     ]
+    }
+   ]
+  },
+  "myApplications": {
+   "line": 188,
+   "calls": [
+    {
+     "http": "GET",
+     "path": "/my/applications",
+     "contracts": [
+      "applications.mine.list"
+     ]
+    }
+   ]
+  },
+  "application": {
+   "line": 192,
+   "calls": [
+    {
+     "http": "GET",
+     "path": "/applications/:p",
+     "contracts": [
+      "applications.read"
+     ]
+    }
+   ]
+  },
+  "applyToOffer": {
+   "line": 197,
+   "calls": [
+    {
+     "http": "POST",
+     "path": "/offers/:p/applications",
+     "contracts": [
+      "applications.create"
+     ]
+    }
+   ]
+  },
+  "withdrawApplication": {
+   "line": 207,
+   "calls": [
+    {
+     "http": "POST",
+     "path": "/applications/:p/withdraw",
+     "contracts": [
+      "applications.withdraw"
+     ]
+    }
+   ]
+  },
+  "respondToProposal": {
+   "line": 217,
+   "calls": [
+    {
+     "http": "POST",
+     "path": "/proposals/:p/respond",
+     "contracts": [
+      "proposals.respond"
+     ]
+    }
+   ]
+  },
+  "myContracts": {
+   "line": 228,
+   "calls": [
+    {
+     "http": "GET",
+     "path": "/my/contracts",
+     "contracts": [
+      "contracts.mine.list"
+     ]
+    }
+   ]
+  },
+  "contract": {
+   "line": 232,
+   "calls": [
+    {
+     "http": "GET",
+     "path": "/contracts/:p",
+     "contracts": [
+      "contracts.read"
+     ]
+    }
+   ]
+  },
+  "signContract": {
+   "line": 237,
+   "calls": [
+    {
+     "http": "POST",
+     "path": "/contracts/:p/sign",
+     "contracts": [
+      "contracts.sign"
+     ]
+    }
+   ]
+  },
+  "confirmContractExecution": {
+   "line": 246,
+   "calls": [
+    {
+     "http": "POST",
+     "path": "/contracts/:p/confirm-execution",
+     "contracts": [
+      "contracts.confirm-execution"
+     ]
+    }
+   ]
+  },
+  "myPayments": {
+   "line": 256,
+   "calls": [
+    {
+     "http": "GET",
+     "path": "/my/payments",
+     "contracts": [
+      "payments.mine.list"
+     ]
+    }
+   ]
+  },
+  "listSchedulesProbe": {
+   "line": 266,
+   "calls": [
+    {
+     "http": "GET",
+     "path": "/my/schedules",
+     "contracts": [
+      "schedules.mine.list"
+     ]
+    }
+   ]
+  },
+  "payment": {
+   "line": 270,
+   "calls": [
+    {
+     "http": "GET",
+     "path": "/payments/:p",
+     "contracts": [
+      "payments.read"
+     ]
+    }
+   ]
+  },
+  "contractPayments": {
+   "line": 274,
+   "calls": [
+    {
+     "http": "GET",
+     "path": "/contracts/:p/payments",
+     "contracts": [
+      "payments.contract.list"
+     ]
+    }
+   ]
+  },
+  "confirmSalary": {
+   "line": 283,
+   "calls": [
+    {
+     "http": "POST",
+     "path": "/payments/:p/salary-confirmation",
+     "contracts": [
+      "payments.salary.confirmation.confirm"
+     ]
+    }
+   ]
+  },
+  "myClaims": {
+   "line": 294,
+   "calls": [
+    {
+     "http": "GET",
+     "path": "/my/claims",
+     "contracts": [
+      "claims.mine.list"
+     ]
+    }
+   ]
+  },
+  "claim": {
+   "line": 298,
+   "calls": [
+    {
+     "http": "GET",
+     "path": "/claims/:p",
+     "contracts": [
+      "claims.read"
+     ]
+    }
+   ]
+  },
+  "createClaim": {
+   "line": 302,
+   "calls": [
+    {
+     "http": "POST",
+     "path": "/claims",
+     "contracts": [
+      "claims.create"
+     ]
+    }
+   ]
+  },
+  "submitClaimEvidence": {
+   "line": 306,
+   "calls": [
+    {
+     "http": "POST",
+     "path": "/claims/:p/evidence-requests/:p/submit",
+     "contracts": [
+      "claims.evidence.submit"
+     ]
+    }
+   ]
+  },
+  "myReplacements": {
+   "line": 315,
+   "calls": [
+    {
+     "http": "GET",
+     "path": "/my/replacements",
+     "contracts": [
+      "replacements.mine.list"
+     ]
+    }
+   ]
+  },
+  "replacement": {
+   "line": 319,
+   "calls": [
+    {
+     "http": "GET",
+     "path": "/replacements/:p",
+     "contracts": [
+      "replacements.read"
+     ]
+    }
+   ]
+  },
+  "myReputation": {
+   "line": 325,
+   "calls": [
+    {
+     "http": "GET",
+     "path": "/my/reputation",
+     "contracts": [
+      "reputation.mine.read"
+     ]
+    }
+   ]
+  },
+  "myReputationEntries": {
+   "line": 329,
+   "calls": [
+    {
+     "http": "GET",
+     "path": "/my/reputation/entries",
+     "contracts": [
+      "reputation.mine.entries.list"
+     ]
+    }
+   ]
+  },
+  "myDocuments": {
+   "line": 335,
+   "calls": [
+    {
+     "http": "GET",
+     "path": "/my/documents",
+     "contracts": [
+      "documents.mine.list"
+     ]
+    }
+   ]
+  },
+  "document": {
+   "line": 339,
+   "calls": [
+    {
+     "http": "GET",
+     "path": "/documents/:p",
+     "contracts": [
+      "documents.read"
+     ]
+    }
+   ]
+  },
+  "documentVersions": {
+   "line": 343,
+   "calls": [
+    {
+     "http": "GET",
+     "path": "/documents/:p/versions",
+     "contracts": [
+      "documents.versions.list"
+     ]
+    }
+   ]
+  },
+  "requestUploadGrant": {
+   "line": 353,
+   "calls": [
+    {
+     "http": "POST",
+     "path": "/documents/upload-grants",
+     "contracts": [
+      "documents.upload-grant"
+     ]
+    }
+   ]
+  },
+  "createDocumentVersion": {
+   "line": 366,
+   "calls": [
+    {
+     "http": "POST",
+     "path": "/documents/:p/versions",
+     "contracts": [
+      "documents.versions.create"
+     ]
+    }
+   ]
+  },
+  "signedDownloadUrl": {
+   "line": 380,
+   "calls": [
+    {
+     "http": "POST",
+     "path": "/documents/:p/signed-download-url",
+     "contracts": [
+      "documents.signed-download"
+     ]
+    }
+   ]
+  },
+  "uploadDocumentContent": {
+   "line": 392,
+   "calls": [
+    {
+     "http": "POST",
+     "path": "/documents/:p/versions/:p/content",
+     "dynamic": true,
+     "contracts": [
+      "documents.versions.content.upload"
+     ]
+    }
+   ]
+  },
+  "myNotifications": {
+   "line": 411,
+   "calls": [
+    {
+     "http": "GET",
+     "path": "/my/notifications",
+     "contracts": [
+      "notifications.mine.list"
+     ]
+    }
+   ]
+  },
+  "markNotificationRead": {
+   "line": 420,
+   "calls": [
+    {
+     "http": "POST",
+     "path": "/notifications/:p/read",
+     "contracts": [
+      "notifications.read"
+     ]
+    }
+   ]
+  },
+  "markAllNotificationsRead": {
+   "line": 428,
+   "calls": [
+    {
+     "http": "POST",
+     "path": "/my/notifications/read-all",
+     "contracts": [
+      "notifications.read-all"
+     ]
+    }
+   ]
+  },
+  "matchingProfile": {
+   "line": 438,
+   "calls": [
+    {
+     "http": "GET",
+     "path": "/my/matching-profile",
+     "contracts": [
+      "matching.profile.read"
+     ]
+    }
+   ]
+  },
+  "updateMatchingProfile": {
+   "line": 442,
+   "calls": [
+    {
+     "http": "PATCH",
+     "path": "/my/matching-profile",
+     "contracts": [
+      "matching.profile.update"
+     ]
+    }
+   ]
+  }
+ },
+ "ADM": {
+  "session": {
+   "line": 251,
+   "calls": [
+    {
+     "http": "GET",
+     "path": "/auth/session",
+     "contracts": [
+      "auth.session"
+     ]
+    }
+   ]
+  },
+  "users": {
+   "line": 274,
+   "calls": [
+    {
+     "http": "GET",
+     "path": "/admin/users",
+     "contracts": [
+      "admin.users.list"
+     ]
+    }
+   ]
+  },
+  "blockUser": {
+   "line": 283,
+   "calls": [
+    {
+     "http": "POST",
+     "path": "/admin/users/:p/block",
+     "contracts": [
+      "admin.users.block"
+     ]
+    }
+   ]
+  },
+  "reviewQueue": {
+   "line": 294,
+   "calls": [
+    {
+     "http": "GET",
+     "path": "/admin/qualifications/review",
+     "contracts": [
+      "matching.qualification.review.list"
+     ]
+    }
+   ]
+  },
+  "decideReview": {
+   "line": 303,
+   "calls": [
+    {
+     "http": "POST",
+     "path": "/admin/qualifications/:p/review",
+     "contracts": [
+      "matching.qualification.review"
+     ]
+    }
+   ]
+  },
+  "contracts": {
+   "line": 320,
+   "calls": [
+    {
+     "http": "GET",
+     "path": "/admin/contracts",
+     "contracts": [
+      "admin.contracts.list"
+     ]
+    }
+   ]
+  },
+  "claims": {
+   "line": 330,
+   "calls": [
+    {
+     "http": "GET",
+     "path": "/admin/claims",
+     "contracts": [
+      "admin.claims.list"
+     ]
+    }
+   ]
+  },
+  "claim": {
+   "line": 340,
+   "calls": [
+    {
+     "http": "GET",
+     "path": "/admin/claims/:p",
+     "contracts": [
+      "admin.claims.read"
+     ]
+    }
+   ]
+  },
+  "reviewClaim": {
+   "line": 345,
+   "calls": [
+    {
+     "http": "POST",
+     "path": "/admin/claims/:p/review",
+     "contracts": [
+      "admin.claims.review"
+     ]
+    }
+   ]
+  },
+  "requestClaimEvidence": {
+   "line": 355,
+   "calls": [
+    {
+     "http": "POST",
+     "path": "/admin/claims/:p/evidence-requests",
+     "contracts": [
+      "admin.claims.evidence.request"
+     ]
+    }
+   ]
+  },
+  "decideClaim": {
+   "line": 366,
+   "calls": [
+    {
+     "http": "POST",
+     "path": "/admin/claims/:p/decision",
+     "contracts": [
+      "admin.claims.decision"
+     ]
+    }
+   ]
+  },
+  "replacements": {
+   "line": 388,
+   "calls": [
+    {
+     "http": "GET",
+     "path": "/admin/replacements",
+     "contracts": [
+      "admin.replacements.list"
+     ]
+    }
+   ]
+  },
+  "replacement": {
+   "line": 393,
+   "calls": [
+    {
+     "http": "GET",
+     "path": "/admin/replacements/:p",
+     "contracts": [
+      "admin.replacements.read"
+     ]
+    }
+   ]
+  },
+  "proposals": {
+   "line": 403,
+   "calls": [
+    {
+     "http": "GET",
+     "path": "/admin/proposals",
+     "contracts": [
+      "admin.proposals.list"
+     ]
+    }
+   ]
+  },
+  "reputationEntries": {
+   "line": 415,
+   "calls": [
+    {
+     "http": "GET",
+     "path": "/admin/reputation/entries",
+     "contracts": [
+      "admin.reputation.entries.list"
+     ]
+    }
+   ]
+  },
+  "reputationEntry": {
+   "line": 433,
+   "calls": [
+    {
+     "http": "GET",
+     "path": "/admin/reputation/entries/:p",
+     "contracts": [
+      "admin.reputation.entries.read"
+     ]
+    }
+   ]
+  },
+  "correctReputationEntry": {
+   "line": 445,
+   "calls": [
+    {
+     "http": "POST",
+     "path": "/admin/reputation/entries/:p/correct",
+     "contracts": [
+      "admin.reputation.entries.correct"
+     ]
+    }
+   ]
+  },
+  "reconcileReputation": {
+   "line": 467,
+   "calls": [
+    {
+     "http": "POST",
+     "path": "/admin/reputation/reconcile",
+     "contracts": [
+      "admin.reputation.reconcile"
+     ]
+    }
+   ]
+  },
+  "payments": {
+   "line": 487,
+   "calls": [
+    {
+     "http": "GET",
+     "path": "/admin/payments",
+     "contracts": [
+      "admin.payments.list"
+     ]
+    }
+   ]
+  },
+  "payment": {
+   "line": 496,
+   "calls": [
+    {
+     "http": "GET",
+     "path": "/payments/:p",
+     "contracts": [
+      "payments.read"
+     ]
+    }
+   ]
+  },
+  "verifyPayment": {
+   "line": 501,
+   "calls": [
+    {
+     "http": "POST",
+     "path": "/admin/payments/:p/approve",
+     "contracts": [
+      "admin.payments.approve"
+     ]
+    }
+   ]
+  },
+  "markPaymentPaid": {
+   "line": 511,
+   "calls": [
+    {
+     "http": "POST",
+     "path": "/admin/payments/:p/confirm",
+     "contracts": [
+      "admin.payments.confirm"
+     ]
+    }
+   ]
+  },
+  "rejectPayment": {
+   "line": 521,
+   "calls": [
+    {
+     "http": "POST",
+     "path": "/admin/payments/:p/reject",
+     "contracts": [
+      "admin.payments.reject"
+     ]
+    }
+   ]
+  },
+  "paymentReconciliationBatch": {
+   "line": 531,
+   "calls": [
+    {
+     "http": "GET",
+     "path": "/admin/payment-reconciliation/batches/:p",
+     "contracts": [
+      "admin.payment-reconciliation.batches.read"
+     ]
+    }
+   ]
+  },
+  "retryPaymentReconciliationBatch": {
+   "line": 542,
+   "calls": [
+    {
+     "http": "POST",
+     "path": "/admin/payment-reconciliation/batches/:p/retry",
+     "contracts": [
+      "admin.payment-reconciliation.batches.retry"
+     ]
+    }
+   ]
+  },
+  "decidePaymentReconciliationReview": {
+   "line": 555,
+   "calls": [
+    {
+     "http": "POST",
+     "path": "/admin/payment-reconciliation/reviews/:p/decision",
+     "contracts": [
+      "admin.payment-reconciliation.reviews.decide"
+     ]
+    }
+   ]
+  },
+  "recordPaymentReconciliationCorrectionAttempt": {
+   "line": 573,
+   "calls": [
+    {
+     "http": "POST",
+     "path": "/admin/payment-reconciliation/reviews/:p/correction-attempts",
+     "contracts": [
+      "admin.payment-reconciliation.reviews.correction-attempt"
+     ]
+    }
+   ]
+  },
+  "documents": {
+   "line": 596,
+   "calls": [
+    {
+     "http": "GET",
+     "path": "/admin/documents",
+     "contracts": [
+      "admin.documents.list"
+     ]
+    }
+   ]
+  },
+  "document": {
+   "line": 612,
+   "calls": [
+    {
+     "http": "GET",
+     "path": "/admin/documents/:p",
+     "contracts": [
+      "admin.documents.read"
+     ]
+    }
+   ]
+  },
+  "revokeDocument": {
+   "line": 617,
+   "calls": [
+    {
+     "http": "POST",
+     "path": "/admin/documents/:p/revoke",
+     "contracts": [
+      "admin.documents.revoke"
+     ]
+    }
+   ]
+  },
+  "revokeDocumentVersion": {
+   "line": 632,
+   "calls": [
+    {
+     "http": "POST",
+     "path": "/admin/documents/:p/versions/:p/revoke",
+     "contracts": [
+      "admin.documents.versions.revoke"
+     ]
+    }
+   ]
+  },
+  "verifyDocumentVersionIntegrity": {
+   "line": 655,
+   "calls": [
+    {
+     "http": "POST",
+     "path": "/documents/:p/versions/:p/verify",
+     "contracts": [
+      "documents.versions.integrity.verify"
+     ]
+    }
+   ]
+  },
+  "notifications": {
+   "line": 681,
+   "calls": [
+    {
+     "http": "GET",
+     "path": "/admin/notifications",
+     "contracts": [
+      "admin.notifications.list"
+     ]
+    }
+   ]
+  },
+  "stats": {
+   "line": 687,
+   "calls": [
+    {
+     "http": "GET",
+     "path": "/admin/stats",
+     "contracts": [
+      "admin.stats.read"
+     ]
+    }
+   ]
+  },
+  "auditLog": {
+   "line": 691,
+   "calls": [
+    {
+     "http": "GET",
+     "path": "/admin/audit",
+     "contracts": [
+      "admin.audit.list"
+     ]
+    }
+   ]
+  },
+  "incidents": {
+   "line": 695,
+   "calls": [
+    {
+     "http": "GET",
+     "path": "/admin/incidents",
+     "contracts": [
+      "admin.incidents.list"
+     ]
+    }
+   ]
+  }
+ },
+ "RTC": {
+  "session": {
+   "line": 134,
+   "calls": [
+    {
+     "http": "GET",
+     "path": "/auth/session",
+     "contracts": [
+      "auth.session"
+     ]
+    }
+   ]
+  },
+  "mySessions": {
+   "line": 158,
+   "calls": [
+    {
+     "http": "GET",
+     "path": "/my/webrtc-sessions",
+     "contracts": [
+      "webrtc.sessions.mine.list"
+     ]
+    }
+   ]
+  },
+  "createSession": {
+   "line": 168,
+   "calls": [
+    {
+     "http": "POST",
+     "path": "/webrtc-sessions",
+     "contracts": [
+      "webrtc.sessions.create"
+     ]
+    }
+   ]
+  },
+  "readSession": {
+   "line": 178,
+   "calls": [
+    {
+     "http": "GET",
+     "path": "/webrtc-sessions/:p",
+     "contracts": [
+      "webrtc.sessions.read"
+     ]
+    }
+   ]
+  },
+  "joinSession": {
+   "line": 187,
+   "calls": [
+    {
+     "http": "POST",
+     "path": "/webrtc-sessions/:p/join",
+     "contracts": [
+      "webrtc.sessions.join"
+     ]
+    }
+   ]
+  },
+  "iceConfiguration": {
+   "line": 200,
+   "calls": [
+    {
+     "http": "POST",
+     "path": "/webrtc-sessions/:p/ice-configuration",
+     "contracts": [
+      "webrtc.sessions.ice-configuration"
+     ]
+    }
+   ]
+  },
+  "closeSession": {
+   "line": 209,
+   "calls": [
+    {
+     "http": "POST",
+     "path": "/webrtc-sessions/:p/close",
+     "contracts": [
+      "webrtc.sessions.close"
+     ]
+    }
+   ]
+  }
+ }
+}
