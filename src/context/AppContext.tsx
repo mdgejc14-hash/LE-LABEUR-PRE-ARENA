@@ -35,6 +35,7 @@ import {
 } from './sessionRouting';
 import { getRepositoryMode } from '../repositories/provider';
 import { IS_DEMO_MODE } from '../utils/config';
+import type { CreateOfferInput } from '../repositories/apiRepository';
 import {
   hydrateSessionResources,
   readSecondaryResource,
@@ -103,7 +104,8 @@ export interface AppContextType {
   examineApplication: (appId: string) => Promise<Application>;
   shortlistApplication: (appId: string) => Promise<Application>;
   rejectApplication: (appId: string, note?: string) => Promise<Application>;
-  createOffer: (offerData: any) => Promise<Offer>;
+  /** Création réelle (POST /offers) : l'état local n'est mis à jour qu'après réussite serveur. */
+  createOffer: (offerData: CreateOfferInput, idempotencyKey?: string) => Promise<Offer>;
 
   // Favoris
   favorites: string[];
@@ -603,9 +605,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return updated;
   }, [currentUser?.id]);
 
-  const createOffer = useCallback(async (data: any) => {
+  const createOffer = useCallback(async (data: CreateOfferInput, idempotencyKey?: string) => {
     if (!currentUser) throw new Error('Utilisateur non connecté');
-    const newOffer = await repositories.createOffer(data, currentUser.id);
+    // Propriétaire = utilisateur de la session courante (jamais une valeur par défaut).
+    // L'API dérive ces champs de la session ; le mock vérifie seulement la propriété.
+    const newOffer = await repositories.createOffer(
+      {
+        ...data,
+        employerId: currentUser.id,
+        employerName: currentUser.fullName,
+        employerLocation: data.location,
+      },
+      currentUser.id,
+      idempotencyKey,
+    );
     setOffers(prev => [newOffer, ...prev]);
     return newOffer;
   }, []);

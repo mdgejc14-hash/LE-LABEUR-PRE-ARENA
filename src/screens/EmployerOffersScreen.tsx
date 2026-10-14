@@ -4,44 +4,29 @@ import { useApp } from '../context/AppContext';
 import { EditorialButton } from '../components/common/EditorialButton';
 import { StatusBadge } from '../components/common/StatusBadge';
 import { EditorialSheet } from '../components/common/EditorialSheet';
+import { useOfferPublisher } from './useOfferPublisher';
+import { OfferFormFields } from './OfferFormFields';
+import type { OfferFormValues } from './offerCreationForm';
+
+const OFFER_FORM_DEFAULTS: OfferFormValues = {
+  title: '',
+  contractType: 'Mission 6 mois',
+  location: 'Cotonou — Cadjèhoun Kpota (Littoral)',
+  remuneration: '180000',
+  skills: 'Menuiserie, Lecture de plan, Finition',
+  summary: '',
+};
 
 export const EmployerOffersScreen: React.FC = () => {
   const { offers, applications, openOfferDetail, openConversationForContext, candidates, currentUser, createOffer } = useApp();
   const [newOfferModalOpen, setNewOfferModalOpen] = useState(false);
-  const [newTitle, setNewTitle] = useState('');
-  const [newSalary, setNewSalary] = useState('180000');
-  const [newLocation, setNewLocation] = useState('Cotonou — Cadjèhoun Kpota (Littoral)');
-  const [newContractType, setNewContractType] = useState('Mission 6 mois');
-  const [newSkills, setNewSkills] = useState('Menuiserie, Lecture de plan, Finition');
-  const [newDescription, setNewDescription] = useState('Recherche artisan qualifié pour travaux et pose soignée.');
-  const [newDuration, setNewDuration] = useState('6');
+  const publisher = useOfferPublisher(createOffer, OFFER_FORM_DEFAULTS);
 
   const myOffers = offers.filter(o => !o.isLeLabeurJob && o.employerId === currentUser?.id);
 
   const handlePublish = async () => {
-    if (!newTitle.trim()) return;
-    const skillsList = newSkills.split(',').map(s => s.trim()).filter(Boolean);
-    await createOffer({
-      title: newTitle,
-      employerId: currentUser?.id || 'user-emp-1',
-      employerName: currentUser?.fullName || "Atelier Bois & Agencement Bénin",
-      employerLocation: newLocation,
-      contractType: newContractType,
-      remuneration: Number(newSalary) || 180000,
-      currency: 'FCFA',
-      location: newLocation,
-      isUrgent: false,
-      isLeLabeurJob: false,
-      skills: skillsList.length > 0 ? skillsList : ['Artisanat qualifié'],
-      summary: newDescription || 'Recherche professionnelle qualifiée sous contrat LE LABEUR.',
-      responsibilities: ['Exécution soignée des ouvrages confiés', 'Respect du planning'],
-      conditions: ['Règlement direct de fin de mois', 'Matériel de protection fourni'],
-      selectionProcess: ['Examen du profil', 'Échange direct', 'Proposition de mission'],
-      durationMonths: Number(newDuration) || 6
-    });
-    setNewOfferModalOpen(false);
-    setNewTitle('');
-    setNewDescription('');
+    const created = await publisher.publish();
+    if (created) setNewOfferModalOpen(false);
   };
 
   return (
@@ -67,6 +52,13 @@ export const EmployerOffersScreen: React.FC = () => {
           <span>Publier</span>
         </EditorialButton>
       </div>
+
+      {publisher.confirmation && (
+        <div role="status" className="mb-3 p-3 rounded border border-[#1BA64B]/30 bg-[#1BA64B]/10 text-[11px] text-[#17233B] flex items-start justify-between gap-2">
+          <span>{publisher.confirmation}</span>
+          <button type="button" onClick={publisher.dismissConfirmation} className="underline shrink-0">Fermer</button>
+        </div>
+      )}
 
       {myOffers.length === 0 ? (
         <div className="flex-1 flex flex-col items-center justify-center p-8 text-center my-auto">
@@ -208,7 +200,7 @@ export const EmployerOffersScreen: React.FC = () => {
         </div>
       )}
 
-      {/* Publish Offer Sheet */}
+      {/* Publish Offer Sheet — confirmation seulement après réponse serveur */}
       <EditorialSheet
         isOpen={newOfferModalOpen}
         onClose={() => setNewOfferModalOpen(false)}
@@ -219,54 +211,25 @@ export const EmployerOffersScreen: React.FC = () => {
             variant="primary"
             fullWidth
             onClick={handlePublish}
+            disabled={publisher.submitting}
           >
-            Valider et publier
+            {publisher.submitting ? 'Publication en cours…' : 'Valider et publier'}
           </EditorialButton>
         }
       >
-        <div className="space-y-4 font-operational text-xs">
-          <div>
-            <label className="block font-medium text-[#17233B] mb-1">
-              Titre du poste
-            </label>
-            <input
-              type="text"
-              placeholder="Ex. Ébéniste d agencement"
-              value={newTitle}
-              onChange={e => setNewTitle(e.target.value)}
-              className="w-full h-10 px-3 bg-[#FFFFFF] border border-[#17233B]/20 rounded-[4px] text-xs text-[#17233B]"
-            />
-          </div>
+        <OfferFormFields
+          values={publisher.form}
+          errors={publisher.fieldErrors}
+          onChange={publisher.patch}
+          disabled={publisher.submitting}
+        />
+        {publisher.formError && (
+          <p role="alert" className="mt-3 text-[11px] text-red-700">{publisher.formError}</p>
+        )}
 
-          <div>
-            <label className="block font-medium text-[#17233B] mb-1">
-              Lieu de travail au Bénin
-            </label>
-            <input
-              type="text"
-              placeholder="Ex. Cotonou — Cadjèhoun Kpota"
-              value={newLocation}
-              onChange={e => setNewLocation(e.target.value)}
-              className="w-full h-10 px-3 bg-[#FFFFFF] border border-[#17233B]/20 rounded-[4px] text-xs text-[#17233B]"
-            />
-          </div>
-
-          <div>
-            <label className="block font-medium text-[#17233B] mb-1">
-              Rémunération mensuelle (FCFA)
-            </label>
-            <input
-              type="number"
-              value={newSalary}
-              onChange={e => setNewSalary(e.target.value)}
-              className="w-full h-10 px-3 bg-[#FFFFFF] border border-[#17233B]/20 rounded-[4px] text-xs font-mono text-[#17233B]"
-            />
-          </div>
-
-          <p className="text-[11px] text-[#17233B]/60 leading-relaxed pt-2">
-            La règle déontologique s appliquera : 25% de commission sur le 1er salaire (payée par l employeur), puis 0% pour les mois suivants. Le salarié ne paie aucun frais.
-          </p>
-        </div>
+        <p className="text-[11px] text-[#17233B]/60 leading-relaxed pt-2">
+          La règle déontologique s appliquera : 25% de commission sur le 1er salaire (payée par l employeur), puis 0% pour les mois suivants. Le salarié ne paie aucun frais.
+        </p>
       </EditorialSheet>
     </div>
   );
