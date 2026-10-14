@@ -84,7 +84,7 @@ export interface ApplicationRepository {
   getApplicationsByEmployer(employerId: string): Promise<Application[]>;
   getApplicationsByOffer(offerId: string): Promise<Application[]>;
   getAllApplications(actorId: string): Promise<Application[]>;
-  applyToOffer(offerId: string, actorId: string): Promise<Application>;
+  applyToOffer(offerId: string, actorId: string, idempotencyKey?: string): Promise<Application>;
   withdrawApplication(applicationId: string, actorId: string): Promise<Application>;
   examineApplication(applicationId: string, actorId: string): Promise<Application>;
   shortlistApplication(applicationId: string, actorId: string): Promise<Application>;

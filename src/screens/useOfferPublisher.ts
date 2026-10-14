@@ -3,7 +3,6 @@ import type { Offer } from '../types';
 import type { CreateOfferInput } from '../repositories/apiRepository';
 import {
   createOfferAttemptTracker,
-  newOfferIdempotencyKey,
   submitOfferForm,
   type OfferFormField,
   type OfferFormValues,
@@ -35,7 +34,7 @@ export function useOfferPublisher(
   const [submitting, setSubmitting] = useState(false);
   const [confirmation, setConfirmation] = useState<string | null>(null);
   const inFlight = useRef(false);
-  const attempt = useRef(createOfferAttemptTracker(newOfferIdempotencyKey));
+  const attempt = useRef(createOfferAttemptTracker());
 
   const patch = useCallback((values: Partial<OfferFormValues>) => {
     setForm(prev => ({ ...prev, ...values }));

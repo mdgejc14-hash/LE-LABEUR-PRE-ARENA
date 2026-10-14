@@ -9,6 +9,7 @@ import { runPostgresIdentityTests } from '../src/backend/identity/postgresIdenti
 import { runSessionBridgeTests } from '../src/repositories/sessionBridge.test';
 import { runSessionHydrationTests } from '../src/context/sessionHydration.test';
 import { runOfferCreationTests } from '../src/screens/offerCreation.test';
+import { runApplicationSubmissionTests } from '../src/screens/applicationSubmission.test';
 import { runPaymentDeclarationTests } from '../src/repositories/paymentDeclarations.test';
 import { runAdminPaymentDeclarationTests } from '../src/repositories/adminPaymentDeclarations.test';
 import { runAdminPaymentDecisionTests } from '../src/repositories/adminPaymentDecisions.test';
@@ -66,6 +67,7 @@ async function main(): Promise<void> {
   const sessionBridge = await runSessionBridgeTests();
   const sessionHydration = await runSessionHydrationTests();
   const offerCreation = await runOfferCreationTests();
+  const applicationSubmission = await runApplicationSubmissionTests();
   const paymentDeclarations = await runPaymentDeclarationTests();
   const adminPaymentDeclarations = await runAdminPaymentDeclarationTests();
   const adminPaymentDecisions = await runAdminPaymentDecisionTests();
@@ -123,6 +125,7 @@ async function main(): Promise<void> {
     { name: 'Frontend ↔ server session bridge', cases: sessionBridge },
     { name: 'Hydratation de session — lectures secondaires 501 / erreurs explicites', cases: sessionHydration },
     { name: 'Création d’offre employeur — DTO réel, erreurs visibles, reprise sans doublon', cases: offerCreation },
+    { name: 'Candidatures — confirmation serveur seule, erreurs visibles, reprise sans doublon', cases: applicationSubmission },
     { name: 'Phases 4A/4B — déclarations de paiement employeur', cases: paymentDeclarations },
     { name: 'Phase 4C — consultation ADMIN des paiements soumis', cases: adminPaymentDeclarations },
     { name: 'Phase 4D — décision ADMIN sur un paiement soumis', cases: adminPaymentDecisions },

@@ -36,6 +36,8 @@ import {
 import { getRepositoryMode } from '../repositories/provider';
 import { IS_DEMO_MODE } from '../utils/config';
 import type { CreateOfferInput } from '../repositories/apiRepository';
+import { createKeyedAttempts } from '../repositories/idempotency';
+import { submitApplication } from '../screens/applicationSubmission';
 import {
   hydrateSessionResources,
   readSecondaryResource,
@@ -570,10 +572,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setScreenState('CANDIDATE_DETAIL');
   }, [pushNavigationState]);
 
+  // Une clé par offre tant que l'issue est inconnue : une reprise ne crée pas de doublon.
+  const applicationKeys = useRef(createKeyedAttempts<string>());
   const applyToOffer = useCallback(async (offerId: string) => {
     if (!currentUser) throw new Error('Utilisateur non connecté');
-    const app = await repositories.applyToOffer(offerId, currentUser.id);
-    setApplications(prev => [app, ...prev]);
+    const app = await submitApplication(
+      offerId,
+      (id, idempotencyKey) => repositories.applyToOffer(id, currentUser.id, idempotencyKey),
+      applicationKeys.current,
+    );
+    setApplications(prev => [app, ...prev.filter(item => item.id !== app.id)]);
     return app;
   }, [currentUser]);
 

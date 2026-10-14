@@ -130,7 +130,7 @@ export function createLegacyApiRepositoryAdapter(api: ApiRepository): AppReposit
     getApplicationsByEmployer: async (_employerId: string) => firstPage(api.applications.getForEmployer({ limit: 100 })),
     getApplicationsByOffer: async (offerId: string) => firstPage(api.applications.getForOffer(offerId, { limit: 100 })),
     getAllApplications: async (_actorId: string) => firstPage(api.admin.listApplications({ limit: 100 })),
-    applyToOffer: (offerId: string, _actorId: string) => api.applications.apply(offerId, { idempotencyKey: key() }),
+    applyToOffer: (offerId: string, _actorId: string, idempotencyKey?: string) => api.applications.apply(offerId, { idempotencyKey: idempotencyKey || key() }),
     withdrawApplication: (applicationId: string, _actorId: string) => api.applications.withdraw(applicationId, { idempotencyKey: key() }),
     examineApplication: (applicationId: string, _actorId: string) => api.applications.examine(applicationId, { idempotencyKey: key() }),
     shortlistApplication: (applicationId: string, _actorId: string) => api.applications.shortlist(applicationId, { idempotencyKey: key() }),

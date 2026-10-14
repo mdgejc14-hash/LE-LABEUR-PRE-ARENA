@@ -14,6 +14,9 @@
 import type { Offer } from '../types';
 import type { CreateOfferInput } from '../repositories/apiRepository';
 import { ApiClientError } from '../repositories/apiClient';
+import { isUnknownOutcome, newIdempotencyKey } from '../repositories/idempotency';
+
+export { isUnknownOutcome };
 
 export interface OfferFormValues {
   title: string;
@@ -80,7 +83,7 @@ export interface OfferAttemptTracker {
   settle(): void;
 }
 
-export function createOfferAttemptTracker(newKey: () => string): OfferAttemptTracker {
+export function createOfferAttemptTracker(newKey: () => string = newIdempotencyKey): OfferAttemptTracker {
   let current: { fingerprint: string; key: string } | null = null;
   return {
     keyFor(payload) {
@@ -94,27 +97,6 @@ export function createOfferAttemptTracker(newKey: () => string): OfferAttemptTra
       current = null;
     },
   };
-}
-
-/** Clé d'idempotence unique par tentative (fonctionne même sans `crypto.randomUUID`). */
-export function newOfferIdempotencyKey(): string {
-  const uuid = globalThis.crypto?.randomUUID?.();
-  return uuid ?? `offer-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
-}
-
-/**
- * Issue non connue (réseau coupé, 5xx) : le serveur a peut-être créé l'offre ;
- * la clé est conservée pour qu'une reprise ne crée pas de doublon.
- */
-export function isUnknownOutcome(error: unknown): boolean {
-  if (error instanceof ApiClientError) {
-    // 501 : route non exposée, aucune requête n'a créé quoi que ce soit.
-    if (error.status === 501) return false;
-    // Coupure réseau (status 0, NETWORK_ERROR), réponse illisible, ou 5xx.
-    return error.status === 0 || error.status >= 500
-      || error.code === 'NETWORK_ERROR' || error.code === 'INVALID_RESPONSE';
-  }
-  return true;
 }
 
 export function offerCreationErrorMessage(error: unknown): string {
