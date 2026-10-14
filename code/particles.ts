@@ -1,8 +1,12 @@
-// particles.ts — fragment shader unique, 120 fps, zéro allocation
-// LE LABEUR · Cyber-Luxe Organique · extraction de la Section 3 du Master Design Document
-//──────────────────────────────────────────────────────────────────────────
 // code/particles.ts — fragment shader unique, 120 fps, zéro allocation
-precision highp float;
+// LE LABEUR · Cyber-Luxe Organique · extraction de la Section 3 du Master Design Document
+
+/**
+ * Source GLSL (fragment shader) des particules d'arrière-plan.
+ * Exportée comme chaîne pour rester un module TypeScript valide : le contenu
+ * GLSL n'est pas interprété par tsc.
+ */
+export const PARTICLES_FRAGMENT_SHADER = `precision highp float;
 uniform vec2 uRes;        // résolution
 uniform float uTime;      // secondes (modulo 600 pour éviter la dérive de précision)
 uniform float uDensity;   // token d'état: 120 (onboarding) · 90 (focus) · 60 (sanction)
@@ -29,3 +33,4 @@ void main() {
   col += uTint * 0.012;                               // voile minimal, jamais de gris plat
   gl_FragColor = vec4(col, clamp(acc * 0.8, 0.0, 0.9));
 }
+`;
