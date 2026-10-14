@@ -7,6 +7,7 @@ import { runCallBoundaryTests } from '../src/services/calls/signalingCredentialC
 import { runIdentitySessionTests } from '../src/backend/identity/identity.test';
 import { runPostgresIdentityTests } from '../src/backend/identity/postgresIdentity.test';
 import { runSessionBridgeTests } from '../src/repositories/sessionBridge.test';
+import { runSessionHydrationTests } from '../src/context/sessionHydration.test';
 import { runPaymentDeclarationTests } from '../src/repositories/paymentDeclarations.test';
 import { runAdminPaymentDeclarationTests } from '../src/repositories/adminPaymentDeclarations.test';
 import { runAdminPaymentDecisionTests } from '../src/repositories/adminPaymentDecisions.test';
@@ -62,6 +63,7 @@ async function main(): Promise<void> {
   const identity = await runIdentitySessionTests();
   const postgresIdentity = await runPostgresIdentityTests();
   const sessionBridge = await runSessionBridgeTests();
+  const sessionHydration = await runSessionHydrationTests();
   const paymentDeclarations = await runPaymentDeclarationTests();
   const adminPaymentDeclarations = await runAdminPaymentDeclarationTests();
   const adminPaymentDecisions = await runAdminPaymentDecisionTests();
@@ -117,6 +119,7 @@ async function main(): Promise<void> {
     { name: 'Server identity & session', cases: identity },
     { name: 'P0-B — identité et sessions PostgreSQL (PGlite)', cases: postgresIdentity },
     { name: 'Frontend ↔ server session bridge', cases: sessionBridge },
+    { name: 'Hydratation de session — lectures secondaires 501 / erreurs explicites', cases: sessionHydration },
     { name: 'Phases 4A/4B — déclarations de paiement employeur', cases: paymentDeclarations },
     { name: 'Phase 4C — consultation ADMIN des paiements soumis', cases: adminPaymentDeclarations },
     { name: 'Phase 4D — décision ADMIN sur un paiement soumis', cases: adminPaymentDecisions },

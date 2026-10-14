@@ -35,6 +35,13 @@ import {
 } from './sessionRouting';
 import { getRepositoryMode } from '../repositories/provider';
 import { IS_DEMO_MODE } from '../utils/config';
+import {
+  hydrateSessionResources,
+  readSecondaryResource,
+  type ResourceStatus,
+  type SessionHydrationResult,
+  type SessionResourceKey,
+} from './sessionHydration';
 
 export type MainTab = 'DISCOVER' | 'DASHBOARD' | 'OFFERS' | 'APPLICATIONS' | 'FAVORITES' | 'MESSAGES' | 'PROFILE';
 
@@ -121,6 +128,8 @@ export interface AppContextType {
 
   // Paiements externes déclarés par l'employeur (PHASES 4A/4B)
   paymentDeclarations: PaymentDeclaration[];
+  /** Statut explicite (ready / unavailable 501 / error) de chaque lecture de session. */
+  resourceStatuses: Record<SessionResourceKey, ResourceStatus>;
   refreshPaymentDeclarations: () => Promise<PaymentDeclaration[]>;
   createPaymentDeclaration: (input: PaymentDeclarationInput) => Promise<PaymentDeclaration>;
   updatePaymentDeclaration: (paymentId: string, patch: Partial<PaymentDeclarationInput>) => Promise<PaymentDeclaration>;
@@ -191,6 +200,17 @@ const defaultFilterState: FilterState = {
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
+const READY_RESOURCE_STATUSES: Record<SessionResourceKey, ResourceStatus> = {
+  offers: { state: 'ready' },
+  applications: { state: 'ready' },
+  contracts: { state: 'ready' },
+  conversations: { state: 'ready' },
+  favorites: { state: 'ready' },
+  candidates: { state: 'ready' },
+  resources: { state: 'ready' },
+  paymentDeclarations: { state: 'ready' },
+};
+
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [screen, setScreenState] = useState<AppScreen>('SPLASH');
   const [onboardingStep, setOnboardingStep] = useState<number>(0);
@@ -211,6 +231,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [applications, setApplications] = useState<Application[]>([]);
   const [contracts, setContracts] = useState<Contract[]>([]);
   const [paymentDeclarations, setPaymentDeclarations] = useState<PaymentDeclaration[]>([]);
+  const [resourceStatuses, setResourceStatuses] = useState<Record<SessionResourceKey, ResourceStatus>>(READY_RESOURCE_STATUSES);
   const [favorites, setFavorites] = useState<string[]>([]);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
@@ -229,80 +250,83 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const [scenarioDrawerOpen, setScenarioDrawerOpen] = useState<boolean>(false);
 
+  const applyHydratedResources = useCallback((hydrated: SessionHydrationResult) => {
+    setOffers(hydrated.offers);
+    setApplications(hydrated.applications);
+    setContracts(hydrated.contracts);
+    setConversations(hydrated.conversations);
+    setFavorites(hydrated.favorites);
+    setCandidates(hydrated.candidates);
+    setResources(hydrated.resources);
+    setPaymentDeclarations(hydrated.paymentDeclarations);
+    setResourceStatuses(hydrated.resourceStatuses);
+  }, []);
+
   /**
    * PHASES 4A/4B — les déclarations de paiement externe n'existent que pour
-   * un employeur connecté. Toute autre session repart d'une liste vide.
+   * un employeur connecté. Une erreur technique est exposée via resourceStatuses
+   * et n'est jamais transformée en liste vide "réussie".
    */
   const loadPaymentDeclarations = useCallback(async (user: UserProfile | null): Promise<PaymentDeclaration[]> => {
     if (!user || user.role !== 'EMPLOYER') {
       setPaymentDeclarations([]);
+      setResourceStatuses(prev => ({ ...prev, paymentDeclarations: { state: 'ready' } }));
       return [];
     }
-    try {
-      const declarations = await repositories.listEmployerPayments(user.id, user.id);
-      setPaymentDeclarations(declarations);
-      return declarations;
-    } catch (err) {
-      console.error('Erreur chargement des déclarations de paiement', err);
-      setPaymentDeclarations([]);
-      return [];
-    }
+    const result = await readSecondaryResource(() => repositories.listEmployerPayments(user.id, user.id));
+    setResourceStatuses(prev => ({ ...prev, paymentDeclarations: result.status }));
+    setPaymentDeclarations(result.data ?? []);
+    return result.data ?? [];
   }, []);
 
   const loadInitialData = useCallback(async () => {
+    let persistedUser: UserProfile | null;
     try {
-      const persistedUser = await repositories.getCurrentSession();
-      const allOffers = await repositories.getAllOffers();
-      const allCandidates = persistedUser && ['EMPLOYER', 'ADMIN'].includes(persistedUser.role)
-        ? await repositories.getAllCandidates()
-        : [];
-      const resDocs = await repositories.getResourceDocuments();
-      setOffers(allOffers);
-      setCandidates(allCandidates);
-      setResources(resDocs);
-
-      if (persistedUser) {
-        const scopedApplicationsPromise = persistedUser.role === 'ADMIN'
-          ? repositories.getAllApplications(persistedUser.id)
-          : persistedUser.role === 'EMPLOYER'
-            ? repositories.getApplicationsByEmployer(persistedUser.id)
-            : repositories.getApplicationsByCandidate(persistedUser.id);
-        const scopedContractsPromise = repositories.getContractsByUser(persistedUser.id, persistedUser.role);
-        const [userApps, userContracts, userConvs, userFavs] = await Promise.all([
-          scopedApplicationsPromise,
-          scopedContractsPromise,
-          repositories.getConversations(persistedUser.id),
-          repositories.getFavorites(persistedUser.id)
-        ]);
-        setApplications(userApps);
-        setContracts(userContracts);
-        setCurrentUser(persistedUser);
-        setCurrentRoleState(persistedUser.role);
-        setConversations(userConvs);
-        setFavorites(userFavs);
-        await loadPaymentDeclarations(persistedUser);
-
-        callService.connectSignaling(persistedUser.id, persistedUser.role).catch(err => {
-          console.warn('Signaling connect warning:', err);
-        });
-
-        // MODE API : une session serveur valide restaure directement l'espace
-        // correspondant au rôle renvoyé par le serveur (candidat/employeur/admin).
-        if (shouldRestoreAuthenticatedScreen(getRepositoryMode(), true)) {
-          historyStackRef.current = [];
-          setScreenState('MAIN');
-          setActiveTabState(landingTabForRole(persistedUser.role));
-        }
-      } else {
-        setCurrentUser(null);
-        setConversations([]);
-        setFavorites([]);
-        setPaymentDeclarations([]);
-      }
+      persistedUser = await repositories.getCurrentSession();
     } catch (err) {
-      console.error('Erreur chargement données initiales', err);
+      // Échec technique de l'autorité de session : on ne fabrique ni session ni données.
+      console.error('Erreur vérification de session', err);
+      return;
     }
-  }, [loadPaymentDeclarations]);
+
+    if (!persistedUser) {
+      // Catalogue public : lu sans session, son échec reste explicite.
+      const [offersRead, resourcesRead] = await Promise.all([
+        readSecondaryResource(() => repositories.getAllOffers()),
+        readSecondaryResource(() => repositories.getResourceDocuments()),
+      ]);
+      setOffers(offersRead.data ?? []);
+      setResources(resourcesRead.data ?? []);
+      setCurrentUser(null);
+      setConversations([]);
+      setFavorites([]);
+      setPaymentDeclarations([]);
+      setResourceStatuses({
+        ...READY_RESOURCE_STATUSES,
+        offers: offersRead.status,
+        resources: resourcesRead.status,
+      });
+      return;
+    }
+
+    // Session serveur valide : seule l'identité est authoritative ici. Les
+    // lectures secondaires ne peuvent pas annuler la session.
+    setCurrentUser(persistedUser);
+    setCurrentRoleState(persistedUser.role);
+    applyHydratedResources(await hydrateSessionResources(persistedUser, repositories));
+
+    callService.connectSignaling(persistedUser.id, persistedUser.role).catch(err => {
+      console.warn('Signaling connect warning:', err);
+    });
+
+    // MODE API : une session serveur valide restaure directement l'espace
+    // correspondant au rôle renvoyé par le serveur (candidat/employeur/admin).
+    if (shouldRestoreAuthenticatedScreen(getRepositoryMode(), true)) {
+      historyStackRef.current = [];
+      setScreenState('MAIN');
+      setActiveTabState(landingTabForRole(persistedUser.role));
+    }
+  }, [applyHydratedResources]);
 
   useEffect(() => {
     loadInitialData();
@@ -439,28 +463,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     } catch {}
 
-    const scopedApplicationsPromise = user.role === 'ADMIN'
-      ? repositories.getAllApplications(user.id)
-      : user.role === 'EMPLOYER'
-        ? repositories.getApplicationsByEmployer(user.id)
-        : repositories.getApplicationsByCandidate(user.id);
-
-    const [userConvs, userFavs, allOffers, userApps, userContracts, scopedCandidates] = await Promise.all([
-      repositories.getConversations(user.id),
-      repositories.getFavorites(user.id),
-      repositories.getAllOffers(),
-      scopedApplicationsPromise,
-      repositories.getContractsByUser(user.id, user.role),
-      ['EMPLOYER', 'ADMIN'].includes(user.role) ? repositories.getAllCandidates() : Promise.resolve([])
-    ]);
-
-    setConversations(userConvs);
-    setFavorites(userFavs);
-    setOffers(allOffers);
-    setApplications(userApps);
-    setContracts(userContracts);
-    setCandidates(scopedCandidates);
-    await loadPaymentDeclarations(user);
+    // Une session serveur déjà validée ouvre l'espace même si une lecture
+    // secondaire est indisponible (501) ou en erreur : son statut est exposé.
+    applyHydratedResources(await hydrateSessionResources(user, repositories));
 
     callService.connectSignaling(user.id, user.role).catch(err => {
       console.warn('Signaling connect warning:', err);
@@ -469,7 +474,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     historyStackRef.current = [];
     setScreenState('MAIN');
     setActiveTabState(landingTabForRole(user.role));
-  }, [loadPaymentDeclarations]);
+  }, [applyHydratedResources]);
 
   const login = useCallback(async (credentialsOrEmail?: string | { email?: string; phone?: string; role?: UserRole }, maybeRole?: UserRole) => {
     let emailToUse = '';
@@ -541,6 +546,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setApplications([]);
     setContracts([]);
     setCandidates([]);
+    setResourceStatuses(READY_RESOURCE_STATUSES);
     // La session serveur est révoquée côté Worker; aucune trace de rôle ne
     // doit subsister dans le navigateur.
     clearStoredRolePreference(typeof localStorage !== 'undefined' ? localStorage : null);
@@ -731,7 +737,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // PHASES 4A/4B — déclarations de paiement externe (EMPLOYEUR). Le contrôle
   // administratif n'est pas encore implémenté : aucune action de validation ici.
   const refreshPaymentDeclarations = useCallback(async () => {
-    return await loadPaymentDeclarations(currentUser);
+    const declarations = await loadPaymentDeclarations(currentUser);
+    return declarations;
   }, [currentUser, loadPaymentDeclarations]);
 
   const createPaymentDeclaration = useCallback(async (input: PaymentDeclarationInput) => {
@@ -1145,6 +1152,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     transferReplacementCandidate,
     finalizeReplacementContract,
     paymentDeclarations,
+    resourceStatuses,
     refreshPaymentDeclarations,
     createPaymentDeclaration,
     updatePaymentDeclaration,
