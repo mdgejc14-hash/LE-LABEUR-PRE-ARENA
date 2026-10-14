@@ -19,6 +19,14 @@
 
 ---
 
+> **Note de hiérarchie (recalage 2026-10-14).** La référence fonctionnelle et métier de LE LABEUR est la spécification « LE LABEUR — Vision Finale, Architecture Métier & Spécifications Opérationnelles », ainsi que les décisions explicites les plus récentes du propriétaire. Ce guide décrit l'**état technique au commit `84dd0ba`** ; il ne prouve pas à lui seul le fonctionnement, et un écart spécification/code est un travail d'implémentation, jamais une modification silencieuse de la spécification.
+>
+> - Le statut `FIN=BLOQUÉ_EN_ATTENTE_DÉCISION` mentionné ci-dessous est **historique et supersédé** par le modèle financier approuvé : 75 % Candidat / 25 % honoraires LE LABEUR au premier mois (à la charge de l'Employeur) ; 100 % au Candidat à partir du deuxième mois, sans nouvelle commission ; aucun honoraire imputé au Candidat ; salaire réglé directement par l'Employeur au Candidat, hors plateforme ; e-MECeF = facturation normalisée, pas transfert d'argent. Réserves juridiques (placement, SMIG) à vérifier avant production.
+> - Les services externes restent **non opérationnels sans preuve réelle**.
+> - Détail : `docs/specifications/NOTE-PROVISOIRE-REFERENCE-METIER.md` (note provisoire ; le texte intégral de la spécification n'est pas encore versionné).
+>
+> Les parties ci-dessous conservent leur statut d'origine ; elles sont à relire à la lumière de cette note.
+
 ## Partie A — Vision générale
 
 ### A.1 Ce que fait LE LABEUR
