@@ -438,18 +438,78 @@ export async function runApplicationDomainTests(): Promise<OfferTestResult[]> {
       assert(found.rows.length === 0, 'aucune candidature ne survit au ROLLBACK');
     });
 
-    await check('P0-E3/P0-E4 Périmètre: les listes générales restent fermées (501); les quatre décisions sont ouvertes par P0-E4', async () => {
+    // --- Lectures candidat : applications.mine.list et applications.read (propriété stricte) ---
+    let otherCandidateToken = '';
+    let otherCandidateId = '';
+    await check('P0-E3 Lecture candidat: second candidat authentifié, candidature propre créée sur une autre offre', async () => {
+      const other = await authenticateActor(harness, 'candidate-2', 'CANDIDATE');
+      otherCandidateToken = other.token;
+      otherCandidateId = other.userId;
+      const response = await harness.worker.fetch(applyRequest(offerIds.concurrent, otherCandidateToken, 'p0e3-read-other-001'));
+      assert(response.status === 201, `201 attendu, reçu ${response.status}`);
+    });
+
+    await check('P0-E3 Mes candidatures: le candidat ne voit que ses propres candidatures (propriété)', async () => {
+      const response = await harness.worker.fetch(authRequest('/api/v1/my/applications?limit=20', candidateToken));
+      assert(response.status === 200, `200 attendu, reçu ${response.status}`);
+      const page = await response.json() as { items: Application[]; hasMore: boolean; cursor: string | null };
+      const owned = await harness.database.query<{ count: string }>(
+        'SELECT count(*)::text AS count FROM applications WHERE candidate_id = $1',
+        [candidateId],
+      );
+      assert(page.items.length === Number(owned.rows[0]?.count ?? -1), 'la liste correspond exactement aux candidatures du candidat en base');
+      assert(page.items.some(item => item.id === primaryApplicationId), 'la candidature principale est listée');
+      assert(page.items.every(item => item.candidateId === candidateId), 'aucune candidature d’un autre candidat');
+      assert(page.hasMore === false && page.cursor === null, 'enveloppe de page sans curseur attendue');
+    });
+
+    await check('P0-E3 Mes candidatures: un autre candidat ne voit pas la candidature du candidat 1', async () => {
+      const response = await harness.worker.fetch(authRequest('/api/v1/my/applications', otherCandidateToken));
+      assert(response.status === 200, `200 attendu, reçu ${response.status}`);
+      const page = await response.json() as { items: Application[] };
+      assert(page.items.length >= 1 && page.items.every(item => item.candidateId === otherCandidateId), 'liste isolée par candidat');
+      assert(!page.items.some(item => item.id === primaryApplicationId), 'candidature d’autrui absente');
+    });
+
+    await check('P0-E3 Mes candidatures: employeur refusé (403), sans session refusé (401)', async () => {
+      const asEmployer = await harness.worker.fetch(authRequest('/api/v1/my/applications', employerToken));
+      assert(asEmployer.status === 403, `403 attendu pour employeur, reçu ${asEmployer.status}`);
+      const anonymous = await harness.worker.fetch(authRequest('/api/v1/my/applications', null));
+      assert(anonymous.status === 401, `401 attendu sans session, reçu ${anonymous.status}`);
+    });
+
+    await check('P0-E3 Lecture: le candidat titulaire lit sa candidature (200), identité relue du store', async () => {
+      const response = await harness.worker.fetch(authRequest(`/api/v1/applications/${primaryApplicationId}`, candidateToken));
+      assert(response.status === 200, `200 attendu, reçu ${response.status}`);
+      const application = await response.json() as Application;
+      assert(application.id === primaryApplicationId && application.candidateId === candidateId, 'candidature du titulaire');
+    });
+
+    await check('P0-E3 Lecture croisée: un autre candidat reçoit 404 identique à une candidature inexistante', async () => {
+      const foreign = await harness.worker.fetch(authRequest(`/api/v1/applications/${primaryApplicationId}`, otherCandidateToken));
+      const missing = await harness.worker.fetch(authRequest('/api/v1/applications/app_inexistante_999', otherCandidateToken));
+      assert(foreign.status === 404 && missing.status === 404, `404 attendu, reçu ${foreign.status}/${missing.status}`);
+      const foreignBody = await foreign.text();
+      assert(!foreignBody.includes(candidateId) && !foreignBody.includes(primaryApplicationId), 'aucune donnée de la candidature d’autrui');
+    });
+
+    await check('P0-E3 Lecture croisée: l’employeur propriétaire lit, un autre employeur reçoit 404, sans session 401', async () => {
+      const owner = await harness.worker.fetch(authRequest(`/api/v1/applications/${primaryApplicationId}`, employerToken));
+      assert(owner.status === 200, `propriétaire employeur : 200 attendu, reçu ${owner.status}`);
+      const otherEmployer = await harness.worker.fetch(authRequest(`/api/v1/applications/${primaryApplicationId}`, otherEmployerToken));
+      assert(otherEmployer.status === 404, `autre employeur : 404 attendu, reçu ${otherEmployer.status}`);
+      const anonymous = await harness.worker.fetch(authRequest(`/api/v1/applications/${primaryApplicationId}`, null));
+      assert(anonymous.status === 401, `401 attendu sans session, reçu ${anonymous.status}`);
+    });
+
+    await check('P0-E3/P0-E4 Périmètre: la liste employeur générale reste fermée (501); les quatre décisions sont ouvertes par P0-E4', async () => {
       // P0-E3 n'ouvrait que la soumission et la consultation par offre
       // propriétaire. P0-E4 ouvre les quatre décisions du cycle (examine,
       // shortlist, reject, withdraw) : elles ne doivent plus répondre 501.
-      const closedResponses = await Promise.all([
-        harness.worker.fetch(authRequest('/api/v1/my/applications', candidateToken)),
-        harness.worker.fetch(authRequest('/api/v1/employer/applications', employerToken)),
-        harness.worker.fetch(authRequest(`/api/v1/applications/${primaryApplicationId}`, candidateToken)),
-      ]);
-      assert(closedResponses.length === 3, 'trois opérations APPLICATION non ouvertes sont contrôlées');
-      assert(closedResponses.every(response => response.status === 501),
-        `les handlers non ouverts doivent répondre 501, reçus ${closedResponses.map(response => response.status).join('/')}`);
+      // Lectures de suivi ouvertes (mine.list et read, propriété stricte, voir contrôles ci-dessus).
+      // La liste employeur générale reste fermée (501).
+      const closedResponse = await harness.worker.fetch(authRequest('/api/v1/employer/applications', employerToken));
+      assert(closedResponse.status === 501, `employer/applications doit rester 501, reçu ${closedResponse.status}`);
 
       const decisions: Array<[string, 'withdraw' | 'examine' | 'shortlist' | 'reject', string]> = [
         ['examine', 'examine', employerToken],

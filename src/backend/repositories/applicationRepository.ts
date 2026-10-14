@@ -183,7 +183,12 @@ export type OpenApplicationRepository = Pick<ServerApplicationRepository,
   | 'shortlist'
   | 'reject'
   | 'withdraw'
->;
+> & {
+  /** `applications.mine.list` — candidatures du candidat authentifié uniquement. */
+  listMine(actor: AuthenticatedActor, page: PageRequest): Promise<CursorPage<Application>>;
+  /** `applications.read` — candidat titulaire ou employeur propriétaire de l'offre ; sinon 404. */
+  readOwn(actor: AuthenticatedActor, applicationId: string): Promise<Application>;
+};
 
 export function createApplicationRepository(
   dependencies: ApplicationRepositoryDependencies,
@@ -577,6 +582,44 @@ export function createApplicationRepository(
       };
     },
 
+    // --- Lectures candidat (suivi) : propriété stricte, aucune énumération ---
+
+    async listMine(suppliedActor, page) {
+      const actor = requireTrustedActor(suppliedActor);
+      requireCandidate(actor);
+      const candidate = await stores.users.findById(actor.id);
+      if (!candidate) throw new ApiError('UNAUTHENTICATED', 'Acteur introuvable.');
+      if (candidate.role !== 'CANDIDATE') throw new ApiError('FORBIDDEN', 'Accès interdit.');
+      if (candidate.status !== 'ACTIVE') throw new ApiError('FORBIDDEN', 'COMPTE NON ACTIF : accès indisponible.');
+      // Le store expose une lecture bornée sans curseur : une pagination par curseur est refusée explicitement.
+      if (page.cursor) {
+        throw new ApiError('VALIDATION_ERROR', 'La pagination par curseur n’est pas disponible pour vos candidatures.');
+      }
+      const records = await stores.applications.listByCandidate(actor.id, page.limit + 1);
+      const hasMore = records.length > page.limit;
+      const visible = records.slice(0, page.limit);
+      const items = await Promise.all(visible.map(record => toProjectionFromStores(record, stores)));
+      return { items, cursor: null, limit: page.limit, hasMore };
+    },
+
+    async readOwn(suppliedActor, suppliedApplicationId) {
+      const actor = requireTrustedActor(suppliedActor);
+      const applicationId = suppliedApplicationId?.trim();
+      const notFound = () => new ApiError('NOT_FOUND', 'Candidature introuvable.');
+      if (!applicationId) throw notFound();
+      const account = await stores.users.findById(actor.id);
+      if (!account) throw new ApiError('UNAUTHENTICATED', 'Acteur introuvable.');
+      if (account.status !== 'ACTIVE') throw new ApiError('FORBIDDEN', 'COMPTE NON ACTIF : accès indisponible.');
+      const record = await stores.applications.findById(applicationId);
+      if (!record) throw notFound();
+      const offer = await stores.offers.findById(record.offerId);
+      const isCandidateOwner = account.role === 'CANDIDATE' && record.candidateId === actor.id;
+      const isEmployerOwner = account.role === 'EMPLOYER' && offer?.employerId === actor.id;
+      // Un non-propriétaire reçoit exactement la réponse d'une candidature inexistante.
+      if (!isCandidateOwner && !isEmployerOwner) throw notFound();
+      return toProjectionFromStores(record, stores);
+    },
+
     // --- P0-E4 : cycle de décision (EMPLOYER propriétaire) ---
 
     async examine(actor, applicationId, command) {
@@ -637,6 +680,14 @@ export function createApplicationApiHandlers(
       );
       return apiJsonResponse(application, 201, context.requestId);
     },
+    'applications.mine.list': async context => repository.listMine(
+      context.actor!,
+      context.page ?? { cursor: null, limit: 25 },
+    ),
+    'applications.read': async context => repository.readOwn(
+      context.actor!,
+      context.params.applicationId,
+    ),
     'applications.offer.list': async context => repository.listApplicationsForOffer(
       context.actor!,
       context.params.offerId,

@@ -1021,7 +1021,7 @@ export async function runProposalDomainTests(): Promise<OfferTestResult[]> {
 
     /* ---------------- 9. PÉRIMÈTRE ET SÉPARATION DEMO/API ---------------- */
 
-    await check('P0-E5 Périmètre: lecture des remplacements ouverte; incidents, messages et listes de candidatures restent fermés (501); déclaration sans paiement', async () => {
+    await check('P0-E5 Périmètre: lecture des remplacements ouverte; incidents, messages et liste employeur de candidatures restent fermés (501); déclaration sans paiement', async () => {
       // P0-F a ouvert le domaine CONTRAT (`/contracts`) : ce test conserve la
       // frontière fermée des domaines restants, sans affaiblir le contrôle P0-E5.
       const closed = await Promise.all([
@@ -1035,8 +1035,8 @@ export async function runProposalDomainTests(): Promise<OfferTestResult[]> {
           headers: { 'content-type': 'application/json', 'Idempotency-Key': 'p0e5-closed-messages-001' },
           body: '{}',
         })),
-        harness.worker.fetch(authRequest('/api/v1/my/applications', candidateToken)),
-        harness.worker.fetch(authRequest('/api/v1/applications/app_p0e5_send', employerToken)),
+        // P4 a OUVERT `/my/applications` et `/applications/:id` (ownership testé dans applications.test.ts).
+        harness.worker.fetch(authRequest('/api/v1/employer/applications', employerToken)),
       ]);
       const absentReplacement = await harness.worker.fetch(authRequest('/api/v1/replacements/rep_p0e5_absent', employerToken));
       assert(absentReplacement.status === 404, `lecture remplacement ouverte avec 404 sur ID absent, reçu ${absentReplacement.status}`);
