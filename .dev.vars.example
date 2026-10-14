@@ -1,0 +1,40 @@
+# LE LABEUR — variables locales de `wrangler dev` (P0-C).
+#
+# Copier en `.dev.vars` (GITIGNORÉ) et renseigner une base locale ou distante.
+# Ce fichier d'exemple ne contient AUCUN secret réel et n'est jamais chargé tel quel.
+#
+# Chaîne de connexion utilisée par le binding Hyperdrive en développement local :
+# elle remplace l'ID du binding (voir documentation Cloudflare « Local development »).
+#   - base locale   : ajouter ?sslmode=disable (le TLS local n'est pas supporté par Hyperdrive local)
+#   - base distante : ajouter ?sslmode=require
+CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE="postgresql://lelabeur:motdepasse-local@127.0.0.1:55432/lelabeur?sslmode=disable"
+
+# P0-DISPUTE-1 — aucun délai de preuve par défaut; ne renseigner qu'après
+# validation explicite de l'exploitant (entier positif en millisecondes).
+# CLAIM_EVIDENCE_DEADLINE_MS=""
+
+# P0-R2 — DOCUMENTS & PREUVES.
+# Secret HMAC (≥ 32 caractères) de signature des URL de téléchargement contrôlées.
+# ABSENT par défaut : la route d'émission d'URL signée répond alors 501 explicite
+# (jamais une URL non vérifiable) et le téléchargement authentifié classique reste
+# disponible. Ne renseigner qu'avec une valeur de test locale ; AUCUN secret de
+# production ne doit apparaître ici ni être committé.
+# P0-CLOUDFLARE-PRODUCTION : le profil de développement de `wrangler.toml` déclare
+# le binding `DOCUMENTS_BUCKET` (`[[r2_buckets]]`), servi par le SIMULATEUR LOCAL
+# de `wrangler dev` — aucun bucket Cloudflare n'est requis ni créé. Le bucket de
+# PRODUCTION reste à créer par l'exploitant (`<R2_BUCKET_NAME_PRODUCTION>`) et son
+# binding reste commenté : sans lui, les routes documents répondent 501.
+# DOCUMENT_URL_SIGNING_SECRET=""
+
+# P0-CLOUDFLARE-PRODUCTION — test LOCAL du déclencheur périodique.
+# `npm run dev:worker:scheduled` active l'endpoint `/__scheduled` (JAMAIS en
+# production, jamais dans la porte de déploiement) :
+#   curl -sS "http://127.0.0.1:8787/__scheduled?cron=*+*+*+*+*""
+
+# Variable NON standard, acceptée uniquement si elle pointe vers la boucle locale
+# (127.0.0.1 / localhost). Elle permet de vérifier le parcours d'authentification
+# complet contre un JWKS de test servi localement. Ignorée partout ailleurs.
+# TEST_ONLY_GOOGLE_JWKS_URL="http://127.0.0.1:8799/jwks"
+
+# Repli sans Hyperdrive (déconseillé, réservé au dépannage local) :
+# POSTGRES_CONNECTION_STRING="postgresql://…"

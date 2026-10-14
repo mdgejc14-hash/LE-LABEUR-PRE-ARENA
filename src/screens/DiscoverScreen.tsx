@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
+import { applicationErrorMessage, hasActiveApplication } from './applicationSubmission';
 import { Search, SlidersHorizontal, Bookmark, BookmarkCheck, ShieldAlert, MapPin, CheckCircle2, Sparkles, Navigation } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { EditorialButton } from '../components/common/EditorialButton';
@@ -15,11 +16,12 @@ export const DiscoverScreen: React.FC = () => {
     filterState,
     updateFilterState,
     resetFilters,
-    applyToOffer
+    applyToOffer,
+    applications
   } = useApp();
 
   const [isFilterSheetOpen, setIsFilterSheetOpen] = useState(false);
-  const [justAppliedId, setJustAppliedId] = useState<string | null>(null);
+  const applyingIds = useRef(new Set<string>());
 
   // RÈGLE 21 & 23 : Une offre FILLED ne doit JAMAIS apparaître dans le catalogue candidat
   const activePublicOffers = offers.filter(o => o.status === 'ACTIVE');
@@ -88,14 +90,19 @@ export const DiscoverScreen: React.FC = () => {
     return true;
   });
 
+  // Affichage « Postulé » dérivé de la liste serveur (pas d'état temporaire).
+  const isOfferApplied = (offerId: string) => hasActiveApplication(applications, offerId);
+
   const handleQuickApply = async (e: React.MouseEvent, offerId: string) => {
     e.stopPropagation();
+    if (applyingIds.current.has(offerId)) return;
+    applyingIds.current.add(offerId);
     try {
       await applyToOffer(offerId);
-      setJustAppliedId(offerId);
-      setTimeout(() => setJustAppliedId(null), 2500);
-    } catch (err: any) {
-      alert(err.message || 'Impossible de postuler');
+    } catch (err: unknown) {
+      alert(applicationErrorMessage(err));
+    } finally {
+      applyingIds.current.delete(offerId);
     }
   };
 
@@ -178,7 +185,7 @@ export const DiscoverScreen: React.FC = () => {
           <div className="divide-y divide-[#17233B]/10">
             {filteredOffers.map(offer => {
               const isFav = favorites.includes(offer.id);
-              const isApplied = justAppliedId === offer.id;
+              const isApplied = isOfferApplied(offer.id);
 
               return (
                 <article
@@ -336,7 +343,7 @@ export const DiscoverScreen: React.FC = () => {
                       size="sm"
                       onClick={(e) => handleQuickApply(e, featuredOffer.id)}
                     >
-                      {justAppliedId === featuredOffer.id ? 'Postulé' : 'Postuler'}
+                      {isOfferApplied(featuredOffer.id) ? 'Postulé' : 'Postuler'}
                     </EditorialButton>
                   </div>
                 </div>
@@ -396,7 +403,7 @@ export const DiscoverScreen: React.FC = () => {
                         size="sm"
                         onClick={(e) => handleQuickApply(e, offer.id)}
                       >
-                        {justAppliedId === offer.id ? 'Postulé' : 'Postuler'}
+                        {isOfferApplied(offer.id) ? 'Postulé' : 'Postuler'}
                       </EditorialButton>
                     </div>
                   </article>
@@ -454,7 +461,7 @@ export const DiscoverScreen: React.FC = () => {
                         size="sm"
                         onClick={(e) => handleQuickApply(e, job.id)}
                       >
-                        {justAppliedId === job.id ? 'Postulé' : 'Postuler en urgence'}
+                        {isOfferApplied(job.id) ? 'Postulé' : 'Postuler en urgence'}
                       </EditorialButton>
                     </div>
                   </article>

@@ -1,0 +1,23 @@
+%% 03 — Parcours Employeur (namespace /client). Contrats appelés relevés dans les composants (D-matrice). ✔ = handler atteint (sonde), 501 = handler absent.
+flowchart TD
+  E01["EMP-01 /client — tableau de bord<br/>offers.mine.list · contracts.mine.list · payments.mine.list · claims.mine.list"] --> E05["EMP-05 /client/missions"]
+  E05 --> E06["EMP-06..09 /client/missions/nouvelle/1..4"]
+  E06 -->|"POST /offers — offers.create ✔ (mémoire et pg)"| E13["EMP-13 /client/missions/:id/publiee"]
+  E13 --> E10["EMP-10 qualification<br/>matching.qualification.submit/read ✔ pg"]
+  E10 --> E18["EMP-18 matching<br/>matching.runs.create/read ✔ pg"]
+  E13 --> E14["EMP-14 détail mission<br/>offers.status.update ✔"]
+  E14 --> E16["EMP-16 candidatures<br/>applications.offer.list · examine · shortlist · reject ✔"]
+  E18 --> E16
+  E16 --> E21["EMP-21 sélection"]
+  E21 -.->|"STOP — non appelé par EMP-21 (gap) ; proposals.create exige un conversationId non vide jamais vérifié (aucune table, proposalRepository.ts:530-531) ; messagerie 501"| PROP(["Émission de proposition impossible depuis l'UI"])
+  PROP -.->|"NON IMPLÉMENTÉ côté UI : contracts.create jamais appelé par un écran"| E29
+  E23["EMP-23..28 propositions"] -.->|"aucune route de lecture des propositions (gaps EMP-23/24)"| X1(["STOP"])
+  E29["EMP-29 /client/contrats/:id<br/>contracts.read · send · sign · terminate · confirm-execution ✔"] --> E31["EMP-31 signer<br/>contracts.sign ✔"]
+  E29 -.->|"contracts.activate / end / finalize-hiring : aucun écran appelant"| X2(["Activation et clôture non accessibles depuis l'UI"])
+  E29 --> E41["EMP-41 paiements<br/>payments.mine.list ✔ pg"]
+  E41 --> E43["EMP-43 déclaration<br/>payments.salary.declare · commission.declare ✔ pg"]
+  E41 --> E42["EMP-42 échéance<br/>payments.close-mission · salary.confirmation.request ✔ pg"]
+  E29 --> E39["EMP-39 litige — ouverture<br/>claims.create ✔ pg"]
+  E39 --> E49["EMP-49..55 dossier de litige<br/>claims.read · evidence.submit ✔ pg"]
+  E39 -.->|"lien /client/litiges : route hors design → écran de repli"| FB(["EmployerRouteFallback"])
+  E49 --> E56["EMP-56..60 remplacement<br/>replacements.mine.list · offer.create ✔ pg"]

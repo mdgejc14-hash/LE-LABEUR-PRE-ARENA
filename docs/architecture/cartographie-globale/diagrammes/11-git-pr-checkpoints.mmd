@@ -1,0 +1,13 @@
+%% 11 — Graphe des PR #47–#71 et du checkpoint. Base de la PR N = branche de tête de la PR N−1 (gh, 2026-10-13). Toutes OUVERTES, aucune fusionnée.
+flowchart LR
+  DM["design-master-v1<br/>cf54c7d"] --> P47["#47 DESIGN-FOUNDATION<br/>43aa2a4 — base design-master-v1"]
+  DM --> B551
+  B551["b551445 P0-DESIGN-FOUNDATION<br/>(équivalent de #47 dans la lignée)"] --> P48["#48 P1 PUBLIC-AUTH (draft)<br/>c9c0670"]
+  P47 -.->|"43aa2a4 ≠ b551445 : diff docs/P0-DESIGN-FOUNDATION.md — conflit probable"| P48
+  P48 --> P49["#49 P2 EMP"] --> P50["#50 P3 PRE"] --> P51["#51 P4A"] --> P52["#52 P4B-1"] --> P53["#53 P4B-2"]
+  P53 --> P54["#54 P4C"] --> P55["#55 P4D"] --> P56["#56 P4E-1"] --> P57["#57 P4E-2"] --> P58["#58 P4F"]
+  P58 --> P59["#59 P4F-2"] --> P60["#60 P4G-1"] --> P61["#61 P4G-2"] --> P62["#62 P4G-3"] --> P63["#63 P4G-4"]
+  P63 --> P64["#64 P4G-5A"] --> P65["#65 P4G-5B"] --> P66["#66 P4G-6"] --> P67["#67 P4G-7"] --> P68["#68 P4G-8"]
+  P68 --> P69["#69 RTC-1"] --> P70["#70 PUB-AUTH-1"] --> P71["#71 PUB-AUTH-2<br/>c759c0f = checkpoint analysé"]
+  P71 --> DOC["PR documentaire (cette cartographie)<br/>base arena/9682849e-le-labeur-pre-arena"]
+  MAIN["main 8fd1126"] -.->|"non ancêtre de HEAD ; merge-base 9ee5029"| P71

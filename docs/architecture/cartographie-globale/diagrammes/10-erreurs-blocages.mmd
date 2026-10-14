@@ -1,0 +1,29 @@
+%% 10 — Chemins d'erreur et points de blocage. Ordre réel du pipeline : src/backend/api/worker.ts l.140-196 ; affichage : UnitBoundary.tsx, SystemFeedback.
+flowchart TD
+  REQ["Requête /api/v1/..."] --> L{"Contrat connu ? (chemin + méthode)"}
+  L -->|"chemin inconnu"| E404["404 NOT_FOUND"]
+  L -->|"méthode non permise"| E405["405 METHOD_NOT_ALLOWED"]
+  L -->|"oui"| AU{"Session (route required) ?"}
+  AU -->|"absente / expirée / révoquée"| E401["401 UNAUTHENTICATED"]
+  AU -->|"ok ou route publique"| RL1{"Seau auth / webhook"}
+  RL1 -->|"dépassé"| E429["429 + retryAfterSeconds"]
+  RL1 --> RB{"validateRouteAccess : rôle, permission, compte"}
+  RB -->|"refus"| E403["403 FORBIDDEN"]
+  RB --> RL2{"Autres seaux (domain-mutations, documents-access, …)"}
+  RL2 -->|"dépassé"| E429
+  RL2 --> ID{"Idempotency-Key (routes idempotentes)"}
+  ID -->|"absente"| EIK["IDEMPOTENCY_KEY_REQUIRED"]
+  ID -->|"invalide"| E400["400 VALIDATION_ERROR"]
+  ID --> H{"Handler installé ?"}
+  H -->|"non"| E501["501 NOT_IMPLEMENTED"]
+  H --> BIZ{"Règle métier (repository)"}
+  BIZ -->|"rejeu même clé"| REPLAY["réponse rejouée (automation_idempotency)"]
+  BIZ -->|"ressource absente ou non possédée"| E404b["404 (anti-IDOR)"]
+  BIZ -->|"clé réutilisée, transition refusée, concurrence"| E409["409 (IDEMPOTENCY_CONFLICT ou conflit) / 422 BUSINESS_RULE_VIOLATION"]
+  BIZ -->|"exception non prévue"| E500["500 masqué (errors.ts)"]
+  E401 --> UB["UnitBoundary → SystemFeedback 401"]
+  E403 --> UB2["UnitBoundary → SystemFeedback 403 ; PUB-04 → /compte-bloque"]
+  E501 --> UI501["src/*/errors.ts:22 : 501 hors STATE_GUARD_KEYS → état 500,<br/>sauf interception locale (admin documents/notifications, rtc shared.tsx:40)"]
+  E400 --> UI400["400 hors STATE_GUARD_KEYS → état 500 (G-FE-09)"]
+  NOAPI["MODE DEMO (aucune API configurée)"] --> GAP["GapNotice « Source de données non configurée »"]
+  E429 --> PUBRL["PUB-04 : message d'attente"]

@@ -1,0 +1,531 @@
+/**
+ * ADM —— BACKEND_GAP déclarés, fiche par fiche.
+ *
+ * Chaque entrée nomme la fiche de design et la capacité ABSENTE du backend.
+ * Elle est affichée telle quelle par l'écran concerné : c'est la seule réponse
+ * autorisée à une donnée manquante (« ne pas inventer une valeur »).
+ *
+ * Aucune de ces lignes ne décrit une API que cette tranche aurait créée : le
+ * backend métier n'est pas modifié. Les routes citées existent (ou non) dans
+ * `src/backend/api/routeContracts.ts` ; l'état réel est vérifié par test.
+ *
+ * P4C-DESIGN-ADMIN-SALARY-PROOFS (ADM-23 → ADM-24) : la confirmation OTP du
+ * Salaire reste strictement réservée au Candidat et sa demande à l'Employeur ;
+ * aucune route ADMIN ne lit la confirmation ni le dossier de preuve, et aucun
+ * secret OTP n'est exposé.
+ *
+ * P4E-1-DESIGN-ADMIN-REPLACEMENTS (ADM-31 → ADM-33) : le dossier de
+ * Remplacement est lu par admin.replacements.list / admin.replacements.read.
+ * Les commandes ADMIN historiques assign / transfer / finalize sont déclarées
+ * dans le catalogue mais SANS handler, volontairement : elles contourneraient
+ * la Candidature, la Proposition et la réponse explicite du Candidat.
+ *
+ * P4E-2-DESIGN-ADMIN-REPUTATION (ADM-34 → ADM-36) : le ledger est lu par
+ * admin.reputation.entries.list / read (audit:read). La correction réelle est
+ * REVERSE / RESTORE (incidents:arbitrate), jamais un delta compensatoire. La
+ * vue dérivée GET /my/reputation est réservée au sujet (scope self) et n'est
+ * pas appelée. Aucune file de recours ni vérificateur de chaîne n'existe.
+ *
+ * P4F-DESIGN-ADMIN-DOCUMENTS (ADM-37 → ADM-40) : le registre et la fiche sont
+ * lus par admin.documents.list / read (documents:read:any) ; la révocation du
+ * Document ou d'une version est admin.documents.revoke / versions.revoke
+ * (incidents:arbitrate, motif, Idempotency-Key). Le contrôle d'intégrité
+ * technique est documents.versions.integrity.verify : route déclarée `scope:
+ * owner`, dont le handler accepte l'ADMIN porteur de documents:read:any —
+ * POINT OUVERT pour le backend (aucune modification faite par cette tranche).
+ * Aucune route de décision de vérification, de quarantaine, de journal d'accès,
+ * de politique ou de purge n'existe : chaque capacité est BACKEND_GAP, jamais
+ * simulée. Les BACKEND_GAP ci-dessous nomment ces capacités absentes.
+ *
+ * P4G-5B-DESIGN-ADMIN-SECURITY-INCIDENTS-AUDIT (ADM-55/56) : unité exacte
+ * « ADM — sécurité (incidents & audit) ». Deux contrats ADMIN existants ont été
+ * réexaminés et REJETÉS comme source de ces écrans, parce que leur contenu ne
+ * convient pas : `admin.audit.list` (audit:read) et `admin.incidents.list`
+ * (incidents:read:any) répondent tous deux une frontière de contrôle
+ * `{items: [], cursor: null, hasMore: false, persistence: 'not-configured'}`
+ * — vérifié par requête réelle sur le worker composé avec une session ADMIN.
+ * Le ledger d’audit unique du produit (`automation_audit_ledger`) reçoit des
+ * écritures réelles (USER_BLOCKED, SECURITY_ACCESS_DENIED…) mais n’est exposé
+ * par aucune route ADMIN, ne porte aucune empreinte de chaînage ni lien vers
+ * l’entrée précédente et n’a aucune contrainte d’immuabilité. La ressource
+ * « incidents » du produit est un incident CONTRACTUEL arbitré, jamais un
+ * incident de sécurité classifié. Aucune commande d’étape, de preuve, de
+ * recherche, de vérification de chaîne ou d’export n’existe : chaque capacité
+ * de ces deux fiches est BACKEND_GAP, et aucun signal technique n’est converti
+ * en incident ni en vulnérabilité.
+ *
+ * P4G-6-DESIGN-ADMIN-DATA-INFRASTRUCTURE (ADM-59/60) : unité exacte
+ * « ADM — infra (données : PostgreSQL & stockage objet) » de `units.py`. Les
+ * huit références de design des deux fiches (postgres, requêtes lentes,
+ * migrations, propositions d’index, stockage, préfixes, vérification de
+ * préfixe, rétention) ne figurent dans aucun contrat serveur et ne sont
+ * servies par aucun handler : elles répondent 404 sur le worker composé
+ * (vérifié avec une session ADMIN). Le rapport public `/healthz` — seule
+ * surface liée à la persistance — décrit la frontière observée par l’API
+ * (mode, joignabilité, sonde, migrations, booléen de binding) mais ne fournit
+ * aucune des mesures des fiches et n’est pas un contrat ADMIN : il n’est pas
+ * utilisé comme substitut. Le registre des Documents n’est pas une
+ * supervision de stockage et n’est pas appelé ici. Aucune mesure, aucun état
+ * de base ni de compartiment, aucune action de réparation, purge, migration
+ * ou configuration n’est simulé : chaque capacité absente est BACKEND_GAP.
+ *
+ * P4G-7-DESIGN-ADMIN-MEDIA-OBSERVABILITY-STATUS (ADM-61, ADM-62, ADM-63) :
+ * trois unités exactes de `units.py`, une fiche par unité — « ADM — infra
+ * (webrtc/turn) », « ADM — infra (observabilité) » et « ADM — infra
+ * (statut) ». Les onze références de design des trois fiches ne figurent dans
+ * aucun contrat serveur et ne sont servies par aucun handler : elles répondent
+ * 404 sur le worker composé (vérifié avec une session ADMIN réelle). Les
+ * sessions média réellement exposées par le produit sont des routes de
+ * PARTICIPANT (scope self/participant, rôles EMPLOYER/CANDIDATE — une session
+ * ADMIN reçoit 403) et ne portent ni qualité média, ni relais, ni coût :
+ * aucune n’est appelée ni convertie en mesure. `admin.calls.list` est déclaré
+ * mais sans handler (501) : ce n’est pas un registre d’appel média. La
+ * frontière de contrôle `admin.stats.read` répond `{metrics: {}}` avec
+ * `persistence: not-configured` : ce n’est pas de l’observabilité. Le rapport
+ * public `/healthz` décrit la seule frontière API/persistance observée
+ * (mode, joignabilité, sonde, migrations, booléen de binding) et ne publie
+ * aucun état de composant : il n’est pas une page de statut et n’est pas
+ * utilisé comme substitut. Aucune session, aucun relais, aucune trace, aucune
+ * alerte, aucun état de composant, aucun incident public, aucune maintenance
+ * et aucune opération de réparation ou de publication n’est simulé : chaque
+ * capacité absente est BACKEND_GAP.
+ *
+ * P4G-5A-DESIGN-ADMIN-SECURITY-CONTROLS (ADM-52 → ADM-54) : unité exacte
+ * « ADM — sécurité (replay, signatures, rate limits & webhooks) ». Le produit
+ * contient des protections serveur réelles — classification forensique
+ * (SECURITY_REPLAY_REJECTED, SECURITY_RATE_LIMITED, SECURITY_ACCESS_DENIED…),
+ * limiteur de débit à fenêtres glissantes et vérification de signature du
+ * webhook de paiement — mais AUCUNE API ADMIN de supervision : ni lecture des
+ * rejeux, ni règles ni statistiques de limitation de débit, ni consultation ni
+ * rejeu de webhooks. Ces protections internes ne sont ni appelées ni traduites
+ * en mesure : chaque capacité de supervision est BACKEND_GAP.
+ *
+ * P4G-8-DESIGN-ADMIN-SALARY-DISPUTES (ADM-25) : unité exacte « ADM — salaire
+ * (litiges) » de `units.py`, route P0 `/admin/salaire/litiges` (domaine
+ * Paiements & Réconciliation). Les deux références de design de la fiche
+ * (`GET /admin/salary/disputes?cursor=` et
+ * `POST /admin/salary/disputes/:id/resolve {decision, entries, motive}`) ne
+ * figurent dans aucun contrat serveur et ne sont servies par aucun handler :
+ * elles répondent 404 sur le worker composé (vérifié avec une session ADMIN
+ * réelle). Un `Claim` (`SALARY_NOT_RECEIVED` ou `PAYMENT_DISPUTE`, couvert par
+ * ADM-26 → ADM-30) est un dossier procédural qui n'expose ni montant de
+ * Salaire, ni montant contesté, ni solde avant/après, ni écriture
+ * compensatoire, et dont la décision (`RESOLVE` / `REJECT`) ne modifie jamais
+ * un `Payment` ni une confirmation de Salaire : il n'est pas réutilisé comme
+ * substitut. De même, les échéances `Payment` de nature `SALARY` (ADM-18,
+ * ADM-21, ADM-23), les tentatives de correction de rapprochement append-only
+ * `RECORDED` (ADM-19) et les routes OTP réservées à l'Employeur et au Candidat
+ * (403 pour ADMIN) ne constituent ni une file de contestations salariales ni
+ * un mécanisme d'écriture compensatoire. Chaque capacité absente est déclarée
+ * en BACKEND_GAP et aucune correction de Salaire, remboursement, retenue ou
+ * versement n'est simulé.
+ */
+
+export const ADMIN_UNIT_GAPS: Record<string, readonly string[]> = {
+  'ADM-01': [
+    'ADM-01 · fiche : GET /admin/overview, GET /admin/queues/summary, GET /admin/activity?since= et GET /admin/health/series — absents du produit. Le tableau de bord compose uniquement admin.users.list, admin.qualifications/review, admin.stats.read, admin.audit.list et admin.incidents.list.',
+    'ADM-01 · admin.stats.read répond toujours un objet de métriques vide : les tuiles concernées affichent « — » (valeur absente), jamais un zéro présenté comme réel.',
+    'ADM-01 · admin.audit.list et admin.incidents.list répondent une frontière de contrôle sans données métier : le journal d’activité et les incidents ne sont pas lisibles.',
+    'ADM-01 · « mode incident » et bascule d’astreinte : aucune API produit.',
+  ],
+  'ADM-02': [
+    'ADM-02 · fiche : GET /admin/users?q=&role=&state=&cursor= — la recherche et les filtres serveur sont absents : la recherche et les filtres sont appliqués localement sur la page réelle chargée (100 comptes maximum).',
+    'ADM-02 · POST /admin/exports — absent : aucun export CSV journalisé.',
+    'ADM-02 · pagination : le handler réel renvoie toujours hasMore à false (aucun curseur) ; la page chargée est la seule source.',
+    'ADM-02 · compteurs d’activité, drapeaux de récidive et blocages antérieurs : aucun endpoint produit.',
+  ],
+  'ADM-03': [
+    'ADM-03 · fiche : GET /admin/users/:id, GET /admin/users/:id/timeline et POST /admin/users/:id/notes — absents. La fiche est composée depuis admin.users.list (page réelle) ; historique, signalements et notes internes ne sont pas lisibles.',
+    'ADM-03 · indicateurs d’activité (contrats, candidatures, claims) et taux de complétion : aucun endpoint ADMIN produit.',
+    'ADM-03 · « envoyer en revue » (POST /admin/users/:id/review) — absent.',
+    'ADM-03 · journal des consultations de fiches (qui, quand, quoi) — absent : aucune trace d’accès n’est exposée.',
+  ],
+  'ADM-04': [
+    'ADM-04 · POST /admin/users/:id/block existe (permission users:block, motif obligatoire, idempotent, audit USER_BLOCKED, sessions actives révoquées) mais ne porte AUCUNE portée ni durée : le blocage réel est total (statut BLOCKED), sans suspension simple ni gel ciblé.',
+    'ADM-04 · POST /admin/users/:id/unblock est déclarée dans le catalogue de routes SANS handler opérationnel (réponse 501 réelle) : le déblocage n’est pas disponible dans cette tranche.',
+    'ADM-04 · POST /admin/users/:id/block/countersign (double validation) — absent : aucune contre-signature serveur.',
+    'ADM-04 · le handler de blocage n’est installé qu’avec une persistance PostgreSQL durable : sans base configurée, la route répond 501 (état réel affiché).',
+    'ADM-04 · simulateur d’effets (contrats, paiements, documents) — absent : la fiche liste les effets réels connus (statut BLOCKED, sessions révoquées, audit).',
+  ],
+  'ADM-05': [
+    'ADM-05 · fiche : GET /admin/blocks?cursor=&filters=, GET /admin/blocks/stats et POST /admin/blocks/export — absents du produit : aucun registre des blocages n’est lisible.',
+    'ADM-05 · les événements USER_BLOCKED existent dans le ledger d’audit serveur, mais aucune route ADMIN ne les expose en lecture.',
+    'ADM-05 · statistiques (blocages 30 jours, taux de levée, motif dominant, délai de recours) — absentes.',
+  ],
+  'ADM-06': [
+    'ADM-06 · fiche : POST /admin/qualification/:id/claim (verrou de prise en charge) — absent : aucun verrou serveur, deux agents peuvent examiner la même revue.',
+    'ADM-06 · GET /admin/qualification/sla — absent : aucun compteur SLA ni délai médian exposé ; l’ancienneté affichée est la date réelle d’évaluation.',
+    'ADM-06 · filtres serveur (règle, catégorie, montant, pays) — absents ; le filtre local porte sur les motifs réels de la page chargée.',
+    'ADM-06 · la file n’est alimentée qu’avec une persistance PostgreSQL durable : sans base configurée, la route répond 501 (état réel affiché).',
+  ],
+  'ADM-07': [
+    'ADM-07 · fiche : GET /admin/qualification/:id — absent : la revue est composée depuis la file réelle (admin.qualifications/review) ; un lien profond vers une qualification déjà traitée affiche un état honnête.',
+    'ADM-07 · POST /admin/qualification/:id/request-info (demande de complément) — absent : aucune messagerie de revue.',
+    'ADM-07 · POST /admin/qualification/:id/recuse (récusation) — absent.',
+    'ADM-07 · checklist d’examen persistée — absente : aucune trace d’examen côté serveur.',
+  ],
+  'ADM-08': [
+    'ADM-08 · la revue réelle n’accepte que deux décisions : ELIGIBLE_FOR_INDEPENDENT et BLOCKED (motif de 10 à 1000 caractères). La troisième carte de la fiche (« complément requis ») n’existe pas côté serveur.',
+    'ADM-08 · GET /admin/qualification/:id/effects-preview — absent : les effets affichés sont ceux, réels, du moteur (parcours indépendant débloqué ou blocage des résultats de matching).',
+    'ADM-08 · « enregistrer un brouillon » — absent : la décision est appliquée immédiatement, de façon idempotente et auditée (MISSION_QUALIFICATION_REVIEWED).',
+    'ADM-08 · la décision est à usage unique : une qualification déjà revue renvoie un conflit 409 réel.',
+  ],
+  'ADM-09': [
+    'ADM-09 · fiche : GET /admin/qualification/history?cursor=&filters=, GET /admin/qualification/analytics et POST /admin/qualification/export — absents du produit : aucun historique de verdicts n’est lisible.',
+    'ADM-09 · les revues sont auditées côté serveur (MISSION_QUALIFICATION_REVIEWED dans le ledger d’audit), mais aucune route ADMIN ne les expose en lecture.',
+    'ADM-09 · distribution des verdicts, taux de recours et détecteur de dérive — absents.',
+  ],
+  'ADM-10': [
+    'ADM-10 · fiche : GET /admin/matching/runs?cursor=, POST /admin/matching/runs/:id/retry et GET /admin/matching/health — absents du produit : aucun run n’est listable côté administration.',
+    'ADM-10 · GET /api/v1/admin/match-events est déclarée (permission match:read:any) SANS handler opérationnel (réponse 501 réelle).',
+    'ADM-10 · GET /api/v1/matching-runs/:runId existe mais est strictement réservée à l’employeur propriétaire (vérification serveur) : un admin ne peut pas lire un run.',
+    'ADM-10 · aucune métrique de santé du service de matching n’est exposée (durée médiane, taux d’échec, files en attente).',
+  ],
+  'ADM-11': [
+    'ADM-11 · fiche : GET /admin/matching/runs/:id et GET /admin/matching/runs/:id/bias-tests — absents : aucun détail de run ni test de biais n’est lisible côté administration.',
+    'ADM-11 · POST /admin/matching/factors/:id/disable (kill switch) — absent : aucune désactivation de facteur n’est possible.',
+    'ADM-11 · les résultats et explications de matching sont lisibles uniquement par l’employeur propriétaire du run (route réelle, contrôle serveur).',
+  ],
+  'ADM-12': [
+    'ADM-12 · fiche : GET /admin/matching/rulesets, POST /admin/matching/rulesets/:v/simulate et POST /admin/matching/rulesets/:v/activate — absents : aucune lecture, simulation, activation ni archivage de règles.',
+    'ADM-12 · les versions de règles affichées sont celles réellement observées dans les données lues (ruleVersion des qualifications en file) ; aucune version n’est inventée.',
+    'ADM-12 · édition des poids de facteurs, tests de biais préalables et double validation — absents : aucune modification de règle n’est possible depuis l’interface.',
+  ],
+  /* ── P4B-1 · supervision des contrats ── */
+  'ADM-13': [
+    'ADM-13 · fiche : GET /admin/contracts?segment=&cursor= — la route admin.contracts.list existe et répond le registre réel (permission contrats:read:any), mais sans segment serveur : les filtres de la fiche sont appliqués localement sur la page réellement chargée ; le curseur réellement renvoyé (id de contrat) sert au chargement de la page suivante.',
+    'ADM-13 · GET /admin/contracts/summary — absent : aucune synthèse serveur. Les repères affichés sont des comptes sur la page réellement chargée, jamais sur la base entière.',
+    'ADM-13 · POST /admin/contracts/export — absent : aucun export du registre (et donc aucune journalisation d’export). Aucun bouton d’export n’est proposé.',
+    'ADM-13 · détecteur d’inactivité « sans activité depuis 7 jours » — absent : le DTO Contrat n’expose aucune date de dernière activité ; aucune estimation n’est affichée à la place.',
+    'ADM-13 · montants : seule la valeur contractuelle réellement lisible est affichée (salaire mensuel et devise du contrat). Les écrans de paiement et de rapprochement, ainsi que tout agrégat financier, sont hors de cette tranche (P4B-2).',
+    'ADM-13 · sans persistance PostgreSQL durable, la route répond sa frontière de contrôle (collection vide, persistence: « not-configured ») : le registre affiche l’absence réelle de données, jamais un registre simulé.',
+  ],
+  'ADM-14': [
+    'ADM-14 · fiche : GET /admin/contracts/:id — absent : aucune lecture individuelle ADMIN n’existe (la route contracts.read est strictement réservée aux parties du contrat, contrôle serveur). La fiche est composée depuis la page réelle de admin.contracts.list (100 contrats par page) ; un contrat hors de la page chargée affiche un état honnête.',
+    'ADM-14 · GET /admin/contracts/:id/versions — absent : aucune table de versions ni de diff n’est exposée à l’ADMIN. La frise rendue est l’historique réellement émis par les services (champ Contrat.history) ; aucune version n’est inventée.',
+    'ADM-14 · POST /admin/contracts/:id/notes (notes internes) et geste « escalader » — absents : aucune écriture n’est possible depuis cette fiche ; elle est en lecture seule.',
+    'ADM-14 · signature et activation : les routes réelles (contracts.sign, contracts.activate) sont réservées aux parties ; l’ADMIN consulte l’état et les horodatages réels des signatures, il ne signe ni n’active rien depuis l’interface.',
+    'ADM-14 · bandeau de niveau d’accès (lecture / action / financier) par écran : aucune donnée serveur ne le décrit ; seule la liste des permissions dérivées par le serveur pour la session est affichée.',
+    'ADM-14 · pièces liées au contrat (vue ADMIN par contrat) : la route admin.documents.list existe (permission documents:read:any) mais ne filtre pas par contrat ; aucun rattachement fiable n’étant exposé, aucune liste de pièces n’est présentée.',
+  ],
+  'ADM-15': [
+    'ADM-15 · fiche : GET /admin/contracts/:id/incidents — absent : les incidents d’un contrat sont lus via la route ADMIN existante des Claims (admin.claims.list, permission incidents:read:any), filtrée localement sur le champ réel Contrat du Claim, page réellement chargée (100 Claims). Aucun endpoint par contrat n’existe.',
+    'ADM-15 · POST /admin/contracts/:id/incidents (création manuelle motivée) et POST /admin/contracts/:id/preventions (actions préventives) — absents : cette tranche ne crée ni n’appelle aucune écriture ; la décision de Claim est gouvernée par le serveur et relève d’une autre tranche (hors P4B-1).',
+    'ADM-15 · score de risque de Claim — absent : aucun modèle serveur n’est exposé ; aucun score n’est calculé ni affiché dans l’interface.',
+    'ADM-15 · sans persistance PostgreSQL durable, les routes Claim répondent 501 (route fermée) : l’écran affiche l’erreur réelle du serveur, jamais un registre vide présenté comme sain.',
+  ],
+  'ADM-16': [
+    'ADM-16 · fiche entière en BACKEND_GAP : POST /admin/contracts/:id/forced-revision et POST /admin/contracts/:id/forced-revision/countersign — absents du produit. Aucune écriture ADMIN sur un contrat n’existe ni n’est simulée : l’ADMIN ne modifie pas un contrat directement (règle du produit : les modifications passent par les flux métier tracés).',
+    'ADM-16 · génération de version R2 signée par la plateforme, double contre-signature superviseur, notification aux parties et voie de recours — aucune de ces capacités n’a de route serveur dans le référentiel.',
+    'ADM-16 · le contexte affiché (référence, statut, parties) provient uniquement de la page réelle de admin.contracts.list ; aucun formulaire n’est rendu, car aucune commande ne pourrait être exécutée.',
+  ],
+  'ADM-17': [
+    'ADM-17 · fiche : GET /admin/contracts/:id/journal?cursor= — absent : aucun journal d’audit paginé par contrat n’existe. L’historique rendu est le champ réel Contrat.history produit par les services (id, horodatage, événement, description, acteur), lu depuis la page réelle de admin.contracts.list.',
+    'ADM-17 · POST /admin/contracts/:id/journal/verify — absent : aucune vérification de chaîne d’empreintes n’est exposée ; le journal affiché n’est pas un event store chaîné et l’écran le dit. Aucun recalcul n’est simulé dans l’interface (règle de la fiche : la vérification est un fait serveur, jamais une déduction d’affichage).',
+    'ADM-17 · GET /admin/contracts/:id/journal/export — absent : aucun export JSON signé, aucun manifeste d’empreintes.',
+    'ADM-17 · valeurs avant/après (deltas) et horodatages milliseconde : non exposés par le DTO ; seuls les champs réellement produits sont affichés.',
+    'ADM-17 · aucun agent ne peut écrire dans l’historique : le produit écrit ces lignes lors des transitions réelles ; cette tranche n’ajoute aucune route d’écriture.',
+  ],
+  /* ── P4B-2 · paiements, déclarations et rapprochement ── */
+  'ADM-18': [
+    'ADM-18 · fiche : GET /admin/payments/overview, GET /admin/payments/events et GET /admin/psp/health — absents. Le registre réel admin.payments.list ne fournit ni agrégats financiers, ni flux temporel, ni état opérateur ; aucun montant n’est additionné dans le navigateur.',
+    'ADM-18 · le DTO Payment expose les échéances et montants unitaires réellement stockés. Il ne fournit pas de synthèse globale ni de détails d’événements financiers à 24 h.',
+    'ADM-18 · la consultation unitaire ADMIN utilise le handler existant GET /api/v1/payments/:paymentId, dont la permission payments:read:any est vérifiée par le handler ; aucune route frontend de détail supplémentaire n’est créée.',
+  ],
+  'ADM-19': [
+    'ADM-19 · GET /admin/reconciliation?period=&operator=, GET /admin/reconciliation/summary et GET /admin/payment-reconciliation/batches — absents. Le produit permet uniquement GET /admin/payment-reconciliation/batches/:batchId si l’identifiant du lot est déjà connu ; aucun registre global ni historique des lots n’est exposé.',
+    'ADM-19 · les items du batch exposent les verdicts réels MATCH, MISMATCH, NOT_FOUND, DUPLICATE et REVIEW_REQUIRED, leurs comparaisons, raisons et horodatages. Un MATCH n’est ni une vérification du Paiement ni un état PAID.',
+    'ADM-19 · POST /admin/reconciliation/gaps/:id/impute — absent. L’API existante de tentative de correction consigne une proposition append-only non appliquée ; aucune écriture compensatoire ou modification du Paiement n’est produite par l’interface.',
+    'ADM-19 · aucun import de relevé propre à un opérateur ni fournisseur réel n’est configuré par cette tranche ; le batch existant n’accepte que des éléments normalisés et reste soumis aux fournisseurs effectivement configurés par le serveur.',
+  ],
+  'ADM-20': [
+    'ADM-20 · GET /admin/payments/anomalies, POST /admin/payments/anomalies/:id/treat et POST /admin/payments/anomalies/:id/false-positive — absents du catalogue et sans handler. Aucun détecteur, seuil, score, file d’anomalies ni faux positif n’est simulé.',
+    'ADM-20 · les verdicts MISMATCH, NOT_FOUND, DUPLICATE et REVIEW_REQUIRED ne sont affichés que lorsqu’ils sont réellement lus dans un lot de rapprochement identifié ; ils ne créent pas une file globale d’anomalies.',
+  ],
+  'ADM-21': [
+    'ADM-21 · aucune route ADMIN dédiée aux déclarations externes n’existe. Les déclarations réellement persistées sont incluses dans le DTO Payment de admin.payments.list et de payments.read ; l’écran ne contourne pas les routes réservées à l’Employeur ou au Candidat.',
+    'ADM-21 · seuls les états PENDING, VERIFIED et REJECTED de chaque tentative, ainsi que les champs réellement exposés, sont affichés. Aucun délai de 72 h, contestation, antécédent de compte ou dossier de pièces dédié n’est fourni par le DTO.',
+    'ADM-21 · les actions ADMIN réelles sont bornées au Paiement courant PENDING_VERIFICATION : approve (payments:approve) ou reject avec motif (payments:reject). Le statut VERIFIED reste distinct de PAID ; la confirmation OTP du Candidat n’est pas accessible à l’ADMIN par cette tranche.',
+  ],
+  'ADM-22': [
+    'ADM-22 · GET /admin/payments/incidents/:id, POST /admin/payments/incidents/:id/resolve et POST /admin/payments/incidents/:id/escalate — absents du catalogue et sans handler. Aucun remboursement, réémission, écriture compensatoire ou incident financier n’est inventé.',
+  ],
+  /* ── P4C · confirmations de Salaire et preuves de réception ── */
+  'ADM-23': [
+    'ADM-23 · fiche : GET /admin/salary/confirmations?cursor=, GET /admin/salary/confirmations/stats et POST /admin/salary/confirmations/:id/remind — absentes du catalogue de routes et sans handler : aucune file de confirmations, aucun agrégat serveur et aucune relance ADMIN n’existent.',
+    'ADM-23 · l’état de confirmation du Salaire (demandée, confirmée, expirée, contestée) n’est exposé par aucune route ADMIN : les repères « en attente d’OTP », « OTP expirés » et « confirmés par le Candidat » affichent « — », jamais un zéro présenté comme réel.',
+    'ADM-23 · la file est composée depuis admin.payments.list (permission serveur payments:read:any) : seuls les Paiements de nature SALARY de la page réellement chargée sont affichés, avec leurs états du cycle servis par le serveur ; aucun montant n’est additionné dans le navigateur.',
+    'ADM-23 · la demande de confirmation reste réservée à l’Employeur (payments.salary.confirmation.request) et la confirmation OTP au Candidat (payments.salary.confirmation.confirm) : l’ADMIN consulte les états du cycle, il ne demande ni ne confirme un Salaire à la place d’une partie.',
+    'ADM-23 · aucune voie d’envoi (SMS, e-mail ou autre) n’est installée par le produit : cette interface n’annonce aucun envoi, aucune relance et aucun code délivré.',
+    'ADM-23 · le journal des envois et des relances horodatées de la fiche — absent : aucun événement de délivrance ni de cadence de relance n’est lisible côté ADMIN.',
+    'ADM-23 · sans persistance durable configurée, admin.payments.list répond sa frontière de contrôle (collection vide, persistence not-configured) : cet état réel est affiché tel quel, jamais une file présentée comme saine.',
+  ],
+  'ADM-24': [
+    'ADM-24 · fiche entière en BACKEND_GAP : GET /admin/salary/proofs/:id, POST /admin/salary/proofs/:id/validate et POST /admin/salary/proofs/:id/invalidate {motive} — absentes du catalogue et sans handler : aucun dossier de preuve n’est lisible et aucune décision (validation, invalidation motivée, contre-preuve) n’est possible côté ADMIN.',
+    'ADM-24 · l’empreinte de preuve, son horodatage, la voie d’acheminement du code, les tentatives de saisie et les signaux de fraude sont produits côté serveur de confirmation et jamais exposés à l’ADMIN : les repères de la fiche affichent « — ».',
+    'ADM-24 · AUCUN secret n’est affiché — ni code, ni empreinte de code, ni graine, ni nonce — et aucun écran ne contourne la confirmation réservée au Candidat.',
+    'ADM-24 · la référence affichée vient du chemin ; aucune trace, aucun versement et aucune décision ne sont chargés faute de handler : la fiche ne rend aucun formulaire, aucune commande ne pouvant être exécutée.',
+  ],
+  /* ── P4G-8 · contestations salariales et écritures de correction ── */
+  'ADM-25': [
+    'ADM-25 · fiche entière en BACKEND_GAP : GET /admin/salary/disputes?cursor= et POST /admin/salary/disputes/:id/resolve {decision, entries, motive} ne sont déclarées dans aucun contrat serveur et ne sont servies par aucun handler composé (404 vérifié sur le worker composé avec une session ADMIN réelle). Aucune permission ADMIN dédiée aux contestations salariales ou aux écritures compensatoires n’existe.',
+    'ADM-25 · volume et calibrage (contestations ouvertes, montant total en jeu, délai médian de résolution, taux de contestations jugées fondées) : aucune source serveur ne calcule ces indicateurs. Les repères affichent « — » (indisponible), jamais zéro, jamais un montant nul ni un taux inventé.',
+    'ADM-25 · file de contestations salariales et états de fiche (Ouvert, Preuve demandée, Résolu — fondé, Résolu — non fondé) : aucun objet serveur ne porte le montant contesté, la partie qui conteste, le motif salarial (non reçu, montant erroné, preuve refusée), l’ancienneté ou l’urgence.',
+    'ADM-25 · table d’écritures compensatoires proposées par le système (solde avant/après, impact tnum, référence au journal) et commandes « Résoudre » / « Demander une pièce » : le modèle serveur ne comporte ni grand livre de solde salarial, ni génération d’écritures compensatoires motivées, ni mécanisme de correction de Salaire, de remboursement, de retenue ou de versement. Les commandes écrites par la fiche sont désactivées.',
+    'ADM-25 · distinction vérifiée avec Claim (ADM-26 → ADM-30, permissions incidents:read:any et incidents:arbitrate) : même lorsqu’un Claim porte le type SALARY_NOT_RECEIVED ou PAYMENT_DISPUTE, ClaimView reste un dossier procédural entre Employeur et Candidat qui n’expose ni montant du Salaire, ni montant contesté, ni solde avant/après, ni écriture compensatoire, et admin.claims.decision (RESOLVE / REJECT) ne modifie jamais un Paiement ni une confirmation de Salaire. Aucune file de Claim n’est réutilisée comme substitut.',
+    'ADM-25 · distinction vérifiée avec Payment, rapprochement et confirmation OTP : admin.payments.list / payments.read (payments:read:any) exposent les échéances de Salaire et les déclarations externes de l’Employeur (statut REJECTED = rejet ADMIN d’une déclaration via admin.payments.reject, jamais une contestation salariale) ; admin.payment-reconciliation.reviews.correction-attempt (payments:approve, ADM-19) consigne une proposition append-only RECORDED non appliquée sur un item de lot ; et payments.salary.confirmation.request / confirm restent réservées à l’Employeur et au Candidat (403 pour ADMIN).',
+  ],
+  /* ── P4D · workflow Claim réellement disponible ── */
+  'ADM-26': [
+    'ADM-26 · la file appelle admin.claims.list (GET /api/v1/admin/claims, permission incidents:read:any) : la route rend toutes les Claims par curseur, sans filtre serveur ni résumé de file. Les segments, la recherche et les comptes indiquent uniquement la page effectivement chargée.',
+    'ADM-26 · filtres queue/type, indicateurs SLA, ancienneté opposable, montants en jeu et verrou de prise en charge — absents du DTO et des handlers ; aucun score, montant, priorité ou verrou n’est calculé dans le navigateur.',
+    'ADM-26 · POST /api/v1/admin/claims/:claimId/claim et GET /api/v1/admin/claims/sla — absents. La prise en charge dédiée et les échéances globales restent BACKEND_GAP.',
+  ],
+  'ADM-27': [
+    'ADM-27 · fiche lue exclusivement par admin.claims.read (GET /api/v1/admin/claims/:claimId, permission incidents:read:any) : ClaimView expose les champs Claim et demandes de justificatif réellement renvoyés. Les échanges des parties, une chronologie d’événements, les notes d’agent et une extraction factuelle ne sont pas dans ce DTO.',
+    'ADM-27 · les comptes auteur et répondant sont des identifiants réellement présents ; aucun nom de personne, rôle de partie ou contexte complémentaire n’est déduit depuis une route réservée aux participants.',
+    'ADM-27 · pour SALARY_NOT_RECEIVED, ClaimView n’expose pas le statut du Paiement ni la confirmation du Salaire par le Candidat. La référence de Paiement seule ne prouve ni déclaration, ni vérification, ni PAID, ni confirmation ; aucun accès OTP n’est ajouté.',
+  ],
+  'ADM-28': [
+    'ADM-28 · les demandes de justificatif lisibles dans ClaimView exposent type, destinataire, statut et horodatages réels ; dueAt n’est affiché que s’il est renvoyé par le serveur. Aucune durée, échéance ou relance n’est inventée.',
+    'ADM-28 · l’API Claim conserve une evidenceReference opaque, sans association Claim→Document ni route ADMIN de contenu. Visionneuse, téléchargement, métadonnées de fichier, EXIF, recevabilité et contradictions — absents ; aucune référence brute, clé d’objet ou pièce simulée n’est rendue.',
+    'ADM-28 · POST /api/v1/admin/claims/:claimId/evidence-requests (incidents:arbitrate) est disponible uniquement en UNDER_REVIEW ou ADMIN_REVIEW et sans autre demande PENDING ; le serveur configure ou omet dueAt. Les contrôles d’état restent autoritaires côté serveur.',
+  ],
+  'ADM-29': [
+    'ADM-29 · revue/escalade réelle : POST /api/v1/admin/claims/:claimId/review (incidents:arbitrate), idempotent et audité ; décision réelle : POST /api/v1/admin/claims/:claimId/decision, même permission, uniquement depuis ADMIN_REVIEW. Aucune transition locale n’est simulée.',
+    'ADM-29 · le DTO de décision n’accepte que decision et resolution. Le backend aboutit à RESOLVED (RESOLVE) ou REJECTED (REJECT), états terminaux existants ; aucun choix de catégorie, effet financier, double validation, appel ou prévisualisation n’est exposé par une route Claim.',
+    'ADM-29 · l’interface propose seulement RESOLVE et REJECT. REPLACE existe dans le handler, mais son effet déclenche le workflow Remplacement et reste exclu de cette tranche. Aucune option ou action de remplacement n’est rendue.',
+    'ADM-29 · aucune commande ADMIN de clôture vers CLOSED n’est déclarée. CLOSED reste affichable lorsqu’il est renvoyé par le serveur, mais l’interface n’invente pas une fermeture.',
+  ],
+  'ADM-30': [
+    'ADM-30 · la page réutilise admin.claims.list et filtre localement les Claims terminés de la page réelle ; resolvedAt, resolvedBy, resolution et status ne sont affichés que lorsqu’ils sont présents dans ClaimView.',
+    'ADM-30 · historique d’événements par Claim, motifs structurés, recours, analyses, comparaison et statistiques — aucune route/DTO consultable ne les fournit. GET /api/v1/admin/audit est une frontière de contrôle non filtrée par Claim ; aucun audit vide ou générique n’est présenté comme historique.',
+    'ADM-30 · aucun filtrage serveur par statut ne permet d’affirmer que la page chargée contient l’historique complet ; charger davantage utilise seulement le curseur officiel admin.claims.list.',
+  ],
+  /* ── P4E-1 · workflow de Remplacement (lecture seule) ── */
+  'ADM-31': [
+    'ADM-31 · la file appelle admin.replacements.list (GET /api/v1/admin/replacements, permission replacements:read:any revérifiée par le repository) : les dossiers sont rendus par curseur, sans filtre serveur. Recherche, filtre d’état et repères portent uniquement sur les pages réellement chargées.',
+    'ADM-31 · GET /admin/replacements/stats — absent : aucun total global, aucune durée « sans Candidat depuis plus de 7 jours », aucun compte de dossiers contestés ni de réussites sur 30 jours. Aucune ancienneté n’est calculée dans le navigateur : seule la date d’ouverture renvoyée est affichée.',
+    'ADM-31 · POST /admin/replacements/:id/reassign — absent : aucune affectation d’agent ADMIN n’existe pour un Remplacement.',
+    'ADM-31 · les états de fiche « notification, contestation, recherche, bascule, clôturé » et les badges de motif (accord mutuel, défaillance, faute alléguée, force majeure) n’existent pas dans le produit : seuls les statuts serveur PENDING_OFFER, SOURCING_CANDIDATES, CANDIDATE_SELECTED, TRANSFERRED_TO_EMPLOYER et CONTRACT_FINALIZED sont affichés. Le motif réel est celui du Claim d’origine, consultable sur sa fiche.',
+    'ADM-31 · ReplacementDossier n’expose ni le Candidat du Contrat source ni le statut de l’Offre : ces colonnes de la fiche ne sont pas reconstituées.',
+    'ADM-31 · sans persistance durable configurée, admin.replacements.list répond sa frontière de contrôle (collection vide, persistence not-configured) : cet état est affiché tel quel, jamais une file présentée comme vide et saine.',
+  ],
+  'ADM-32': [
+    'ADM-32 · GET /admin/replacements/:id/full — absent. Le dossier est lu par admin.replacements.read ; le Claim d’origine par admin.claims.read (incidents:read:any) ; les Contrats source et successeur sont recherchés dans la page chargée de admin.contracts.list (contracts:read:any) ; la Proposition sélectionnée dans la page chargée de admin.proposals.list (applications:read:any) ; les Paiements de chaque Contrat dans la page chargée de admin.payments.list (payments:read:any). Chaque bloc affiche son propre état.',
+    'ADM-32 · POST /admin/replacements/:id/intervene — absent : aucune relance, médiation ou correction ADMIN. Les commandes déclarées admin.replacements.assign, admin.replacements.transfer et admin.replacements.finalize n’ont volontairement aucun handler : aucune assignation directe, aucun transfert direct de Candidat et aucune finalisation ADMIN ne sont proposés.',
+    'ADM-32 · le dossier ne porte qu’une date d’ouverture et une date de dernière mise à jour : aucune étape (Offre publiée, Candidature sélectionnée, Proposition émise, réponse du Candidat, Contrat successeur) n’est horodatée par l’API. Le déroulé indique l’état atteint, jamais une date reconstituée.',
+    'ADM-32 · l’audit REPLACEMENT_OFFER_PUBLISHED et l’événement REPLACEMENT_CREATED sont écrits par le serveur, mais GET /api/v1/admin/audit reste une frontière de contrôle non filtrée par dossier : aucun journal d’audit du Remplacement n’est lisible. Seul l’historique émis sur chaque Contrat (CONTRACT_REPLACED, REPLACEMENT_SUCCESSOR_LINKED…) est affiché lorsqu’il est servi.',
+    'ADM-32 · admin.applications.list et admin.offers.list sont des frontières de contrôle sans données métier : le statut de la Candidature sélectionnée et celui de l’Offre de remplacement ne sont pas lisibles ; seules leurs références et le titre de l’Offre renvoyés par le dossier sont affichés.',
+    'ADM-32 · aucune lecture ADMIN unitaire de Contrat ni de Proposition n’existe (contracts.read est réservée aux parties) : un élément hors de la page chargée est déclaré « hors page chargée », jamais rechargé par une route de partie.',
+    'ADM-32 · montants dus à chacun, priorité du Paiement du Candidat sortant et relance automatique — aucune route ne les fournit. Les Paiements restent rattachés à leur propre Contrat : aucun total, aucune fusion et aucun transfert entre Contrats ne sont calculés ou affichés.',
+  ],
+  'ADM-33': [
+    'ADM-33 · fiche entière en BACKEND_GAP : POST /admin/replacements/:id/arbitrate et GET /admin/replacements/:id/arbitrate/preview — absents du catalogue et sans handler. Aucun arbitrage, aucune motivation, aucune double validation et aucun recours ne peuvent être enregistrés.',
+    'ADM-33 · le produit ne connaît aucun état « contesté » pour un Remplacement : aucune contestation n’est à trancher et aucun dossier n’est présenté comme tel.',
+    'ADM-33 · aucune écriture financière, aucun ajustement de décompte et aucune correction de périmètre ne sont simulés : la fiche ne rend aucun formulaire. Le Paiement du travail validé reste rattaché au Contrat source.',
+    'ADM-33 · la seule décision ADMIN du workflow est la décision REPLACE d’un Claim CONTRACT_INCIDENT en ADMIN_REVIEW (admin.claims.decision, incidents:arbitrate), qui ouvre le dossier et passe le Contrat source à REPLACED. Elle relève de la fiche de décision du Claim et n’est pas rendue par cette tranche.',
+  ],
+  /* ── P4E-2 · réputation ── */
+  'ADM-34': [
+    'ADM-34 · GET /admin/reputation/summary — absent : aucun bandeau 24 h, aucun délai médian, aucun total plateforme. Les repères affichés comptent uniquement la page réellement chargée de admin.reputation.entries.list.',
+    'ADM-34 · POST /admin/reputation/entries/corrections {subjectId, delta, motive, caseRef} — absent. La correction réelle est POST /api/v1/admin/reputation/entries/:reputationId/correct {action: REVERSE|RESTORE, reason} (permission incidents:arbitrate, idempotente, auditée). Aucun delta compensatoire, aucune valeur absolue et aucune note 0-100 ne sont saisis ni calculés.',
+    'ADM-34 · GET /api/v1/my/reputation (vue dérivée, impact net) est réservée au sujet (scope self) : l’ADMIN ne l’appelle pas et n’agrège pas un score dans le navigateur. Seuls l’impact, la direction, la catégorie, le statut et l’explication stockés sur chaque entrée sont affichés.',
+    'ADM-34 · double validation, notification du sujet, référence de dossier obligatoire et aperçu avant/après d’un score — absents. L’historique append-only de l’entrée (REVERSED / RESTORED) est le seul journal de correction exposé.',
+    'ADM-34 · sans persistance PostgreSQL durable, les handlers de réputation ne sont pas installés : la route répond 501 (état réel affiché), jamais un ledger simulé.',
+  ],
+  'ADM-35': [
+    'ADM-35 · fiche entière en BACKEND_GAP : GET /admin/reputation/contests et POST /admin/reputation/contests/:id/decide — absents du catalogue et sans handler. Aucune file de recours, aucun dossier comparatif, aucun taux d’acceptation et aucun SLA ne sont exposés.',
+    'ADM-35 · le produit ne connaît aucun objet « contestation d’entrée de réputation ». Ouvrir un Claim n’est pas une décision sur une entrée du ledger : aucune file n’est fabriquée à partir des Claims.',
+    'ADM-35 · aucun formulaire n’est rendu : une décision d’acceptation ou de rejet ne pourrait pas être exécutée. La correction d’une entrée existante, si elle est autorisée, relève de ADM-34 (REVERSE / RESTORE).',
+  ],
+  'ADM-36': [
+    'ADM-36 · fiche entière en BACKEND_GAP : POST /admin/audit/integrity/run, GET /admin/audit/integrity/runs et GET /admin/audit/integrity/report.pdf — absents du catalogue et sans handler. Aucune chaîne de hash, aucun rapport signé et aucune vérification d’intégrité ne sont exposés.',
+    'ADM-36 · GET /api/v1/admin/audit est une frontière de contrôle sans données métier : elle n’est pas utilisée comme vérificateur de ledger. POST /api/v1/admin/reputation/reconcile relit les faits déjà persistés d’un sujet (ADM-34) ; ce n’est pas une preuve d’intégrité de chaîne.',
+    'ADM-36 · aucun bouton « lancer une vérification » n’est proposé : aucune commande serveur ne la recevrait. Aucun résultat intègre / rupture n’est simulé.',
+  ],
+  'ADM-37': [
+    'ADM-37 · GET /admin/documents/storage (volume stocké, mini-graphe 30 j, panne R2) — absent : aucune route ADMIN de volume. Les repères de volume restent « — ».',
+    'ADM-37 · GET /admin/documents/quarantine — absent : aucun statut « en quarantaine » n’existe côté serveur. Le compteur de quarantaine reste « — » ; aucune pièce n’est déduite.',
+    'ADM-37 · filtres taille, pays et période de dépôt — absents de admin.documents.list. Seuls le type, le statut ACTIVE|REVOKED et l’identifiant du propriétaire sont acceptés.',
+    'ADM-37 · colonnes date de vérification, taille et empreinte courte dans le registre — absentes du DTO de liste. La fiche (ADM-38) affiche les empreintes SHA-256 réellement enregistrées.',
+    'ADM-37 · « rétention respectée » et bandeau de minimisation — aucune donnée de conformité de rétention n’est exposée. Les durées restent PENDING_LEGAL_VALIDATION tant que la validation juridique n’est pas acquise.',
+    'ADM-37 · sans persistance PostgreSQL durable ou sans stockage objet configuré, admin.documents.list n’est pas installé : la route répond 501 et l’écran affiche « Source de données non configurée », jamais une liste simulée.',
+  ],
+  'ADM-38': [
+    'ADM-38 · GET /admin/documents/:id/review et POST /admin/documents/:id/review/decide {criteria, outcome, rejectReason?} — absents. Aucune décision Valider, Rejeter ou Demander un complément n’existe côté serveur : aucun bouton correspondant n’est proposé.',
+    'ADM-38 · visionneuse sécurisée (contenu, zoom, rotation, filigrane nominatif, comparaison de versions) — absente. Aucune route ADMIN ne livre un contenu : aucun binaire n’est affiché ni téléchargé depuis l’ADMIN.',
+    'ADM-38 · grille de contrôle standardisée (lisibilité, validité des dates, cohérence d’identité, conformité) — absente. Aucun critère n’est versionné côté serveur ; aucune case n’est rendue.',
+    'ADM-38 · journal de consultation au nom de l’agent et motif de rejet gabarité — absents. Aucune trace de consultation ADMIN n’est écrite par une route dédiée.',
+    'ADM-38 · délai de décision de 48 h et historique des rejets antérieurs du titulaire — absents. Aucune échéance de décision ni historique de décision n’existe côté serveur.',
+    'ADM-38 · le contrôle d’intégrité technique (recalcul de l’empreinte SHA-256 enregistrée) est une capacité serveur réelle. Il ne valide ni ne rejette la pièce, et n’est pas une certification juridique.',
+    'ADM-38 · sans persistance durable ou stockage objet, les routes de documents répondent 501 : la fiche affiche « Source de données non configurée », jamais une vérification simulée.',
+  ],
+  'ADM-39': [
+    'ADM-39 · GET /admin/documents/quarantine?cursor= (file de quarantaine) — absent. Aucune file n’est lisible : l’écran n’affiche ni liste vide ni liste simulée.',
+    'ADM-39 · POST /admin/documents/:id/quarantine/lift — absent. Aucune levée d’isolement n’est exécutable depuis l’ADMIN.',
+    'ADM-39 · POST /admin/documents/:id/quarantine/confirm-fraud {motive} — absent. Aucune confirmation de fraude n’est exécutable, et aucun renvoi vers une fiche de compte n’est déduit de la pièce.',
+    'ADM-39 · détection (analyse statique, anti-malware, comparateur de doublons), gravité et délai de traitement — absents. Aucun pipeline de détection n’est branché à l’ADMIN.',
+    'ADM-39 · demande de pièce alternative — absente. Aucun statut « complément demandé » n’existe pour un Document.',
+    'ADM-39 · isolement immédiat appliqué aux candidatures — absent. Aucun effet d’isolement n’est lu ni affiché : aucun état « isolée » n’est déduit des données existantes.',
+  ],
+  'ADM-40': [
+    'ADM-40 · GET /admin/documents/access-log?cursor= (journal d’accès : agent, document, type d’accès, motif, IP tronquée) — absent. admin.audit.list reste une frontière de contrôle sans données métier et n’est pas utilisée comme journal documentaire.',
+    'ADM-40 · GET /admin/documents/retention/policies — absent. Aucune politique n’est lue. La classe de conservation affichée provient des règles de domaine ; chaque durée reste en attente de validation juridique, aucune durée n’est inventée.',
+    'ADM-40 · POST /admin/documents/retention/purge — absent. Aucune purge n’est proposée, et la rétention n’est pas modifiée tant que la validation juridique n’est pas acquise.',
+    'ADM-40 · compteurs « purgés ce mois », « prochaine purge planifiée » et « conservation légale prolongée » — absents. Aucun compteur n’est calculé dans le navigateur.',
+    'ADM-40 · export du journal d’accès (journalisé) — absent. Aucune route d’export n’existe.',
+    'ADM-40 · sans persistance durable ou stockage objet, les routes de documents répondent 501 : l’écran affiche « Source de données non configurée », jamais un journal simulé.',
+  ],
+  /* ── P4F-2 · notifications administratives ── */
+  'ADM-41': [
+    'ADM-41 · GET /api/v1/admin/notifications (admin.notifications.list, permission notifications:read:any) est la seule lecture ADMIN installée : elle renvoie la page réelle des notifications In-App, avec curseur, état de lecture et états de canaux retournés par le serveur.',
+    'ADM-41 · GET /admin/notifications/overview et GET /admin/notifications/templates/health — absents : volumes 24 h, taux d’ouverture, files, santé par gabarit et histogramme global ne sont pas exposés. Les repères affichés sont bornés à la page réellement chargée.',
+    'ADM-41 · POST /admin/notifications/test-send — absent : aucun envoi de test, aucune notification n’est créée depuis l’interface. Les canaux Push et Email restent des abstractions sans fournisseur réel ; leur état NOT_AVAILABLE est affiché tel que renvoyé.',
+    'ADM-41 · filtres serveur par gabarit, canal, période ou destinataire — absents de admin.notifications.list. Aucun filtrage local n’est présenté comme une requête plateforme.',
+    'ADM-41 · marquer une notification lue ou toutes les notifications lues relève des routes scope self (`notifications.read`, `notifications.read-all`) : l’ADMIN ne les détourne pas pour agir sur la boîte d’un autre compte.',
+    'ADM-41 · sans persistance PostgreSQL durable, le handler ADMIN n’est pas installé : la route répond 501 et l’écran affiche « Source de données non configurée », jamais une boîte vide simulée.',
+  ],
+  'ADM-42': [
+    'ADM-42 · GET /admin/notifications/templates, PUT /admin/notifications/templates/:id et POST /admin/notifications/templates/:id/validate — absents du catalogue et sans handler. Aucun gabarit, version, variable, langue ou statut n’est rendu.',
+    'ADM-42 · enregistrement d’une version, contrôle de conformité financière et prévisualisation multi-canal — absents. Aucun formulaire, éditeur, aperçu ni bouton actif n’est proposé.',
+    'ADM-42 · la notification persistée contient un titre et un message issus du serveur, mais cela ne constitue pas une ressource de gabarit administrable : aucune version n’est déduite depuis les notifications.',
+  ],
+  'ADM-43': [
+    'ADM-43 · GET /admin/notifications/deliverability et GET /admin/notifications/otp-health — absents. Aucun volume fournisseur, taux de livraison, latence, incident ou série horaire n’est exposé.',
+    'ADM-43 · POST /admin/notifications/failover {channel, scope} — absent : aucune bascule de canal ne peut être forcée depuis l’ADMIN et aucun fournisseur externe n’est configuré.',
+    'ADM-43 · les champs pushStatus et emailStatus d’une notification réelle peuvent valoir NOT_AVAILABLE, SKIPPED, DELIVERED ou FAILED ; ils ne remplacent pas une agrégation par fournisseur et ne sont pas transformés en taux dans le navigateur.',
+    'ADM-43 · numéros, adresses, webhooks, accusés de livraison et règles de backoff — absents de la capacité serveur exposée. Aucun canal externe n’est simulé.',
+  ],
+  /* ── P4G-1 · exploitation : aucune API ADMIN ops ── */
+  'ADM-44': [
+    'ADM-44 · GET /admin/ops/queues et GET /admin/ops/queues/:name/series — absents du catalogue de routes et sans handler : aucune profondeur, aucun débit, aucune latence, aucun échec ni série temporelle n’est lisible. Les tables du worker ne sont pas exposées au navigateur.',
+    'ADM-44 · POST /admin/ops/queues/:name/scale {workers, durationMin} — absent : aucune augmentation des workers, aucune alerte automatique ni action de mise à l’échelle depuis la console.',
+  ],
+  'ADM-45': [
+    'ADM-45 · GET /admin/ops/queues/:name/jobs?cursor= et GET /admin/ops/jobs/:id — absents : ni liste, ni payload expurgé, ni historique des tentatives. Le nom dans le chemin n’est qu’une référence non vérifiée.',
+    'ADM-45 · POST /admin/ops/jobs/:id/retry et POST /admin/ops/jobs/retry-batch {filter, limit} — absents : aucune relance, aucun rejeu de lot ni reprise des échecs depuis l’ADMIN.',
+  ],
+  'ADM-46': [
+    'ADM-46 · GET /admin/ops/cron et GET /admin/ops/cron/:name/history — absents : le déclencheur interne du worker n’expose ni registre ADMIN de planifications, ni historique, ni mesure de dérive.',
+    'ADM-46 · POST /admin/ops/cron/:name/run — absent : aucune exécution manuelle, aucun bouton actif et aucun horaire futur déduit de la configuration interne.',
+  ],
+  /* ── P4G-2 · SLO, dead-letter et incidents d’exploitation ── */
+  'ADM-47': [
+    'ADM-47 · GET /admin/ops/slo, GET /admin/ops/slo/:id/history et GET /admin/ops/slo/report.pdf — routes décrites par la fiche mais absentes de routeContracts.ts et sans handler : aucune cible, mesure sur 7/30 jours, série, consommation de budget, incident imputé ou rapport n’est exposé.',
+    'ADM-47 · politiques d’épuisement, propriétaire SLO, règle de gel des déploiements, revue obligatoire et plan de rétablissement — aucun contrat serveur ni mécanisme ADMIN consultable ne les confirme. Aucune conséquence automatique n’est présentée comme active.',
+  ],
+  'ADM-48': [
+    'ADM-48 · GET /admin/ops/dlq, GET /admin/ops/dlq/:id/analysis, POST /admin/ops/dlq/:id/retry et POST /admin/ops/dlq/:id/abandon — références de design absentes de routeContracts.ts et sans handler ADMIN : aucune liste, analyse, tentative de rejeu ou compensation n’est disponible.',
+    'ADM-48 · le worker contient un résultat interne « dead-letter », mais aucun contrat de lecture ou permission de supervision ne l’expose à l’ADMIN. Les tables et résultats internes ne sont pas traités comme une API ; aucun compteur ni état vide n’est déduit.',
+  ],
+  'ADM-49': [
+    'ADM-49 · GET /admin/ops/incidents/:id, POST /admin/ops/incidents/:id/entries et POST /admin/ops/incidents/:id/broadcast — références de design absentes de routeContracts.ts et sans handler : aucune chronologie, communication, sévérité, portée, statut ou propriétaire n’est lisible ni modifiable.',
+    'ADM-49 · aucune route de liste GET /admin/ops/incidents n’est définie ; le paramètre de /admin/ops/incidents/:id est une référence non vérifiée et ne crée pas de dossier consultable.',
+    'ADM-49 · GET /api/v1/admin/incidents (admin.incidents.list, incidents:read:any) renvoie la frontière de contrôle avec items vides et persistence=not-configured ; elle ne contient pas d’incident ops et ne prouve pas qu’il n’en existe aucun. Cette route n’est pas utilisée par ADM-49.',
+    'ADM-49 · POST /api/v1/admin/incidents/:incidentId/arbitrate (incidents:arbitrate) est déclaré mais aucun handler n’est installé dans la composition du worker : la commande répond 501 et ne fournit ni chronologie, ni publication, ni clôture ops. Elle n’est pas appelée.',
+  ],
+  /* ── P4G-3 · sécurité : dashboard & contrôles d’accès ── */
+  'ADM-50': [
+    'ADM-50 · GET /admin/security/overview et GET /admin/security/detections?cursor= — références de design sans contrat ni handler ADMIN : aucune détection, tendance, posture, verrou de sécurité, incident ouvert ou dernier audit n’est consultable.',
+    'ADM-50 · POST /admin/security/detections/:id/qualify — absent. Aucun faux positif n’est qualifiable et aucune action automatique n’est réversible depuis cette vue.',
+    'ADM-50 · admin.audit.list (audit:read) et admin.incidents.list (incidents:read:any) renvoient une frontière de contrôle persistence=not-configured ; leurs items vides ne prouvent ni absence de détection ni absence d’incident. Le statut BLOCKED d’un compte ne représente pas un verrou de sécurité.',
+  ],
+  'ADM-51': [
+    'ADM-51 · GET /admin/security/idor?cursor= — absent : aucun refus structuré, politique d’autorisation appliquée, récurrence, acteur expurgé ou indice de fuite n’est exposé côté ADMIN.',
+    'ADM-51 · POST /admin/security/idor/:id/qualify et POST /admin/security/idor/:id/reinforce — absents : ni qualification ni renforcement possible. Aucun refus n’est interprété comme tentative IDOR, aucun résultat « refusé » ou « fuite » n’est présumé.',
+    'ADM-51 · les protections et traces serveur internes ne constituent pas une API de supervision. Aucun endpoint, paramètre manipulé, contexte de session ni identifiant sensible n’est affiché.',
+  ],
+  /* ── P4G-4 · infrastructure : topologie & Worker edge ── */
+  'ADM-57': [
+    'ADM-57 · GET /admin/infra/topology, GET /admin/infra/nodes/:id/health et GET /admin/infra/edge/metrics — références de design absentes de routeContracts.ts et sans handler ADMIN : aucune topologie déployée, aucun état de nœud, aucune latence ni métrique Edge n’est exposé.',
+    'ADM-57 · le handler public /healthz existant rapporte uniquement le runtime et l’état de persistance observés ; il ne décrit pas une topologie, le WAF, le cache ou les services externes et n’est pas utilisé comme substitut.',
+    'ADM-57 · aucune permission ADMIN d’infrastructure n’est déclarée. La garde de session ADMIN existante protège l’écran ; aucune autorisation métier ni route serveur n’est ajoutée.',
+  ],
+  'ADM-58': [
+    'ADM-58 · GET /admin/infra/worker et GET /admin/infra/worker/deployments — absents du catalogue de routes et sans handler : invocations, latences, erreurs 5xx, cache, règles effectives, liste et part de trafic des déploiements restent inconnus.',
+    'ADM-58 · POST /admin/infra/worker/rollback et POST /admin/infra/worker/deployments/:id/countersign — absents : aucun retour arrière ni contre-signature ne peut être exécuté depuis l’interface.',
+    'ADM-58 · /healthz ne renvoie pas les métriques Edge ni un état de déploiement. Les fichiers de configuration et le code du Worker ne prouvent pas qu’un Worker est déployé ou sain en production.',
+  ],
+  /* ── P4G-5A · contrôles de sécurité : rejeu, limitation de débit, webhooks ── */
+  'ADM-52': [
+    'ADM-52 · GET /admin/security/replay?cursor= — référence de design absente de routeContracts.ts et sans handler ADMIN : aucun rejeu, aucune signature invalide, aucun token réutilisé ni horodatage décalé n’est consultable. Le tableau vide n’atteste pas l’absence de rejeu.',
+    'ADM-52 · POST /admin/security/replay/:id/qualify — absent : aucune détection n’est qualifiable et aucune fenêtre de tolérance n’est ajustable depuis l’interface.',
+    'ADM-52 · POST /admin/security/secrets/:id/rotate — absent : aucune rotation de secret n’est exécutable. Aucun secret, aucune version ni date de rotation n’est exposé, même partiellement : aucun état de rotation n’est affiché faute de source.',
+    'ADM-52 · le serveur ne classe SECURITY_REPLAY_REJECTED que sur IDEMPOTENCY_CONFLICT ou sur un conflit 409 de clé d’idempotence : ce rejet d’idempotence n’est PAS une détection de rejeu de signature et n’est jamais présenté comme tel ici.',
+    'ADM-52 · les événements forensiques de sécurité sont écrits dans le ledger d’audit existant par le puits d’audit forensique, installé uniquement avec une persistance PostgreSQL durable ; aucune route ADMIN ne les expose en lecture.',
+    'ADM-52 · admin.audit.list (audit:read) renvoie une frontière de contrôle à items vides et persistence=not-configured : ce n’est pas un journal de détections et il n’est pas utilisé comme substitut.',
+  ],
+  'ADM-53': [
+    'ADM-53 · GET /admin/security/rate-limits — référence de design absente de routeContracts.ts et sans handler ADMIN : aucune règle, portée, seuil, fenêtre, volume déclenché, blocage ni contestation d’utilisateur n’est lisible.',
+    'ADM-53 · POST /admin/security/rate-limits/:rule/simulate, POST /admin/security/rate-limits/:rule/apply et POST /admin/security/unblock — absents : aucun simulateur, aucun ajustement de règle et aucun déblocage d’utilisateur n’est exécutable depuis l’interface.',
+    'ADM-53 · la limitation de débit réelle est le limiteur interne de src/backend/api/security.ts : fenêtres glissantes conservées en mémoire par compartiment, route et sujet, avec 7 compartiments par défaut. Ces compteurs ne sont ni persistés ni exposés : aucun volume, aucun blocage et aucun taux de faux positifs n’en est déduit.',
+    'ADM-53 · un refus 429 est classé SECURITY_RATE_LIMITED dans le ledger d’audit forensique ; aucune route ADMIN ne lit ces événements et aucun compteur n’est calculé dans le navigateur.',
+    'ADM-53 · aucune permission ADMIN de limitation de débit ni d’exemption de partenaire n’est déclarée dans la matrice RBAC serveur. La garde de session ADMIN existante protège l’écran ; aucune autorisation métier ni route serveur n’est ajoutée.',
+  ],
+  'ADM-54': [
+    'ADM-54 · GET /admin/security/webhooks et GET /admin/security/webhooks/:partner/events — références de design absentes de routeContracts.ts et sans handler ADMIN : aucun partenaire, volume 24 h, latence médiane, taux d’échec, état de signature ni dernier succès n’est consultable.',
+    'ADM-54 · POST /admin/security/webhooks/events/:id/retry — absent : aucun rejeu d’événement échoué n’est déclenchable depuis l’interface et aucune file de rejeu n’est lisible.',
+    'ADM-54 · les seuls contrats webhook du produit sont webhooks.payment-provider et webhooks.payment-provider.root (POST entrant public) : ce sont des points de réception, pas une lecture ADMIN de supervision. Ils ne sont pas appelés par cet écran.',
+    'ADM-54 · la vérification de signature et d’horodatage est faite par l’adaptateur fournisseur ; un rejet écrit une trace de rejet de signature dans le ledger d’audit des paiements, qu’aucune route ADMIN n’expose. L’absence de ligne ici n’atteste ni l’absence d’événement, ni une signature valide, ni une panne partenaire.',
+    'ADM-54 · aucune clé de signature, valeur d’en-tête ni charge utile n’est affichée : aucune route ADMIN ne les fournit et aucune n’est reconstruite ni devinée côté interface.',
+  ],
+  /* ── P4G-5B · incidents de sécurité & journal d’audit ── */
+  'ADM-55': [
+    'ADM-55 · GET /admin/security/incidents/:id, POST /admin/security/incidents/:id/step {step, evidence} et POST /admin/security/incidents/:id/close {postmortem} — références de design absentes de routeContracts.ts et sans handler : aucune classification, sévérité, périmètre, statut, responsable, étape de procédure, preuve ni post-mortem ne sont lisibles ni modifiables. Une requête sur /api/v1/admin/security/incidents/:id répond 404 (vérifié sur le worker composé).',
+    'ADM-55 · GET /api/v1/admin/incidents (admin.incidents.list, incidents:read:any) est déclaré et composé, mais répond une frontière de contrôle {items: [], cursor: null, hasMore: false, persistence: not-configured} : elle ne contient aucun incident, aucune procédure et aucune preuve. Cette route n’est pas appelée par cet écran et son tableau vide ne prouve pas qu’aucun incident de sécurité n’existe.',
+    'ADM-55 · la ressource « incidents » du produit est un incident CONTRACTUEL arbitré (poursuite, annulation ou remplacement d’un Contrat), pas un incident de sécurité : elle n’est pas convertie en classification, en sévérité ni en périmètre. Aucun incident de sécurité n’est déduit de cette ressource.',
+    'ADM-55 · POST /api/v1/admin/incidents/:incidentId/arbitrate (incidents:arbitrate) est déclaré mais aucun handler n’est installé dans la composition du worker : la commande répond 501 et ne correspond à aucune étape de procédure d’incident de sécurité. Elle n’est pas appelée et aucune action équivalente n’est proposée.',
+    'ADM-55 · aucune permission ADMIN d’incident de sécurité n’est déclarée : incidents:read:any et incidents:arbitrate sont les permissions réelles des Claims, de la Réputation et des Documents. La garde de session ADMIN existante protège l’écran ; aucune autorisation métier ni route serveur n’est ajoutée.',
+    'ADM-55 · aucune obligation de notification (personnes concernées, autorités, partenaires, presse), aucune juridiction, aucune échéance légale et aucune conclusion juridique ne sont produites : aucune source serveur ne les fournit. Un signal technique classé par le serveur (refus d’accès, limitation de débit, rejet d’idempotence) n’est ni un incident confirmé, ni une vulnérabilité.',
+  ],
+  'ADM-56': [
+    'ADM-56 · GET /admin/security/audit?cursor=&filters=, POST /admin/security/audit/search {query}, POST /admin/security/audit/verify et GET /admin/security/audit/export — références de design absentes de routeContracts.ts et sans handler : aucune entrée, aucun filtre serveur, aucune vérification de chaîne et aucun export ne sont disponibles. Une requête sur /api/v1/admin/security/audit répond 404 (vérifié sur le worker composé).',
+    'ADM-56 · GET /api/v1/admin/audit (admin.audit.list, audit:read) est déclaré et composé : un ADMIN reçoit 200, sans session 401, sans audit:read 403. Sa réponse est une frontière de contrôle {resource: audit, items: [], cursor: null, hasMore: false, persistence: not-configured} : elle ne lit pas le ledger d’audit et ne contient aucune entrée. Elle n’est pas appelée par cet écran et ses items vides ne constituent pas un journal vide.',
+    'ADM-56 · le ledger d’audit unique du produit (automation_audit_ledger, migrations 0006/0007) reçoit des écritures réelles (USER_BLOCKED, SECURITY_ACCESS_DENIED, SECURITY_RATE_LIMITED…) mais aucune route ADMIN ne les expose en lecture : il n’est pas un journal consultable et n’est pas utilisé comme substitut.',
+    'ADM-56 · le ledger d’audit ne porte aucune empreinte d’événement, aucun lien vers l’entrée précédente, aucune procédure de vérification de chaîne et aucune contrainte d’immuabilité en base : « chaîne vérifiée », « dernier audit d’intégrité » et « export JSON signé » restent sans source. Aucun verdict d’intégrité n’est affiché et aucune vérification n’est simulée dans le navigateur.',
+    'ADM-56 · politique de rétention, stockage froid et journalisation des consultations du journal lui-même (qui a cherché quoi) — aucun contrat ADMIN ni mécanisme consultable ne les confirme. Aucune durée de conservation, aucune valeur probante et aucune trace de consultation ne sont présentées.',
+    'ADM-56 · aucune recherche détachée avec notification n’existe côté serveur : l’écran n’affiche aucun champ de filtre, aucune requête n’est envoyée et aucune exécution en tâche de fond n’est annoncée.',
+  ],
+  /* ── P4G-6 · données d’infrastructure : PostgreSQL/Hyperdrive & stockage objet ── */
+  'ADM-59': [
+    'ADM-59 · GET /admin/infra/postgres, GET /admin/infra/postgres/slow-queries, GET /admin/infra/postgres/migrations et POST /admin/infra/postgres/index-proposals — références de design absentes de routeContracts.ts et sans handler ADMIN : aucune latence p95, aucune connexion active ni dimension de pool, aucune requête lente, aucun retard de réplication, aucun historique de migration et aucune proposition d’index ne sont lisibles. Les huit références de l’unité (base et stockage) répondent 404 (vérifié sur le worker composé avec une session ADMIN).',
+    'ADM-59 · GET /healthz est le seul point d’entrée lié à la persistance : ce rapport public décrit la frontière réellement observée par l’API (mode, motif, joignabilité par une sonde, latence de cette sonde, descripteur sûr de cible, migrations appliquées et en attente) et le booléen runtime.hyperdriveBinding (le Worker a-t-il reçu un binding). Il ne porte aucune permission ADMIN et ne fournit ni latence p95, ni connexions, ni requête lente, ni réplication : il n’est pas utilisé comme substitut et son absence dans cet écran ne prouve aucun état de la base.',
+    'ADM-59 · aucune permission ADMIN de base de données ni d’infrastructure n’est déclarée dans la matrice RBAC serveur : les permissions réelles servent les utilisateurs, les contrats, les Claims, les paiements, les Documents, la réputation et les notifications. La garde de session ADMIN existante protège l’écran ; aucune autorisation métier ni route serveur n’est ajoutée.',
+    'ADM-59 · la configuration de persistance du dépôt (pool local borné du Worker, délai d’instruction, descripteur de cible) est un paramètre de composition, pas une mesure : aucun compteur de connexions, aucun pg_stat_statements, aucun plan d’exécution et aucune métrique de requête ne sont exposés en lecture. La dimension du pool n’est jamais présentée comme un nombre de connexions actives.',
+    'ADM-59 · le suivi de réplication, la bascule lecture/écriture et l’estimation d’impact d’une migration n’existent dans aucun contrat serveur : aucun état n’est déduit de la présence de fichiers de migration, d’un manifeste ni d’un résultat de vérification technique.',
+  ],
+  'ADM-60': [
+    'ADM-60 · GET /admin/infra/r2, GET /admin/infra/r2/prefixes, POST /admin/infra/r2/verify {prefix} et GET /admin/infra/r2/retention — références de design absentes de routeContracts.ts et sans handler ADMIN : volume total, nombre d’objets, coût estimé, latence de distribution, erreurs d’accès, répartition chaud / froid / archive, courbe de croissance, table des préfixes logiques et politique de rétention restent inconnus.',
+    'ADM-60 · aucune route ADMIN n’expose le stockage objet : ni nom de compartiment, ni préfixe physique, ni URL présignée, ni listage d’objets. La configuration ne déclare qu’un compartiment du simulateur local et la production est volontairement absente — aucune ressource réelle n’existe dans cette session, et aucun fichier de configuration n’est présenté comme un état de stockage.',
+    'ADM-60 · la seule lecture ADMIN voisine est le registre des Documents (admin.documents.list, permission documents:read:any) : il rend des métadonnées de Document (type, statut, version courante, classe de conservation) et, dans la fiche, les tailles déclarée et reçue d’une version. Ce n’est pas une supervision de stockage — aucune occupation, aucun volume agrégé, aucune classe de stockage, aucune disponibilité de compartiment et aucune latence de distribution n’en sont déduits — et il n’est pas appelé par cet écran.',
+    'ADM-60 · le contrôle d’intégrité technique POST /api/v1/documents/:documentId/versions/:versionId/verify vérifie UNE version de Document (empreinte SHA-256) et rend un verdict technique : il ne réalise ni échantillonnage ni vérification d’un préfixe, ne produit aucun rapport signé et n’est pas appelé ici. Une empreinte vérifiée sur une version n’atteste pas l’intégrité du stockage.',
+    'ADM-60 · aucune purge, aucun nettoyage de fichier orphelin, aucune transition de classe ni alerte de dérive de coût n’existe côté serveur : aucune action n’est proposée, désactivée ou programmée depuis cette vue, et aucun tarif n’est appliqué dans le navigateur.',
+  ],
+  /* ── P4G-7 · média, observabilité & statut d’infrastructure ── */
+  'ADM-61': [
+    'ADM-61 · GET /admin/infra/webrtc, GET /admin/infra/webrtc/sessions?cursor=, GET /admin/infra/webrtc/quality et GET /admin/infra/webrtc/costs — références de design absentes de routeContracts.ts et sans handler ADMIN : aucune session active, aucun taux d’établissement, aucune latence, aucune perte de paquets, aucun recours au relais et aucun coût média ne sont lisibles. Les quatre références répondent 404 (vérifié sur le worker composé avec une session ADMIN réelle).',
+    'ADM-61 · les sessions média du produit (webrtc.sessions.*) sont des routes de PARTICIPANT : scope self/participant, rôles EMPLOYER / CANDIDATE. Une session ADMIN reçoit 403 sur GET /api/v1/my/webrtc-sessions (vérifié) : il n’existe aucune vue d’ensemble ADMIN, et ces réponses ne portent ni qualité média (latence, gigue, perte, MOS), ni relais utilisé, ni coût. Elles ne sont pas appelées ni converties en mesure par cet écran.',
+    'ADM-61 · aucune permission ADMIN de média ni d’infrastructure n’est déclarée dans la matrice RBAC serveur. La garde de session ADMIN existante protège l’écran ; aucune autorisation métier, aucune route serveur et aucune configuration TURN n’est ajoutée ou modifiée.',
+    'ADM-61 · GET /api/v1/admin/calls (admin.calls.list, calls:read:any) est déclaré mais AUCUN handler n’est installé : la commande répond 501 (vérifié). Ce n’est ni un registre de sessions média ni une source de qualité ; elle n’est pas appelée.',
+    'ADM-61 · aucune URL de serveur STUN/TURN, aucun identifiant, aucune adresse d’accès et aucun secret de signalisation n’est affiché (§3.6). L’état de configuration ICE réel du produit (AVAILABLE / NOT_CONFIGURED / BLOCKED_EXTERNAL_ACCESS) est réservé aux participants et n’est pas exposé ici : aucun relais, aucune bascule et aucune panne ne sont déduits d’un fichier de configuration.',
+    'ADM-61 · l’état de consentement d’enregistrement (RTC-05) n’est exposé par aucune route ADMIN et aucun contenu de session n’est consultable dans cet espace : aucune durée, aucun enregistrement et aucune qualité ne sont présentés comme observés.',
+  ],
+  'ADM-62': [
+    'ADM-62 · GET /admin/infra/observability, GET /admin/infra/observability/alerts et POST /admin/infra/observability/alerts/:id/simulate — références de design absentes de routeContracts.ts et sans handler ADMIN : aucune couverture de traces, aucun inventaire d’alertes, aucune condition, aucun seuil, aucun taux d’action, aucun coût et aucune simulation ne sont lisibles. Les trois références répondent 404 (vérifié sur le worker composé avec une session ADMIN réelle).',
+    'ADM-62 · l’observabilité interne existe bien côté serveur — journal structuré, règles de rédaction (OBSERVABILITY_REDACTION_RULES), identifiant de corrélation, ligne d’observabilité écrite à chaque déclenchement planifié — mais ce sont des mécanismes internes, pas une API : aucune route ADMIN ne les expose en lecture et aucune mesure n’en est déduite.',
+    'ADM-62 · GET /api/v1/admin/stats (admin.stats.read, stats:read) est déclaré et composé : un ADMIN reçoit 200 avec {resource: stats, scope: admin, persistence: not-configured, metrics: {}} (vérifié). C’est une frontière de contrôle sans mesure : ni couverture, ni alerte, ni seuil, ni coût. Elle n’est pas appelée par cet écran et ses métriques vides ne prouvent ni un bruit faible ni une couverture suffisante.',
+    'ADM-62 · aucun état de traçage par chemin critique n’est exposé : ni trace orpheline, ni span manquant, ni journal sans corrélation, ni métrique sans seuil. Aucun contrôle de qualité n’est recalculé dans le navigateur à partir des journaux techniques.',
+    'ADM-62 · aucune simulation d’alerte en environnement isolé n’existe : aucun déclenchement de test n’est exécutable et aucun bac à sable n’est annoncé. Aucune cible de bruit (moins de 5 alertes/jour) n’est présentée comme tenue ou manquée, faute de mesure.',
+    'ADM-62 · aucune permission ADMIN d’observabilité n’est déclarée dans la matrice RBAC serveur. La garde de session ADMIN existante protège l’écran ; aucune autorisation métier, aucun seuil et aucune rétention ne sont ajoutés ou modifiés.',
+  ],
+  'ADM-63': [
+    'ADM-63 · GET /admin/status/components, POST /admin/status/updates {template, body}, POST /admin/status/maintenance {window, impact} et GET /admin/status/public-preview — références de design absentes de routeContracts.ts et sans handler ADMIN : aucun état de composant, aucun incident public, aucune maintenance planifiée et aucun aperçu ne sont lisibles ni publiables. Les quatre références répondent 404 (vérifié sur le worker composé avec une session ADMIN réelle).',
+    'ADM-63 · aucune page de statut publique n’est servie : les états de composants sont déclarés par la fiche comme DÉRIVÉS de la télémétrie et jamais saisis à la main — faute de télémétrie publiée, aucun état n’est affiché et aucun état n’est saisi ici. La liste des composants (API, applications, paiements, documents, appels, notifications) est rendue comme structure, jamais comme relevé.',
+    'ADM-63 · GET /healthz est un rapport public de la frontière API/persistance (status, persistence.mode/reason/reachable/latencyMs/migrations, runtime.hyperdriveBinding) : il ne publie aucun composant de service, aucun état dérivé de télémétrie, aucun incident, aucune maintenance ni aucune mise à jour horodatée. Ce n’est pas une page de statut et il n’est pas utilisé comme substitut ; son absence dans cet écran ne dit rien de la disponibilité des services.',
+    'ADM-63 · l’écran de maintenance public (PUB-10) appartient à l’espace public : aucune route ADMIN ne le prépare, ne le planifie ni ne le publie, et rien n’est annoncé aux utilisateurs depuis cette vue. Aucun report automatique d’échéance, aucune fenêtre de 24 h et aucun gabarit contrôlé ne sont présentés comme actifs.',
+    'ADM-63 · aucun détecteur d’écart entre télémétrie et page publique n’existe : ni écart détecté, ni délai médian de publication, ni taux de respect des mises à jour annoncées ne sont calculés. Aucune conclusion d’honnêteté ou de synchronisation n’est affichée faute de source.',
+    'ADM-63 · aucune permission ADMIN de statut public n’est déclarée dans la matrice RBAC serveur. La garde de session ADMIN existante protège l’écran ; aucune autorisation métier, aucune route serveur et aucune configuration du Worker edge ne sont ajoutées ou modifiées.',
+  ],
+
+};

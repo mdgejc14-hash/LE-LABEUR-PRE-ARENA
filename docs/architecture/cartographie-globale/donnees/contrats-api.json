@@ -1,0 +1,8396 @@
+[
+ {
+  "key": "auth.session",
+  "method": "GET",
+  "path": "/api/v1/auth/session",
+  "authentication": "required",
+  "scope": "self",
+  "handler": {
+   "file": "src/backend/api/identityWorker.ts",
+   "line": 135,
+   "factory": "createIdentityApiWorker",
+   "condition": "GOOGLE_CLIENT_ID + persistance mémoire ou PostgreSQL",
+   "calls": [
+    "fonction.readSession"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "EMPLOYER",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 200,
+    "code": "OK",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   },
+   "postgres": {
+    "status": 200,
+    "code": "OK",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   },
+   "postgresR2": {
+    "status": 200,
+    "code": "OK",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": "auth",
+  "tests": [
+   "scripts/verify-postgres-e2e.ts",
+   "scripts/verify-public-ui.ts",
+   "scripts/verify-workerd-local.ts",
+   "src/backend/identity/postgresIdentity.test.ts",
+   "src/public/public.test.tsx"
+  ],
+  "usedByScreens": []
+ },
+ {
+  "key": "auth.google.credential",
+  "method": "POST",
+  "path": "/api/v1/auth/google/credential",
+  "authentication": "public",
+  "scope": "public",
+  "handler": {
+   "file": "src/backend/api/identityWorker.ts",
+   "line": 134,
+   "factory": "createIdentityApiWorker",
+   "condition": "GOOGLE_CLIENT_ID + persistance mémoire ou PostgreSQL",
+   "calls": [
+    "fonction.googleLogin"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": null,
+    "handler": "ABSENT"
+   },
+   "memory": {
+    "status": 400,
+    "code": "VALIDATION_ERROR",
+    "role": null,
+    "handler": "ATTEINT"
+   },
+   "postgres": {
+    "status": 400,
+    "code": "VALIDATION_ERROR",
+    "role": null,
+    "handler": "ATTEINT"
+   },
+   "postgresR2": {
+    "status": 400,
+    "code": "VALIDATION_ERROR",
+    "role": null,
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": "auth",
+  "tests": [
+   "scripts/verify-postgres-e2e.ts",
+   "scripts/verify-workerd-local.ts",
+   "src/backend/api/offers.test.ts",
+   "src/backend/identity/postgresIdentity.test.ts",
+   "src/public/public.test.tsx"
+  ],
+  "usedByScreens": []
+ },
+ {
+  "key": "auth.logout",
+  "method": "POST",
+  "path": "/api/v1/auth/logout",
+  "authentication": "required",
+  "scope": "self",
+  "auditOnMutation": true,
+  "handler": {
+   "file": "src/backend/api/identityWorker.ts",
+   "line": 136,
+   "factory": "createIdentityApiWorker",
+   "condition": "GOOGLE_CLIENT_ID + persistance mémoire ou PostgreSQL",
+   "calls": [
+    "fonction.logout"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "EMPLOYER",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 200,
+    "code": "OK",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   },
+   "postgres": {
+    "status": 200,
+    "code": "OK",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   },
+   "postgresR2": {
+    "status": 200,
+    "code": "OK",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": "auth",
+  "tests": [
+   "scripts/verify-postgres-e2e.ts",
+   "scripts/verify-workerd-local.ts",
+   "src/backend/api/securityAntiFraud.test.ts",
+   "src/backend/identity/identity.test.ts",
+   "src/backend/identity/postgresIdentity.test.ts",
+   "src/public/public.test.tsx"
+  ],
+  "usedByScreens": []
+ },
+ {
+  "key": "auth.google",
+  "method": "POST",
+  "path": "/api/v1/auth/google",
+  "authentication": "public",
+  "scope": "public",
+  "handler": {
+   "file": "src/backend/api/identityWorker.ts",
+   "line": 133,
+   "factory": "createIdentityApiWorker",
+   "condition": "GOOGLE_CLIENT_ID + persistance mémoire ou PostgreSQL",
+   "calls": [
+    "fonction.googleLogin"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": null,
+    "handler": "ABSENT"
+   },
+   "memory": {
+    "status": 400,
+    "code": "VALIDATION_ERROR",
+    "role": null,
+    "handler": "ATTEINT"
+   },
+   "postgres": {
+    "status": 400,
+    "code": "VALIDATION_ERROR",
+    "role": null,
+    "handler": "ATTEINT"
+   },
+   "postgresR2": {
+    "status": 400,
+    "code": "VALIDATION_ERROR",
+    "role": null,
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": "auth",
+  "tests": [
+   "src/backend/identity/identity.test.ts"
+  ],
+  "usedByScreens": []
+ },
+ {
+  "key": "me.read",
+  "method": "GET",
+  "path": "/api/v1/me",
+  "authentication": "required",
+  "scope": "self",
+  "handler": {
+   "file": "src/backend/api/identityWorker.ts",
+   "line": 137,
+   "factory": "createIdentityApiWorker",
+   "condition": "GOOGLE_CLIENT_ID + persistance mémoire ou PostgreSQL",
+   "calls": [
+    "fonction.readSession"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "EMPLOYER",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 200,
+    "code": "OK",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   },
+   "postgres": {
+    "status": 200,
+    "code": "OK",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   },
+   "postgresR2": {
+    "status": 200,
+    "code": "OK",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [
+   "scripts/verify-postgres-e2e.ts",
+   "scripts/verify-workerd-local.ts",
+   "src/backend/api/securityAntiFraud.test.ts",
+   "src/backend/identity/identity.test.ts",
+   "src/backend/identity/postgresIdentity.test.ts"
+  ],
+  "usedByScreens": []
+ },
+ {
+  "key": "users.me.read",
+  "method": "GET",
+  "path": "/api/v1/users/me",
+  "authentication": "required",
+  "scope": "self",
+  "handler": {
+   "file": "src/backend/api/identityWorker.ts",
+   "line": 138,
+   "factory": "createIdentityApiWorker",
+   "condition": "GOOGLE_CLIENT_ID + persistance mémoire ou PostgreSQL",
+   "calls": [
+    "fonction.readSession"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "EMPLOYER",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 200,
+    "code": "OK",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   },
+   "postgres": {
+    "status": 200,
+    "code": "OK",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   },
+   "postgresR2": {
+    "status": 200,
+    "code": "OK",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [],
+  "usedByScreens": []
+ },
+ {
+  "key": "users.me.update",
+  "method": "PATCH",
+  "path": "/api/v1/users/me",
+  "authentication": "required",
+  "scope": "self",
+  "auditOnMutation": true,
+  "handler": null,
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "EMPLOYER",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   },
+   "postgres": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   },
+   "postgresR2": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [],
+  "usedByScreens": []
+ },
+ {
+  "key": "users.profile.read",
+  "method": "GET",
+  "path": "/api/v1/users/:userId",
+  "authentication": "required",
+  "scope": "owner",
+  "handler": null,
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "EMPLOYER",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   },
+   "postgres": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   },
+   "postgresR2": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [],
+  "usedByScreens": []
+ },
+ {
+  "key": "users.candidates.list",
+  "method": "GET",
+  "path": "/api/v1/directory/candidates",
+  "authentication": "public",
+  "scope": "public",
+  "collection": true,
+  "handler": null,
+  "probe": {
+   "closed": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": null,
+    "handler": "ABSENT"
+   },
+   "memory": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": null,
+    "handler": "ABSENT"
+   },
+   "postgres": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": null,
+    "handler": "ABSENT"
+   },
+   "postgresR2": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": null,
+    "handler": "ABSENT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [],
+  "usedByScreens": []
+ },
+ {
+  "key": "users.employers.list",
+  "method": "GET",
+  "path": "/api/v1/directory/employers",
+  "authentication": "public",
+  "scope": "public",
+  "collection": true,
+  "handler": null,
+  "probe": {
+   "closed": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": null,
+    "handler": "ABSENT"
+   },
+   "memory": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": null,
+    "handler": "ABSENT"
+   },
+   "postgres": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": null,
+    "handler": "ABSENT"
+   },
+   "postgresR2": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": null,
+    "handler": "ABSENT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [],
+  "usedByScreens": []
+ },
+ {
+  "key": "offers.public.list",
+  "method": "GET",
+  "path": "/api/v1/offers",
+  "authentication": "public",
+  "scope": "public",
+  "collection": true,
+  "handler": {
+   "file": "src/backend/repositories/offerRepository.ts",
+   "line": 432,
+   "factory": "createOfferApiHandlers",
+   "condition": "persistance mémoire ou PostgreSQL (persistence.core)",
+   "calls": [
+    "repository.listPublicOffers"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": null,
+    "handler": "ABSENT"
+   },
+   "memory": {
+    "status": 200,
+    "code": "OK",
+    "role": null,
+    "handler": "ATTEINT"
+   },
+   "postgres": {
+    "status": 200,
+    "code": "OK",
+    "role": null,
+    "handler": "ATTEINT"
+   },
+   "postgresR2": {
+    "status": 200,
+    "code": "OK",
+    "role": null,
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [
+   "scripts/verify-postgres-e2e.ts",
+   "scripts/verify-workerd-local.ts",
+   "src/backend/api/foundation.test.ts",
+   "src/backend/api/health.test.ts",
+   "src/backend/api/offers.test.ts",
+   "src/backend/api/securityAntiFraud.test.ts",
+   "src/backend/automation/cronQueue.test.ts",
+   "src/backend/persistence/persistence.test.ts",
+   "src/backend/worker/cloudflareEntry.test.ts"
+  ],
+  "usedByScreens": [
+   "PRE-05",
+   "PRE-06"
+  ]
+ },
+ {
+  "key": "offers.public.read",
+  "method": "GET",
+  "path": "/api/v1/offers/:offerId",
+  "authentication": "public",
+  "scope": "public",
+  "handler": {
+   "file": "src/backend/repositories/offerRepository.ts",
+   "line": 424,
+   "factory": "createOfferApiHandlers",
+   "condition": "persistance mémoire ou PostgreSQL (persistence.core)",
+   "calls": [
+    "repository.getOffer"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": null,
+    "handler": "ABSENT"
+   },
+   "memory": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": null,
+    "handler": "ATTEINT"
+   },
+   "postgres": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": null,
+    "handler": "ATTEINT"
+   },
+   "postgresR2": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": null,
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [
+   "src/backend/api/offers.test.ts"
+  ],
+  "usedByScreens": [
+   "PRE-07",
+   "PRE-08",
+   "PRE-09",
+   "PRE-41",
+   "PRE-43",
+   "PRE-44"
+  ]
+ },
+ {
+  "key": "offers.mine.list",
+  "method": "GET",
+  "path": "/api/v1/my/offers",
+  "authentication": "required",
+  "scope": "self",
+  "collection": true,
+  "roles": [
+   "EMPLOYER"
+  ],
+  "handler": {
+   "file": "src/backend/repositories/offerRepository.ts",
+   "line": 447,
+   "factory": "createOfferApiHandlers",
+   "condition": "persistance mémoire ou PostgreSQL (persistence.core)",
+   "calls": [
+    "repository.getMyOffers"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "EMPLOYER",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 200,
+    "code": "OK",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   },
+   "postgres": {
+    "status": 200,
+    "code": "OK",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   },
+   "postgresR2": {
+    "status": 200,
+    "code": "OK",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [
+   "src/backend/api/offers.test.ts"
+  ],
+  "usedByScreens": [
+   "EMP-01",
+   "EMP-05",
+   "EMP-11",
+   "EMP-12",
+   "EMP-13",
+   "EMP-14",
+   "EMP-15",
+   "EMP-17",
+   "EMP-18",
+   "EMP-19"
+  ]
+ },
+ {
+  "key": "offers.create",
+  "method": "POST",
+  "path": "/api/v1/offers",
+  "authentication": "required",
+  "scope": "self",
+  "roles": [
+   "EMPLOYER"
+  ],
+  "idempotency": true,
+  "auditOnMutation": true,
+  "handler": {
+   "file": "src/backend/repositories/offerRepository.ts",
+   "line": 418,
+   "factory": "createOfferApiHandlers",
+   "condition": "persistance mémoire ou PostgreSQL (persistence.core)",
+   "calls": [
+    "repository.createOffer"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "EMPLOYER",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 400,
+    "code": "VALIDATION_ERROR",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   },
+   "postgres": {
+    "status": 400,
+    "code": "VALIDATION_ERROR",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   },
+   "postgresR2": {
+    "status": 400,
+    "code": "VALIDATION_ERROR",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": "domain-mutations",
+  "tests": [
+   "scripts/verify-postgres-e2e.ts",
+   "scripts/verify-workerd-local.ts",
+   "src/backend/api/foundation.test.ts",
+   "src/backend/api/health.test.ts",
+   "src/backend/api/offers.test.ts",
+   "src/backend/api/securityAntiFraud.test.ts",
+   "src/backend/automation/cronQueue.test.ts",
+   "src/backend/persistence/persistence.test.ts",
+   "src/backend/worker/cloudflareEntry.test.ts"
+  ],
+  "usedByScreens": [
+   "EMP-06",
+   "EMP-07",
+   "EMP-08",
+   "EMP-09"
+  ]
+ },
+ {
+  "key": "offers.status.update",
+  "method": "PATCH",
+  "path": "/api/v1/offers/:offerId/status",
+  "authentication": "required",
+  "scope": "owner",
+  "roles": [
+   "EMPLOYER"
+  ],
+  "idempotency": true,
+  "auditOnMutation": true,
+  "handler": {
+   "file": "src/backend/repositories/offerRepository.ts",
+   "line": 452,
+   "factory": "createOfferApiHandlers",
+   "condition": "persistance mémoire ou PostgreSQL (persistence.core)",
+   "calls": [
+    "repository.setOfferStatus"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "EMPLOYER",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 400,
+    "code": "VALIDATION_ERROR",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   },
+   "postgres": {
+    "status": 400,
+    "code": "VALIDATION_ERROR",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   },
+   "postgresR2": {
+    "status": 400,
+    "code": "VALIDATION_ERROR",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [
+   "src/backend/api/offers.test.ts",
+   "src/backend/api/securityAntiFraud.test.ts"
+  ],
+  "usedByScreens": [
+   "EMP-14",
+   "EMP-15"
+  ]
+ },
+ {
+  "key": "offers.favorites.list",
+  "method": "GET",
+  "path": "/api/v1/my/favorites",
+  "authentication": "required",
+  "scope": "self",
+  "handler": null,
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "EMPLOYER",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   },
+   "postgres": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   },
+   "postgresR2": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [],
+  "usedByScreens": []
+ },
+ {
+  "key": "offers.favorites.toggle",
+  "method": "POST",
+  "path": "/api/v1/offers/:offerId/favorite",
+  "authentication": "required",
+  "scope": "self",
+  "idempotency": true,
+  "auditOnMutation": true,
+  "handler": null,
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "EMPLOYER",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   },
+   "postgres": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   },
+   "postgresR2": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [
+   "src/backend/api/offers.test.ts"
+  ],
+  "usedByScreens": []
+ },
+ {
+  "key": "matching.qualification.submit",
+  "method": "POST",
+  "path": "/api/v1/offers/:offerId/qualification",
+  "authentication": "required",
+  "scope": "owner",
+  "roles": [
+   "EMPLOYER"
+  ],
+  "idempotency": true,
+  "auditOnMutation": true,
+  "handler": {
+   "file": "src/backend/matching/matchingRepository.ts",
+   "line": 501,
+   "factory": "createMatchingApiHandlers",
+   "condition": "PostgreSQL uniquement",
+   "calls": [
+    "repository.submitQualification"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "EMPLOYER",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   },
+   "postgres": {
+    "status": 400,
+    "code": "VALIDATION_ERROR",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   },
+   "postgresR2": {
+    "status": 400,
+    "code": "VALIDATION_ERROR",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [
+   "scripts/verify-workerd-local.ts",
+   "src/backend/api/securityAntiFraud.test.ts",
+   "src/backend/automation/cronQueue.test.ts",
+   "src/backend/matching/matching.test.ts"
+  ],
+  "usedByScreens": [
+   "EMP-10"
+  ]
+ },
+ {
+  "key": "matching.qualification.read",
+  "method": "GET",
+  "path": "/api/v1/offers/:offerId/qualification",
+  "authentication": "required",
+  "scope": "owner",
+  "roles": [
+   "EMPLOYER"
+  ],
+  "handler": {
+   "file": "src/backend/matching/matchingRepository.ts",
+   "line": 505,
+   "factory": "createMatchingApiHandlers",
+   "condition": "PostgreSQL uniquement",
+   "calls": [
+    "repository.getPublicMissionConstraints",
+    "repository.getQualification",
+    "repository.listPendingReviews",
+    "repository.resolveHumanReview"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "EMPLOYER",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   },
+   "postgres": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   },
+   "postgresR2": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [
+   "scripts/verify-workerd-local.ts",
+   "src/backend/api/securityAntiFraud.test.ts",
+   "src/backend/automation/cronQueue.test.ts"
+  ],
+  "usedByScreens": [
+   "EMP-10",
+   "EMP-14",
+   "EMP-18",
+   "EMP-19"
+  ]
+ },
+ {
+  "key": "matching.qualification.summary",
+  "method": "GET",
+  "path": "/api/v1/offers/:offerId/qualification-summary",
+  "authentication": "public",
+  "scope": "public",
+  "handler": {
+   "file": "src/backend/matching/matchingRepository.ts",
+   "line": 507,
+   "factory": "createMatchingApiHandlers",
+   "condition": "PostgreSQL uniquement",
+   "calls": [
+    "repository.getMyCandidateProfile",
+    "repository.getPublicMissionConstraints",
+    "repository.listPendingReviews",
+    "repository.resolveHumanReview"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": null,
+    "handler": "ABSENT"
+   },
+   "memory": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": null,
+    "handler": "ABSENT"
+   },
+   "postgres": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": null,
+    "handler": "ATTEINT"
+   },
+   "postgresR2": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": null,
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [
+   "scripts/verify-workerd-local.ts"
+  ],
+  "usedByScreens": []
+ },
+ {
+  "key": "matching.profile.read",
+  "method": "GET",
+  "path": "/api/v1/my/matching-profile",
+  "authentication": "required",
+  "scope": "self",
+  "roles": [
+   "CANDIDATE"
+  ],
+  "handler": {
+   "file": "src/backend/matching/matchingRepository.ts",
+   "line": 513,
+   "factory": "createMatchingApiHandlers",
+   "condition": "PostgreSQL uniquement",
+   "calls": [
+    "repository.createMatchingRun",
+    "repository.getMatchingRun",
+    "repository.getMyCandidateProfile",
+    "repository.updateCandidateProfile"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "CANDIDATE",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "CANDIDATE",
+    "handler": "ABSENT"
+   },
+   "postgres": {
+    "status": 200,
+    "code": "OK",
+    "role": "CANDIDATE",
+    "handler": "ATTEINT"
+   },
+   "postgresR2": {
+    "status": 200,
+    "code": "OK",
+    "role": "CANDIDATE",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [
+   "scripts/verify-workerd-local.ts",
+   "src/backend/api/documents.test.ts",
+   "src/backend/api/securityAntiFraud.test.ts"
+  ],
+  "usedByScreens": [
+   "PRE-01",
+   "PRE-03",
+   "PRE-04"
+  ]
+ },
+ {
+  "key": "matching.profile.update",
+  "method": "PATCH",
+  "path": "/api/v1/my/matching-profile",
+  "authentication": "required",
+  "scope": "self",
+  "roles": [
+   "CANDIDATE"
+  ],
+  "idempotency": true,
+  "auditOnMutation": true,
+  "handler": {
+   "file": "src/backend/matching/matchingRepository.ts",
+   "line": 514,
+   "factory": "createMatchingApiHandlers",
+   "condition": "PostgreSQL uniquement",
+   "calls": [
+    "repository.createMatchingRun",
+    "repository.getMatchingRun",
+    "repository.updateCandidateProfile"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "CANDIDATE",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "CANDIDATE",
+    "handler": "ABSENT"
+   },
+   "postgres": {
+    "status": 200,
+    "code": "OK",
+    "role": "CANDIDATE",
+    "handler": "ATTEINT"
+   },
+   "postgresR2": {
+    "status": 200,
+    "code": "OK",
+    "role": "CANDIDATE",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [
+   "scripts/verify-workerd-local.ts",
+   "src/backend/api/documents.test.ts",
+   "src/backend/api/securityAntiFraud.test.ts",
+   "src/backend/matching/matching.test.ts"
+  ],
+  "usedByScreens": [
+   "PRE-01",
+   "PRE-04"
+  ]
+ },
+ {
+  "key": "matching.runs.create",
+  "method": "POST",
+  "path": "/api/v1/offers/:offerId/matching-runs",
+  "authentication": "required",
+  "scope": "owner",
+  "roles": [
+   "EMPLOYER"
+  ],
+  "idempotency": true,
+  "auditOnMutation": true,
+  "handler": {
+   "file": "src/backend/matching/matchingRepository.ts",
+   "line": 516,
+   "factory": "createMatchingApiHandlers",
+   "condition": "PostgreSQL uniquement",
+   "calls": [
+    "repository.createMatchingRun",
+    "repository.getMatchingRun"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "EMPLOYER",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   },
+   "postgres": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   },
+   "postgresR2": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [
+   "scripts/verify-workerd-local.ts",
+   "src/backend/api/securityAntiFraud.test.ts",
+   "src/backend/matching/matching.test.ts"
+  ],
+  "usedByScreens": [
+   "EMP-18",
+   "EMP-19"
+  ]
+ },
+ {
+  "key": "matching.runs.read",
+  "method": "GET",
+  "path": "/api/v1/matching-runs/:runId",
+  "authentication": "required",
+  "scope": "owner",
+  "roles": [
+   "EMPLOYER"
+  ],
+  "handler": {
+   "file": "src/backend/matching/matchingRepository.ts",
+   "line": 518,
+   "factory": "createMatchingApiHandlers",
+   "condition": "PostgreSQL uniquement",
+   "calls": [
+    "repository.getMatchingRun"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "EMPLOYER",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   },
+   "postgres": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   },
+   "postgresR2": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [],
+  "usedByScreens": [
+   "EMP-18",
+   "EMP-19"
+  ]
+ },
+ {
+  "key": "matching.qualification.review.list",
+  "method": "GET",
+  "path": "/api/v1/admin/qualifications/review",
+  "authentication": "required",
+  "scope": "admin",
+  "roles": [
+   "ADMIN"
+  ],
+  "permission": "offers:moderate",
+  "collection": true,
+  "handler": {
+   "file": "src/backend/matching/matchingRepository.ts",
+   "line": 509,
+   "factory": "createMatchingApiHandlers",
+   "condition": "PostgreSQL uniquement",
+   "calls": [
+    "repository.getMyCandidateProfile",
+    "repository.listPendingReviews",
+    "repository.resolveHumanReview",
+    "repository.updateCandidateProfile"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "ADMIN",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "ADMIN",
+    "handler": "NON_SONDÉ"
+   },
+   "postgres": {
+    "status": 200,
+    "code": "OK",
+    "role": "ADMIN",
+    "handler": "ATTEINT"
+   },
+   "postgresR2": {
+    "status": 200,
+    "code": "OK",
+    "role": "ADMIN",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [],
+  "usedByScreens": [
+   "ADM-01",
+   "ADM-06",
+   "ADM-07",
+   "ADM-08",
+   "ADM-12"
+  ]
+ },
+ {
+  "key": "matching.qualification.review",
+  "method": "POST",
+  "path": "/api/v1/admin/qualifications/:qualificationId/review",
+  "authentication": "required",
+  "scope": "admin",
+  "roles": [
+   "ADMIN"
+  ],
+  "permission": "offers:moderate",
+  "idempotency": true,
+  "auditOnMutation": true,
+  "handler": {
+   "file": "src/backend/matching/matchingRepository.ts",
+   "line": 511,
+   "factory": "createMatchingApiHandlers",
+   "condition": "PostgreSQL uniquement",
+   "calls": [
+    "repository.createMatchingRun",
+    "repository.getMyCandidateProfile",
+    "repository.resolveHumanReview",
+    "repository.updateCandidateProfile"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "ADMIN",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "ADMIN",
+    "handler": "NON_SONDÉ"
+   },
+   "postgres": {
+    "status": 400,
+    "code": "VALIDATION_ERROR",
+    "role": "ADMIN",
+    "handler": "ATTEINT"
+   },
+   "postgresR2": {
+    "status": 400,
+    "code": "VALIDATION_ERROR",
+    "role": "ADMIN",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [
+   "src/backend/matching/matching.test.ts"
+  ],
+  "usedByScreens": [
+   "ADM-08"
+  ]
+ },
+ {
+  "key": "applications.mine.list",
+  "method": "GET",
+  "path": "/api/v1/my/applications",
+  "authentication": "required",
+  "scope": "self",
+  "collection": true,
+  "roles": [
+   "CANDIDATE"
+  ],
+  "handler": null,
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "CANDIDATE",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "CANDIDATE",
+    "handler": "ABSENT"
+   },
+   "postgres": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "CANDIDATE",
+    "handler": "ABSENT"
+   },
+   "postgresR2": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "CANDIDATE",
+    "handler": "ABSENT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [
+   "scripts/verify-workerd-local.ts",
+   "src/backend/api/applicationDecisions.test.ts",
+   "src/backend/api/applications.test.ts",
+   "src/backend/api/proposals.test.ts"
+  ],
+  "usedByScreens": [
+   "PRE-01",
+   "PRE-10",
+   "PRE-11",
+   "PRE-12",
+   "PRE-13",
+   "PRE-14",
+   "PRE-15"
+  ]
+ },
+ {
+  "key": "applications.employer.list",
+  "method": "GET",
+  "path": "/api/v1/employer/applications",
+  "authentication": "required",
+  "scope": "self",
+  "collection": true,
+  "roles": [
+   "EMPLOYER"
+  ],
+  "handler": null,
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "EMPLOYER",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   },
+   "postgres": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   },
+   "postgresR2": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [
+   "src/backend/api/applicationDecisions.test.ts",
+   "src/backend/api/applications.test.ts"
+  ],
+  "usedByScreens": []
+ },
+ {
+  "key": "applications.offer.list",
+  "method": "GET",
+  "path": "/api/v1/offers/:offerId/applications",
+  "authentication": "required",
+  "scope": "owner",
+  "collection": true,
+  "roles": [
+   "EMPLOYER"
+  ],
+  "handler": {
+   "file": "src/backend/repositories/applicationRepository.ts",
+   "line": 640,
+   "factory": "createApplicationApiHandlers",
+   "condition": "persistance mémoire ou PostgreSQL (persistence.core)",
+   "calls": [
+    "repository.examine",
+    "repository.listApplicationsForOffer"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "EMPLOYER",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   },
+   "postgres": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   },
+   "postgresR2": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [
+   "scripts/verify-postgres-e2e.ts",
+   "scripts/verify-workerd-local.ts",
+   "src/backend/api/applications.test.ts",
+   "src/backend/api/replacements.test.ts",
+   "src/backend/api/securityAntiFraud.test.ts",
+   "src/backend/automation/cronQueue.test.ts",
+   "src/backend/persistence/persistence.test.ts"
+  ],
+  "usedByScreens": [
+   "EMP-01",
+   "EMP-14",
+   "EMP-16",
+   "EMP-17",
+   "EMP-20",
+   "EMP-21",
+   "EMP-22"
+  ]
+ },
+ {
+  "key": "applications.read",
+  "method": "GET",
+  "path": "/api/v1/applications/:applicationId",
+  "authentication": "required",
+  "scope": "owner",
+  "handler": null,
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "EMPLOYER",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   },
+   "postgres": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   },
+   "postgresR2": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [
+   "src/backend/api/applicationDecisions.test.ts",
+   "src/backend/api/applications.test.ts",
+   "src/backend/api/proposals.test.ts"
+  ],
+  "usedByScreens": [
+   "PRE-10",
+   "PRE-12",
+   "PRE-13"
+  ]
+ },
+ {
+  "key": "applications.create",
+  "method": "POST",
+  "path": "/api/v1/offers/:offerId/applications",
+  "authentication": "required",
+  "scope": "self",
+  "roles": [
+   "CANDIDATE"
+  ],
+  "idempotency": true,
+  "auditOnMutation": true,
+  "handler": {
+   "file": "src/backend/repositories/applicationRepository.ts",
+   "line": 629,
+   "factory": "createApplicationApiHandlers",
+   "condition": "persistance mémoire ou PostgreSQL (persistence.core)",
+   "calls": [
+    "repository.applyToOffer"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "CANDIDATE",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": "CANDIDATE",
+    "handler": "ATTEINT"
+   },
+   "postgres": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": "CANDIDATE",
+    "handler": "ATTEINT"
+   },
+   "postgresR2": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": "CANDIDATE",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": "domain-mutations",
+  "tests": [
+   "scripts/verify-postgres-e2e.ts",
+   "scripts/verify-workerd-local.ts",
+   "src/backend/api/applications.test.ts",
+   "src/backend/api/replacements.test.ts",
+   "src/backend/api/securityAntiFraud.test.ts",
+   "src/backend/automation/cronQueue.test.ts",
+   "src/backend/persistence/persistence.test.ts"
+  ],
+  "usedByScreens": [
+   "PRE-08",
+   "PRE-09"
+  ]
+ },
+ {
+  "key": "applications.withdraw",
+  "method": "POST",
+  "path": "/api/v1/applications/:applicationId/withdraw",
+  "authentication": "required",
+  "scope": "owner",
+  "roles": [
+   "CANDIDATE"
+  ],
+  "idempotency": true,
+  "auditOnMutation": true,
+  "handler": {
+   "file": "src/backend/repositories/applicationRepository.ts",
+   "line": 678,
+   "factory": "createApplicationApiHandlers",
+   "condition": "persistance mémoire ou PostgreSQL (persistence.core)",
+   "calls": [
+    "repository.withdraw"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "CANDIDATE",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": "CANDIDATE",
+    "handler": "ATTEINT"
+   },
+   "postgres": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": "CANDIDATE",
+    "handler": "ATTEINT"
+   },
+   "postgresR2": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": "CANDIDATE",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [
+   "scripts/verify-postgres-e2e.ts",
+   "src/backend/api/applicationDecisions.test.ts",
+   "src/backend/api/replacements.test.ts",
+   "src/backend/api/securityAntiFraud.test.ts"
+  ],
+  "usedByScreens": [
+   "EMP-16",
+   "EMP-20",
+   "EMP-21",
+   "EMP-22",
+   "PRE-10",
+   "PRE-12",
+   "PRE-13",
+   "PRE-14"
+  ]
+ },
+ {
+  "key": "applications.examine",
+  "method": "POST",
+  "path": "/api/v1/applications/:applicationId/examine",
+  "authentication": "required",
+  "scope": "owner",
+  "roles": [
+   "EMPLOYER"
+  ],
+  "idempotency": true,
+  "auditOnMutation": true,
+  "handler": {
+   "file": "src/backend/repositories/applicationRepository.ts",
+   "line": 650,
+   "factory": "createApplicationApiHandlers",
+   "condition": "persistance mémoire ou PostgreSQL (persistence.core)",
+   "calls": [
+    "repository.examine",
+    "repository.shortlist"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "EMPLOYER",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   },
+   "postgres": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   },
+   "postgresR2": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [
+   "scripts/verify-postgres-e2e.ts",
+   "src/backend/api/applicationDecisions.test.ts",
+   "src/backend/api/securityAntiFraud.test.ts"
+  ],
+  "usedByScreens": [
+   "EMP-16",
+   "EMP-20",
+   "EMP-21",
+   "EMP-22"
+  ]
+ },
+ {
+  "key": "applications.shortlist",
+  "method": "POST",
+  "path": "/api/v1/applications/:applicationId/shortlist",
+  "authentication": "required",
+  "scope": "owner",
+  "roles": [
+   "EMPLOYER"
+  ],
+  "idempotency": true,
+  "auditOnMutation": true,
+  "handler": {
+   "file": "src/backend/repositories/applicationRepository.ts",
+   "line": 656,
+   "factory": "createApplicationApiHandlers",
+   "condition": "persistance mémoire ou PostgreSQL (persistence.core)",
+   "calls": [
+    "repository.reject",
+    "repository.shortlist"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "EMPLOYER",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   },
+   "postgres": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   },
+   "postgresR2": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [
+   "scripts/verify-postgres-e2e.ts",
+   "src/backend/api/applicationDecisions.test.ts",
+   "src/backend/api/replacements.test.ts",
+   "src/backend/api/securityAntiFraud.test.ts"
+  ],
+  "usedByScreens": [
+   "EMP-16",
+   "EMP-20",
+   "EMP-21",
+   "EMP-22"
+  ]
+ },
+ {
+  "key": "applications.reject",
+  "method": "POST",
+  "path": "/api/v1/applications/:applicationId/reject",
+  "authentication": "required",
+  "scope": "owner",
+  "roles": [
+   "EMPLOYER"
+  ],
+  "idempotency": true,
+  "auditOnMutation": true,
+  "handler": {
+   "file": "src/backend/repositories/applicationRepository.ts",
+   "line": 662,
+   "factory": "createApplicationApiHandlers",
+   "condition": "persistance mémoire ou PostgreSQL (persistence.core)",
+   "calls": [
+    "repository.reject"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "EMPLOYER",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   },
+   "postgres": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   },
+   "postgresR2": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [
+   "scripts/verify-postgres-e2e.ts",
+   "src/backend/api/applicationDecisions.test.ts"
+  ],
+  "usedByScreens": [
+   "EMP-16",
+   "EMP-20",
+   "EMP-21",
+   "EMP-22"
+  ]
+ },
+ {
+  "key": "proposals.create",
+  "method": "POST",
+  "path": "/api/v1/conversations/:conversationId/proposals",
+  "authentication": "required",
+  "scope": "participant",
+  "roles": [
+   "EMPLOYER"
+  ],
+  "idempotency": true,
+  "auditOnMutation": true,
+  "handler": {
+   "file": "src/backend/repositories/proposalRepository.ts",
+   "line": 777,
+   "factory": "createProposalApiHandlers",
+   "condition": "persistance mémoire ou PostgreSQL (persistence.core)",
+   "calls": [
+    "repository.createProposal"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "EMPLOYER",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 400,
+    "code": "VALIDATION_ERROR",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   },
+   "postgres": {
+    "status": 400,
+    "code": "VALIDATION_ERROR",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   },
+   "postgresR2": {
+    "status": 400,
+    "code": "VALIDATION_ERROR",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": "domain-mutations",
+  "tests": [
+   "scripts/verify-postgres-e2e.ts",
+   "scripts/verify-workerd-local.ts",
+   "src/backend/api/proposals.test.ts",
+   "src/backend/api/replacements.test.ts",
+   "src/backend/api/securityAntiFraud.test.ts",
+   "src/backend/automation/cronQueue.test.ts"
+  ],
+  "usedByScreens": []
+ },
+ {
+  "key": "proposals.respond",
+  "method": "POST",
+  "path": "/api/v1/proposals/:proposalId/respond",
+  "authentication": "required",
+  "scope": "participant",
+  "roles": [
+   "CANDIDATE"
+  ],
+  "idempotency": true,
+  "auditOnMutation": true,
+  "handler": {
+   "file": "src/backend/repositories/proposalRepository.ts",
+   "line": 790,
+   "factory": "createProposalApiHandlers",
+   "condition": "persistance mémoire ou PostgreSQL (persistence.core)",
+   "calls": [
+    "repository.respondToProposal"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "CANDIDATE",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 400,
+    "code": "VALIDATION_ERROR",
+    "role": "CANDIDATE",
+    "handler": "ATTEINT"
+   },
+   "postgres": {
+    "status": 400,
+    "code": "VALIDATION_ERROR",
+    "role": "CANDIDATE",
+    "handler": "ATTEINT"
+   },
+   "postgresR2": {
+    "status": 400,
+    "code": "VALIDATION_ERROR",
+    "role": "CANDIDATE",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [
+   "scripts/verify-postgres-e2e.ts",
+   "scripts/verify-workerd-local.ts",
+   "src/backend/api/proposals.test.ts",
+   "src/backend/api/replacements.test.ts",
+   "src/backend/api/securityAntiFraud.test.ts",
+   "src/backend/automation/cronQueue.test.ts"
+  ],
+  "usedByScreens": []
+ },
+ {
+  "key": "proposals.expire",
+  "method": "POST",
+  "path": "/api/v1/proposals/:proposalId/expire",
+  "authentication": "required",
+  "scope": "owner",
+  "roles": [
+   "EMPLOYER"
+  ],
+  "idempotency": true,
+  "auditOnMutation": true,
+  "handler": {
+   "file": "src/backend/repositories/proposalRepository.ts",
+   "line": 804,
+   "factory": "createProposalApiHandlers",
+   "condition": "persistance mémoire ou PostgreSQL (persistence.core)",
+   "calls": [
+    "repository.expireProposal",
+    "repository.getAdminProposals"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "EMPLOYER",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   },
+   "postgres": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   },
+   "postgresR2": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [
+   "scripts/verify-postgres-e2e.ts",
+   "scripts/verify-workerd-local.ts",
+   "src/backend/api/proposals.test.ts"
+  ],
+  "usedByScreens": []
+ },
+ {
+  "key": "contracts.mine.list",
+  "method": "GET",
+  "path": "/api/v1/my/contracts",
+  "authentication": "required",
+  "scope": "self",
+  "collection": true,
+  "handler": {
+   "file": "src/backend/repositories/contractRepository.ts",
+   "line": 1443,
+   "factory": "createContractApiHandlers",
+   "condition": "persistance mémoire ou PostgreSQL (persistence.core)",
+   "calls": [
+    "repository.getContract",
+    "repository.getMyContracts"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "EMPLOYER",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 200,
+    "code": "OK",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   },
+   "postgres": {
+    "status": 200,
+    "code": "OK",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   },
+   "postgresR2": {
+    "status": 200,
+    "code": "OK",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [
+   "src/backend/api/contracts.test.ts",
+   "src/backend/api/documents.test.ts",
+   "src/backend/api/foundation.test.ts"
+  ],
+  "usedByScreens": [
+   "EMP-01",
+   "EMP-02",
+   "EMP-03",
+   "EMP-11",
+   "EMP-14",
+   "EMP-23",
+   "EMP-24",
+   "EMP-25",
+   "EMP-27",
+   "EMP-28",
+   "EMP-37",
+   "EMP-38",
+   "EMP-41",
+   "EMP-45",
+   "EMP-47",
+   "EMP-56",
+   "EMP-57",
+   "EMP-58",
+   "EMP-59",
+   "PRE-01",
+   "PRE-16",
+   "PRE-17",
+   "PRE-18",
+   "PRE-19",
+   "PRE-20",
+   "PRE-28",
+   "PRE-29",
+   "PRE-30",
+   "PRE-31",
+   "PRE-32",
+   "PRE-33",
+   "PRE-36",
+   "PRE-37",
+   "PRE-40",
+   "PRE-41",
+   "PRE-43",
+   "PRE-44",
+   "PRE-47"
+  ]
+ },
+ {
+  "key": "contracts.read",
+  "method": "GET",
+  "path": "/api/v1/contracts/:contractId",
+  "authentication": "required",
+  "scope": "owner",
+  "handler": {
+   "file": "src/backend/repositories/contractRepository.ts",
+   "line": 1448,
+   "factory": "createContractApiHandlers",
+   "condition": "persistance mémoire ou PostgreSQL (persistence.core)",
+   "calls": [
+    "repository.getContract"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "EMPLOYER",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   },
+   "postgres": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   },
+   "postgresR2": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [
+   "src/backend/api/contracts.test.ts",
+   "src/backend/api/securityAntiFraud.test.ts"
+  ],
+  "usedByScreens": [
+   "EMP-29",
+   "EMP-30",
+   "EMP-31",
+   "EMP-32",
+   "EMP-33",
+   "EMP-34",
+   "EMP-35",
+   "EMP-36",
+   "EMP-39",
+   "EMP-60",
+   "PRE-21",
+   "PRE-22",
+   "PRE-23",
+   "PRE-24",
+   "PRE-25",
+   "PRE-26",
+   "PRE-27"
+  ]
+ },
+ {
+  "key": "contracts.create",
+  "method": "POST",
+  "path": "/api/v1/contracts",
+  "authentication": "required",
+  "scope": "owner",
+  "roles": [
+   "EMPLOYER"
+  ],
+  "idempotency": true,
+  "auditOnMutation": true,
+  "handler": {
+   "file": "src/backend/repositories/contractRepository.ts",
+   "line": 1454,
+   "factory": "createContractApiHandlers",
+   "condition": "persistance mémoire ou PostgreSQL (persistence.core)",
+   "calls": [
+    "repository.createContract"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "EMPLOYER",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 400,
+    "code": "VALIDATION_ERROR",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   },
+   "postgres": {
+    "status": 400,
+    "code": "VALIDATION_ERROR",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   },
+   "postgresR2": {
+    "status": 400,
+    "code": "VALIDATION_ERROR",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": "domain-mutations",
+  "tests": [
+   "scripts/verify-postgres-e2e.ts",
+   "scripts/verify-workerd-local.ts",
+   "src/backend/api/contracts.test.ts",
+   "src/backend/api/postContract.test.ts",
+   "src/backend/api/replacements.test.ts",
+   "src/backend/api/securityAntiFraud.test.ts",
+   "src/backend/automation/contractActivation.test.ts",
+   "src/backend/automation/cronQueue.test.ts",
+   "src/backend/notifications/notifications.test.ts"
+  ],
+  "usedByScreens": []
+ },
+ {
+  "key": "contracts.send",
+  "method": "POST",
+  "path": "/api/v1/contracts/:contractId/send",
+  "authentication": "required",
+  "scope": "owner",
+  "roles": [
+   "EMPLOYER"
+  ],
+  "idempotency": true,
+  "auditOnMutation": true,
+  "handler": {
+   "file": "src/backend/repositories/contractRepository.ts",
+   "line": 1466,
+   "factory": "createContractApiHandlers",
+   "condition": "persistance mémoire ou PostgreSQL (persistence.core)",
+   "calls": [
+    "repository.activateContract",
+    "repository.sendContract",
+    "repository.signContract"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "EMPLOYER",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   },
+   "postgres": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   },
+   "postgresR2": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [
+   "scripts/verify-postgres-e2e.ts",
+   "scripts/verify-workerd-local.ts",
+   "src/backend/api/replacements.test.ts",
+   "src/backend/api/securityAntiFraud.test.ts",
+   "src/backend/automation/contractActivation.test.ts",
+   "src/backend/automation/cronQueue.test.ts"
+  ],
+  "usedByScreens": [
+   "EMP-29",
+   "EMP-32",
+   "EMP-33",
+   "EMP-34",
+   "EMP-35"
+  ]
+ },
+ {
+  "key": "contracts.sign",
+  "method": "POST",
+  "path": "/api/v1/contracts/:contractId/sign",
+  "authentication": "required",
+  "scope": "owner",
+  "idempotency": true,
+  "auditOnMutation": true,
+  "handler": {
+   "file": "src/backend/repositories/contractRepository.ts",
+   "line": 1472,
+   "factory": "createContractApiHandlers",
+   "condition": "persistance mémoire ou PostgreSQL (persistence.core)",
+   "calls": [
+    "repository.activateContract",
+    "repository.endContract",
+    "repository.signContract"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "EMPLOYER",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   },
+   "postgres": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   },
+   "postgresR2": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [
+   "scripts/verify-postgres-e2e.ts",
+   "scripts/verify-workerd-local.ts",
+   "src/backend/api/contracts.test.ts",
+   "src/backend/api/replacements.test.ts",
+   "src/backend/api/securityAntiFraud.test.ts",
+   "src/backend/automation/contractActivation.test.ts",
+   "src/backend/automation/cronQueue.test.ts"
+  ],
+  "usedByScreens": [
+   "EMP-29",
+   "EMP-31",
+   "EMP-32",
+   "EMP-33",
+   "EMP-34",
+   "EMP-35",
+   "PRE-21",
+   "PRE-22",
+   "PRE-23",
+   "PRE-24",
+   "PRE-25",
+   "PRE-26",
+   "PRE-27"
+  ]
+ },
+ {
+  "key": "contracts.activate",
+  "method": "POST",
+  "path": "/api/v1/contracts/:contractId/activate",
+  "authentication": "required",
+  "scope": "owner",
+  "roles": [
+   "EMPLOYER"
+  ],
+  "idempotency": true,
+  "auditOnMutation": true,
+  "handler": {
+   "file": "src/backend/repositories/contractRepository.ts",
+   "line": 1478,
+   "factory": "createContractApiHandlers",
+   "condition": "persistance mémoire ou PostgreSQL (persistence.core)",
+   "calls": [
+    "repository.activateContract",
+    "repository.endContract",
+    "repository.terminateContract"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "EMPLOYER",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   },
+   "postgres": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   },
+   "postgresR2": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [
+   "scripts/verify-postgres-e2e.ts",
+   "scripts/verify-workerd-local.ts",
+   "src/backend/api/replacements.test.ts",
+   "src/backend/api/securityAntiFraud.test.ts",
+   "src/backend/automation/contractActivation.test.ts",
+   "src/backend/automation/cronQueue.test.ts"
+  ],
+  "usedByScreens": []
+ },
+ {
+  "key": "contracts.end",
+  "method": "POST",
+  "path": "/api/v1/contracts/:contractId/end",
+  "authentication": "required",
+  "scope": "owner",
+  "roles": [
+   "EMPLOYER"
+  ],
+  "idempotency": true,
+  "auditOnMutation": true,
+  "handler": {
+   "file": "src/backend/repositories/contractRepository.ts",
+   "line": 1484,
+   "factory": "createContractApiHandlers",
+   "condition": "persistance mémoire ou PostgreSQL (persistence.core)",
+   "calls": [
+    "repository.endContract",
+    "repository.terminateContract"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "EMPLOYER",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   },
+   "postgres": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   },
+   "postgresR2": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [
+   "scripts/verify-postgres-e2e.ts",
+   "scripts/verify-workerd-local.ts",
+   "src/backend/api/paymentMissionClose.test.ts",
+   "src/backend/api/securityAntiFraud.test.ts",
+   "src/backend/automation/cronQueue.test.ts"
+  ],
+  "usedByScreens": []
+ },
+ {
+  "key": "contracts.terminate",
+  "method": "POST",
+  "path": "/api/v1/contracts/:contractId/terminate",
+  "authentication": "required",
+  "scope": "owner",
+  "roles": [
+   "EMPLOYER"
+  ],
+  "idempotency": true,
+  "auditOnMutation": true,
+  "handler": {
+   "file": "src/backend/repositories/contractRepository.ts",
+   "line": 1490,
+   "factory": "createContractApiHandlers",
+   "condition": "persistance mémoire ou PostgreSQL (persistence.core)",
+   "calls": [
+    "repository.terminateContract"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "EMPLOYER",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 400,
+    "code": "VALIDATION_ERROR",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   },
+   "postgres": {
+    "status": 400,
+    "code": "VALIDATION_ERROR",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   },
+   "postgresR2": {
+    "status": 400,
+    "code": "VALIDATION_ERROR",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [
+   "scripts/verify-postgres-e2e.ts",
+   "scripts/verify-workerd-local.ts",
+   "src/backend/api/claims.test.ts",
+   "src/backend/api/paymentMissionClose.test.ts"
+  ],
+  "usedByScreens": [
+   "EMP-29",
+   "EMP-32",
+   "EMP-33",
+   "EMP-34",
+   "EMP-35"
+  ]
+ },
+ {
+  "key": "contracts.finalize-hiring",
+  "method": "POST",
+  "path": "/api/v1/contracts/:contractId/finalize-hiring",
+  "authentication": "required",
+  "scope": "owner",
+  "roles": [
+   "EMPLOYER"
+  ],
+  "idempotency": true,
+  "auditOnMutation": true,
+  "handler": {
+   "file": "src/backend/repositories/contractRepository.ts",
+   "line": 1503,
+   "factory": "createContractApiHandlers",
+   "condition": "persistance mémoire ou PostgreSQL (persistence.core)",
+   "calls": [
+    "repository.confirmExecution",
+    "repository.finalizeHiring"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "EMPLOYER",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   },
+   "postgres": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   },
+   "postgresR2": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [
+   "src/backend/api/postContract.test.ts",
+   "src/backend/api/securityAntiFraud.test.ts"
+  ],
+  "usedByScreens": []
+ },
+ {
+  "key": "contracts.confirm-execution",
+  "method": "POST",
+  "path": "/api/v1/contracts/:contractId/confirm-execution",
+  "authentication": "required",
+  "scope": "owner",
+  "roles": [
+   "EMPLOYER",
+   "CANDIDATE"
+  ],
+  "idempotency": true,
+  "auditOnMutation": true,
+  "handler": {
+   "file": "src/backend/repositories/contractRepository.ts",
+   "line": 1509,
+   "factory": "createContractApiHandlers",
+   "condition": "persistance mémoire ou PostgreSQL (persistence.core)",
+   "calls": [
+    "repository.confirmExecution"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "EMPLOYER",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   },
+   "postgres": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   },
+   "postgresR2": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [
+   "src/backend/api/contracts.test.ts"
+  ],
+  "usedByScreens": [
+   "EMP-29",
+   "EMP-32",
+   "EMP-33",
+   "EMP-34",
+   "EMP-35",
+   "PRE-21",
+   "PRE-22",
+   "PRE-23",
+   "PRE-25",
+   "PRE-26",
+   "PRE-27"
+  ]
+ },
+ {
+  "key": "contracts.monthly-action",
+  "method": "POST",
+  "path": "/api/v1/contracts/:contractId/monthly-actions",
+  "authentication": "required",
+  "scope": "owner",
+  "idempotency": true,
+  "auditOnMutation": true,
+  "handler": null,
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "EMPLOYER",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   },
+   "postgres": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   },
+   "postgresR2": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [
+   "src/backend/api/contracts.test.ts",
+   "src/backend/api/postContract.test.ts",
+   "src/backend/automation/contractActivation.test.ts"
+  ],
+  "usedByScreens": []
+ },
+ {
+  "key": "payments.mine.list",
+  "method": "GET",
+  "path": "/api/v1/my/payments",
+  "authentication": "required",
+  "scope": "self",
+  "collection": true,
+  "handler": {
+   "file": "src/backend/repositories/paymentRepository.ts",
+   "line": 2810,
+   "factory": "createPaymentApiHandlers",
+   "condition": "PostgreSQL uniquement",
+   "calls": [
+    "repository.getContractPayments",
+    "repository.getMyPayments",
+    "repository.getPayment"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "EMPLOYER",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   },
+   "postgres": {
+    "status": 200,
+    "code": "OK",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   },
+   "postgresR2": {
+    "status": 200,
+    "code": "OK",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [
+   "src/backend/api/documents.test.ts",
+   "src/backend/api/payments.test.ts",
+   "src/backend/automation/cronQueue.test.ts"
+  ],
+  "usedByScreens": [
+   "EMP-01",
+   "EMP-41",
+   "EMP-45",
+   "EMP-47",
+   "PRE-01",
+   "PRE-32",
+   "PRE-33",
+   "PRE-36",
+   "PRE-37"
+  ]
+ },
+ {
+  "key": "payments.read",
+  "method": "GET",
+  "path": "/api/v1/payments/:paymentId",
+  "authentication": "required",
+  "scope": "owner",
+  "handler": {
+   "file": "src/backend/repositories/paymentRepository.ts",
+   "line": 2815,
+   "factory": "createPaymentApiHandlers",
+   "condition": "PostgreSQL uniquement",
+   "calls": [
+    "repository.getPayment"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "EMPLOYER",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   },
+   "postgres": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   },
+   "postgresR2": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [
+   "src/admin/admin.test.tsx",
+   "src/backend/api/applicationDecisions.test.ts",
+   "src/backend/api/contracts.test.ts",
+   "src/backend/api/externalPaymentProvider.test.ts",
+   "src/backend/api/paymentMissionClose.test.ts",
+   "src/backend/api/payments.test.ts",
+   "src/backend/api/proposals.test.ts",
+   "src/backend/api/securityAntiFraud.test.ts",
+   "src/backend/automation/contractActivation.test.ts"
+  ],
+  "usedByScreens": [
+   "ADM-18",
+   "ADM-23",
+   "EMP-42",
+   "EMP-43",
+   "EMP-44",
+   "EMP-46",
+   "EMP-48",
+   "PRE-34",
+   "PRE-35",
+   "PRE-38",
+   "PRE-39"
+  ]
+ },
+ {
+  "key": "payments.contract.list",
+  "method": "GET",
+  "path": "/api/v1/contracts/:contractId/payments",
+  "authentication": "required",
+  "scope": "owner",
+  "collection": true,
+  "handler": {
+   "file": "src/backend/repositories/paymentRepository.ts",
+   "line": 2821,
+   "factory": "createPaymentApiHandlers",
+   "condition": "PostgreSQL uniquement",
+   "calls": [
+    "repository.declarePayment",
+    "repository.getContractPayments"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "EMPLOYER",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   },
+   "postgres": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   },
+   "postgresR2": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [
+   "src/backend/api/payments.test.ts"
+  ],
+  "usedByScreens": [
+   "EMP-29",
+   "EMP-31",
+   "EMP-32",
+   "EMP-33",
+   "EMP-34",
+   "EMP-35",
+   "EMP-60"
+  ]
+ },
+ {
+  "key": "payments.commission.declare",
+  "method": "POST",
+  "path": "/api/v1/payments/commission-declarations",
+  "authentication": "required",
+  "scope": "owner",
+  "roles": [
+   "EMPLOYER"
+  ],
+  "idempotency": true,
+  "auditOnMutation": true,
+  "handler": {
+   "file": "src/backend/repositories/paymentRepository.ts",
+   "line": 2827,
+   "factory": "createPaymentApiHandlers",
+   "condition": "PostgreSQL uniquement",
+   "calls": [
+    "repository.declarePayment",
+    "repository.getAdminPayments"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "EMPLOYER",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   },
+   "postgres": {
+    "status": 400,
+    "code": "VALIDATION_ERROR",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   },
+   "postgresR2": {
+    "status": 400,
+    "code": "VALIDATION_ERROR",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [
+   "src/backend/api/applicationDecisions.test.ts",
+   "src/backend/api/contracts.test.ts",
+   "src/backend/api/externalPaymentProvider.test.ts",
+   "src/backend/api/paymentMissionClose.test.ts",
+   "src/backend/api/payments.test.ts",
+   "src/backend/api/proposals.test.ts",
+   "src/backend/automation/contractActivation.test.ts"
+  ],
+  "usedByScreens": [
+   "EMP-43",
+   "EMP-44"
+  ]
+ },
+ {
+  "key": "payments.salary.confirmation.request",
+  "method": "POST",
+  "path": "/api/v1/payments/:paymentId/salary-confirmation-request",
+  "authentication": "required",
+  "scope": "owner",
+  "roles": [
+   "EMPLOYER"
+  ],
+  "idempotency": true,
+  "auditOnMutation": true,
+  "handler": {
+   "file": "src/backend/payments/salaryConfirmation.ts",
+   "line": 123,
+   "factory": "createSalaryConfirmationHandlers",
+   "condition": "PostgreSQL uniquement (mode postgres)",
+   "calls": [
+    "fonction.request"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "EMPLOYER",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   },
+   "postgres": {
+    "status": 422,
+    "code": "BUSINESS_RULE_VIOLATION",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   },
+   "postgresR2": {
+    "status": 422,
+    "code": "BUSINESS_RULE_VIOLATION",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": "salary-otp",
+  "tests": [
+   "scripts/verify-workerd-local.ts",
+   "src/admin/admin.test.tsx",
+   "src/backend/api/payments.test.ts",
+   "src/backend/api/reputation.test.ts",
+   "src/backend/automation/cronQueue.test.ts"
+  ],
+  "usedByScreens": [
+   "EMP-42"
+  ]
+ },
+ {
+  "key": "payments.salary.confirmation.confirm",
+  "method": "POST",
+  "path": "/api/v1/payments/:paymentId/salary-confirmation",
+  "authentication": "required",
+  "scope": "owner",
+  "roles": [
+   "CANDIDATE"
+  ],
+  "idempotency": true,
+  "auditOnMutation": true,
+  "handler": {
+   "file": "src/backend/payments/salaryConfirmation.ts",
+   "line": 123,
+   "factory": "createSalaryConfirmationHandlers",
+   "condition": "PostgreSQL uniquement (mode postgres)",
+   "calls": [
+    "fonction.confirm"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "CANDIDATE",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "CANDIDATE",
+    "handler": "ABSENT"
+   },
+   "postgres": {
+    "status": 400,
+    "code": "VALIDATION_ERROR",
+    "role": "CANDIDATE",
+    "handler": "ATTEINT"
+   },
+   "postgresR2": {
+    "status": 400,
+    "code": "VALIDATION_ERROR",
+    "role": "CANDIDATE",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": "salary-otp",
+  "tests": [
+   "scripts/verify-postgres-e2e.ts",
+   "scripts/verify-workerd-local.ts",
+   "src/admin/admin.test.tsx",
+   "src/backend/api/externalPaymentProvider.test.ts",
+   "src/backend/api/payments.test.ts",
+   "src/backend/api/reputation.test.ts",
+   "src/backend/api/securityAntiFraud.test.ts",
+   "src/public/public.test.tsx"
+  ],
+  "usedByScreens": [
+   "PRE-38",
+   "PRE-39"
+  ]
+ },
+ {
+  "key": "payments.salary.declare",
+  "method": "POST",
+  "path": "/api/v1/payments/salary-declarations",
+  "authentication": "required",
+  "scope": "owner",
+  "roles": [
+   "EMPLOYER"
+  ],
+  "idempotency": true,
+  "auditOnMutation": true,
+  "handler": {
+   "file": "src/backend/repositories/paymentRepository.ts",
+   "line": 2833,
+   "factory": "createPaymentApiHandlers",
+   "condition": "PostgreSQL uniquement",
+   "calls": [
+    "repository.declarePayment",
+    "repository.getAdminPayments",
+    "repository.verifyPayment"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "EMPLOYER",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   },
+   "postgres": {
+    "status": 400,
+    "code": "VALIDATION_ERROR",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   },
+   "postgresR2": {
+    "status": 400,
+    "code": "VALIDATION_ERROR",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [
+   "src/backend/api/paymentMissionClose.test.ts",
+   "src/backend/api/payments.test.ts",
+   "src/backend/api/securityAntiFraud.test.ts"
+  ],
+  "usedByScreens": [
+   "EMP-43",
+   "EMP-44"
+  ]
+ },
+ {
+  "key": "webhooks.payment-provider.root",
+  "method": "POST",
+  "path": "/api/webhooks/payment-provider",
+  "authentication": "public",
+  "scope": "public",
+  "handler": {
+   "file": "src/backend/repositories/paymentRepository.ts",
+   "line": 2871,
+   "factory": "createPaymentApiHandlers",
+   "condition": "PostgreSQL uniquement",
+   "calls": [
+    "repository.processPaymentWebhook"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": null,
+    "handler": "ABSENT"
+   },
+   "memory": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": null,
+    "handler": "ABSENT"
+   },
+   "postgres": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": null,
+    "handler": "ATTEINT"
+   },
+   "postgresR2": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": null,
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": "webhook",
+  "tests": [
+   "scripts/verify-postgres-e2e.ts",
+   "scripts/verify-workerd-local.ts",
+   "src/admin/admin.test.tsx",
+   "src/backend/api/externalPaymentProvider.test.ts",
+   "src/backend/api/securityAntiFraud.test.ts"
+  ],
+  "usedByScreens": []
+ },
+ {
+  "key": "webhooks.payment-provider",
+  "method": "POST",
+  "path": "/api/v1/webhooks/payment-provider",
+  "authentication": "public",
+  "scope": "public",
+  "handler": {
+   "file": "src/backend/repositories/paymentRepository.ts",
+   "line": 2883,
+   "factory": "createPaymentApiHandlers",
+   "condition": "PostgreSQL uniquement",
+   "calls": [
+    "repository.processPaymentWebhook"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": null,
+    "handler": "ABSENT"
+   },
+   "memory": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": null,
+    "handler": "ABSENT"
+   },
+   "postgres": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": null,
+    "handler": "ATTEINT"
+   },
+   "postgresR2": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": null,
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": "webhook",
+  "tests": [
+   "scripts/verify-workerd-local.ts",
+   "src/admin/admin.test.tsx",
+   "src/backend/api/externalPaymentProvider.test.ts",
+   "src/backend/api/paymentMissionClose.test.ts"
+  ],
+  "usedByScreens": []
+ },
+ {
+  "key": "payments.advance-month",
+  "method": "POST",
+  "path": "/api/v1/contracts/:contractId/payments/advance-month",
+  "authentication": "required",
+  "scope": "owner",
+  "roles": [
+   "EMPLOYER"
+  ],
+  "idempotency": true,
+  "auditOnMutation": true,
+  "handler": {
+   "file": "src/backend/repositories/paymentRepository.ts",
+   "line": 2915,
+   "factory": "createPaymentApiHandlers",
+   "condition": "PostgreSQL uniquement",
+   "calls": [
+    "repository.advanceContractMonth"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "EMPLOYER",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   },
+   "postgres": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   },
+   "postgresR2": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [
+   "src/backend/api/contracts.test.ts"
+  ],
+  "usedByScreens": []
+ },
+ {
+  "key": "payments.close-mission",
+  "method": "POST",
+  "path": "/api/v1/contracts/:contractId/payments/close-mission",
+  "authentication": "required",
+  "scope": "owner",
+  "roles": [
+   "EMPLOYER"
+  ],
+  "idempotency": true,
+  "auditOnMutation": true,
+  "handler": {
+   "file": "src/backend/repositories/paymentRepository.ts",
+   "line": 2905,
+   "factory": "createPaymentApiHandlers",
+   "condition": "PostgreSQL uniquement",
+   "calls": [
+    "repository.advanceContractMonth",
+    "repository.closeMissionPayments"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "EMPLOYER",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   },
+   "postgres": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   },
+   "postgresR2": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [
+   "src/backend/api/paymentMissionClose.test.ts"
+  ],
+  "usedByScreens": [
+   "EMP-42"
+  ]
+ },
+ {
+  "key": "schedules.mine.list",
+  "method": "GET",
+  "path": "/api/v1/my/schedules",
+  "authentication": "required",
+  "scope": "self",
+  "collection": true,
+  "handler": null,
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "EMPLOYER",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   },
+   "postgres": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   },
+   "postgresR2": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [],
+  "usedByScreens": [
+   "PRE-32",
+   "PRE-33"
+  ]
+ },
+ {
+  "key": "claims.mine.list",
+  "method": "GET",
+  "path": "/api/v1/my/claims",
+  "authentication": "required",
+  "scope": "self",
+  "collection": true,
+  "roles": [
+   "CANDIDATE",
+   "EMPLOYER"
+  ],
+  "handler": {
+   "file": "src/backend/disputes/claimRepository.ts",
+   "line": 1090,
+   "factory": "createClaimApiHandlers",
+   "condition": "PostgreSQL uniquement",
+   "calls": [
+    "repository.create",
+    "repository.get",
+    "repository.listMine"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "CANDIDATE",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "CANDIDATE",
+    "handler": "ABSENT"
+   },
+   "postgres": {
+    "status": 200,
+    "code": "OK",
+    "role": "CANDIDATE",
+    "handler": "ATTEINT"
+   },
+   "postgresR2": {
+    "status": 200,
+    "code": "OK",
+    "role": "CANDIDATE",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [
+   "src/backend/api/claims.test.ts",
+   "src/backend/api/documents.test.ts"
+  ],
+  "usedByScreens": [
+   "EMP-01",
+   "EMP-02",
+   "EMP-03",
+   "EMP-40",
+   "PRE-01",
+   "PRE-32",
+   "PRE-33",
+   "PRE-36",
+   "PRE-37"
+  ]
+ },
+ {
+  "key": "claims.read",
+  "method": "GET",
+  "path": "/api/v1/claims/:claimId",
+  "authentication": "required",
+  "scope": "participant",
+  "roles": [
+   "CANDIDATE",
+   "EMPLOYER"
+  ],
+  "handler": {
+   "file": "src/backend/disputes/claimRepository.ts",
+   "line": 1091,
+   "factory": "createClaimApiHandlers",
+   "condition": "PostgreSQL uniquement",
+   "calls": [
+    "repository.create",
+    "repository.get"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "CANDIDATE",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "CANDIDATE",
+    "handler": "ABSENT"
+   },
+   "postgres": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": "CANDIDATE",
+    "handler": "ATTEINT"
+   },
+   "postgresR2": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": "CANDIDATE",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [
+   "scripts/verify-postgres-e2e.ts",
+   "scripts/verify-workerd-local.ts",
+   "src/backend/api/claims.test.ts",
+   "src/backend/api/securityAntiFraud.test.ts"
+  ],
+  "usedByScreens": [
+   "EMP-49",
+   "EMP-50",
+   "EMP-51",
+   "EMP-52",
+   "EMP-53",
+   "EMP-54",
+   "EMP-55"
+  ]
+ },
+ {
+  "key": "claims.create",
+  "method": "POST",
+  "path": "/api/v1/claims",
+  "authentication": "required",
+  "scope": "self",
+  "roles": [
+   "CANDIDATE",
+   "EMPLOYER"
+  ],
+  "idempotency": true,
+  "auditOnMutation": true,
+  "handler": {
+   "file": "src/backend/disputes/claimRepository.ts",
+   "line": 1092,
+   "factory": "createClaimApiHandlers",
+   "condition": "PostgreSQL uniquement",
+   "calls": [
+    "repository.create"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "CANDIDATE",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "CANDIDATE",
+    "handler": "ABSENT"
+   },
+   "postgres": {
+    "status": 400,
+    "code": "VALIDATION_ERROR",
+    "role": "CANDIDATE",
+    "handler": "ATTEINT"
+   },
+   "postgresR2": {
+    "status": 400,
+    "code": "VALIDATION_ERROR",
+    "role": "CANDIDATE",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": "domain-mutations",
+  "tests": [
+   "scripts/verify-postgres-e2e.ts",
+   "scripts/verify-workerd-local.ts",
+   "src/backend/api/claims.test.ts",
+   "src/backend/api/replacements.test.ts",
+   "src/backend/api/reputation.test.ts",
+   "src/backend/api/securityAntiFraud.test.ts",
+   "src/backend/automation/cronQueue.test.ts"
+  ],
+  "usedByScreens": [
+   "EMP-39",
+   "EMP-48",
+   "PRE-36",
+   "PRE-37",
+   "PRE-47"
+  ]
+ },
+ {
+  "key": "claims.evidence.submit",
+  "method": "POST",
+  "path": "/api/v1/claims/:claimId/evidence-requests/:evidenceRequestId/submit",
+  "authentication": "required",
+  "scope": "participant",
+  "roles": [
+   "CANDIDATE",
+   "EMPLOYER"
+  ],
+  "idempotency": true,
+  "auditOnMutation": true,
+  "handler": {
+   "file": "src/backend/disputes/claimRepository.ts",
+   "line": 1098,
+   "factory": "createClaimApiHandlers",
+   "condition": "PostgreSQL uniquement",
+   "calls": [
+    "repository.submitEvidence"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "CANDIDATE",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "CANDIDATE",
+    "handler": "ABSENT"
+   },
+   "postgres": {
+    "status": 400,
+    "code": "VALIDATION_ERROR",
+    "role": "CANDIDATE",
+    "handler": "ATTEINT"
+   },
+   "postgresR2": {
+    "status": 400,
+    "code": "VALIDATION_ERROR",
+    "role": "CANDIDATE",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [
+   "src/backend/api/claims.test.ts"
+  ],
+  "usedByScreens": [
+   "EMP-49",
+   "EMP-50",
+   "EMP-51"
+  ]
+ },
+ {
+  "key": "admin.claims.list",
+  "method": "GET",
+  "path": "/api/v1/admin/claims",
+  "authentication": "required",
+  "scope": "admin",
+  "permission": "incidents:read:any",
+  "collection": true,
+  "handler": {
+   "file": "src/backend/disputes/claimRepository.ts",
+   "line": 1104,
+   "factory": "createClaimApiHandlers",
+   "condition": "PostgreSQL uniquement",
+   "calls": [
+    "repository.getAdmin",
+    "repository.listAdmin",
+    "repository.review"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "ADMIN",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "ADMIN",
+    "handler": "NON_SONDÉ"
+   },
+   "postgres": {
+    "status": 200,
+    "code": "OK",
+    "role": "ADMIN",
+    "handler": "ATTEINT"
+   },
+   "postgresR2": {
+    "status": 200,
+    "code": "OK",
+    "role": "ADMIN",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [
+   "scripts/verify-admin-ui.ts",
+   "scripts/verify-postgres-e2e.ts",
+   "src/admin/admin.test.tsx",
+   "src/backend/api/claims.test.ts"
+  ],
+  "usedByScreens": [
+   "ADM-15",
+   "ADM-26",
+   "ADM-30"
+  ]
+ },
+ {
+  "key": "admin.claims.read",
+  "method": "GET",
+  "path": "/api/v1/admin/claims/:claimId",
+  "authentication": "required",
+  "scope": "admin",
+  "permission": "incidents:read:any",
+  "handler": {
+   "file": "src/backend/disputes/claimRepository.ts",
+   "line": 1105,
+   "factory": "createClaimApiHandlers",
+   "condition": "PostgreSQL uniquement",
+   "calls": [
+    "repository.getAdmin",
+    "repository.review"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "ADMIN",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "ADMIN",
+    "handler": "NON_SONDÉ"
+   },
+   "postgres": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": "ADMIN",
+    "handler": "ATTEINT"
+   },
+   "postgresR2": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": "ADMIN",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [
+   "scripts/verify-admin-ui.ts",
+   "src/admin/admin.test.tsx"
+  ],
+  "usedByScreens": [
+   "ADM-27",
+   "ADM-28",
+   "ADM-29",
+   "ADM-32"
+  ]
+ },
+ {
+  "key": "admin.claims.review",
+  "method": "POST",
+  "path": "/api/v1/admin/claims/:claimId/review",
+  "authentication": "required",
+  "scope": "admin",
+  "permission": "incidents:arbitrate",
+  "idempotency": true,
+  "auditOnMutation": true,
+  "handler": {
+   "file": "src/backend/disputes/claimRepository.ts",
+   "line": 1106,
+   "factory": "createClaimApiHandlers",
+   "condition": "PostgreSQL uniquement",
+   "calls": [
+    "repository.review"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "ADMIN",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "ADMIN",
+    "handler": "NON_SONDÉ"
+   },
+   "postgres": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": "ADMIN",
+    "handler": "ATTEINT"
+   },
+   "postgresR2": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": "ADMIN",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [
+   "src/admin/admin.test.tsx",
+   "src/backend/api/claims.test.ts",
+   "src/backend/api/replacements.test.ts",
+   "src/backend/api/reputation.test.ts",
+   "src/backend/api/securityAntiFraud.test.ts",
+   "src/backend/automation/cronQueue.test.ts"
+  ],
+  "usedByScreens": [
+   "ADM-27",
+   "ADM-28"
+  ]
+ },
+ {
+  "key": "admin.claims.evidence.request",
+  "method": "POST",
+  "path": "/api/v1/admin/claims/:claimId/evidence-requests",
+  "authentication": "required",
+  "scope": "admin",
+  "permission": "incidents:arbitrate",
+  "idempotency": true,
+  "auditOnMutation": true,
+  "handler": {
+   "file": "src/backend/disputes/claimRepository.ts",
+   "line": 1112,
+   "factory": "createClaimApiHandlers",
+   "condition": "PostgreSQL uniquement",
+   "calls": [
+    "repository.requestEvidence"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "ADMIN",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "ADMIN",
+    "handler": "NON_SONDÉ"
+   },
+   "postgres": {
+    "status": 400,
+    "code": "VALIDATION_ERROR",
+    "role": "ADMIN",
+    "handler": "ATTEINT"
+   },
+   "postgresR2": {
+    "status": 400,
+    "code": "VALIDATION_ERROR",
+    "role": "ADMIN",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [
+   "src/admin/admin.test.tsx"
+  ],
+  "usedByScreens": [
+   "ADM-27",
+   "ADM-28"
+  ]
+ },
+ {
+  "key": "admin.claims.decision",
+  "method": "POST",
+  "path": "/api/v1/admin/claims/:claimId/decision",
+  "authentication": "required",
+  "scope": "admin",
+  "permission": "incidents:arbitrate",
+  "idempotency": true,
+  "auditOnMutation": true,
+  "handler": {
+   "file": "src/backend/disputes/claimRepository.ts",
+   "line": 1120,
+   "factory": "createClaimApiHandlers",
+   "condition": "PostgreSQL uniquement",
+   "calls": [
+    "repository.decide"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "ADMIN",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "ADMIN",
+    "handler": "NON_SONDÉ"
+   },
+   "postgres": {
+    "status": 400,
+    "code": "VALIDATION_ERROR",
+    "role": "ADMIN",
+    "handler": "ATTEINT"
+   },
+   "postgresR2": {
+    "status": 400,
+    "code": "VALIDATION_ERROR",
+    "role": "ADMIN",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [
+   "src/admin/admin.test.tsx",
+   "src/backend/api/claims.test.ts",
+   "src/backend/api/replacements.test.ts",
+   "src/backend/api/reputation.test.ts",
+   "src/backend/api/securityAntiFraud.test.ts",
+   "src/backend/automation/cronQueue.test.ts"
+  ],
+  "usedByScreens": [
+   "ADM-29"
+  ]
+ },
+ {
+  "key": "admin.claims.restriction.apply",
+  "method": "POST",
+  "path": "/api/v1/admin/claims/:claimId/restrictions",
+  "authentication": "required",
+  "scope": "admin",
+  "permission": "incidents:arbitrate",
+  "idempotency": true,
+  "auditOnMutation": true,
+  "handler": {
+   "file": "src/backend/disputes/claimRepository.ts",
+   "line": 1125,
+   "factory": "createClaimApiHandlers",
+   "condition": "PostgreSQL uniquement",
+   "calls": [
+    "repository.applyRestriction"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "ADMIN",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "ADMIN",
+    "handler": "NON_SONDÉ"
+   },
+   "postgres": {
+    "status": 400,
+    "code": "VALIDATION_ERROR",
+    "role": "ADMIN",
+    "handler": "ATTEINT"
+   },
+   "postgresR2": {
+    "status": 400,
+    "code": "VALIDATION_ERROR",
+    "role": "ADMIN",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [
+   "src/backend/api/claims.test.ts",
+   "src/backend/api/reputation.test.ts"
+  ],
+  "usedByScreens": []
+ },
+ {
+  "key": "admin.claims.restriction.release",
+  "method": "POST",
+  "path": "/api/v1/admin/claims/:claimId/restrictions/:restrictionId/release",
+  "authentication": "required",
+  "scope": "admin",
+  "permission": "incidents:arbitrate",
+  "idempotency": true,
+  "auditOnMutation": true,
+  "handler": {
+   "file": "src/backend/disputes/claimRepository.ts",
+   "line": 1130,
+   "factory": "createClaimApiHandlers",
+   "condition": "PostgreSQL uniquement",
+   "calls": [
+    "repository.releaseRestriction"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "ADMIN",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "ADMIN",
+    "handler": "NON_SONDÉ"
+   },
+   "postgres": {
+    "status": 400,
+    "code": "VALIDATION_ERROR",
+    "role": "ADMIN",
+    "handler": "ATTEINT"
+   },
+   "postgresR2": {
+    "status": 400,
+    "code": "VALIDATION_ERROR",
+    "role": "ADMIN",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [
+   "src/backend/api/claims.test.ts",
+   "src/backend/api/reputation.test.ts"
+  ],
+  "usedByScreens": []
+ },
+ {
+  "key": "reputation.mine.read",
+  "method": "GET",
+  "path": "/api/v1/my/reputation",
+  "authentication": "required",
+  "scope": "self",
+  "handler": {
+   "file": "src/backend/reputation/reputationRepository.ts",
+   "line": 541,
+   "factory": "createReputationApiHandlers",
+   "condition": "PostgreSQL uniquement",
+   "calls": [
+    "repository.getMine",
+    "repository.listMine",
+    "repository.reconcileMine"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "EMPLOYER",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   },
+   "postgres": {
+    "status": 200,
+    "code": "OK",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   },
+   "postgresR2": {
+    "status": 200,
+    "code": "OK",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [
+   "src/admin/admin.test.tsx",
+   "src/backend/api/documents.test.ts",
+   "src/backend/api/reputation.test.ts",
+   "src/backend/api/securityAntiFraud.test.ts",
+   "src/backend/automation/cronQueue.test.ts"
+  ],
+  "usedByScreens": [
+   "PRE-45",
+   "PRE-46"
+  ]
+ },
+ {
+  "key": "reputation.mine.entries.list",
+  "method": "GET",
+  "path": "/api/v1/my/reputation/entries",
+  "authentication": "required",
+  "scope": "self",
+  "collection": true,
+  "handler": {
+   "file": "src/backend/reputation/reputationRepository.ts",
+   "line": 542,
+   "factory": "createReputationApiHandlers",
+   "condition": "PostgreSQL uniquement",
+   "calls": [
+    "repository.listMine",
+    "repository.reconcileMine"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "EMPLOYER",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   },
+   "postgres": {
+    "status": 200,
+    "code": "OK",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   },
+   "postgresR2": {
+    "status": 200,
+    "code": "OK",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [
+   "src/backend/api/reputation.test.ts",
+   "src/backend/api/securityAntiFraud.test.ts"
+  ],
+  "usedByScreens": [
+   "PRE-45",
+   "PRE-46",
+   "PRE-47"
+  ]
+ },
+ {
+  "key": "reputation.mine.reconcile",
+  "method": "POST",
+  "path": "/api/v1/my/reputation/reconcile",
+  "authentication": "required",
+  "scope": "self",
+  "idempotency": true,
+  "auditOnMutation": true,
+  "handler": {
+   "file": "src/backend/reputation/reputationRepository.ts",
+   "line": 544,
+   "factory": "createReputationApiHandlers",
+   "condition": "PostgreSQL uniquement",
+   "calls": [
+    "repository.reconcileMine"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "EMPLOYER",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   },
+   "postgres": {
+    "status": 200,
+    "code": "OK",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   },
+   "postgresR2": {
+    "status": 200,
+    "code": "OK",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": "reconciliation-sensitive",
+  "tests": [
+   "src/backend/api/reputation.test.ts",
+   "src/backend/api/securityAntiFraud.test.ts",
+   "src/backend/automation/cronQueue.test.ts"
+  ],
+  "usedByScreens": []
+ },
+ {
+  "key": "admin.reputation.entries.list",
+  "method": "GET",
+  "path": "/api/v1/admin/reputation/entries",
+  "authentication": "required",
+  "scope": "admin",
+  "permission": "audit:read",
+  "collection": true,
+  "handler": {
+   "file": "src/backend/reputation/reputationRepository.ts",
+   "line": 549,
+   "factory": "createReputationApiHandlers",
+   "condition": "PostgreSQL uniquement",
+   "calls": [
+    "repository.listAdmin"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "ADMIN",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "ADMIN",
+    "handler": "NON_SONDÉ"
+   },
+   "postgres": {
+    "status": 200,
+    "code": "OK",
+    "role": "ADMIN",
+    "handler": "ATTEINT"
+   },
+   "postgresR2": {
+    "status": 200,
+    "code": "OK",
+    "role": "ADMIN",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [
+   "scripts/verify-admin-ui.ts",
+   "src/admin/admin.test.tsx",
+   "src/backend/api/reputation.test.ts",
+   "src/backend/api/securityAntiFraud.test.ts"
+  ],
+  "usedByScreens": [
+   "ADM-34"
+  ]
+ },
+ {
+  "key": "admin.reputation.entries.read",
+  "method": "GET",
+  "path": "/api/v1/admin/reputation/entries/:reputationId",
+  "authentication": "required",
+  "scope": "admin",
+  "permission": "audit:read",
+  "handler": {
+   "file": "src/backend/reputation/reputationRepository.ts",
+   "line": 567,
+   "factory": "createReputationApiHandlers",
+   "condition": "PostgreSQL uniquement",
+   "calls": [
+    "repository.correct",
+    "repository.getAdmin"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "ADMIN",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "ADMIN",
+    "handler": "NON_SONDÉ"
+   },
+   "postgres": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": "ADMIN",
+    "handler": "ATTEINT"
+   },
+   "postgresR2": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": "ADMIN",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [
+   "src/admin/admin.test.tsx",
+   "src/backend/api/reputation.test.ts",
+   "src/backend/api/securityAntiFraud.test.ts"
+  ],
+  "usedByScreens": [
+   "ADM-34"
+  ]
+ },
+ {
+  "key": "admin.reputation.entries.correct",
+  "method": "POST",
+  "path": "/api/v1/admin/reputation/entries/:reputationId/correct",
+  "authentication": "required",
+  "scope": "admin",
+  "permission": "incidents:arbitrate",
+  "idempotency": true,
+  "auditOnMutation": true,
+  "handler": {
+   "file": "src/backend/reputation/reputationRepository.ts",
+   "line": 569,
+   "factory": "createReputationApiHandlers",
+   "condition": "PostgreSQL uniquement",
+   "calls": [
+    "repository.correct"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "ADMIN",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "ADMIN",
+    "handler": "NON_SONDÉ"
+   },
+   "postgres": {
+    "status": 400,
+    "code": "VALIDATION_ERROR",
+    "role": "ADMIN",
+    "handler": "ATTEINT"
+   },
+   "postgresR2": {
+    "status": 400,
+    "code": "VALIDATION_ERROR",
+    "role": "ADMIN",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": "reconciliation-sensitive",
+  "tests": [
+   "src/admin/admin.test.tsx",
+   "src/backend/api/reputation.test.ts",
+   "src/backend/api/securityAntiFraud.test.ts"
+  ],
+  "usedByScreens": [
+   "ADM-34"
+  ]
+ },
+ {
+  "key": "admin.reputation.reconcile",
+  "method": "POST",
+  "path": "/api/v1/admin/reputation/reconcile",
+  "authentication": "required",
+  "scope": "admin",
+  "permission": "incidents:arbitrate",
+  "idempotency": true,
+  "auditOnMutation": true,
+  "handler": {
+   "file": "src/backend/reputation/reputationRepository.ts",
+   "line": 577,
+   "factory": "createReputationApiHandlers",
+   "condition": "PostgreSQL uniquement",
+   "calls": [
+    "repository.reconcileAdmin"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "ADMIN",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "ADMIN",
+    "handler": "NON_SONDÉ"
+   },
+   "postgres": {
+    "status": 400,
+    "code": "VALIDATION_ERROR",
+    "role": "ADMIN",
+    "handler": "ATTEINT"
+   },
+   "postgresR2": {
+    "status": 400,
+    "code": "VALIDATION_ERROR",
+    "role": "ADMIN",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": "reconciliation-sensitive",
+  "tests": [
+   "scripts/verify-admin-ui.ts",
+   "src/admin/admin.test.tsx"
+  ],
+  "usedByScreens": [
+   "ADM-34"
+  ]
+ },
+ {
+  "key": "incidents.mine.list",
+  "method": "GET",
+  "path": "/api/v1/my/incidents",
+  "authentication": "required",
+  "scope": "self",
+  "collection": true,
+  "handler": null,
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "EMPLOYER",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   },
+   "postgres": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   },
+   "postgresR2": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [],
+  "usedByScreens": []
+ },
+ {
+  "key": "incidents.read",
+  "method": "GET",
+  "path": "/api/v1/incidents/:incidentId",
+  "authentication": "required",
+  "scope": "owner",
+  "handler": null,
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "EMPLOYER",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   },
+   "postgres": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   },
+   "postgresR2": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [],
+  "usedByScreens": []
+ },
+ {
+  "key": "incidents.report",
+  "method": "POST",
+  "path": "/api/v1/incidents",
+  "authentication": "required",
+  "scope": "owner",
+  "idempotency": true,
+  "auditOnMutation": true,
+  "handler": null,
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "EMPLOYER",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   },
+   "postgres": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   },
+   "postgresR2": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [
+   "src/backend/api/applicationDecisions.test.ts",
+   "src/backend/api/contracts.test.ts",
+   "src/backend/api/postContract.test.ts",
+   "src/backend/api/proposals.test.ts"
+  ],
+  "usedByScreens": []
+ },
+ {
+  "key": "replacements.mine.list",
+  "method": "GET",
+  "path": "/api/v1/my/replacements",
+  "authentication": "required",
+  "scope": "self",
+  "collection": true,
+  "handler": {
+   "file": "src/backend/replacements/replacementRepository.ts",
+   "line": 307,
+   "factory": "createReplacementApiHandlers",
+   "condition": "PostgreSQL uniquement",
+   "calls": [
+    "repository.get",
+    "repository.listAdmin",
+    "repository.listMine",
+    "repository.publishOffer"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "EMPLOYER",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   },
+   "postgres": {
+    "status": 200,
+    "code": "OK",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   },
+   "postgresR2": {
+    "status": 200,
+    "code": "OK",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [
+   "src/backend/api/documents.test.ts"
+  ],
+  "usedByScreens": [
+   "EMP-56",
+   "EMP-57",
+   "EMP-58",
+   "EMP-59",
+   "PRE-40",
+   "PRE-41",
+   "PRE-43",
+   "PRE-44"
+  ]
+ },
+ {
+  "key": "replacements.read",
+  "method": "GET",
+  "path": "/api/v1/replacements/:replacementId",
+  "authentication": "required",
+  "scope": "owner",
+  "handler": {
+   "file": "src/backend/replacements/replacementRepository.ts",
+   "line": 308,
+   "factory": "createReplacementApiHandlers",
+   "condition": "PostgreSQL uniquement",
+   "calls": [
+    "repository.get",
+    "repository.listAdmin",
+    "repository.publishOffer"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "EMPLOYER",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   },
+   "postgres": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   },
+   "postgresR2": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [
+   "src/backend/api/applicationDecisions.test.ts",
+   "src/backend/api/contracts.test.ts",
+   "src/backend/api/postContract.test.ts",
+   "src/backend/api/proposals.test.ts",
+   "src/backend/api/replacements.test.ts",
+   "src/backend/api/securityAntiFraud.test.ts"
+  ],
+  "usedByScreens": [
+   "PRE-41",
+   "PRE-42",
+   "PRE-43",
+   "PRE-44"
+  ]
+ },
+ {
+  "key": "replacements.offer.create",
+  "method": "POST",
+  "path": "/api/v1/replacements/:replacementId/offer",
+  "authentication": "required",
+  "scope": "owner",
+  "roles": [
+   "EMPLOYER"
+  ],
+  "idempotency": true,
+  "auditOnMutation": true,
+  "handler": {
+   "file": "src/backend/replacements/replacementRepository.ts",
+   "line": 311,
+   "factory": "createReplacementApiHandlers",
+   "condition": "PostgreSQL uniquement",
+   "calls": [
+    "repository.publishOffer"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "EMPLOYER",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   },
+   "postgres": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   },
+   "postgresR2": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [
+   "src/backend/api/replacements.test.ts",
+   "src/backend/api/securityAntiFraud.test.ts"
+  ],
+  "usedByScreens": [
+   "EMP-58"
+  ]
+ },
+ {
+  "key": "messages.conversations.mine",
+  "method": "GET",
+  "path": "/api/v1/my/conversations",
+  "authentication": "required",
+  "scope": "self",
+  "collection": true,
+  "handler": null,
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "EMPLOYER",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   },
+   "postgres": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   },
+   "postgresR2": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [],
+  "usedByScreens": []
+ },
+ {
+  "key": "messages.conversation.create",
+  "method": "POST",
+  "path": "/api/v1/conversations",
+  "authentication": "required",
+  "scope": "participant",
+  "idempotency": true,
+  "auditOnMutation": true,
+  "handler": null,
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "EMPLOYER",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   },
+   "postgres": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   },
+   "postgresR2": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [],
+  "usedByScreens": []
+ },
+ {
+  "key": "messages.conversation.list",
+  "method": "GET",
+  "path": "/api/v1/conversations/:conversationId/messages",
+  "authentication": "required",
+  "scope": "participant",
+  "collection": true,
+  "handler": null,
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "EMPLOYER",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   },
+   "postgres": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   },
+   "postgresR2": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [
+   "src/backend/api/applicationDecisions.test.ts",
+   "src/backend/api/contracts.test.ts",
+   "src/backend/api/postContract.test.ts",
+   "src/backend/api/proposals.test.ts"
+  ],
+  "usedByScreens": []
+ },
+ {
+  "key": "messages.send",
+  "method": "POST",
+  "path": "/api/v1/conversations/:conversationId/messages",
+  "authentication": "required",
+  "scope": "participant",
+  "idempotency": true,
+  "auditOnMutation": true,
+  "handler": null,
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "EMPLOYER",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   },
+   "postgres": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   },
+   "postgresR2": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [
+   "src/backend/api/applicationDecisions.test.ts",
+   "src/backend/api/contracts.test.ts",
+   "src/backend/api/postContract.test.ts",
+   "src/backend/api/proposals.test.ts"
+  ],
+  "usedByScreens": []
+ },
+ {
+  "key": "messages.read",
+  "method": "POST",
+  "path": "/api/v1/conversations/:conversationId/read",
+  "authentication": "required",
+  "scope": "participant",
+  "idempotency": true,
+  "auditOnMutation": true,
+  "handler": null,
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "EMPLOYER",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   },
+   "postgres": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   },
+   "postgresR2": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [],
+  "usedByScreens": []
+ },
+ {
+  "key": "notifications.mine.list",
+  "method": "GET",
+  "path": "/api/v1/my/notifications",
+  "authentication": "required",
+  "scope": "self",
+  "collection": true,
+  "handler": {
+   "file": "src/backend/notifications/notificationApi.ts",
+   "line": 66,
+   "factory": "createNotificationApiHandlers",
+   "condition": "PostgreSQL uniquement",
+   "calls": [
+    "service.listMine"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "EMPLOYER",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   },
+   "postgres": {
+    "status": 200,
+    "code": "OK",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   },
+   "postgresR2": {
+    "status": 200,
+    "code": "OK",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [
+   "scripts/verify-postgres-e2e.ts",
+   "scripts/verify-workerd-local.ts",
+   "src/backend/api/contracts.test.ts",
+   "src/backend/api/postContract.test.ts",
+   "src/backend/api/securityAntiFraud.test.ts",
+   "src/backend/automation/cronQueue.test.ts",
+   "src/backend/notifications/notifications.test.ts"
+  ],
+  "usedByScreens": [
+   "EMP-02",
+   "PRE-02"
+  ]
+ },
+ {
+  "key": "notifications.read",
+  "method": "POST",
+  "path": "/api/v1/notifications/:notificationId/read",
+  "authentication": "required",
+  "scope": "self",
+  "idempotency": true,
+  "auditOnMutation": true,
+  "handler": {
+   "file": "src/backend/notifications/notificationApi.ts",
+   "line": 75,
+   "factory": "createNotificationApiHandlers",
+   "condition": "PostgreSQL uniquement",
+   "calls": [
+    "service.markRead"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "EMPLOYER",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   },
+   "postgres": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   },
+   "postgresR2": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [
+   "scripts/verify-postgres-e2e.ts",
+   "scripts/verify-workerd-local.ts",
+   "src/backend/api/securityAntiFraud.test.ts",
+   "src/backend/automation/cronQueue.test.ts",
+   "src/backend/notifications/notifications.test.ts"
+  ],
+  "usedByScreens": [
+   "EMP-02"
+  ]
+ },
+ {
+  "key": "notifications.read-all",
+  "method": "POST",
+  "path": "/api/v1/my/notifications/read-all",
+  "authentication": "required",
+  "scope": "self",
+  "idempotency": true,
+  "auditOnMutation": true,
+  "handler": {
+   "file": "src/backend/notifications/notificationApi.ts",
+   "line": 82,
+   "factory": "createNotificationApiHandlers",
+   "condition": "PostgreSQL uniquement",
+   "calls": [
+    "service.markAllRead"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "EMPLOYER",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   },
+   "postgres": {
+    "status": 200,
+    "code": "OK",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   },
+   "postgresR2": {
+    "status": 200,
+    "code": "OK",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [
+   "src/backend/api/securityAntiFraud.test.ts",
+   "src/backend/notifications/notifications.test.ts"
+  ],
+  "usedByScreens": [
+   "EMP-02",
+   "PRE-02"
+  ]
+ },
+ {
+  "key": "webrtc.sessions.mine.list",
+  "method": "GET",
+  "path": "/api/v1/my/webrtc-sessions",
+  "authentication": "required",
+  "scope": "self",
+  "collection": true,
+  "roles": [
+   "EMPLOYER",
+   "CANDIDATE"
+  ],
+  "handler": {
+   "file": "src/backend/webrtc/webrtcApi.ts",
+   "line": 86,
+   "factory": "createWebRtcApiHandlers",
+   "condition": "PostgreSQL uniquement (mode postgres)",
+   "calls": [
+    "repository.listMine"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "EMPLOYER",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   },
+   "postgres": {
+    "status": 200,
+    "code": "OK",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   },
+   "postgresR2": {
+    "status": 200,
+    "code": "OK",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [
+   "scripts/verify-admin-ui.ts",
+   "src/backend/webrtc/webrtc.test.ts"
+  ],
+  "usedByScreens": [
+   "RTC-06"
+  ]
+ },
+ {
+  "key": "webrtc.sessions.create",
+  "method": "POST",
+  "path": "/api/v1/webrtc-sessions",
+  "authentication": "required",
+  "scope": "participant",
+  "roles": [
+   "EMPLOYER",
+   "CANDIDATE"
+  ],
+  "idempotency": true,
+  "auditOnMutation": true,
+  "handler": {
+   "file": "src/backend/webrtc/webrtcApi.ts",
+   "line": 91,
+   "factory": "createWebRtcApiHandlers",
+   "condition": "PostgreSQL uniquement (mode postgres)",
+   "calls": [
+    "repository.create"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "EMPLOYER",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   },
+   "postgres": {
+    "status": 400,
+    "code": "VALIDATION_ERROR",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   },
+   "postgresR2": {
+    "status": 400,
+    "code": "VALIDATION_ERROR",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": "webrtc-signaling",
+  "tests": [
+   "scripts/verify-admin-ui.ts",
+   "scripts/verify-workerd-local.ts",
+   "src/backend/api/securityAntiFraud.test.ts",
+   "src/backend/webrtc/webrtc.test.ts",
+   "src/rtc/rtc.test.tsx"
+  ],
+  "usedByScreens": [
+   "RTC-06"
+  ]
+ },
+ {
+  "key": "webrtc.sessions.read",
+  "method": "GET",
+  "path": "/api/v1/webrtc-sessions/:sessionId",
+  "authentication": "required",
+  "scope": "participant",
+  "roles": [
+   "EMPLOYER",
+   "CANDIDATE"
+  ],
+  "handler": {
+   "file": "src/backend/webrtc/webrtcApi.ts",
+   "line": 104,
+   "factory": "createWebRtcApiHandlers",
+   "condition": "PostgreSQL uniquement (mode postgres)",
+   "calls": [
+    "repository.get"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "EMPLOYER",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   },
+   "postgres": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   },
+   "postgresR2": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [
+   "src/backend/webrtc/webrtc.test.ts"
+  ],
+  "usedByScreens": [
+   "RTC-01",
+   "RTC-02",
+   "RTC-03",
+   "RTC-04",
+   "RTC-05",
+   "RTC-07",
+   "RTC-08"
+  ]
+ },
+ {
+  "key": "webrtc.sessions.join",
+  "method": "POST",
+  "path": "/api/v1/webrtc-sessions/:sessionId/join",
+  "authentication": "required",
+  "scope": "participant",
+  "roles": [
+   "EMPLOYER",
+   "CANDIDATE"
+  ],
+  "auditOnMutation": true,
+  "handler": {
+   "file": "src/backend/webrtc/webrtcApi.ts",
+   "line": 109,
+   "factory": "createWebRtcApiHandlers",
+   "condition": "PostgreSQL uniquement (mode postgres)",
+   "calls": [
+    "repository.join"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "EMPLOYER",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   },
+   "postgres": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   },
+   "postgresR2": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": "webrtc-signaling",
+  "tests": [
+   "scripts/verify-workerd-local.ts",
+   "src/backend/api/securityAntiFraud.test.ts",
+   "src/backend/webrtc/webrtc.test.ts"
+  ],
+  "usedByScreens": [
+   "RTC-01",
+   "RTC-02"
+  ]
+ },
+ {
+  "key": "webrtc.sessions.credentials.create",
+  "method": "POST",
+  "path": "/api/v1/webrtc-sessions/:sessionId/credentials",
+  "authentication": "required",
+  "scope": "participant",
+  "roles": [
+   "EMPLOYER",
+   "CANDIDATE"
+  ],
+  "handler": {
+   "file": "src/backend/webrtc/webrtcApi.ts",
+   "line": 114,
+   "factory": "createWebRtcApiHandlers",
+   "condition": "PostgreSQL uniquement (mode postgres)",
+   "calls": [
+    "repository.issueCredential"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "EMPLOYER",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   },
+   "postgres": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   },
+   "postgresR2": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": "webrtc-signaling",
+  "tests": [
+   "scripts/verify-workerd-local.ts",
+   "src/backend/api/securityAntiFraud.test.ts",
+   "src/backend/webrtc/webrtc.test.ts"
+  ],
+  "usedByScreens": []
+ },
+ {
+  "key": "webrtc.sessions.ice-configuration",
+  "method": "POST",
+  "path": "/api/v1/webrtc-sessions/:sessionId/ice-configuration",
+  "authentication": "required",
+  "scope": "participant",
+  "roles": [
+   "EMPLOYER",
+   "CANDIDATE"
+  ],
+  "handler": {
+   "file": "src/backend/webrtc/webrtcApi.ts",
+   "line": 119,
+   "factory": "createWebRtcApiHandlers",
+   "condition": "PostgreSQL uniquement (mode postgres)",
+   "calls": [
+    "repository.getIceConfiguration"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "EMPLOYER",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   },
+   "postgres": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   },
+   "postgresR2": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [
+   "scripts/verify-workerd-local.ts",
+   "src/backend/webrtc/webrtc.test.ts"
+  ],
+  "usedByScreens": [
+   "RTC-07"
+  ]
+ },
+ {
+  "key": "webrtc.sessions.signaling.send",
+  "method": "POST",
+  "path": "/api/v1/webrtc-sessions/:sessionId/signaling",
+  "authentication": "required",
+  "scope": "participant",
+  "roles": [
+   "EMPLOYER",
+   "CANDIDATE"
+  ],
+  "idempotency": true,
+  "auditOnMutation": true,
+  "handler": {
+   "file": "src/backend/webrtc/webrtcApi.ts",
+   "line": 124,
+   "factory": "createWebRtcApiHandlers",
+   "condition": "PostgreSQL uniquement (mode postgres)",
+   "calls": [
+    "repository.sendSignal"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "EMPLOYER",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   },
+   "postgres": {
+    "status": 400,
+    "code": "VALIDATION_ERROR",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   },
+   "postgresR2": {
+    "status": 400,
+    "code": "VALIDATION_ERROR",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": "webrtc-signaling",
+  "tests": [
+   "scripts/verify-workerd-local.ts",
+   "src/backend/api/securityAntiFraud.test.ts",
+   "src/backend/webrtc/webrtc.test.ts"
+  ],
+  "usedByScreens": []
+ },
+ {
+  "key": "webrtc.sessions.signaling.poll",
+  "method": "GET",
+  "path": "/api/v1/webrtc-sessions/:sessionId/signaling",
+  "authentication": "required",
+  "scope": "participant",
+  "roles": [
+   "EMPLOYER",
+   "CANDIDATE"
+  ],
+  "handler": {
+   "file": "src/backend/webrtc/webrtcApi.ts",
+   "line": 135,
+   "factory": "createWebRtcApiHandlers",
+   "condition": "PostgreSQL uniquement (mode postgres)",
+   "calls": [
+    "repository.poll"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "EMPLOYER",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   },
+   "postgres": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   },
+   "postgresR2": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": "webrtc-signaling",
+  "tests": [
+   "scripts/verify-workerd-local.ts",
+   "src/backend/api/securityAntiFraud.test.ts",
+   "src/backend/webrtc/webrtc.test.ts"
+  ],
+  "usedByScreens": []
+ },
+ {
+  "key": "webrtc.sessions.transport-connected",
+  "method": "POST",
+  "path": "/api/v1/webrtc-sessions/:sessionId/connected",
+  "authentication": "required",
+  "scope": "participant",
+  "roles": [
+   "EMPLOYER",
+   "CANDIDATE"
+  ],
+  "idempotency": true,
+  "auditOnMutation": true,
+  "handler": {
+   "file": "src/backend/webrtc/webrtcApi.ts",
+   "line": 152,
+   "factory": "createWebRtcApiHandlers",
+   "condition": "PostgreSQL uniquement (mode postgres)",
+   "calls": [
+    "repository.reportTransportConnected"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "EMPLOYER",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   },
+   "postgres": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   },
+   "postgresR2": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [
+   "scripts/verify-workerd-local.ts",
+   "src/backend/webrtc/webrtc.test.ts"
+  ],
+  "usedByScreens": []
+ },
+ {
+  "key": "webrtc.sessions.close",
+  "method": "POST",
+  "path": "/api/v1/webrtc-sessions/:sessionId/close",
+  "authentication": "required",
+  "scope": "participant",
+  "roles": [
+   "EMPLOYER",
+   "CANDIDATE"
+  ],
+  "idempotency": true,
+  "auditOnMutation": true,
+  "handler": {
+   "file": "src/backend/webrtc/webrtcApi.ts",
+   "line": 164,
+   "factory": "createWebRtcApiHandlers",
+   "condition": "PostgreSQL uniquement (mode postgres)",
+   "calls": [
+    "repository.close"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "EMPLOYER",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   },
+   "postgres": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   },
+   "postgresR2": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [
+   "scripts/verify-workerd-local.ts",
+   "src/backend/api/securityAntiFraud.test.ts",
+   "src/backend/webrtc/webrtc.test.ts"
+  ],
+  "usedByScreens": [
+   "RTC-04"
+  ]
+ },
+ {
+  "key": "calls.mine.list",
+  "method": "GET",
+  "path": "/api/v1/my/calls",
+  "authentication": "required",
+  "scope": "self",
+  "collection": true,
+  "handler": null,
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "EMPLOYER",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   },
+   "postgres": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   },
+   "postgresR2": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [],
+  "usedByScreens": []
+ },
+ {
+  "key": "calls.create",
+  "method": "POST",
+  "path": "/api/v1/calls",
+  "authentication": "required",
+  "scope": "self",
+  "idempotency": true,
+  "auditOnMutation": true,
+  "handler": null,
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "EMPLOYER",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   },
+   "postgres": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   },
+   "postgresR2": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [
+   "src/rtc/rtc.test.tsx"
+  ],
+  "usedByScreens": []
+ },
+ {
+  "key": "calls.accept",
+  "method": "POST",
+  "path": "/api/v1/calls/:callId/accept",
+  "authentication": "required",
+  "scope": "participant",
+  "idempotency": true,
+  "auditOnMutation": true,
+  "handler": null,
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "EMPLOYER",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   },
+   "postgres": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   },
+   "postgresR2": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [],
+  "usedByScreens": []
+ },
+ {
+  "key": "calls.reject",
+  "method": "POST",
+  "path": "/api/v1/calls/:callId/reject",
+  "authentication": "required",
+  "scope": "participant",
+  "idempotency": true,
+  "auditOnMutation": true,
+  "handler": null,
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "EMPLOYER",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   },
+   "postgres": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   },
+   "postgresR2": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [],
+  "usedByScreens": []
+ },
+ {
+  "key": "calls.end",
+  "method": "POST",
+  "path": "/api/v1/calls/:callId/end",
+  "authentication": "required",
+  "scope": "participant",
+  "idempotency": true,
+  "auditOnMutation": true,
+  "handler": null,
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "EMPLOYER",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   },
+   "postgres": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   },
+   "postgresR2": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [],
+  "usedByScreens": []
+ },
+ {
+  "key": "calls.signaling-credential",
+  "method": "POST",
+  "path": "/api/v1/calls/signaling-credential",
+  "authentication": "required",
+  "scope": "participant",
+  "handler": null,
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "EMPLOYER",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   },
+   "postgres": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   },
+   "postgresR2": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [],
+  "usedByScreens": []
+ },
+ {
+  "key": "calls.ice-configuration",
+  "method": "POST",
+  "path": "/api/v1/calls/:callId/ice-configuration",
+  "authentication": "required",
+  "scope": "participant",
+  "handler": null,
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "EMPLOYER",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   },
+   "postgres": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   },
+   "postgresR2": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [],
+  "usedByScreens": []
+ },
+ {
+  "key": "calls.call-signaling-credential",
+  "method": "POST",
+  "path": "/api/v1/calls/:callId/signaling-credential",
+  "authentication": "required",
+  "scope": "participant",
+  "handler": null,
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "EMPLOYER",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   },
+   "postgres": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   },
+   "postgresR2": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [],
+  "usedByScreens": []
+ },
+ {
+  "key": "resources.published.list",
+  "method": "GET",
+  "path": "/api/v1/resources",
+  "authentication": "public",
+  "scope": "public",
+  "collection": true,
+  "handler": null,
+  "probe": {
+   "closed": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": null,
+    "handler": "ABSENT"
+   },
+   "memory": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": null,
+    "handler": "ABSENT"
+   },
+   "postgres": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": null,
+    "handler": "ABSENT"
+   },
+   "postgresR2": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": null,
+    "handler": "ABSENT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [
+   "scripts/verify-workerd-local.ts",
+   "src/backend/api/offers.test.ts",
+   "src/backend/persistence/persistence.test.ts"
+  ],
+  "usedByScreens": []
+ },
+ {
+  "key": "resources.published.read",
+  "method": "GET",
+  "path": "/api/v1/resources/:resourceId",
+  "authentication": "public",
+  "scope": "public",
+  "handler": null,
+  "probe": {
+   "closed": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": null,
+    "handler": "ABSENT"
+   },
+   "memory": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": null,
+    "handler": "ABSENT"
+   },
+   "postgres": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": null,
+    "handler": "ABSENT"
+   },
+   "postgresR2": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": null,
+    "handler": "ABSENT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [],
+  "usedByScreens": []
+ },
+ {
+  "key": "documents.mine.list",
+  "method": "GET",
+  "path": "/api/v1/my/documents",
+  "authentication": "required",
+  "scope": "self",
+  "collection": true,
+  "handler": {
+   "file": "src/backend/documents/documentRepository.ts",
+   "line": 1331,
+   "factory": "createDocumentApiHandlers",
+   "condition": "PostgreSQL + stockage objet (DOCUMENTS_BUCKET ou injection)",
+   "calls": [
+    "repository.createUploadGrant",
+    "repository.listMine"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "EMPLOYER",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   },
+   "postgres": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   },
+   "postgresR2": {
+    "status": 200,
+    "code": "OK",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [
+   "src/backend/api/documents.test.ts",
+   "src/backend/api/securityAntiFraud.test.ts",
+   "src/backend/automation/cronQueue.test.ts"
+  ],
+  "usedByScreens": [
+   "PRE-03",
+   "PRE-48"
+  ]
+ },
+ {
+  "key": "documents.upload-grant",
+  "method": "POST",
+  "path": "/api/v1/documents/upload-grants",
+  "authentication": "required",
+  "scope": "self",
+  "idempotency": true,
+  "auditOnMutation": true,
+  "handler": {
+   "file": "src/backend/documents/documentRepository.ts",
+   "line": 1334,
+   "factory": "createDocumentApiHandlers",
+   "condition": "PostgreSQL + stockage objet (DOCUMENTS_BUCKET ou injection)",
+   "calls": [
+    "repository.createUploadGrant"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "EMPLOYER",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   },
+   "postgres": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   },
+   "postgresR2": {
+    "status": 400,
+    "code": "VALIDATION_ERROR",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": "documents-access",
+  "tests": [
+   "scripts/verify-workerd-local.ts",
+   "src/backend/api/documents.test.ts",
+   "src/backend/api/securityAntiFraud.test.ts",
+   "src/backend/automation/cronQueue.test.ts",
+   "src/backend/worker/cloudflareEntry.test.ts"
+  ],
+  "usedByScreens": [
+   "PRE-48"
+  ]
+ },
+ {
+  "key": "documents.signed-download",
+  "method": "POST",
+  "path": "/api/v1/documents/:documentId/signed-download-url",
+  "authentication": "required",
+  "scope": "owner",
+  "handler": {
+   "file": "src/backend/documents/documentRepository.ts",
+   "line": 1368,
+   "factory": "createDocumentApiHandlers",
+   "condition": "PostgreSQL + stockage objet (DOCUMENTS_BUCKET ou injection)",
+   "calls": [
+    "repository.issueSignedDownload"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "EMPLOYER",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   },
+   "postgres": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   },
+   "postgresR2": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": "documents-access",
+  "tests": [
+   "scripts/verify-workerd-local.ts",
+   "src/backend/api/documents.test.ts",
+   "src/backend/api/securityAntiFraud.test.ts"
+  ],
+  "usedByScreens": []
+ },
+ {
+  "key": "documents.read",
+  "method": "GET",
+  "path": "/api/v1/documents/:documentId",
+  "authentication": "required",
+  "scope": "owner",
+  "handler": {
+   "file": "src/backend/documents/documentRepository.ts",
+   "line": 1347,
+   "factory": "createDocumentApiHandlers",
+   "condition": "PostgreSQL + stockage objet (DOCUMENTS_BUCKET ou injection)",
+   "calls": [
+    "repository.createVersion",
+    "repository.listVersions",
+    "repository.read"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "EMPLOYER",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   },
+   "postgres": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   },
+   "postgresR2": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [
+   "scripts/verify-workerd-local.ts",
+   "src/backend/api/documents.test.ts",
+   "src/backend/api/securityAntiFraud.test.ts",
+   "src/backend/automation/cronQueue.test.ts",
+   "src/backend/worker/cloudflareEntry.test.ts"
+  ],
+  "usedByScreens": [
+   "PRE-49",
+   "PRE-50",
+   "PRE-51",
+   "PRE-52"
+  ]
+ },
+ {
+  "key": "documents.versions.list",
+  "method": "GET",
+  "path": "/api/v1/documents/:documentId/versions",
+  "authentication": "required",
+  "scope": "owner",
+  "handler": {
+   "file": "src/backend/documents/documentRepository.ts",
+   "line": 1349,
+   "factory": "createDocumentApiHandlers",
+   "condition": "PostgreSQL + stockage objet (DOCUMENTS_BUCKET ou injection)",
+   "calls": [
+    "repository.createVersion",
+    "repository.listVersions"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "EMPLOYER",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   },
+   "postgres": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   },
+   "postgresR2": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [
+   "src/backend/api/documents.test.ts",
+   "src/backend/api/securityAntiFraud.test.ts"
+  ],
+  "usedByScreens": [
+   "PRE-49",
+   "PRE-50",
+   "PRE-51",
+   "PRE-52"
+  ]
+ },
+ {
+  "key": "documents.versions.create",
+  "method": "POST",
+  "path": "/api/v1/documents/:documentId/versions",
+  "authentication": "required",
+  "scope": "owner",
+  "idempotency": true,
+  "auditOnMutation": true,
+  "handler": {
+   "file": "src/backend/documents/documentRepository.ts",
+   "line": 1351,
+   "factory": "createDocumentApiHandlers",
+   "condition": "PostgreSQL + stockage objet (DOCUMENTS_BUCKET ou injection)",
+   "calls": [
+    "repository.createVersion"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "EMPLOYER",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   },
+   "postgres": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   },
+   "postgresR2": {
+    "status": 400,
+    "code": "VALIDATION_ERROR",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": "documents-access",
+  "tests": [
+   "src/backend/api/documents.test.ts",
+   "src/backend/api/securityAntiFraud.test.ts"
+  ],
+  "usedByScreens": [
+   "PRE-49",
+   "PRE-50",
+   "PRE-51",
+   "PRE-52"
+  ]
+ },
+ {
+  "key": "documents.versions.content.upload",
+  "method": "POST",
+  "path": "/api/v1/documents/:documentId/versions/:versionId/content",
+  "authentication": "required",
+  "scope": "owner",
+  "idempotency": true,
+  "auditOnMutation": true,
+  "handler": {
+   "file": "src/backend/documents/documentRepository.ts",
+   "line": 1360,
+   "factory": "createDocumentApiHandlers",
+   "condition": "PostgreSQL + stockage objet (DOCUMENTS_BUCKET ou injection)",
+   "calls": [
+    "repository.uploadContent"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "EMPLOYER",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   },
+   "postgres": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   },
+   "postgresR2": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": "documents-access",
+  "tests": [
+   "scripts/verify-workerd-local.ts",
+   "src/backend/api/documents.test.ts",
+   "src/backend/api/securityAntiFraud.test.ts"
+  ],
+  "usedByScreens": [
+   "PRE-48",
+   "PRE-49",
+   "PRE-50",
+   "PRE-51",
+   "PRE-52"
+  ]
+ },
+ {
+  "key": "documents.versions.content.download",
+  "method": "GET",
+  "path": "/api/v1/documents/:documentId/versions/:versionId/content",
+  "authentication": "required",
+  "scope": "owner",
+  "handler": {
+   "file": "src/backend/documents/documentRepository.ts",
+   "line": 1378,
+   "factory": "createDocumentApiHandlers",
+   "condition": "PostgreSQL + stockage objet (DOCUMENTS_BUCKET ou injection)",
+   "calls": [
+    "repository.downloadContent"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "EMPLOYER",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   },
+   "postgres": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   },
+   "postgresR2": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": "documents-access",
+  "tests": [
+   "scripts/verify-workerd-local.ts",
+   "src/backend/api/documents.test.ts",
+   "src/backend/api/securityAntiFraud.test.ts"
+  ],
+  "usedByScreens": []
+ },
+ {
+  "key": "documents.versions.integrity.verify",
+  "method": "POST",
+  "path": "/api/v1/documents/:documentId/versions/:versionId/verify",
+  "authentication": "required",
+  "scope": "owner",
+  "idempotency": true,
+  "auditOnMutation": true,
+  "handler": {
+   "file": "src/backend/documents/documentRepository.ts",
+   "line": 1389,
+   "factory": "createDocumentApiHandlers",
+   "condition": "PostgreSQL + stockage objet (DOCUMENTS_BUCKET ou injection)",
+   "calls": [
+    "repository.createLink",
+    "repository.listLinks",
+    "repository.verifyIntegrity"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "EMPLOYER",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   },
+   "postgres": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   },
+   "postgresR2": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [
+   "scripts/verify-admin-ui.ts",
+   "scripts/verify-workerd-local.ts",
+   "src/admin/admin.test.tsx",
+   "src/backend/api/documents.test.ts"
+  ],
+  "usedByScreens": [
+   "ADM-38"
+  ]
+ },
+ {
+  "key": "documents.links.list",
+  "method": "GET",
+  "path": "/api/v1/documents/:documentId/versions/:versionId/links",
+  "authentication": "required",
+  "scope": "owner",
+  "handler": {
+   "file": "src/backend/documents/documentRepository.ts",
+   "line": 1392,
+   "factory": "createDocumentApiHandlers",
+   "condition": "PostgreSQL + stockage objet (DOCUMENTS_BUCKET ou injection)",
+   "calls": [
+    "repository.createLink",
+    "repository.listLinks"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "EMPLOYER",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   },
+   "postgres": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   },
+   "postgresR2": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [
+   "src/backend/api/documents.test.ts"
+  ],
+  "usedByScreens": []
+ },
+ {
+  "key": "documents.links.create",
+  "method": "POST",
+  "path": "/api/v1/documents/:documentId/versions/:versionId/links",
+  "authentication": "required",
+  "scope": "owner",
+  "idempotency": true,
+  "auditOnMutation": true,
+  "handler": {
+   "file": "src/backend/documents/documentRepository.ts",
+   "line": 1395,
+   "factory": "createDocumentApiHandlers",
+   "condition": "PostgreSQL + stockage objet (DOCUMENTS_BUCKET ou injection)",
+   "calls": [
+    "repository.createLink"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "EMPLOYER",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   },
+   "postgres": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "EMPLOYER",
+    "handler": "ABSENT"
+   },
+   "postgresR2": {
+    "status": 400,
+    "code": "VALIDATION_ERROR",
+    "role": "EMPLOYER",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [
+   "src/backend/api/documents.test.ts"
+  ],
+  "usedByScreens": []
+ },
+ {
+  "key": "admin.documents.list",
+  "method": "GET",
+  "path": "/api/v1/admin/documents",
+  "authentication": "required",
+  "scope": "admin",
+  "permission": "documents:read:any",
+  "collection": true,
+  "handler": {
+   "file": "src/backend/documents/documentRepository.ts",
+   "line": 1408,
+   "factory": "createDocumentApiHandlers",
+   "condition": "PostgreSQL + stockage objet (DOCUMENTS_BUCKET ou injection)",
+   "calls": [
+    "repository.listAdmin"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "ADMIN",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "ADMIN",
+    "handler": "NON_SONDÉ"
+   },
+   "postgres": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "ADMIN",
+    "handler": "ABSENT"
+   },
+   "postgresR2": {
+    "status": 200,
+    "code": "OK",
+    "role": "ADMIN",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [
+   "scripts/verify-admin-ui.ts",
+   "src/admin/admin.test.tsx",
+   "src/backend/api/documents.test.ts",
+   "src/backend/api/securityAntiFraud.test.ts"
+  ],
+  "usedByScreens": [
+   "ADM-37"
+  ]
+ },
+ {
+  "key": "admin.documents.read",
+  "method": "GET",
+  "path": "/api/v1/admin/documents/:documentId",
+  "authentication": "required",
+  "scope": "admin",
+  "permission": "documents:read:any",
+  "handler": {
+   "file": "src/backend/documents/documentRepository.ts",
+   "line": 1419,
+   "factory": "createDocumentApiHandlers",
+   "condition": "PostgreSQL + stockage objet (DOCUMENTS_BUCKET ou injection)",
+   "calls": [
+    "repository.readAdmin",
+    "repository.revokeVersionAdmin"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "ADMIN",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "ADMIN",
+    "handler": "NON_SONDÉ"
+   },
+   "postgres": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "ADMIN",
+    "handler": "ABSENT"
+   },
+   "postgresR2": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": "ADMIN",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [
+   "scripts/verify-admin-ui.ts",
+   "src/admin/admin.test.tsx",
+   "src/backend/api/documents.test.ts"
+  ],
+  "usedByScreens": [
+   "ADM-38"
+  ]
+ },
+ {
+  "key": "admin.documents.revoke",
+  "method": "POST",
+  "path": "/api/v1/admin/documents/:documentId/revoke",
+  "authentication": "required",
+  "scope": "admin",
+  "permission": "incidents:arbitrate",
+  "idempotency": true,
+  "auditOnMutation": true,
+  "handler": {
+   "file": "src/backend/documents/documentRepository.ts",
+   "line": 1433,
+   "factory": "createDocumentApiHandlers",
+   "condition": "PostgreSQL + stockage objet (DOCUMENTS_BUCKET ou injection)",
+   "calls": [
+    "repository.revokeDocumentAdmin"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "ADMIN",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "ADMIN",
+    "handler": "NON_SONDÉ"
+   },
+   "postgres": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "ADMIN",
+    "handler": "ABSENT"
+   },
+   "postgresR2": {
+    "status": 400,
+    "code": "VALIDATION_ERROR",
+    "role": "ADMIN",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [
+   "scripts/verify-admin-ui.ts",
+   "src/admin/admin.test.tsx",
+   "src/backend/api/documents.test.ts",
+   "src/backend/api/securityAntiFraud.test.ts"
+  ],
+  "usedByScreens": [
+   "ADM-38"
+  ]
+ },
+ {
+  "key": "admin.documents.versions.revoke",
+  "method": "POST",
+  "path": "/api/v1/admin/documents/:documentId/versions/:versionId/revoke",
+  "authentication": "required",
+  "scope": "admin",
+  "permission": "incidents:arbitrate",
+  "idempotency": true,
+  "auditOnMutation": true,
+  "handler": {
+   "file": "src/backend/documents/documentRepository.ts",
+   "line": 1421,
+   "factory": "createDocumentApiHandlers",
+   "condition": "PostgreSQL + stockage objet (DOCUMENTS_BUCKET ou injection)",
+   "calls": [
+    "repository.revokeVersionAdmin"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "ADMIN",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "ADMIN",
+    "handler": "NON_SONDÉ"
+   },
+   "postgres": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "ADMIN",
+    "handler": "ABSENT"
+   },
+   "postgresR2": {
+    "status": 400,
+    "code": "VALIDATION_ERROR",
+    "role": "ADMIN",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [
+   "src/admin/admin.test.tsx",
+   "src/backend/api/documents.test.ts"
+  ],
+  "usedByScreens": [
+   "ADM-38"
+  ]
+ },
+ {
+  "key": "admin.calls.list",
+  "method": "GET",
+  "path": "/api/v1/admin/calls",
+  "authentication": "required",
+  "scope": "admin",
+  "permission": "calls:read:any",
+  "collection": true,
+  "handler": null,
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "ADMIN",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "ADMIN",
+    "handler": "NON_SONDÉ"
+   },
+   "postgres": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "ADMIN",
+    "handler": "ABSENT"
+   },
+   "postgresR2": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "ADMIN",
+    "handler": "ABSENT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [
+   "scripts/verify-admin-ui.ts",
+   "src/admin/admin.test.tsx"
+  ],
+  "usedByScreens": []
+ },
+ {
+  "key": "admin.match-events.list",
+  "method": "GET",
+  "path": "/api/v1/admin/match-events",
+  "authentication": "required",
+  "scope": "admin",
+  "permission": "match:read:any",
+  "collection": true,
+  "handler": null,
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "ADMIN",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "ADMIN",
+    "handler": "NON_SONDÉ"
+   },
+   "postgres": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "ADMIN",
+    "handler": "ABSENT"
+   },
+   "postgresR2": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "ADMIN",
+    "handler": "ABSENT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [],
+  "usedByScreens": []
+ },
+ {
+  "key": "admin.communication-events.list",
+  "method": "GET",
+  "path": "/api/v1/admin/communication-events",
+  "authentication": "required",
+  "scope": "admin",
+  "permission": "communications:read:any",
+  "collection": true,
+  "handler": null,
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "ADMIN",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "ADMIN",
+    "handler": "NON_SONDÉ"
+   },
+   "postgres": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "ADMIN",
+    "handler": "ABSENT"
+   },
+   "postgresR2": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "ADMIN",
+    "handler": "ABSENT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [],
+  "usedByScreens": []
+ },
+ {
+  "key": "admin.whatsapp-events.list",
+  "method": "GET",
+  "path": "/api/v1/admin/whatsapp-events",
+  "authentication": "required",
+  "scope": "admin",
+  "permission": "communications:read:any",
+  "collection": true,
+  "handler": null,
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "ADMIN",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "ADMIN",
+    "handler": "NON_SONDÉ"
+   },
+   "postgres": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "ADMIN",
+    "handler": "ABSENT"
+   },
+   "postgresR2": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "ADMIN",
+    "handler": "ABSENT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [],
+  "usedByScreens": []
+ },
+ {
+  "key": "admin.users.list",
+  "method": "GET",
+  "path": "/api/v1/admin/users",
+  "authentication": "required",
+  "scope": "admin",
+  "permission": "users:read:any",
+  "collection": true,
+  "handler": {
+   "file": "src/backend/api/identityWorker.ts",
+   "line": 139,
+   "factory": "createIdentityApiWorker",
+   "condition": "GOOGLE_CLIENT_ID + persistance mémoire ou PostgreSQL",
+   "calls": [
+    "fonction.adminUsers"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "ADMIN",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "ADMIN",
+    "handler": "NON_SONDÉ"
+   },
+   "postgres": {
+    "status": 200,
+    "code": "OK",
+    "role": "ADMIN",
+    "handler": "ATTEINT"
+   },
+   "postgresR2": {
+    "status": 200,
+    "code": "OK",
+    "role": "ADMIN",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [
+   "scripts/verify-admin-ui.ts",
+   "scripts/verify-postgres-e2e.ts",
+   "scripts/verify-workerd-local.ts",
+   "src/backend/api/foundation.test.ts",
+   "src/backend/api/securityAntiFraud.test.ts",
+   "src/backend/identity/identity.test.ts",
+   "src/backend/identity/postgresIdentity.test.ts",
+   "src/backend/persistence/persistence.test.ts"
+  ],
+  "usedByScreens": [
+   "ADM-01",
+   "ADM-02",
+   "ADM-03",
+   "ADM-04"
+  ]
+ },
+ {
+  "key": "admin.users.block",
+  "method": "POST",
+  "path": "/api/v1/admin/users/:userId/block",
+  "authentication": "required",
+  "scope": "admin",
+  "permission": "users:block",
+  "idempotency": true,
+  "auditOnMutation": true,
+  "handler": {
+   "file": "src/backend/api/entry.ts",
+   "line": 1090,
+   "factory": "composeWorker",
+   "condition": "PostgreSQL uniquement (adminSecurityHandlers)",
+   "calls": [
+    "automation.idempotency.complete",
+    "automation.idempotency.reserve"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "ADMIN",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "ADMIN",
+    "handler": "NON_SONDÉ"
+   },
+   "postgres": {
+    "status": 400,
+    "code": "VALIDATION_ERROR",
+    "role": "ADMIN",
+    "handler": "ATTEINT"
+   },
+   "postgresR2": {
+    "status": 400,
+    "code": "VALIDATION_ERROR",
+    "role": "ADMIN",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": "reconciliation-sensitive",
+  "tests": [
+   "src/admin/admin.test.tsx",
+   "src/backend/api/foundation.test.ts",
+   "src/backend/api/securityAntiFraud.test.ts"
+  ],
+  "usedByScreens": [
+   "ADM-04"
+  ]
+ },
+ {
+  "key": "admin.users.unblock",
+  "method": "POST",
+  "path": "/api/v1/admin/users/:userId/unblock",
+  "authentication": "required",
+  "scope": "admin",
+  "permission": "users:unblock",
+  "idempotency": true,
+  "auditOnMutation": true,
+  "handler": null,
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "ADMIN",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "ADMIN",
+    "handler": "NON_SONDÉ"
+   },
+   "postgres": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "ADMIN",
+    "handler": "ABSENT"
+   },
+   "postgresR2": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "ADMIN",
+    "handler": "ABSENT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [],
+  "usedByScreens": []
+ },
+ {
+  "key": "admin.offers.list",
+  "method": "GET",
+  "path": "/api/v1/admin/offers",
+  "authentication": "required",
+  "scope": "admin",
+  "permission": "offers:read:any",
+  "collection": true,
+  "handler": {
+   "file": "src/backend/api/identityWorker.ts",
+   "line": 140,
+   "factory": "createIdentityApiWorker",
+   "condition": "GOOGLE_CLIENT_ID + persistance mémoire ou PostgreSQL",
+   "calls": [
+    "fonction.adminControl"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "ADMIN",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "ADMIN",
+    "handler": "NON_SONDÉ"
+   },
+   "postgres": {
+    "status": 200,
+    "code": "OK",
+    "role": "ADMIN",
+    "handler": "ATTEINT"
+   },
+   "postgresR2": {
+    "status": 200,
+    "code": "OK",
+    "role": "ADMIN",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [
+   "src/backend/identity/identity.test.ts"
+  ],
+  "usedByScreens": []
+ },
+ {
+  "key": "admin.applications.list",
+  "method": "GET",
+  "path": "/api/v1/admin/applications",
+  "authentication": "required",
+  "scope": "admin",
+  "permission": "applications:read:any",
+  "collection": true,
+  "handler": {
+   "file": "src/backend/api/identityWorker.ts",
+   "line": 141,
+   "factory": "createIdentityApiWorker",
+   "condition": "GOOGLE_CLIENT_ID + persistance mémoire ou PostgreSQL",
+   "calls": [
+    "fonction.adminControl"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "ADMIN",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "ADMIN",
+    "handler": "NON_SONDÉ"
+   },
+   "postgres": {
+    "status": 200,
+    "code": "OK",
+    "role": "ADMIN",
+    "handler": "ATTEINT"
+   },
+   "postgresR2": {
+    "status": 200,
+    "code": "OK",
+    "role": "ADMIN",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [
+   "src/backend/identity/identity.test.ts"
+  ],
+  "usedByScreens": []
+ },
+ {
+  "key": "admin.proposals.list",
+  "method": "GET",
+  "path": "/api/v1/admin/proposals",
+  "authentication": "required",
+  "scope": "admin",
+  "permission": "applications:read:any",
+  "collection": true,
+  "handler": {
+   "file": "src/backend/repositories/proposalRepository.ts",
+   "line": 810,
+   "factory": "createProposalApiHandlers",
+   "condition": "persistance mémoire ou PostgreSQL (persistence.core)",
+   "calls": [
+    "repository.getAdminProposals"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "ADMIN",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "ADMIN",
+    "handler": "NON_SONDÉ"
+   },
+   "postgres": {
+    "status": 200,
+    "code": "OK",
+    "role": "ADMIN",
+    "handler": "ATTEINT"
+   },
+   "postgresR2": {
+    "status": 200,
+    "code": "OK",
+    "role": "ADMIN",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [
+   "scripts/verify-admin-ui.ts",
+   "src/admin/admin.test.tsx",
+   "src/backend/api/proposals.test.ts"
+  ],
+  "usedByScreens": [
+   "ADM-32"
+  ]
+ },
+ {
+  "key": "admin.contracts.list",
+  "method": "GET",
+  "path": "/api/v1/admin/contracts",
+  "authentication": "required",
+  "scope": "admin",
+  "permission": "contracts:read:any",
+  "collection": true,
+  "handler": {
+   "file": "src/backend/repositories/contractRepository.ts",
+   "line": 1521,
+   "factory": "createContractApiHandlers",
+   "condition": "persistance mémoire ou PostgreSQL (persistence.core)",
+   "calls": [
+    "repository.getAdminContracts"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "ADMIN",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "ADMIN",
+    "handler": "NON_SONDÉ"
+   },
+   "postgres": {
+    "status": 200,
+    "code": "OK",
+    "role": "ADMIN",
+    "handler": "ATTEINT"
+   },
+   "postgresR2": {
+    "status": 200,
+    "code": "OK",
+    "role": "ADMIN",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [
+   "scripts/verify-admin-ui.ts",
+   "scripts/verify-postgres-e2e.ts",
+   "src/admin/admin.test.tsx",
+   "src/backend/api/contracts.test.ts",
+   "src/backend/identity/identity.test.ts"
+  ],
+  "usedByScreens": [
+   "ADM-13",
+   "ADM-14",
+   "ADM-15",
+   "ADM-16",
+   "ADM-17",
+   "ADM-32"
+  ]
+ },
+ {
+  "key": "admin.payments.list",
+  "method": "GET",
+  "path": "/api/v1/admin/payments",
+  "authentication": "required",
+  "scope": "admin",
+  "permission": "payments:read:any",
+  "collection": true,
+  "handler": {
+   "file": "src/backend/repositories/paymentRepository.ts",
+   "line": 2839,
+   "factory": "createPaymentApiHandlers",
+   "condition": "PostgreSQL uniquement",
+   "calls": [
+    "repository.confirmPaymentPaid",
+    "repository.getAdminPayments",
+    "repository.verifyPayment"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "ADMIN",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "ADMIN",
+    "handler": "NON_SONDÉ"
+   },
+   "postgres": {
+    "status": 200,
+    "code": "OK",
+    "role": "ADMIN",
+    "handler": "ATTEINT"
+   },
+   "postgresR2": {
+    "status": 200,
+    "code": "OK",
+    "role": "ADMIN",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [
+   "scripts/verify-admin-ui.ts",
+   "src/admin/admin.test.tsx",
+   "src/backend/api/payments.test.ts",
+   "src/backend/identity/identity.test.ts"
+  ],
+  "usedByScreens": [
+   "ADM-18",
+   "ADM-21",
+   "ADM-23",
+   "ADM-32"
+  ]
+ },
+ {
+  "key": "admin.payments.approve",
+  "method": "POST",
+  "path": "/api/v1/admin/payments/:paymentId/approve",
+  "authentication": "required",
+  "scope": "admin",
+  "permission": "payments:approve",
+  "idempotency": true,
+  "auditOnMutation": true,
+  "handler": {
+   "file": "src/backend/repositories/paymentRepository.ts",
+   "line": 2844,
+   "factory": "createPaymentApiHandlers",
+   "condition": "PostgreSQL uniquement",
+   "calls": [
+    "repository.confirmPaymentPaid",
+    "repository.rejectPayment",
+    "repository.verifyPayment"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "ADMIN",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "ADMIN",
+    "handler": "NON_SONDÉ"
+   },
+   "postgres": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": "ADMIN",
+    "handler": "ATTEINT"
+   },
+   "postgresR2": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": "ADMIN",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [
+   "src/admin/admin.test.tsx",
+   "src/backend/api/paymentMissionClose.test.ts",
+   "src/backend/api/payments.test.ts"
+  ],
+  "usedByScreens": [
+   "ADM-18",
+   "ADM-21"
+  ]
+ },
+ {
+  "key": "admin.payments.reject",
+  "method": "POST",
+  "path": "/api/v1/admin/payments/:paymentId/reject",
+  "authentication": "required",
+  "scope": "admin",
+  "permission": "payments:reject",
+  "idempotency": true,
+  "auditOnMutation": true,
+  "handler": {
+   "file": "src/backend/repositories/paymentRepository.ts",
+   "line": 2856,
+   "factory": "createPaymentApiHandlers",
+   "condition": "PostgreSQL uniquement",
+   "calls": [
+    "repository.rejectPayment"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "ADMIN",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "ADMIN",
+    "handler": "NON_SONDÉ"
+   },
+   "postgres": {
+    "status": 400,
+    "code": "VALIDATION_ERROR",
+    "role": "ADMIN",
+    "handler": "ATTEINT"
+   },
+   "postgresR2": {
+    "status": 400,
+    "code": "VALIDATION_ERROR",
+    "role": "ADMIN",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [
+   "src/admin/admin.test.tsx",
+   "src/backend/api/paymentMissionClose.test.ts",
+   "src/backend/api/payments.test.ts"
+  ],
+  "usedByScreens": [
+   "ADM-18",
+   "ADM-21"
+  ]
+ },
+ {
+  "key": "admin.payments.confirm",
+  "method": "POST",
+  "path": "/api/v1/admin/payments/:paymentId/confirm",
+  "authentication": "required",
+  "scope": "admin",
+  "permission": "payments:approve",
+  "idempotency": true,
+  "auditOnMutation": true,
+  "handler": {
+   "file": "src/backend/repositories/paymentRepository.ts",
+   "line": 2850,
+   "factory": "createPaymentApiHandlers",
+   "condition": "PostgreSQL uniquement",
+   "calls": [
+    "repository.confirmPaymentPaid",
+    "repository.rejectPayment"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "ADMIN",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "ADMIN",
+    "handler": "NON_SONDÉ"
+   },
+   "postgres": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": "ADMIN",
+    "handler": "ATTEINT"
+   },
+   "postgresR2": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": "ADMIN",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [
+   "src/admin/admin.test.tsx",
+   "src/backend/api/externalPaymentProvider.test.ts",
+   "src/backend/api/paymentMissionClose.test.ts",
+   "src/backend/api/payments.test.ts",
+   "src/backend/api/securityAntiFraud.test.ts"
+  ],
+  "usedByScreens": [
+   "ADM-18",
+   "ADM-21"
+  ]
+ },
+ {
+  "key": "admin.payments.reconcile",
+  "method": "POST",
+  "path": "/api/v1/admin/payments/:paymentId/reconcile",
+  "authentication": "required",
+  "scope": "admin",
+  "permission": "payments:read:any",
+  "idempotency": true,
+  "auditOnMutation": true,
+  "handler": {
+   "file": "src/backend/repositories/paymentRepository.ts",
+   "line": 2896,
+   "factory": "createPaymentApiHandlers",
+   "condition": "PostgreSQL uniquement",
+   "calls": [
+    "repository.reconcilePayment"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "ADMIN",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "ADMIN",
+    "handler": "NON_SONDÉ"
+   },
+   "postgres": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": "ADMIN",
+    "handler": "ATTEINT"
+   },
+   "postgresR2": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": "ADMIN",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": "reconciliation-sensitive",
+  "tests": [
+   "src/backend/api/externalPaymentProvider.test.ts",
+   "src/backend/api/securityAntiFraud.test.ts"
+  ],
+  "usedByScreens": []
+ },
+ {
+  "key": "admin.payment-reconciliation.batches.create",
+  "method": "POST",
+  "path": "/api/v1/admin/payment-reconciliation/batches",
+  "authentication": "required",
+  "scope": "admin",
+  "permission": "payments:read:any",
+  "idempotency": true,
+  "auditOnMutation": true,
+  "handler": {
+   "file": "src/backend/payments/paymentReconciliationApi.ts",
+   "line": 79,
+   "factory": "createPaymentReconciliationApiHandlers",
+   "condition": "PostgreSQL uniquement",
+   "calls": [
+    "service.reconcileBatch"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "ADMIN",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "ADMIN",
+    "handler": "NON_SONDÉ"
+   },
+   "postgres": {
+    "status": 400,
+    "code": "VALIDATION_ERROR",
+    "role": "ADMIN",
+    "handler": "ATTEINT"
+   },
+   "postgresR2": {
+    "status": 400,
+    "code": "VALIDATION_ERROR",
+    "role": "ADMIN",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": "reconciliation-sensitive",
+  "tests": [
+   "src/admin/admin.test.tsx",
+   "src/backend/api/payments.test.ts"
+  ],
+  "usedByScreens": []
+ },
+ {
+  "key": "admin.payment-reconciliation.batches.read",
+  "method": "GET",
+  "path": "/api/v1/admin/payment-reconciliation/batches/:batchId",
+  "authentication": "required",
+  "scope": "admin",
+  "permission": "payments:read:any",
+  "collection": true,
+  "handler": {
+   "file": "src/backend/payments/paymentReconciliationApi.ts",
+   "line": 90,
+   "factory": "createPaymentReconciliationApiHandlers",
+   "condition": "PostgreSQL uniquement",
+   "calls": [
+    "service.getBatch",
+    "service.retryBatch"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "ADMIN",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "ADMIN",
+    "handler": "NON_SONDÉ"
+   },
+   "postgres": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": "ADMIN",
+    "handler": "ATTEINT"
+   },
+   "postgresR2": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": "ADMIN",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [
+   "scripts/verify-admin-ui.ts",
+   "src/admin/admin.test.tsx"
+  ],
+  "usedByScreens": [
+   "ADM-19"
+  ]
+ },
+ {
+  "key": "admin.payment-reconciliation.batches.retry",
+  "method": "POST",
+  "path": "/api/v1/admin/payment-reconciliation/batches/:batchId/retry",
+  "authentication": "required",
+  "scope": "admin",
+  "permission": "payments:read:any",
+  "idempotency": true,
+  "auditOnMutation": true,
+  "handler": {
+   "file": "src/backend/payments/paymentReconciliationApi.ts",
+   "line": 97,
+   "factory": "createPaymentReconciliationApiHandlers",
+   "condition": "PostgreSQL uniquement",
+   "calls": [
+    "service.decideReview",
+    "service.retryBatch"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "ADMIN",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "ADMIN",
+    "handler": "NON_SONDÉ"
+   },
+   "postgres": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": "ADMIN",
+    "handler": "ATTEINT"
+   },
+   "postgresR2": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": "ADMIN",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": "reconciliation-sensitive",
+  "tests": [
+   "scripts/verify-admin-ui.ts",
+   "src/admin/admin.test.tsx"
+  ],
+  "usedByScreens": [
+   "ADM-19"
+  ]
+ },
+ {
+  "key": "admin.payment-reconciliation.reviews.decide",
+  "method": "POST",
+  "path": "/api/v1/admin/payment-reconciliation/reviews/:reviewId/decision",
+  "authentication": "required",
+  "scope": "admin",
+  "permission": "payments:approve",
+  "idempotency": true,
+  "auditOnMutation": true,
+  "handler": {
+   "file": "src/backend/payments/paymentReconciliationApi.ts",
+   "line": 105,
+   "factory": "createPaymentReconciliationApiHandlers",
+   "condition": "PostgreSQL uniquement",
+   "calls": [
+    "service.decideReview"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "ADMIN",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "ADMIN",
+    "handler": "NON_SONDÉ"
+   },
+   "postgres": {
+    "status": 400,
+    "code": "VALIDATION_ERROR",
+    "role": "ADMIN",
+    "handler": "ATTEINT"
+   },
+   "postgresR2": {
+    "status": 400,
+    "code": "VALIDATION_ERROR",
+    "role": "ADMIN",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": "reconciliation-sensitive",
+  "tests": [
+   "scripts/verify-admin-ui.ts",
+   "src/admin/admin.test.tsx",
+   "src/backend/api/payments.test.ts"
+  ],
+  "usedByScreens": [
+   "ADM-19"
+  ]
+ },
+ {
+  "key": "admin.payment-reconciliation.reviews.correction-attempt",
+  "method": "POST",
+  "path": "/api/v1/admin/payment-reconciliation/reviews/:reviewId/correction-attempts",
+  "authentication": "required",
+  "scope": "admin",
+  "permission": "payments:approve",
+  "idempotency": true,
+  "auditOnMutation": true,
+  "handler": {
+   "file": "src/backend/payments/paymentReconciliationApi.ts",
+   "line": 119,
+   "factory": "createPaymentReconciliationApiHandlers",
+   "condition": "PostgreSQL uniquement",
+   "calls": [
+    "service.recordCorrectionAttempt"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "ADMIN",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "ADMIN",
+    "handler": "NON_SONDÉ"
+   },
+   "postgres": {
+    "status": 400,
+    "code": "VALIDATION_ERROR",
+    "role": "ADMIN",
+    "handler": "ATTEINT"
+   },
+   "postgresR2": {
+    "status": 400,
+    "code": "VALIDATION_ERROR",
+    "role": "ADMIN",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [
+   "scripts/verify-admin-ui.ts",
+   "src/admin/admin.test.tsx",
+   "src/backend/api/payments.test.ts"
+  ],
+  "usedByScreens": [
+   "ADM-19"
+  ]
+ },
+ {
+  "key": "admin.schedules.list",
+  "method": "GET",
+  "path": "/api/v1/admin/schedules",
+  "authentication": "required",
+  "scope": "admin",
+  "permission": "schedules:read:any",
+  "collection": true,
+  "handler": null,
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "ADMIN",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "ADMIN",
+    "handler": "NON_SONDÉ"
+   },
+   "postgres": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "ADMIN",
+    "handler": "ABSENT"
+   },
+   "postgresR2": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "ADMIN",
+    "handler": "ABSENT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [],
+  "usedByScreens": []
+ },
+ {
+  "key": "admin.incidents.list",
+  "method": "GET",
+  "path": "/api/v1/admin/incidents",
+  "authentication": "required",
+  "scope": "admin",
+  "permission": "incidents:read:any",
+  "collection": true,
+  "handler": {
+   "file": "src/backend/api/identityWorker.ts",
+   "line": 144,
+   "factory": "createIdentityApiWorker",
+   "condition": "GOOGLE_CLIENT_ID + persistance mémoire ou PostgreSQL",
+   "calls": [
+    "fonction.adminControl"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "ADMIN",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "ADMIN",
+    "handler": "NON_SONDÉ"
+   },
+   "postgres": {
+    "status": 200,
+    "code": "OK",
+    "role": "ADMIN",
+    "handler": "ATTEINT"
+   },
+   "postgresR2": {
+    "status": 200,
+    "code": "OK",
+    "role": "ADMIN",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [
+   "scripts/verify-admin-ui.ts",
+   "src/admin/admin.test.tsx",
+   "src/backend/identity/identity.test.ts"
+  ],
+  "usedByScreens": [
+   "ADM-01"
+  ]
+ },
+ {
+  "key": "admin.incidents.arbitrate",
+  "method": "POST",
+  "path": "/api/v1/admin/incidents/:incidentId/arbitrate",
+  "authentication": "required",
+  "scope": "admin",
+  "permission": "incidents:arbitrate",
+  "idempotency": true,
+  "auditOnMutation": true,
+  "handler": null,
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "ADMIN",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "ADMIN",
+    "handler": "NON_SONDÉ"
+   },
+   "postgres": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "ADMIN",
+    "handler": "ABSENT"
+   },
+   "postgresR2": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "ADMIN",
+    "handler": "ABSENT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [
+   "src/admin/admin.test.tsx"
+  ],
+  "usedByScreens": []
+ },
+ {
+  "key": "admin.replacements.list",
+  "method": "GET",
+  "path": "/api/v1/admin/replacements",
+  "authentication": "required",
+  "scope": "admin",
+  "permission": "replacements:read:any",
+  "collection": true,
+  "handler": {
+   "file": "src/backend/replacements/replacementRepository.ts",
+   "line": 309,
+   "factory": "createReplacementApiHandlers",
+   "condition": "PostgreSQL uniquement",
+   "calls": [
+    "repository.get",
+    "repository.listAdmin",
+    "repository.publishOffer"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "ADMIN",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "ADMIN",
+    "handler": "NON_SONDÉ"
+   },
+   "postgres": {
+    "status": 200,
+    "code": "OK",
+    "role": "ADMIN",
+    "handler": "ATTEINT"
+   },
+   "postgresR2": {
+    "status": 200,
+    "code": "OK",
+    "role": "ADMIN",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [
+   "scripts/verify-admin-ui.ts",
+   "src/admin/admin.test.tsx",
+   "src/backend/api/replacements.test.ts",
+   "src/backend/identity/identity.test.ts"
+  ],
+  "usedByScreens": [
+   "ADM-31"
+  ]
+ },
+ {
+  "key": "admin.replacements.read",
+  "method": "GET",
+  "path": "/api/v1/admin/replacements/:replacementId",
+  "authentication": "required",
+  "scope": "admin",
+  "permission": "replacements:read:any",
+  "handler": {
+   "file": "src/backend/replacements/replacementRepository.ts",
+   "line": 310,
+   "factory": "createReplacementApiHandlers",
+   "condition": "PostgreSQL uniquement",
+   "calls": [
+    "repository.get",
+    "repository.publishOffer"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "ADMIN",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "ADMIN",
+    "handler": "NON_SONDÉ"
+   },
+   "postgres": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": "ADMIN",
+    "handler": "ATTEINT"
+   },
+   "postgresR2": {
+    "status": 404,
+    "code": "NOT_FOUND",
+    "role": "ADMIN",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [
+   "src/admin/admin.test.tsx"
+  ],
+  "usedByScreens": [
+   "ADM-32",
+   "ADM-33"
+  ]
+ },
+ {
+  "key": "admin.replacements.assign",
+  "method": "POST",
+  "path": "/api/v1/admin/replacements/:replacementId/assign",
+  "authentication": "required",
+  "scope": "admin",
+  "permission": "replacements:manage",
+  "idempotency": true,
+  "auditOnMutation": true,
+  "handler": null,
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "ADMIN",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "ADMIN",
+    "handler": "NON_SONDÉ"
+   },
+   "postgres": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "ADMIN",
+    "handler": "ABSENT"
+   },
+   "postgresR2": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "ADMIN",
+    "handler": "ABSENT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [
+   "src/admin/admin.test.tsx",
+   "src/backend/api/replacements.test.ts"
+  ],
+  "usedByScreens": []
+ },
+ {
+  "key": "admin.replacements.transfer",
+  "method": "POST",
+  "path": "/api/v1/admin/replacements/:replacementId/transfer",
+  "authentication": "required",
+  "scope": "admin",
+  "permission": "replacements:manage",
+  "idempotency": true,
+  "auditOnMutation": true,
+  "handler": null,
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "ADMIN",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "ADMIN",
+    "handler": "NON_SONDÉ"
+   },
+   "postgres": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "ADMIN",
+    "handler": "ABSENT"
+   },
+   "postgresR2": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "ADMIN",
+    "handler": "ABSENT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [
+   "src/admin/admin.test.tsx",
+   "src/backend/api/replacements.test.ts"
+  ],
+  "usedByScreens": []
+ },
+ {
+  "key": "admin.replacements.finalize",
+  "method": "POST",
+  "path": "/api/v1/admin/replacements/:replacementId/finalize",
+  "authentication": "required",
+  "scope": "admin",
+  "permission": "replacements:manage",
+  "idempotency": true,
+  "auditOnMutation": true,
+  "handler": null,
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "ADMIN",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "ADMIN",
+    "handler": "NON_SONDÉ"
+   },
+   "postgres": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "ADMIN",
+    "handler": "ABSENT"
+   },
+   "postgresR2": {
+    "status": 501,
+    "code": "NOT_IMPLEMENTED",
+    "role": "ADMIN",
+    "handler": "ABSENT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [
+   "src/admin/admin.test.tsx",
+   "src/backend/api/replacements.test.ts"
+  ],
+  "usedByScreens": []
+ },
+ {
+  "key": "admin.notifications.list",
+  "method": "GET",
+  "path": "/api/v1/admin/notifications",
+  "authentication": "required",
+  "scope": "admin",
+  "permission": "notifications:read:any",
+  "collection": true,
+  "handler": {
+   "file": "src/backend/notifications/notificationApi.ts",
+   "line": 89,
+   "factory": "createNotificationApiHandlers",
+   "condition": "PostgreSQL uniquement",
+   "calls": [
+    "service.listAdmin"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "ADMIN",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "ADMIN",
+    "handler": "NON_SONDÉ"
+   },
+   "postgres": {
+    "status": 200,
+    "code": "OK",
+    "role": "ADMIN",
+    "handler": "ATTEINT"
+   },
+   "postgresR2": {
+    "status": 200,
+    "code": "OK",
+    "role": "ADMIN",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [
+   "scripts/verify-admin-ui.ts",
+   "src/admin/admin.test.tsx",
+   "src/backend/api/securityAntiFraud.test.ts",
+   "src/backend/notifications/notifications.test.ts"
+  ],
+  "usedByScreens": [
+   "ADM-41"
+  ]
+ },
+ {
+  "key": "admin.audit.list",
+  "method": "GET",
+  "path": "/api/v1/admin/audit",
+  "authentication": "required",
+  "scope": "admin",
+  "permission": "audit:read",
+  "collection": true,
+  "handler": {
+   "file": "src/backend/api/identityWorker.ts",
+   "line": 146,
+   "factory": "createIdentityApiWorker",
+   "condition": "GOOGLE_CLIENT_ID + persistance mémoire ou PostgreSQL",
+   "calls": [
+    "fonction.adminControl"
+   ]
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "ADMIN",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "ADMIN",
+    "handler": "NON_SONDÉ"
+   },
+   "postgres": {
+    "status": 200,
+    "code": "OK",
+    "role": "ADMIN",
+    "handler": "ATTEINT"
+   },
+   "postgresR2": {
+    "status": 200,
+    "code": "OK",
+    "role": "ADMIN",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [
+   "scripts/verify-admin-ui.ts",
+   "src/admin/admin.test.tsx",
+   "src/backend/identity/identity.test.ts"
+  ],
+  "usedByScreens": [
+   "ADM-01"
+  ]
+ },
+ {
+  "key": "admin.stats.read",
+  "method": "GET",
+  "path": "/api/v1/admin/stats",
+  "authentication": "required",
+  "scope": "admin",
+  "permission": "stats:read",
+  "handler": {
+   "file": "src/backend/api/identityWorker.ts",
+   "line": 147,
+   "factory": "createIdentityApiWorker",
+   "condition": "GOOGLE_CLIENT_ID + persistance mémoire ou PostgreSQL",
+   "calls": []
+  },
+  "probe": {
+   "closed": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "ADMIN",
+    "handler": "NON_SONDÉ"
+   },
+   "memory": {
+    "status": 401,
+    "code": "UNAUTHENTICATED",
+    "role": "ADMIN",
+    "handler": "NON_SONDÉ"
+   },
+   "postgres": {
+    "status": 200,
+    "code": "OK",
+    "role": "ADMIN",
+    "handler": "ATTEINT"
+   },
+   "postgresR2": {
+    "status": 200,
+    "code": "OK",
+    "role": "ADMIN",
+    "handler": "ATTEINT"
+   }
+  },
+  "rateLimitBucket": null,
+  "tests": [
+   "scripts/verify-admin-ui.ts",
+   "src/admin/admin.test.tsx",
+   "src/backend/identity/identity.test.ts"
+  ],
+  "usedByScreens": [
+   "ADM-01"
+  ]
+ }
+]

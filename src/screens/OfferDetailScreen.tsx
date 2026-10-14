@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { applicationErrorMessage, hasActiveApplication } from './applicationSubmission';
 import { ArrowLeft, Bookmark, BookmarkCheck, CheckCircle2, Phone, MessageSquare, MapPin, ShieldCheck } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { EditorialButton } from '../components/common/EditorialButton';
@@ -18,7 +19,7 @@ export const OfferDetailScreen: React.FC = () => {
     setActiveTab
   } = useApp();
 
-  const [hasApplied, setHasApplied] = useState(false);
+  const [applying, setApplying] = useState(false);
   const [actionFeedback, setActionFeedback] = useState<string | null>(null);
 
   if (!selectedOffer) {
@@ -33,15 +34,19 @@ export const OfferDetailScreen: React.FC = () => {
   }
 
   const isFav = favorites.includes(selectedOffer.id);
-  const alreadyApplied = applications.some(a => a.offerId === selectedOffer.id && a.status !== 'WITHDRAWN') || hasApplied;
+  // État « envoyée » uniquement depuis les candidatures renvoyées par le serveur.
+  const alreadyApplied = hasActiveApplication(applications, selectedOffer.id);
 
   const handleApply = async () => {
+    if (applying) return;
+    setApplying(true);
     try {
       await applyToOffer(selectedOffer.id);
-      setHasApplied(true);
-    } catch (err: any) {
-      setActionFeedback(err.message || 'Impossible de postuler');
-      setTimeout(() => setActionFeedback(null), 3000);
+    } catch (err: unknown) {
+      setActionFeedback(applicationErrorMessage(err));
+      setTimeout(() => setActionFeedback(null), 6000);
+    } finally {
+      setApplying(false);
     }
   };
 
@@ -253,8 +258,9 @@ export const OfferDetailScreen: React.FC = () => {
             variant="primary"
             fullWidth
             onClick={handleApply}
+            disabled={applying}
           >
-            <span>Postuler</span>
+            <span>{applying ? 'Envoi en cours…' : 'Postuler'}</span>
           </EditorialButton>
         )}
       </div>

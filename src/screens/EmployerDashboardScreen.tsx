@@ -18,7 +18,19 @@ import { useApp } from '../context/AppContext';
 import { EditorialButton } from '../components/common/EditorialButton';
 import { StatusBadge } from '../components/common/StatusBadge';
 import { EditorialSheet } from '../components/common/EditorialSheet';
+import { useOfferPublisher } from './useOfferPublisher';
+import { OfferFormFields } from './OfferFormFields';
+import type { OfferFormValues } from './offerCreationForm';
 import { HairlineDivider } from '../components/common/HairlineDivider';
+
+const DASHBOARD_OFFER_FORM_DEFAULTS: OfferFormValues = {
+  title: '',
+  contractType: 'Mission 6 mois',
+  location: 'Cotonou — Cadjèhoun Kpota (Littoral)',
+  remuneration: '180000',
+  skills: 'Agencement, Lecture de plan, Finition',
+  summary: '',
+};
 
 export const EmployerDashboardScreen: React.FC = () => {
   const {
@@ -37,16 +49,12 @@ export const EmployerDashboardScreen: React.FC = () => {
     setActiveTab,
     declareCommission,
     confirmMonthlyAction,
-    startAudioCall
+    startAudioCall,
+    paymentDeclarations
   } = useApp();
 
   const [newOfferModalOpen, setNewOfferModalOpen] = useState(false);
-  const [newTitle, setNewTitle] = useState('');
-  const [newSalary, setNewSalary] = useState('180000');
-  const [newLocation, setNewLocation] = useState('Cotonou — Cadjèhoun Kpota (Littoral)');
-  const [newContractType, setNewContractType] = useState('Mission 6 mois');
-  const [newSkills, setNewSkills] = useState('Agencement, Lecture de plan, Finition');
-  const [newSummary, setNewSummary] = useState('');
+  const publisher = useOfferPublisher(createOffer, DASHBOARD_OFFER_FORM_DEFAULTS);
 
   // Payment declaration modal for employer
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
@@ -118,29 +126,8 @@ export const EmployerDashboardScreen: React.FC = () => {
   const totalCommissionDue = scheduleRows.filter(row => row.kind === 'COMMISSION' && row.status === 'DUE').reduce((sum, row) => sum + row.amount, 0);
 
   const handleCreateOffer = async () => {
-    if (!newTitle.trim()) return;
-    const skillsList = newSkills.split(',').map(s => s.trim()).filter(Boolean);
-    await createOffer({
-      title: newTitle,
-      employerId: currentUser?.id || 'user-emp-1',
-      employerName: currentUser?.fullName || "Atelier Bois & Agencement Bénin",
-      employerLocation: newLocation,
-      contractType: newContractType,
-      remuneration: Number(newSalary) || 180000,
-      currency: 'FCFA',
-      location: newLocation,
-      isUrgent: false,
-      isLeLabeurJob: false,
-      skills: skillsList.length > 0 ? skillsList : ['Artisanat qualifié'],
-      summary: newSummary || 'Recherche professionnelle qualifiée sous contrat LE LABEUR.',
-      responsibilities: ['Exécution soignée des ouvrages confiés', 'Respect du planning convenu'],
-      conditions: ['Règlement direct de fin de mois', 'Matériel de protection fourni'],
-      selectionProcess: ['Examen du profil', 'Échange direct', 'Proposition de mission'],
-      durationMonths: 6
-    });
-    setNewOfferModalOpen(false);
-    setNewTitle('');
-    setNewSummary('');
+    const created = await publisher.publish();
+    if (created) setNewOfferModalOpen(false);
   };
 
   const openPaymentModal = (contract: any, monthNumber: number, mode: 'SALARY' | 'COMMISSION') => {
@@ -229,6 +216,12 @@ export const EmployerDashboardScreen: React.FC = () => {
 
   return (
     <div className="flex-1 flex flex-col p-5 bg-[#F3F3EC] select-none pb-24 font-operational text-xs text-[#17233B]">
+      {publisher.confirmation && (
+        <div role="status" className="mb-4 p-3 rounded border border-[#1BA64B]/30 bg-[#1BA64B]/10 text-[11px] text-[#17233B] flex items-start justify-between gap-2">
+          <span>{publisher.confirmation}</span>
+          <button type="button" onClick={publisher.dismissConfirmation} className="underline shrink-0">Fermer</button>
+        </div>
+      )}
       {currentUser?.accountStatus === 'BLOCKED' && (
         <div className="mb-5 rounded-2xl border border-[#A33A2B]/25 bg-[#A33A2B]/5 p-4 space-y-3">
           <div className="flex items-start justify-between gap-3">
@@ -489,6 +482,31 @@ export const EmployerDashboardScreen: React.FC = () => {
         </EditorialButton>
       </div>
 
+      {/* PHASE 4A : accès aux déclarations de paiement externe (Mes Paiements) */}
+      <button
+        type="button"
+        onClick={() => setScreen('PAYMENTS')}
+        className="w-full mb-6 bg-white border border-[#17233B]/10 rounded-[4px] p-4 flex items-center justify-between text-left hover:border-[#17233B]/25 transition-colors tap-feedback cursor-pointer"
+      >
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-[4px] bg-[#17233B]/5 border border-[#17233B]/10 flex items-center justify-center text-[#17233B]">
+            <DollarSign className="w-4 h-4" />
+          </div>
+          <div>
+            <h4 className="text-xs font-semibold text-[#17233B]">Paiements</h4>
+            <p className="text-[11px] text-[#17233B]/60 mt-0.5">
+              Déclarer un règlement effectué hors plateforme et suivre vos justificatifs
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <span className="text-[10px] font-mono text-[#17233B]/50">
+            {paymentDeclarations.length} déclaration(s)
+          </span>
+          <ArrowRight className="w-4 h-4 text-[#17233B]/40" />
+        </div>
+      </button>
+
       {/* Section Candidatures Récentes */}
       <div className="mb-6 space-y-3">
         <div className="flex items-center justify-between">
@@ -680,7 +698,7 @@ export const EmployerDashboardScreen: React.FC = () => {
         )}
       </div>
 
-      {/* Modal Publier Offre */}
+      {/* Modal Publier Offre — confirmation seulement après réponse serveur */}
       <EditorialSheet
         isOpen={newOfferModalOpen}
         onClose={() => setNewOfferModalOpen(false)}
@@ -691,71 +709,21 @@ export const EmployerDashboardScreen: React.FC = () => {
             variant="primary"
             fullWidth
             onClick={handleCreateOffer}
+            disabled={publisher.submitting}
           >
-            Valider et publier
+            {publisher.submitting ? 'Publication en cours…' : 'Valider et publier'}
           </EditorialButton>
         }
       >
-        <div className="space-y-3 font-operational text-xs">
-          <div>
-            <label className="block font-medium text-[#17233B] mb-1">Intitulé du poste / Métier</label>
-            <input
-              type="text"
-              placeholder="Ex. Menuisier d'Art & Agencement"
-              value={newTitle}
-              onChange={e => setNewTitle(e.target.value)}
-              className="w-full h-10 px-3 bg-white border border-[#17233B]/20 rounded text-xs"
-            />
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <label className="block font-medium text-[#17233B] mb-1">Salaire (FCFA/mois)</label>
-              <input
-                type="number"
-                value={newSalary}
-                onChange={e => setNewSalary(e.target.value)}
-                className="w-full h-10 px-3 bg-white border border-[#17233B]/20 rounded text-xs font-mono"
-              />
-            </div>
-            <div>
-              <label className="block font-medium text-[#17233B] mb-1">Type de contrat</label>
-              <input
-                type="text"
-                value={newContractType}
-                onChange={e => setNewContractType(e.target.value)}
-                className="w-full h-10 px-3 bg-white border border-[#17233B]/20 rounded text-xs"
-              />
-            </div>
-          </div>
-          <div>
-            <label className="block font-medium text-[#17233B] mb-1">Lieu du chantier au Bénin</label>
-            <input
-              type="text"
-              value={newLocation}
-              onChange={e => setNewLocation(e.target.value)}
-              className="w-full h-10 px-3 bg-white border border-[#17233B]/20 rounded text-xs"
-            />
-          </div>
-          <div>
-            <label className="block font-medium text-[#17233B] mb-1">Compétences attendues (séparées par virgules)</label>
-            <input
-              type="text"
-              value={newSkills}
-              onChange={e => setNewSkills(e.target.value)}
-              className="w-full h-10 px-3 bg-white border border-[#17233B]/20 rounded text-xs"
-            />
-          </div>
-          <div>
-            <label className="block font-medium text-[#17233B] mb-1">Description du travail</label>
-            <textarea
-              rows={2}
-              placeholder="Précisez ce qui est attendu..."
-              value={newSummary}
-              onChange={e => setNewSummary(e.target.value)}
-              className="w-full p-2 bg-white border border-[#17233B]/20 rounded text-xs"
-            />
-          </div>
-        </div>
+        <OfferFormFields
+          values={publisher.form}
+          errors={publisher.fieldErrors}
+          onChange={publisher.patch}
+          disabled={publisher.submitting}
+        />
+        {publisher.formError && (
+          <p role="alert" className="mt-3 text-[11px] text-red-700">{publisher.formError}</p>
+        )}
       </EditorialSheet>
 
       {/* Modal Paiement Commission */}

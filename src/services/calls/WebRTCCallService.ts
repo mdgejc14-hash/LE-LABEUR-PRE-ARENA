@@ -1,6 +1,7 @@
 import { CallStatus } from '../../types';
 import { getRTCConfiguration, SignalingMessage } from './types';
 import { SignalingTransport } from './SignalingTransport';
+import { requestIceServersForCall } from './iceCredentialClient';
 
 export interface WebRTCStateCallback {
   onStateChange: (status: CallStatus) => void;
@@ -54,8 +55,9 @@ export class WebRTCCallService {
     }
   }
 
-  private createPeerConnection(): RTCPeerConnection {
-    const config = getRTCConfiguration();
+  private async createPeerConnection(): Promise<RTCPeerConnection> {
+    const dynamicIceServers = this.currentCallId ? await requestIceServersForCall(this.currentCallId) : [];
+    const config = getRTCConfiguration(dynamicIceServers);
     const pc = new RTCPeerConnection(config);
 
     if (this.localStream) {
@@ -133,7 +135,7 @@ export class WebRTCCallService {
     this.localUserId = callerId;
 
     await this.acquireMicrophone();
-    const pc = this.createPeerConnection();
+    const pc = await this.createPeerConnection();
     this.setupSignalingListener();
 
     const offer = await pc.createOffer({
@@ -161,7 +163,7 @@ export class WebRTCCallService {
     this.callbacks?.onStateChange('ACCEPTING');
 
     await this.acquireMicrophone();
-    const pc = this.createPeerConnection();
+    const pc = await this.createPeerConnection();
     this.setupSignalingListener();
 
     await pc.setRemoteDescription(new RTCSessionDescription(offerSdp));

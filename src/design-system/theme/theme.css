@@ -1,0 +1,7 @@
+/*
+ * Entrée du thème Master (P0-DESIGN-FOUNDATION). Importée par le chunk des shells uniquement :
+ * le chemin legacy « / » ne charge ni ces variables ni ces polices.
+ */
+@import "../generated/tokens.css";
+@import "./fonts.css";
+@import "./master.css";

@@ -1,0 +1,247 @@
+%% LE LABEUR — Document global des machines à états (dérivé du code réel au commit cd0dd63)
+%% Un seul diagramme : chaque machine vit dans un état composite nommé.
+%% Convention des libellés de transition : « DÉCLENCHEUR · ACTEUR AUTORISÉ · [CONDITION] · (EFFET) ».
+%% Les mentions « MANQUE » recensent les états ou transitions déclarés mais jamais atteints :
+%% elles sont constatées dans le code, jamais déduites.
+
+stateDiagram-v2
+  direction LR
+
+  %% =========================================================
+  %% 1. UTILISATEUR / COMPTE
+  %% =========================================================
+  state UTILISATEUR_COMPTE {
+    [*] --> U_ACTIVE : création du compte (login email inconnu OU credential Google vérifié)
+    U_ACTIVE --> U_BLOCKED : blockUser · ADMIN · [échéance salaire ou commission ≥ J+3] · (audit ACCOUNT_BLOCKED + notification)
+    U_BLOCKED --> U_ACTIVE : unblockUser · ADMIN · [aucune échéance DUE/REJECTED et aucun paiement PENDING_VERIFICATION] · (audit + notification)
+    U_BLOCKED --> U_BLOCKED : opérations non régularisatrices refusées (assertOperationalActor)
+    note right of U_BLOCKED
+      MANQUE : statut PENDING déclaré côté serveur, jamais produit
+      MANQUE : aucun déblocage automatique par le temps
+      MANQUE : aucune suppression ni anonymisation de compte
+    end note
+  }
+
+  %% =========================================================
+  %% 2. OFFRE
+  %% =========================================================
+  state OFFRE {
+    [*] --> O_ACTIVE : createOffer · EMPLOYER propriétaire (ou ADMIN pour l'offre LeLabeur)
+    O_ACTIVE --> O_PAUSED : updateOfferStatus · EMPLOYER propriétaire
+    O_PAUSED --> O_ACTIVE : updateOfferStatus · EMPLOYER propriétaire
+    O_ACTIVE --> O_CANCELLED : updateOfferStatus · EMPLOYER propriétaire
+    O_PAUSED --> O_CANCELLED : updateOfferStatus · EMPLOYER propriétaire
+    O_ACTIVE --> O_FILLED : automatique · activation du contrat lié
+    O_PAUSED --> O_FILLED : automatique · activation du contrat lié
+    O_FILLED --> O_FILLED : toute réactivation refusée
+    note right of O_FILLED
+      MANQUE : republication d'une offre FILLED
+      MANQUE : modération ADMIN (permission offers:moderate déclarée, aucun handler)
+      MANQUE : recherche serveur (searchOffers : exercée par les tests uniquement)
+    end note
+  }
+
+  %% =========================================================
+  %% 3. CANDIDATURE
+  %% =========================================================
+  state CANDIDATURE {
+    [*] --> A_PENDING : applyToOffer · CANDIDATE · [offre ACTIVE, non doublon]
+    A_PENDING --> A_REVIEW : reviewApplication · EMPLOYER propriétaire
+    A_PENDING --> A_SHORTLISTED : updateApplicationStatus · EMPLOYER propriétaire
+    A_PENDING --> A_REJECTED : updateApplicationStatus · EMPLOYER propriétaire · [motif obligatoire]
+    A_REVIEW --> A_SHORTLISTED : updateApplicationStatus · EMPLOYER propriétaire
+    A_REVIEW --> A_REJECTED : updateApplicationStatus · EMPLOYER propriétaire · [motif obligatoire]
+    A_PENDING --> A_WITHDRAWN : withdrawApplication · CANDIDATE propriétaire
+    A_WITHDRAWN --> A_PENDING : re-candidature · CANDIDATE
+    A_PENDING --> A_HIRED : automatique · activation du contrat
+    A_REVIEW --> A_HIRED : automatique · activation du contrat
+    A_SHORTLISTED --> A_HIRED : automatique · activation du contrat
+    A_PENDING --> A_CLOSED_OFFER_FILLED : automatique · offre pourvue
+    A_REVIEW --> A_CLOSED_OFFER_FILLED : automatique · offre pourvue
+    A_SHORTLISTED --> A_CLOSED_OFFER_FILLED : automatique · offre pourvue
+    note right of A_HIRED
+      MANQUE : CONTRACTED déclaré mais jamais écrit
+      MANQUE : notification d'arrivée de candidature (NEW_APPLICATION jamais produite)
+      MANQUE : aucun chemin de sortie après HIRED
+    end note
+  }
+
+  %% =========================================================
+  %% 4. PROPOSITION DE MISSION
+  %% =========================================================
+  state PROPOSITION {
+    [*] --> P_SENT : createProposal / sendProposal · EMPLOYER propriétaire de l'offre (voir note)
+    P_SENT --> P_ACCEPTED : respondToProposal ACCEPT · CANDIDATE destinataire
+    P_SENT --> P_REVISION_REQUESTED : respondToProposal REVISE · CANDIDATE destinataire · [révision obligatoire]
+    P_SENT --> P_DECLINED : respondToProposal DECLINE · CANDIDATE destinataire
+    P_REVISION_REQUESTED --> P_SENT : nouvelle proposition · EMPLOYER émetteur
+    P_SENT --> P_ACCEPTED : automatique · activation du contrat
+    P_REVISION_REQUESTED --> P_ACCEPTED : automatique · activation du contrat
+    note right of P_SENT
+      MANQUE : DRAFT jamais produit
+      MANQUE : EXPIRED jamais produit (aucune expiration)
+      MANQUE : sendProposal n'a aucun appelant UI ; la proposition naît de la génération de contrat
+      MANQUE : aucune notification à l'envoi ni à la réponse d'une proposition
+    end note
+  }
+
+  %% =========================================================
+  %% 5. CONTRAT
+  %% =========================================================
+  state CONTRAT {
+    [*] --> C_SIGNATURE : generateContract · EMPLOYER propriétaire · [offre ACTIVE, applicationId obligatoire, durée et salaire validés]
+    C_SIGNATURE --> C_SIGNATURE : signature d'une seule partie (attente de la seconde)
+    C_SIGNATURE --> C_ACTIVE : signContract bilatéral · EMPLOYER et CANDIDATE · [employerSigned ET employeeSigned, aucun contrat ACTIVE concurrent] · (offre FILLED, candidature HIRED, autres clôturées, proposition ACCEPTED, échéancier généré)
+    C_ACTIVE --> C_INCIDENT : reportIncident · partie au contrat
+    C_ACTIVE --> C_SUSPENDED : arbitrateIncident SUSPENDRE · ADMIN
+    C_SUSPENDED --> C_ACTIVE : arbitrateIncident CONTINUER · ADMIN
+    C_INCIDENT --> C_ACTIVE : arbitrateIncident CONTINUER · ADMIN
+    C_INCIDENT --> C_SUSPENDED : arbitrateIncident SUSPENDRE · ADMIN
+    C_ACTIVE --> C_ACTIVE : resolveStartDivergence CONFIRM · ADMIN
+    C_ACTIVE --> C_ACTIVE : advanceContractMonth · EMPLOYER propriétaire · [currentMonth < durée, aucun appelant UI]
+    C_ACTIVE --> C_TERMINATED : dissociateMonth2 · CANDIDATE ou EMPLOYER partie · [currentMonth ≥ 2, motif obligatoire] · (gel des échéances futures + notification)
+    C_ACTIVE --> C_TERMINATED : arbitrateIncident CLÔTURER ou ANNULER · ADMIN
+    C_INCIDENT --> C_TERMINATED : arbitrateIncident CLÔTURER ou ANNULER · ADMIN
+    C_ACTIVE --> C_TERMINATED : resolveStartDivergence CANCEL · ADMIN
+    C_INCIDENT --> C_REPLACED : arbitrateIncident REMPLACER · ADMIN · (création du dossier de remplacement)
+    note right of C_SIGNATURE
+      MANQUE : DRAFT, PENDING_EMPLOYER, PENDING_EMPLOYEE jamais écrits
+      MANQUE : COMPLETED jamais atteint (aucune clôture naturelle de fin de contrat)
+      MANQUE : résiliation à l'initiative de l'employeur en M2+
+      MANQUE : avancement de mois sans écran (advanceContractMonth : tests uniquement)
+    end note
+  }
+
+  %% =========================================================
+  %% 6. INCIDENT (+ MISSION : cycle de vie visible côté contrat)
+  %% =========================================================
+  state INCIDENT {
+    [*] --> I_OPEN : reportIncident · partie au contrat · [contrat ACTIVE ou SUSPENDED] · (contrat INCIDENT + notifications autres partie et ADMIN)
+    I_OPEN --> I_RESOLVED : arbitrateIncident CONTINUER · ADMIN · (contrat ACTIVE)
+    I_OPEN --> I_UNDER_REVIEW : arbitrateIncident SUSPENDRE · ADMIN · (contrat SUSPENDED)
+    I_OPEN --> I_CLOSED : arbitrateIncident CLÔTURER ou ANNULER · ADMIN · (contrat TERMINATED + gel des échéances)
+    I_OPEN --> I_REPLACEMENT_REQUESTED : arbitrateIncident REMPLACER · ADMIN · (contrat REPLACED + dossier de remplacement)
+    note right of I_OPEN
+      MANQUE : WAITING_EMPLOYEE et WAITING_EMPLOYER jamais écrits
+      MANQUE : TERMINATED jamais écrit (la fermeture produit CLOSED)
+      MANQUE : REPLACEMENT_IN_PROGRESS jamais écrit
+      MANQUE : aucune escalade ni relance automatique (aucun Cron)
+    end note
+  }
+
+  %% =========================================================
+  %% 7. REMPLACEMENT
+  %% =========================================================
+  state REMPLACEMENT {
+    [*] --> R_SOURCING_CANDIDATES : createReplacementFromIncident · ADMIN · [après arbitrage REMPLACER] · (offre urgente ADMIN)
+    R_SOURCING_CANDIDATES --> R_CANDIDATE_SELECTED : assignReplacementCandidate · ADMIN ou EMPLOYER propriétaire
+    R_CANDIDATE_SELECTED --> R_TRANSFERRED_TO_EMPLOYER : transferReplacementCandidate · ADMIN
+    R_TRANSFERRED_TO_EMPLOYER --> R_CONTRACT_FINALIZED : finalizeReplacementContract · ADMIN · (nouveau contrat au statut SIGNATURE)
+    note right of R_SOURCING_CANDIDATES
+      MANQUE : PENDING_OFFER jamais écrit (présent seulement dans les données de démo)
+      MANQUE : aucune notification au candidat remplaçant
+      MANQUE : refus possible du candidat transféré (CandidateTransfer DECLINED jamais produit)
+      MANQUE : solde des mois travaillés (TOTAL_* déclarés, jamais écrits)
+    end note
+  }
+
+  %% =========================================================
+  %% 8. PAIEMENT — ÉCHÉANCE SALAIRE
+  %% =========================================================
+  state SALAIRE {
+    [*] --> S_SCHEDULED : génération de l'échéancier à l'activation du contrat
+    S_SCHEDULED --> S_DUE : syncPaymentSchedule · [date d'échéance atteinte]
+    S_DUE --> S_PENDING_VERIFICATION : confirmMonthlyAction DECLARE_SALARY ou PAID · EMPLOYER · [statut DUE ou REJECTED, montant EXACT de la part salarié, transactionId fourni]
+    S_REJECTED --> S_PENDING_VERIFICATION : nouvelle déclaration · EMPLOYER
+    S_PENDING_VERIFICATION --> S_PAID : confirmMonthlyAction CONFIRM_SALARY_RECEIVED · CANDIDATE
+    S_PENDING_VERIFICATION --> S_REJECTED : confirmMonthlyAction CONTEST · CANDIDATE · (notification employeur + tous les ADMIN)
+    S_SCHEDULED --> S_NOT_APPLICABLE : gel des échéances futures (fin de mission ou arbitrage)
+    S_DUE --> S_NOT_APPLICABLE : gel des échéances futures
+    note right of S_DUE
+      MANQUE : aucune notification d'échéance à venir
+      MANQUE : aucune bascule automatique vers DUE sans lecture (aucun Cron)
+    end note
+  }
+
+  %% =========================================================
+  %% 9. PAIEMENT — COMMISSION LE LABEUR (M1 uniquement)
+  %% =========================================================
+  state COMMISSION {
+    [*] --> M_SCHEDULED : contrat activé · [M1 = 25 pour cent du salaire, à la charge de l'employeur]
+    M_SCHEDULED --> M_DUE : syncPaymentSchedule · [date atteinte]
+    M_DUE --> M_PENDING_VERIFICATION : declareCommissionPayment · EMPLOYER · [montant EXACT, transactionId + preuve + téléphone, aucun autre paiement en vérification] · (notification à tous les ADMIN)
+    M_PENDING_VERIFICATION --> M_PAID : verifyCommissionPayment · ADMIN · (échéancier, ledger et contrat synchronisés)
+    M_PENDING_VERIFICATION --> M_REJECTED : rejectCommissionPayment · ADMIN · [motif obligatoire]
+    M_REJECTED --> M_DUE : régularisation
+    M_DUE --> M_NOT_APPLICABLE : mois 2 et suivants (commission nulle)
+    M_SCHEDULED --> M_NOT_APPLICABLE : gel des échéances futures
+    note right of M_PENDING_VERIFICATION
+      MANQUE : justificatif réel (aucun binaire stocké ; preuve de type blob:)
+      MANQUE : aucun seuil de montant, aucune vérification de cohérence bancaire
+    end note
+  }
+
+  %% =========================================================
+  %% 10. DÉCLARATION DE PAIEMENT EXTERNE (DRAFT vers SUBMITTED vers décision)
+  %% =========================================================
+  state DECLARATION_PAIEMENT {
+    [*] --> D_DRAFT : createPaymentDeclaration · EMPLOYER · [contrat lui appartenant, montant entier > 0, moyen de paiement, transactionId, référence, paidAt non future, justificatif document OU référence] · (audit PAYMENT_DECLARATION_CREATED)
+    D_DRAFT --> D_DRAFT : updatePaymentDeclaration · EMPLOYER propriétaire
+    D_DRAFT --> D_SUBMITTED : submitPaymentDeclaration · EMPLOYER propriétaire · (submittedAt + audit PAYMENT_DECLARATION_SUBMITTED)
+    D_SUBMITTED --> D_APPROVED : approvePaymentDeclaration · ADMIN · (reviewedBy + reviewedAt + audit)
+    D_SUBMITTED --> D_REJECTED : rejectPaymentDeclaration · ADMIN · [motif obligatoire]
+    note right of D_DRAFT
+      MANQUE : UNDER_REVIEW déclaré (statut, libellé, style) mais JAMAIS écrit
+      MANQUE : RESUBMITTED déclaré mais JAMAIS écrit ; un rejet est terminal
+      MANQUE : aucune notification sur soumission, approbation ou rejet
+      MANQUE : aucun lien avec l'échéancier, la commission, J+3 ou le déblocage
+      MANQUE : aucune route API (501 en MODE API) et aucune table PostgreSQL
+      MANQUE : justificatif non stocké (chaîne de caractères)
+    end note
+  }
+
+  %% =========================================================
+  %% 11. NOTIFICATION
+  %% =========================================================
+  state NOTIFICATION {
+    [*] --> N_UNREAD : createNotification · système · [déduplication sur recipientId + type + dedupeKey]
+    N_UNREAD --> N_READ : markAsRead (propriétaire uniquement) ou markAllAsRead · [méthodes sans appelant UI]
+    note right of N_UNREAD
+      MANQUE : aucun écran, cloche, badge ou compteur dans l'application
+      MANQUE : liens inexploitables (linkRef.screen ADMIN ou APPLICATIONS absents de AppScreen)
+      MANQUE : aucun archivage, aucune purge, aucune limite de volume
+      MANQUE : types déclarés jamais produits (NEW_MESSAGE, MISSED_CALL, APPLICATION_WITHDRAWN, MISSION_*, REPLACEMENT_INITIATED, CANDIDATE_TRANSFERRED)
+      MANQUE : producteurs absents sur sendMessage et sur tout le cycle des déclarations de paiement
+    end note
+  }
+
+  %% =========================================================
+  %% 12. APPEL / WEBRTC
+  %% =========================================================
+  state APPEL_WEBRTC {
+    state PERSISTE_DANS_LE_REPOSITORY {
+      [*] --> W_CALLING : initiateCall · appelant
+      W_CALLING --> W_ACCEPTING : acceptCall · appelé · [offre SDP requise]
+      W_CALLING --> W_REJECTED : rejectCall · appelé
+      W_CALLING --> W_MISSED : endCall sans réponse · appelé
+      W_CALLING --> W_ENDED : endCall · appelant
+      W_ACCEPTING --> W_ENDED : endCall
+    }
+    state LIVE_NON_PERSISTE {
+      [*] --> L_CALLING
+      L_CALLING --> L_RINGING
+      L_RINGING --> L_ACCEPTING
+      L_ACCEPTING --> L_CONNECTING
+      L_CONNECTING --> L_CONNECTED
+      L_CONNECTING --> L_FAILED
+      L_CONNECTED --> L_ENDED
+      L_CALLING --> L_ENDED
+    }
+    note right of LIVE_NON_PERSISTE
+      MANQUE : CONNECTED jamais persisté, donc l'historique ne reflète pas les appels aboutis
+      MANQUE : IDLE jamais persisté
+      MANQUE : MISSED_CALL jamais produit (seul INCOMING_CALL l'est)
+      MANQUE : signaling serveur non déployé ; en démo un token pré-signé de moins de 5 minutes est obligatoire sinon l'appel échoue
+      MANQUE : historique d'appels sans écran (getCallHistory : tests uniquement)
+    end note
+  }

@@ -1,0 +1,18 @@
+%% 12 — Remplacements et réputation (diagramme complémentaire). Références : claimRepository.ts, replacementRepository.ts, sqlReplacementStores.ts, reputationAutomation.ts.
+flowchart TD
+  CL["Claim en ADMIN_REVIEW"] -->|"admin.claims.decision REPLACE (claimRepository.ts:846-870)"| R1["Remplacement PENDING_OFFER<br/>outbox REPLACEMENT_CREATED → notification"]
+  R1 -->|"replacements.offer.create EMPLOYER — EMP-58 (sqlReplacementStores.ts:94)"| R2["SOURCING_CANDIDATES"]
+  R2 -->|"candidature sur l'offre puis applications.shortlist (applicationRepository.ts:343)"| R3["CANDIDATE_SELECTED"]
+  R3 -->|"reject → releaseSelection (applicationRepository.ts:355)"| R2
+  R3 -.->|"proposals.create : non appelé par les écrans de famille ; conversationId opaque, messagerie 501"| R3b["proposition rattachée (attachProposal, proposalRepository.ts:624)"]
+  R3b -->|"proposals.respond ACCEPT (proposalRepository.ts:461)"| R4["TRANSFERRED_TO_EMPLOYER"]
+  R3b -->|"DECLINE (proposalRepository.ts:466)"| R2
+  R4 -.->|"contracts.create — aucun écran appelant (legacy seulement)"| R5["CONTRACT_FINALIZED (linkSuccessorContract)"]
+  ADM["ADMIN assign / transfer / finalize"] -.->|"501 — contrats sans handler"| R2
+  subgraph REP["Réputation (ledger append-only)"]
+    E1["SALARY_CONFIRMED"] -->|"reputationAutomation"| L["reputation_entries ACTIVE"]
+    E2["CLAIM_RESOLVED"] -->|"reputationAutomation"| L
+    L -->|"admin.reputation.entries.correct REVERSE / RESTORE (reputationRepository.ts:427-444, permission incidents:arbitrate)"| L2["ACTIVE ⇄ REVERSED, correction auditée"]
+    J["job REPUTATION_RECONCILIATION (cron)"] --> L
+  end
+  PRE47["PRE-47 contestation"] -->|"claims.create (OTHER_REVIEW_REQUIRED)"| CL

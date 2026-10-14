@@ -1,0 +1,38 @@
+%% 05 — Cycle contrat → échéances → déclaration → vérification → salaire → litige (états réels du code).
+flowchart LR
+  subgraph PROP["Proposition (proposalTransitions.ts)"]
+    PS["SENT"] -->|"ACCEPT (CANDIDATE)"| PA["ACCEPTED"]
+    PS -->|"DECLINE (CANDIDATE)"| PD["DECLINED"]
+    PS -->|"expire (EMPLOYER)"| PE["EXPIRED"]
+  end
+  subgraph CT["Contrat (contractTransitions.ts)"]
+    CD["DRAFT"] -->|"SEND (EMPLOYER)"| CS["SIGNATURE"]
+    CS -->|"sign ×2 puis contracts.activate (EMPLOYER) — aucun écran appelant"| CA["ACTIVE"]
+    CA -->|"END"| CC["COMPLETED"]
+    CA -->|"TERMINATE"| CTm["TERMINATED"]
+  end
+  PA -->|"contracts.create (contractRepository.ts) — commissionPercentage 25 (l.734)"| CD
+  CA -->|"outbox CONTRACT_ACTIVATED → contractActivation.ts : échéancier"| PAY
+  subgraph PAY["Paiement (paymentLifecycle.ts)"]
+    S1["SCHEDULED"] -->|"MARK_DUE (SYSTEM, cron)"| S2["DUE"]
+    S2 -->|"DECLARE_PAYMENT (EMPLOYER)"| S3["PENDING_VERIFICATION"]
+    S3 -->|"VERIFY (ADMIN)"| S4["VERIFIED"]
+    S3 -->|"REJECT (ADMIN)"| S6["REJECTED"]
+    S6 -->|"nouvelle déclaration"| S3
+    S4 -->|"CONFIRM_PAID (ADMIN) ou webhook fournisseur"| S5["PAID"]
+  end
+  S5 -->|"payments.salary.confirmation.request (EMPLOYER)"| OTP["salary_confirmations — OTP"]
+  OTP -->|"payments.salary.confirmation.confirm (CANDIDATE)"| CONF["SALARY_CONFIRMED → réputation"]
+  WH["Webhook fournisseur<br/>webhooks.payment-provider"] -.->|"NON CONFIGURÉ : aucun fournisseur enregistré"| S5
+  subgraph CL["Claim (claimRepository.ts)"]
+    O["OPEN (create l.624)"] -->|"requestEvidence ADMIN (l.805)"| ER["EVIDENCE_REQUESTED"]
+    ER -->|"submitEvidence partie (l.688)"| UR["UNDER_REVIEW"]
+    O -->|"review ADMIN (l.746)"| AR["ADMIN_REVIEW"]
+    UR -->|"review ADMIN (l.746)"| AR
+    AR -->|"decide ADMIN (l.885)"| RS["RESOLVED / REJECTED"]
+    CLO["CLOSED — déclaré (disputes/records.ts:18), aucune transition trouvée : À VÉRIFIER"]
+  end
+  CA -->|"claims.create (CONTRACT_INCIDENT)"| O
+  S2 -->|"claims.create (SALARY_NOT_RECEIVED / PAYMENT_DISPUTE)"| O
+  AR -->|"decide REPLACE (claimRepository.ts:846)"| REP["replacements PENDING_OFFER"]
+  FIN["FIN-01..03 — triplet, frais, exports"] -.->|"BLOQUÉ_EN_ATTENTE_DÉCISION"| PAY

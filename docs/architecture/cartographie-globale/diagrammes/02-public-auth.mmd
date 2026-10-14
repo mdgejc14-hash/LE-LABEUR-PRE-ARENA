@@ -1,0 +1,22 @@
+%% 02 — Parcours Public / Auth. Références : src/public/PublicPage.tsx (lignes), src/public/auth.ts, src/backend/api/identityWorker.ts.
+flowchart TD
+  P01["PUB-01 /ouverture — Splash"] -->|"GET /auth/session (l.108) OK"| LEG["/ — application legacy"]
+  P01 -->|"timeout 1600 ms ou pas de session (l.102,107)"| P02["PUB-02 /accueil"]
+  P02 -->|"Créer mon compte (l.157)"| P03["PUB-03 /onboarding/profil"]
+  P02 -->|"J'ai déjà un compte (l.158)"| P04["PUB-04 /connexion"]
+  P03 -->|"Continuer (l.195)"| P05["PUB-05 /inscription"]
+  P05 -.->|"STOP — bouton désactivé (l.274) ; contrats register/consent absents"| X1(["Création de compte impossible dans l'espace public"])
+  P04 -->|"Google GSI puis POST /auth/google/credential intent=login (l.226)"| GW{"Composition serveur"}
+  GW -->|"GOOGLE_CLIENT_ID vide (wrangler.toml) : 501"| X2(["STOP — connexion indisponible"])
+  GW -->|"200/201 + cookie de session"| LEG
+  GW -->|"403 compte non actif (l.262)"| P09["PUB-09 /compte-bloque"]
+  GW -->|"429 retryAfterSeconds (auth.ts)"| P04
+  P09 -->|"POST /auth/logout (l.327)"| P02
+  P04 -->|"Mot de passe oublié (l.244)"| P07["PUB-07 /recuperation"]
+  P07 -.->|"NON IMPLÉMENTÉ — aucun contrat recovery"| X3(["STOP"])
+  P05 -->|"lien (l.282)"| P06["PUB-06 /verifier-otp"]
+  P06 -.->|"NON IMPLÉMENTÉ — aucun contrat OTP d'auth"| X4(["STOP"])
+  P02 -->|"CGU (l.161)"| P08["PUB-08 /legal"]
+  P08 -.->|"NON IMPLÉMENTÉ — acceptation versionnée absente"| X5(["STOP"])
+  P10["PUB-10 /maintenance"] -.->|"aucune source d'état"| X6(["STOP"])
+  LEG -.->|"À VÉRIFIER : aucun lien vers /client, /prestataire, /admin depuis le legacy"| SPACES["Espaces Master Design"]
